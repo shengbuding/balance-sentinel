@@ -379,7 +379,9 @@ private fun AccountBalanceCard(
                     Text(stringResource(R.string.home_no_data), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    balance.balanceInfos.forEach { info ->
+                    balance.balanceInfos
+                        .sortedByDescending { it.totalBalance.toDoubleOrNull() ?: 0.0 }
+                        .forEach { info ->
                         BalanceInfoCard(info)
                         Spacer(modifier = Modifier.height(8.dp))
                     }

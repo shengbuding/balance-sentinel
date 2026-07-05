@@ -30,7 +30,7 @@ object BalanceWidgetDataStore {
     ) {
         val p = getPrefs(context)
         val balances = getAllBalances(p).toMutableList()
-        val idx = balances.indexOfFirst { it.accountId == accountId }
+        val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
         val entry = AccountBalance(
             accountId = accountId,
             label = label,
