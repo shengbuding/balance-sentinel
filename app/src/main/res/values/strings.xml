@@ -235,6 +235,17 @@
     <string name="data_import_history_fail">导入失败：无法解析数据文件</string>
     <string name="data_import_history_empty">文件中没有可导入的数据</string>
 
+    <!-- ===== New Sub-pages ===== -->
+    <string name="data_clear_title">清除数据</string>
+    <string name="data_backup_title">备份与迁移</string>
+    <string name="data_nav_clear_title">清除数据</string>
+    <string name="data_nav_clear_desc">清空原始记录、日摘要、用量快照、刷新日志等</string>
+    <string name="data_nav_backup_title">备份与迁移</string>
+    <string name="data_nav_backup_desc">导入/导出历史数据和配置，导出调试报告</string>
+    <string name="data_backup_section_history">历史数据</string>
+    <string name="data_backup_section_config">配置</string>
+    <string name="data_backup_section_debug">调试</string>
+
     <!-- ===== Data Management: Storage Stats ===== -->
     <string name="data_storage_stats_title">存储统计</string>
     <string name="data_stat_empty">暂无数据</string>
@@ -253,6 +264,7 @@
     <string name="data_stat_alarm_drop">丢弃</string>
 
     <!-- ===== Data Management: Sections ===== -->
+    <string name="data_section_actions">操作</string>
     <string name="data_section_clear">清除数据</string>
     <string name="data_section_reset">重置</string>
     <string name="data_section_export_import">导出 / 导入</string>

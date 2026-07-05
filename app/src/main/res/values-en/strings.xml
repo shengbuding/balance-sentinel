@@ -235,6 +235,17 @@
     <string name="data_import_history_fail">Import failed: could not parse data file</string>
     <string name="data_import_history_empty">No importable data found in file</string>
 
+    <!-- ===== New Sub-pages ===== -->
+    <string name="data_clear_title">Clear Data</string>
+    <string name="data_backup_title">Backup &amp; Migration</string>
+    <string name="data_nav_clear_title">Clear Data</string>
+    <string name="data_nav_clear_desc">Clear raw records, daily summaries, usage snapshots, refresh logs, etc.</string>
+    <string name="data_nav_backup_title">Backup &amp; Migration</string>
+    <string name="data_nav_backup_desc">Import/export history data and config, export debug report</string>
+    <string name="data_backup_section_history">History Data</string>
+    <string name="data_backup_section_config">Configuration</string>
+    <string name="data_backup_section_debug">Debug</string>
+
     <!-- ===== Data Management: Storage Stats ===== -->
     <string name="data_storage_stats_title">Storage Statistics</string>
     <string name="data_stat_empty">No data yet</string>
@@ -253,6 +264,7 @@
     <string name="data_stat_alarm_drop">Drop</string>
 
     <!-- ===== Data Management: Sections ===== -->
+    <string name="data_section_actions">Actions</string>
     <string name="data_section_clear">Clear Data</string>
     <string name="data_section_reset">Reset</string>
     <string name="data_section_export_import">Export / Import</string>
