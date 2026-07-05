@@ -76,6 +76,19 @@ android {
         versionName = gitVersionName()
     }
 
+    // Release 签名配置（签名文件路径和密码从 keystore.properties 读取）
+    // 必须在 buildTypes 之前定义，否则 signingConfigs.findByName("release") 找不到
+    signingConfigs {
+        if (hasKeystoreConfig) {
+            create("release") {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -88,18 +101,6 @@ android {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         // Debug builds keep full debugging support; use assembleRelease for size testing
-    }
-
-    // Release 签名配置（签名文件路径和密码从 keystore.properties 读取）
-    signingConfigs {
-        if (hasKeystoreConfig) {
-            create("release") {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-            }
-        }
     }
 
     compileOptions {
