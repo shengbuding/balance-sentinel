@@ -10,6 +10,7 @@ class DeepSeekApp : Application() {
         super.onCreate()
         CrashLogger.install(this)
         createNotificationChannel()
+        CrashLogger.breadcrumb("App", "onCreate complete")
     }
 
     private fun createNotificationChannel() {

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.PowerManager
 import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.DeepSeekApiService
@@ -65,6 +66,7 @@ class BalanceRefreshService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLogger.breadcrumb(TAG, "Service onCreate")
         apiKeyManager = ApiKeyManager(this)
         widgetPrefs = WidgetPrefs(this)
         notificationHelper = NotificationHelper(this)
@@ -102,6 +104,7 @@ class BalanceRefreshService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
         KeepAliveReceiver.cancel(this)
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
@@ -163,6 +166,7 @@ class BalanceRefreshService : Service() {
             return
         }
         isRefreshing = true
+        CrashLogger.breadcrumb(TAG, "Refresh cycle started")
 
         // WakeLock 防止 CPU 在刷新期间休眠
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -283,6 +287,7 @@ class BalanceRefreshService : Service() {
 
                 } catch (e: Exception) {
                     Logger.e(TAG, "Auto refresh batch failed", e)
+                    CrashLogger.logNonFatal(TAG, e)
                     notificationHelper.sendForegroundNotification(getString(R.string.service_notif_query_failed), e.message ?: e.javaClass.simpleName)
                 }
 
@@ -291,6 +296,7 @@ class BalanceRefreshService : Service() {
                 // 释放 WakeLock + 清除并发标记（确保所有退出路径都释放）
                 isRefreshing = false
                 try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
+                CrashLogger.breadcrumb(TAG, "Refresh cycle completed")
             }
         }.start()
     }

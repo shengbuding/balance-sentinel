@@ -62,11 +62,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        CrashLogger.breadcrumb("MainActivity", "onCreate started")
 
         // 在任何权限检查之前标记启动意图——即使权限弹窗延迟了 Service 启动，
         // ViewModel 的 checkMissedRefreshes() 也知道服务正在启动中，不会误判
         RefreshScheduler.markStartRequested(this)
         requestNotificationAndStartService()
+        CrashLogger.breadcrumb("MainActivity", "onCreate complete")
 
         // Deep-link 目标（从通知的 "查看详情" 按钮进入）
         val deepLinkTarget = intent?.getStringExtra("deep_link_target")
