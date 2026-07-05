@@ -36,6 +36,7 @@ import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import com.balancesentinel.app.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -413,10 +414,10 @@ private fun BalanceInfoCard(info: BalanceInfo) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.balance_total, getCurrencySymbol(info.currency)),
+                Text(stringResource(R.string.balance_total, FormatUtils.currencySymbol(info.currency)),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatAmount(info.totalBalance),
+                Text(FormatUtils.formatAmount(info.totalBalance),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface)
@@ -425,10 +426,10 @@ private fun BalanceInfoCard(info: BalanceInfo) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(modifier = Modifier.height(6.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.balance_granted, formatAmount(info.grantedBalance)),
+                Text(stringResource(R.string.balance_granted, FormatUtils.formatAmount(info.grantedBalance)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(stringResource(R.string.balance_topped_up, formatAmount(info.toppedUpBalance)),
+                Text(stringResource(R.string.balance_topped_up, FormatUtils.formatAmount(info.toppedUpBalance)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -491,14 +492,6 @@ private fun SimpleStatusBar(uiState: com.balancesentinel.app.ui.viewmodel.HomeUi
 // ═══════════════════════════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════════════════════════
-
-private fun getCurrencySymbol(currency: String): String = when (currency.uppercase()) {
-    "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency
-}
-
-private fun formatAmount(amount: String): String {
-    return try { "%.2f".format(amount.toDouble()) } catch (_: NumberFormatException) { amount }
-}
 
 private fun formatRefreshTime(timestamp: Long, now: Long, context: Context): String {
     if (timestamp <= 0) return ""

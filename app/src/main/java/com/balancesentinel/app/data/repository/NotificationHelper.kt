@@ -9,6 +9,7 @@ import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
 import com.balancesentinel.app.receiver.SnoozeReceiver
+import com.balancesentinel.app.util.FormatUtils
 
 /**
  * 统一通知工厂。
@@ -69,7 +70,7 @@ class NotificationHelper(private val context: Context) {
 
     /** 低余额预警通知，含 "查看详情" + "暂停预警" 操作按钮 */
     fun sendLowBalanceAlert(accountId: String, balance: Float, threshold: Float, currency: String, label: String) {
-        val symbol = currencySymbol(currency)
+        val symbol = FormatUtils.currencySymbol(currency)
         val accountLabel = if (label.isNotEmpty()) "[$label] " else ""
         val title = context.getString(R.string.alert_low_title)
         val content = context.getString(
@@ -106,7 +107,7 @@ class NotificationHelper(private val context: Context) {
         accountId: String, current: Float, previous: Float, diff: Float,
         periodMin: Int, currency: String, label: String
     ) {
-        val symbol = currencySymbol(currency)
+        val symbol = FormatUtils.currencySymbol(currency)
         val direction = if (current < previous)
             context.getString(R.string.alert_change_decreased)
         else
@@ -185,7 +186,4 @@ class NotificationHelper(private val context: Context) {
 
     // ── 工具 ──
 
-    private fun currencySymbol(currency: String) = when (currency.uppercase()) {
-        "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency
-    }
 }

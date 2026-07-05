@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import com.balancesentinel.app.data.util.Logger
+import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.DeepSeekApiService
@@ -264,8 +265,8 @@ class BalanceRefreshService : Service() {
 
                     // 通知栏显示汇总
                     if (hasData) {
-                        val symbol = currencySymbol(primaryCurrency)
-                        val total = formatAmount("%.2f".format(totalAggregated))
+                        val symbol = FormatUtils.currencySymbol(primaryCurrency)
+                        val total = FormatUtils.formatAmount("%.2f".format(totalAggregated))
                         val status = if (allAvailable) getString(R.string.service_notif_status_available)
                             else getString(R.string.service_notif_status_partial)
                         notificationHelper.sendForegroundNotification("$symbol$total", status)
@@ -343,13 +344,6 @@ class BalanceRefreshService : Service() {
 
     // buildNotification / updateNotification replaced by NotificationHelper
 
-    private fun currencySymbol(currency: String) = when (currency.uppercase()) {
-        "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency
-    }
-
-    private fun formatAmount(amount: String): String {
-        return try { "%.2f".format(amount.toDouble()) } catch (_: Exception) { amount }
-    }
 
     companion object {
         private const val TAG = "BalanceRefreshSvc"

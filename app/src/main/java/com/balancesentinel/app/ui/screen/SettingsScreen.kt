@@ -37,6 +37,7 @@ import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import com.balancesentinel.app.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -162,7 +163,7 @@ private fun StatusSummaryPanel(summary: com.balancesentinel.app.data.repository.
             ) {
                 Text(
                     text = if (summary.alarmMethod.isNotEmpty())
-                        stringResource(R.string.settings_alarm_format, methodLabel(summary.alarmMethod, LocalContext.current))
+                        stringResource(R.string.settings_alarm_format, FormatUtils.methodLabel(LocalContext.current, summary.alarmMethod))
                     else
                         stringResource(R.string.settings_alarm_none),
                     style = MaterialTheme.typography.bodySmall,
@@ -212,7 +213,7 @@ private fun StatusSummaryPanel(summary: com.balancesentinel.app.data.repository.
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(R.string.settings_expected_schedule, formatFullTime(summary.expectedNextRefresh)),
+                        text = stringResource(R.string.settings_expected_schedule, FormatUtils.formatFullTime(summary.expectedNextRefresh)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1033,26 +1034,3 @@ private fun DataManagementEntryRow(onClick: () -> Unit) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
-// 工具函数
-// ═══════════════════════════════════════════════════════════
-
-private fun currencySymbol(currency: String): String = when (currency.uppercase()) {
-    "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency
-}
-
-private fun formatFullTime(timestamp: Long): String {
-    return try {
-        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-        fmt.format(java.util.Date(timestamp))
-    } catch (_: Exception) { timestamp.toString() }
-}
-
-private fun methodLabel(method: String, context: Context): String = when (method) {
-    "alarm_clock" -> context.getString(R.string.alarm_method_alarm_clock)
-    "exact" -> context.getString(R.string.alarm_method_exact)
-    "inexact" -> context.getString(R.string.alarm_method_inexact)
-    "failed" -> context.getString(R.string.alarm_method_failed)
-    "foreground_service" -> context.getString(R.string.alarm_method_service_loop)
-    else -> method.ifEmpty { context.getString(R.string.alarm_method_none) }
-}

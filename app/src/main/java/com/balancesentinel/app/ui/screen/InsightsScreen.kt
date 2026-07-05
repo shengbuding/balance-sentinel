@@ -52,6 +52,7 @@ import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
+import com.balancesentinel.app.util.FormatUtils
 
 /**
  * 洞察页 v2 — 双引擎双卡片架构。
@@ -315,21 +316,21 @@ private fun IntradayCard(
                 if (bill.consumed > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
-                        value = "-${getCurrencySymbol(currency)}%.2f".format(bill.consumed),
+                        value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
                         color = Color(0xFFE53E3E)
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
-                        value = "+${getCurrencySymbol(currency)}%.2f".format(bill.toppedUp),
+                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
                         color = Color(0xFF4CAF50)
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
-                        value = "+${getCurrencySymbol(currency)}%.2f".format(bill.granted),
+                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
                         color = Color(0xFF7C4DFF)
                     )
                 }
@@ -355,7 +356,7 @@ private fun IntradayCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$prefix${getCurrencySymbol(currency)}%.2f".format(bill.netChange),
+                        text = "$prefix${FormatUtils.currencySymbol(currency)}%.2f".format(bill.netChange),
                         style = MaterialTheme.typography.labelMedium,
                         color = netColor,
                         fontWeight = FontWeight.Bold
@@ -505,21 +506,21 @@ private fun DailyCard(
                 if (bill.consumed > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
-                        value = "-${getCurrencySymbol(currency)}%.2f".format(bill.consumed),
+                        value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
                         color = Color(0xFFE53E3E)
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
-                        value = "+${getCurrencySymbol(currency)}%.2f".format(bill.toppedUp),
+                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
                         color = Color(0xFF4CAF50)
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
-                        value = "+${getCurrencySymbol(currency)}%.2f".format(bill.granted),
+                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
                         color = Color(0xFF7C4DFF)
                     )
                 }
@@ -545,7 +546,7 @@ private fun DailyCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$prefix${getCurrencySymbol(currency)}%.2f".format(bill.netChange),
+                        text = "$prefix${FormatUtils.currencySymbol(currency)}%.2f".format(bill.netChange),
                         style = MaterialTheme.typography.labelMedium,
                         color = netColor,
                         fontWeight = FontWeight.Bold
@@ -566,14 +567,14 @@ private fun DailyCard(
                     ) {
                         EstimateMetric(
                             label = stringResource(R.string.insights_current_balance),
-                            value = "${getCurrencySymbol(currency)}%.2f".format(
+                            value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
                                 points.lastOrNull()?.balance ?: 0f
                             ),
                             valueColor = MaterialTheme.colorScheme.onSurface
                         )
                         EstimateMetric(
                             label = stringResource(R.string.insights_daily_consumption),
-                            value = "${getCurrencySymbol(currency)}%.2f".format(estimate.dailyRate),
+                            value = "${FormatUtils.currencySymbol(currency)}%.2f".format(estimate.dailyRate),
                             valueColor = MaterialTheme.colorScheme.onSurface
                         )
                         val estColor = when {
@@ -1248,9 +1249,3 @@ private fun formatChartValue(value: Float): String {
     }
 }
 
-private fun getCurrencySymbol(currency: String): String = when (currency.uppercase()) {
-    "CNY" -> "¥"
-    "USD" -> "$"
-    "EUR" -> "€"
-    else -> currency
-}

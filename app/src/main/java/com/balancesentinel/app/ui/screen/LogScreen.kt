@@ -28,6 +28,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
+import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -270,7 +271,7 @@ private fun RefreshLogItem(entry: RefreshLogEntry) {
 
 @Composable
 private fun ManualAutoLogItem(entry: RefreshLogEntry) {
-    val cs = currencySymbol(entry.currency)
+    val cs = FormatUtils.currencySymbol(entry.currency)
     val isManual = entry.type == RefreshLogType.MANUAL
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -289,7 +290,7 @@ private fun ManualAutoLogItem(entry: RefreshLogEntry) {
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-                Text("$cs${formatAmount(entry.totalBalance)}",
+                Text("$cs${FormatUtils.formatAmount(entry.totalBalance)}",
                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 if (entry.message.isNotEmpty()) {
                     Text(entry.message, style = MaterialTheme.typography.labelSmall,
@@ -332,7 +333,7 @@ private fun ScheduleLogItem(entry: RefreshLogEntry) {
                 else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
         }
         if (entry.intervalSeconds > 0) {
-            Text("间隔: ${formatInterval(entry.intervalSeconds)}",
+            Text("间隔: ${FormatUtils.formatInterval(entry.intervalSeconds)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -366,7 +367,7 @@ private fun MissedLogItem(entry: RefreshLogEntry) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
         }
         if (entry.expectedTime > 0) {
-            Text("预定: ${formatFullTime(entry.expectedTime)} · 间隔: ${formatInterval(entry.intervalSeconds)}",
+            Text("预定: ${FormatUtils.formatFullTime(entry.expectedTime)} · 间隔: ${FormatUtils.formatInterval(entry.intervalSeconds)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -508,18 +509,8 @@ private fun CrashLogCard(
 }
 
 // ═══════════════════════════════════════════════════════════
-// 工具函数 (kept in Chinese — diagnostic/log content)
+// 工具函数
 // ═══════════════════════════════════════════════════════════
-
-private fun currencySymbol(currency: String): String = when (currency.uppercase()) {
-    "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency
-}
-
-private fun formatInterval(seconds: Int): String = when {
-    seconds < 60 -> "${seconds}秒"
-    seconds % 60 == 0 -> "${seconds / 60}分钟"
-    else -> "${seconds / 60}分${seconds % 60}秒"
-}
 
 private fun formatTimeAgo(timestamp: Long): String {
     if (timestamp <= 0) return ""
@@ -528,28 +519,8 @@ private fun formatTimeAgo(timestamp: Long): String {
         diff < 60_000 -> "刚刚"
         diff < 3_600_000 -> "${diff / 60_000}分钟前"
         diff < 86_400_000 -> "${diff / 3_600_000}小时前"
-        else -> formatFullTime(timestamp)
+        else -> FormatUtils.formatFullTime(timestamp)
     }
-}
-
-private fun formatFullTime(timestamp: Long): String {
-    return try {
-        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-        fmt.format(java.util.Date(timestamp))
-    } catch (_: Exception) { timestamp.toString() }
-}
-
-private fun formatAmount(amount: String): String {
-    return try { "%.2f".format(amount.toDouble()) } catch (_: NumberFormatException) { amount }
-}
-
-private fun methodLabel(method: String): String = when (method) {
-    "alarm_clock" -> "系统闹钟级 (setAlarmClock)"
-    "exact" -> "精确闹钟"
-    "inexact" -> "普通闹钟 (降级)"
-    "failed" -> "失败"
-    "foreground_service" -> "前台服务循环"
-    else -> method.ifEmpty { "无" }
 }
 
 // ═══════════════════════════════════════════════════════════

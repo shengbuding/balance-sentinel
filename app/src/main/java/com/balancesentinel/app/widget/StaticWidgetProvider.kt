@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.ComponentName
 import com.balancesentinel.app.data.util.Logger
+import com.balancesentinel.app.util.FormatUtils
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
@@ -211,7 +212,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         if (agg != null) {
             val symbol = when (agg.currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> agg.currency }
-            val total = formatAmount(agg.totalBalance)
+            val total = FormatUtils.formatAmount(agg.totalBalance)
             val timeText = formatRefreshTime(context, agg.lastUpdated)
             val label = if (agg.accountCount > 1) context.getString(R.string.widget_title_multi, agg.accountCount)
                 else context.getString(R.string.widget_default_title)
@@ -221,8 +222,8 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_status, if (agg.isAvailable) context.getString(R.string.widget_status_available)
                     else context.getString(R.string.widget_status_partial))
                 views.setTextViewText(R.id.widget_balance, "$symbol$total")
-                views.setTextViewText(R.id.widget_granted, context.getString(R.string.balance_granted, "$symbol${formatAmount(agg.grantedBalance)}"))
-                views.setTextViewText(R.id.widget_topped_up, context.getString(R.string.balance_topped_up, "$symbol${formatAmount(agg.toppedUpBalance)}"))
+                views.setTextViewText(R.id.widget_granted, context.getString(R.string.balance_granted, "$symbol${FormatUtils.formatAmount(agg.grantedBalance)}"))
+                views.setTextViewText(R.id.widget_topped_up, context.getString(R.string.balance_topped_up, "$symbol${FormatUtils.formatAmount(agg.toppedUpBalance)}"))
                 views.setTextViewText(R.id.widget_refresh_time, timeText)
                 views.setViewVisibility(R.id.widget_detail_row, android.view.View.VISIBLE)
             } else {
@@ -401,8 +402,6 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             } catch (_: Exception) {}
         }
     }
-
-    private fun formatAmount(amount: String) = try { "%.2f".format(amount.toDouble()) } catch (_: Exception) { amount }
 
     private fun formatRefreshTime(context: Context, timestamp: Long): String {
         if (timestamp <= 0) return ""
