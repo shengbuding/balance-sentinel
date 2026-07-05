@@ -399,6 +399,20 @@
     <string name="widget_config_account">选择账户</string>
     <string name="widget_config_currency">选择币种</string>
 
+    <!-- ===== Onboarding ===== -->
+    <string name="onboarding_welcome_title">欢迎使用钱包哨兵</string>
+    <string name="onboarding_welcome_desc">实时监控 DeepSeek API 账户余额，\n在桌面小组件上一目了然</string>
+    <string name="onboarding_features_title">核心功能</string>
+    <string name="onboarding_features_desc">三大能力，守护你的 API 余额</string>
+    <string name="onboarding_feat_refresh">后台自动刷新，无需手动查询</string>
+    <string name="onboarding_feat_alert">余额不足预警 + 异动提醒</string>
+    <string name="onboarding_feat_widget">桌面小组件，余额一目了然</string>
+    <string name="onboarding_start_title">开始使用</string>
+    <string name="onboarding_start_desc">添加你的 DeepSeek API Key，\n即可开始监控余额</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_skip">跳过</string>
+    <string name="onboarding_get_started">开始使用</string>
+
     <!-- ===== Misc ===== -->
     <string name="default_account_label">默认账户</string>
 </resources>

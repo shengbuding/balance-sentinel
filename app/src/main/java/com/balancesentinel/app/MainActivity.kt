@@ -39,6 +39,7 @@ import com.balancesentinel.app.ui.screen.DataManagementScreen
 import com.balancesentinel.app.ui.screen.HomeScreen
 import com.balancesentinel.app.ui.screen.InsightsScreen
 import com.balancesentinel.app.ui.screen.LogScreen
+import com.balancesentinel.app.ui.screen.OnboardingScreen
 import com.balancesentinel.app.ui.screen.SettingsScreen
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
@@ -46,8 +47,9 @@ import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
+import com.balancesentinel.app.util.OnboardingHelper
 
-enum class Screen { HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT }
+enum class Screen { ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT }
 
 class MainActivity : ComponentActivity() {
 
@@ -77,12 +79,16 @@ class MainActivity : ComponentActivity() {
                 val insightsViewModel: InsightsViewModel = viewModel()
                 val logViewModel: LogViewModel = viewModel()
                 val dataManagementViewModel: DataManagementViewModel = viewModel()
+                val context = LocalContext.current
                 var currentScreen by remember {
                     mutableStateOf(
-                        if (deepLinkTarget == "insights") Screen.INSIGHTS else Screen.HOME
+                        when {
+                            OnboardingHelper.shouldShow(context) -> Screen.ONBOARDING
+                            deepLinkTarget == "insights" -> Screen.INSIGHTS
+                            else -> Screen.HOME
+                        }
                     )
                 }
-                val context = LocalContext.current
 
                 // 首次启动电池优化引导
                 var showBatteryGuide by remember { mutableStateOf(false) }
@@ -131,6 +137,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                if (currentScreen == Screen.ONBOARDING) {
+                    OnboardingScreen(
+                        onComplete = { currentScreen = Screen.HOME }
+                    )
+                } else {
                 Scaffold(
                     bottomBar = {
                         NavigationBar {
@@ -178,8 +189,10 @@ class MainActivity : ComponentActivity() {
                                 viewModel = dataManagementViewModel,
                                 onBack = { currentScreen = Screen.SETTINGS }
                             )
+                            else -> {}
                         }
                     }
+                }
                 }
             }
         }
