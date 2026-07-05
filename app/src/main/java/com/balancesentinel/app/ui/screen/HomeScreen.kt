@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -241,6 +243,7 @@ private fun AddAccountDialog(
     var label by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -263,6 +266,21 @@ private fun AddAccountDialog(
                     placeholder = { Text(stringResource(R.string.add_account_key_hint)) },
                     visualTransformation = if (showKey) VisualTransformation.None
                         else PasswordVisualTransformation(),
+                    leadingIcon = {
+                        Box(modifier = Modifier
+                            .clickable {
+                                val clipText = clipboardManager.getText()?.text ?: ""
+                                if (clipText.isNotBlank()) apiKey = clipText.trim()
+                            }
+                            .padding(horizontal = 8.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.add_account_paste_key),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
                     trailingIcon = {
                         IconButton(onClick = { showKey = !showKey }) {
                             Icon(

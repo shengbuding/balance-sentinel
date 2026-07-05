@@ -35,6 +35,7 @@
     <string name="add_account_key_hint">输入你的 API Key</string>
     <string name="add_account_show_key">显示</string>
     <string name="add_account_hide_key">隐藏</string>
+    <string name="add_account_paste_key">从剪贴板粘贴</string>
 
     <!-- ===== Balance Card ===== -->
     <string name="balance_total">%1$s 总余额</string>
