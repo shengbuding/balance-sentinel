@@ -267,13 +267,36 @@ class BalanceRefreshService : Service() {
                         } catch (_: Exception) {}
                     }
 
-                    // 通知栏显示汇总
+                    // 通知栏显示：总余额可选，额外钱包按用户排序横向附加
                     if (hasData) {
-                        val symbol = FormatUtils.currencySymbol(primaryCurrency)
                         val total = FormatUtils.formatAmount("%.2f".format(totalAggregated))
                         val status = if (allAvailable) getString(R.string.service_notif_status_available)
                             else getString(R.string.service_notif_status_partial)
-                        notificationHelper.sendForegroundNotification("$symbol$total", status)
+                        val showTotal = widgetPrefs.showTotalBalanceInNotification
+
+                        // 获取用户勾选的钱包，按排序列表排列
+                        val allBalances = BalanceWidgetDataStore.getAllBalances(this)
+                        val walletOrder = widgetPrefs.getNotificationWalletOrder()
+                        val selectedBalances = allBalances.filter { balance ->
+                            widgetPrefs.isNotificationWalletSelected(balance.accountId, balance.currency)
+                        }
+                        // 按用户设定的排序排列
+                        val orderedWallets = if (walletOrder.isNotEmpty()) {
+                            selectedBalances.sortedBy { balance ->
+                                val key = "${balance.accountId}_${balance.currency}"
+                                val idx = walletOrder.indexOf(key)
+                                if (idx >= 0) idx else Int.MAX_VALUE
+                            }
+                        } else {
+                            selectedBalances
+                        }
+
+                        val totalPos = if (showTotal)
+                            widgetPrefs.getNotificationWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "") else -1
+
+                        notificationHelper.sendBalanceNotification(
+                            total, primaryCurrency, status, orderedWallets, showTotal, totalPos
+                        )
                     } else {
                         notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_no_data))
                     }

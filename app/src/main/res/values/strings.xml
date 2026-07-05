@@ -142,6 +142,8 @@
     <string name="settings_change_amount">变动金额</string>
     <string name="settings_change_period">时间窗口（分钟）</string>
     <string name="settings_change_confirm">确认设置</string>
+    <string name="settings_alert_entry">预警设置</string>
+    <string name="settings_alert_entry_desc">管理余额预警和异动提醒，分账户分币种控制</string>
     <string name="settings_data_management">数据管理</string>
     <string name="settings_close">关闭</string>
     <string name="settings_data_management_desc">导出/导入配置与历史数据</string>
@@ -164,6 +166,29 @@
     <string name="interval_seconds">%1$d秒</string>
     <string name="change_alert_summary">变动 &gt;= %1$s / %2$d分钟</string>
     <string name="change_alert_current">当前: &gt;= %1$s / %2$d分钟</string>
+
+    <!-- ===== Alert Settings Screen ===== -->
+    <string name="alert_settings_title">预警设置</string>
+    <string name="alert_settings_balance_switch">余额预警</string>
+    <string name="alert_settings_change_switch">异动提醒</string>
+    <string name="alert_settings_account_label">账户: %1$s</string>
+    <string name="alert_settings_no_data_hint">暂无余额数据，请在首页刷新后再来设置</string>
+    <string name="alert_settings_global_threshold">全局阈值</string>
+    <string name="alert_settings_balance_threshold_label">余额预警阈值</string>
+    <string name="alert_settings_change_threshold_label">异动金额阈值</string>
+    <string name="alert_settings_change_period_label">异动时间窗口</string>
+    <string name="alert_settings_snooze_label">暂停预警时长</string>
+    <string name="alert_settings_section_accounts">分账户/币种开关</string>
+    <string name="alert_settings_section_global">全局参数</string>
+    <string name="alert_settings_threshold_hint">输入金额</string>
+    <string name="alert_settings_period_hint">分钟数</string>
+
+    <!-- ===== Notification Display Settings ===== -->
+    <string name="alert_settings_notification_title">通知栏额外显示</string>
+    <string name="alert_settings_notification_wallet">通知栏</string>
+    <string name="alert_settings_notification_hint">勾选后对应钱包余额将显示在通知栏。可通过 ↑↓ 按钮调整展示顺序。</string>
+    <string name="alert_settings_show_total">显示总余额</string>
+    <string name="notification_total_entry">总计 %1$s%2$s</string>
 
     <!-- ===== Settings Alarm Stats ===== -->
     <string name="alarm_stats_format">设%1$d 触发%2$d 覆盖%3$d 丢弃%4$d</string>

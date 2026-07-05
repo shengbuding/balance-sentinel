@@ -22,7 +22,9 @@ data class DataExport(
     val exportedAt: String,
     val appVersion: String,
     val dailySummaries: List<DailySummary>,
-    val rawRecords: List<RawRecord>
+    val rawRecords: List<RawRecord>,
+    val usageSnapshots: List<com.balancesentinel.app.data.model.UsageSnapshot> = emptyList(),
+    val refreshLogs: List<com.balancesentinel.app.data.model.RefreshLogEntry> = emptyList()
 )
 
 object DataExporter {
@@ -45,7 +47,9 @@ object DataExporter {
             exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
             appVersion = appVersion,
             dailySummaries = DailySummaryStore.getSummaries(context),
-            rawRecords = RawRecordStore.getAllRecords(context)
+            rawRecords = RawRecordStore.getAllRecords(context),
+            usageSnapshots = UsageDataStore.getAllSnapshots(context),
+            refreshLogs = RefreshLogStore.getEntries(context)
         )
         return json.encodeToString(data)
     }
@@ -70,7 +74,9 @@ object DataExporter {
      */
     fun hasData(context: Context): Boolean {
         return DailySummaryStore.getSummaries(context).isNotEmpty() ||
-                RawRecordStore.getAllRecords(context).isNotEmpty()
+                RawRecordStore.getAllRecords(context).isNotEmpty() ||
+                UsageDataStore.getAllSnapshots(context).isNotEmpty() ||
+                RefreshLogStore.getEntries(context).isNotEmpty()
     }
 
     // ── 导入 ──
@@ -104,6 +110,8 @@ object DataExporter {
     fun applyImport(context: Context, data: DataExport): Pair<Int, Int> {
         val summariesImported = mergeSummaries(context, data.dailySummaries)
         val recordsImported = mergeRecords(context, data.rawRecords)
+        mergeUsageSnapshots(context, data.usageSnapshots)
+        mergeRefreshLogs(context, data.refreshLogs)
         return Pair(summariesImported, recordsImported)
     }
 
@@ -148,5 +156,35 @@ object DataExporter {
             RawRecordStore.addRecord(context, record)
         }
         return newRecords.size
+    }
+
+    /**
+     * 合并用量快照：按 (accountId + timestamp) 去重。
+     * 已存在的跳过，不存在的追加。
+     */
+    private fun mergeUsageSnapshots(context: Context, imported: List<com.balancesentinel.app.data.model.UsageSnapshot>) {
+        if (imported.isEmpty()) return
+        val existing = UsageDataStore.getAllSnapshots(context)
+        val existingKeys = existing.map { it.accountId to it.timestamp }.toSet()
+        val newSnapshots = imported.filter {
+            (it.accountId to it.timestamp) !in existingKeys
+        }
+        for (snapshot in newSnapshots) {
+            UsageDataStore.saveSnapshot(context, snapshot)
+        }
+    }
+
+    /**
+     * 合并刷新日志：按 id 去重。
+     * 已存在的跳过，不存在的追加。
+     */
+    private fun mergeRefreshLogs(context: Context, imported: List<com.balancesentinel.app.data.model.RefreshLogEntry>) {
+        if (imported.isEmpty()) return
+        val existing = RefreshLogStore.getEntries(context)
+        val existingIds = existing.map { it.id }.toSet()
+        val newLogs = imported.filter { it.id !in existingIds }
+        for (log in newLogs) {
+            RefreshLogStore.addEntry(context, log)
+        }
     }
 }

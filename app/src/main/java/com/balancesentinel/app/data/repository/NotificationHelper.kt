@@ -10,6 +10,7 @@ import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
 import com.balancesentinel.app.receiver.SnoozeReceiver
 import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.widget.AccountBalance
 
 /**
  * 统一通知工厂。
@@ -159,6 +160,117 @@ class NotificationHelper(private val context: Context) {
     fun sendForegroundNotification(title: String, content: String) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(DeepSeekApp.NOTIFICATION_ID, buildForegroundNotification(title, content))
+    }
+
+    /**
+     * 构建余额通知（v2.5）。
+     * 所有余额条目（含总余额）按用户排序平级处理。
+     * 排序第一位的金额显示为标题，其余横向排列在正文行。
+     * 超出长度限制的进 BigTextStyle 展开视图。
+     *
+     * @param totalBalance 总余额格式化字符串（如 "1,234.56"）
+     * @param totalCurrency 总余额币种代码
+     * @param status 可用状态文字（无余额条目时作为正文）
+     * @param extraWallets 按用户排序后的选中钱包列表（可能含 total 在任意位置）
+     * @param showTotal 是否在列表中包含总余额条目
+     * @param totalPosition 总余额在排序列表中的位置（-1 表示不含）
+     */
+    fun buildBalanceNotification(
+        totalBalance: String,
+        totalCurrency: String,
+        status: String,
+        extraWallets: List<AccountBalance>,
+        showTotal: Boolean = true,
+        totalPosition: Int = 0
+    ): android.app.Notification {
+        val symbol = FormatUtils.currencySymbol(totalCurrency)
+
+        // 构建余额条目列表：总余额按排序位置插入
+        val entries = mutableListOf<String>()
+        var walletIdx = 0
+        var totalInserted = false
+        for (pos in 0 until (extraWallets.size + (if (showTotal) 1 else 0))) {
+            if (showTotal && !totalInserted && pos == totalPosition.coerceIn(0, extraWallets.size)) {
+                entries.add(context.getString(R.string.notification_total_entry, symbol, totalBalance))
+                totalInserted = true
+            } else {
+                if (walletIdx < extraWallets.size) {
+                    val w = extraWallets[walletIdx]
+                    val ws = FormatUtils.currencySymbol(w.currency)
+                    entries.add("${w.label} $ws${FormatUtils.formatAmount(w.totalBalance)}")
+                    walletIdx++
+                }
+            }
+        }
+
+        val builder = NotificationCompat.Builder(context, DeepSeekApp.CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .setContentIntent(createOpenAppIntent())
+
+        if (entries.isEmpty()) {
+            builder.setContentTitle(context.getString(R.string.app_name))
+            builder.setContentText(status)
+        } else {
+            // 第一个条目作为标题（金额最显眼）
+            builder.setContentTitle(entries.first())
+
+            if (entries.size == 1) {
+                builder.setContentText(status)
+            } else {
+                val rest = entries.drop(1)
+
+                // 估算通知栏正文区可容纳字符数
+                val dm = context.resources.displayMetrics
+                val screenWidthDp = (dm.widthPixels / dm.density).toInt()
+                val maxChars = ((screenWidthDp * 0.65) / 7).toInt().coerceIn(25, 55)
+
+                var truncated = false
+                val body = buildString {
+                    var remaining = maxChars
+                    for (i in rest.indices) {
+                        val segment = if (i == 0) rest[i] else " · ${rest[i]}"
+                        if (segment.length <= remaining) {
+                            append(segment)
+                            remaining -= segment.length
+                        } else {
+                            val overflow = rest.size - i
+                            if (overflow > 0) {
+                                append("  +$overflow")
+                                truncated = true
+                            }
+                            break
+                        }
+                    }
+                }
+
+                builder.setContentText(body)
+
+                // 溢出时启用 BigTextStyle 展开视图（显示全部条目）
+                if (truncated) {
+                    val expandedText = entries.joinToString("\n")
+                    builder.setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
+                }
+            }
+        }
+
+        return builder.build()
+    }
+
+    /** 更新前台 Service 常驻通知（v2.5 签名）。 */
+    fun sendBalanceNotification(
+        totalBalance: String,
+        totalCurrency: String,
+        status: String,
+        extraWallets: List<AccountBalance>,
+        showTotal: Boolean = true,
+        totalPosition: Int = 0
+    ) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(
+            DeepSeekApp.NOTIFICATION_ID,
+            buildBalanceNotification(totalBalance, totalCurrency, status, extraWallets, showTotal, totalPosition)
+        )
     }
 
     /** 分组摘要通知：在多账户触发预警后汇总显示 */

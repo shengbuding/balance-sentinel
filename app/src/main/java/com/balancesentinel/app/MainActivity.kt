@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.ui.screen.AlertSettingsScreen
 import com.balancesentinel.app.ui.screen.DataManagementScreen
 import com.balancesentinel.app.ui.screen.HomeScreen
 import com.balancesentinel.app.ui.screen.InsightsScreen
@@ -49,7 +50,7 @@ import com.balancesentinel.app.ui.viewmodel.LogViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
 import com.balancesentinel.app.util.OnboardingHelper
 
-enum class Screen { ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT }
+enum class Screen { ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT, ALERT_SETTINGS }
 
 class MainActivity : ComponentActivity() {
 
@@ -181,7 +182,8 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 onBack = { currentScreen = Screen.HOME },
                                 onNavigateToLog = { currentScreen = Screen.LOG },
-                                onNavigateToDataManagement = { currentScreen = Screen.DATA_MANAGEMENT }
+                                onNavigateToDataManagement = { currentScreen = Screen.DATA_MANAGEMENT },
+                                onNavigateToAlertSettings = { currentScreen = Screen.ALERT_SETTINGS }
                             )
                             Screen.LOG -> LogScreen(
                                 viewModel = logViewModel,
@@ -189,6 +191,9 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DATA_MANAGEMENT -> DataManagementScreen(
                                 viewModel = dataManagementViewModel,
+                                onBack = { currentScreen = Screen.SETTINGS }
+                            )
+                            Screen.ALERT_SETTINGS -> AlertSettingsScreen(
                                 onBack = { currentScreen = Screen.SETTINGS }
                             )
                             else -> {}

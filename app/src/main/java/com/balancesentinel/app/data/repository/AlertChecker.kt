@@ -23,7 +23,7 @@ object AlertChecker {
         totalBalance: String, currency: String, label: String = ""
     ): Boolean {
         val prefs = WidgetPrefs(context)
-        if (!prefs.alertEnabled) return false
+        if (!prefs.isBalanceAlertEnabled(accountId, currency)) return false
 
         val threshold = prefs.alertThreshold
         if (threshold <= 0f) return false
@@ -63,7 +63,7 @@ object AlertChecker {
         totalBalance: String, currency: String, label: String = ""
     ): Boolean {
         val prefs = WidgetPrefs(context)
-        if (!prefs.changeAlertEnabled) return false
+        if (!prefs.isChangeAlertEnabled(accountId, currency)) return false
 
         val threshold = prefs.changeAlertThreshold
         val periodMinutes = prefs.changeAlertPeriodMinutes

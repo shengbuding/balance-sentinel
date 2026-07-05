@@ -35,7 +35,11 @@ data class ConfigSettings(
     val changeAlertEnabled: Boolean,
     val changeAlertThreshold: Float,
     val changeAlertPeriodMinutes: Int,
-    val logMaxEntries: Int
+    val logMaxEntries: Int,
+    val snoozeDurationMinutes: Int = 60,
+    val perCurrencyAlertSettings: List<PerCurrencyAlertSetting> = emptyList(),
+    val showTotalBalance: Boolean = true,
+    val notificationSelectedWallets: List<NotificationWalletSelection> = emptyList()
 )
 
 object ConfigManager {
@@ -78,7 +82,11 @@ object ConfigManager {
             changeAlertEnabled = widgetPrefs.changeAlertEnabled,
             changeAlertThreshold = widgetPrefs.changeAlertThreshold,
             changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-            logMaxEntries = widgetPrefs.logMaxEntries
+            logMaxEntries = widgetPrefs.logMaxEntries,
+            snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes,
+            perCurrencyAlertSettings = widgetPrefs.getAllPerCurrencyAlertSettings(),
+            showTotalBalance = widgetPrefs.showTotalBalanceInNotification,
+            notificationSelectedWallets = widgetPrefs.getAllNotificationWalletSelections()
         )
         val appVersion = try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
@@ -160,6 +168,10 @@ object ConfigManager {
         widgetPrefs.changeAlertThreshold = s.changeAlertThreshold
         widgetPrefs.changeAlertPeriodMinutes = s.changeAlertPeriodMinutes
         widgetPrefs.logMaxEntries = s.logMaxEntries
+        widgetPrefs.snoozeDurationMinutes = s.snoozeDurationMinutes
+        widgetPrefs.applyPerCurrencyAlertSettings(s.perCurrencyAlertSettings)
+        widgetPrefs.showTotalBalanceInNotification = s.showTotalBalance
+        widgetPrefs.applyNotificationWalletSelections(s.notificationSelectedWallets)
 
         return skipped
     }

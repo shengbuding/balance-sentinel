@@ -1,7 +1,7 @@
 package com.balancesentinel.app.ui.screen
 
 import android.content.Context
-import android.widget.Toast
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,17 +37,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.repository.ApiKeyManager
-import com.balancesentinel.app.data.repository.ConfigManager
-import com.balancesentinel.app.data.repository.DataExporter
-import com.balancesentinel.app.data.repository.WidgetPrefs
+
+
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit, onNavigateToDataManagement: () -> Unit) {
+fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit, onNavigateToDataManagement: () -> Unit, onNavigateToAlertSettings: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -88,11 +86,8 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
             // ── 刷新设置 ──
             WidgetSettingsSection(viewModel, uiState.refreshIntervalSeconds)
 
-            // ── 预警设置 ──
-            AlertSettingsSection(viewModel, uiState)
-
-            // ── 异动提醒 ──
-            ChangeAlertSettingsSection(viewModel, uiState)
+            // ── 预警设置入口 ──
+            AlertSettingsEntryRow(onClick = onNavigateToAlertSettings)
 
             // ── 数据管理入口 ──
             DataManagementEntryRow(onClick = onNavigateToDataManagement)
@@ -544,390 +539,56 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
 }
 
 // ═══════════════════════════════════════════════════════════
-// 余额预警设置
+// 预警设置入口
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun AlertSettingsSection(
-    viewModel: HomeViewModel,
-    uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var thresholdInput by remember(uiState.alertThreshold) {
-        mutableStateOf(if (uiState.alertThreshold > 0f) uiState.alertThreshold.toInt().toString() else "")
-    }
-    val snoozeInfo = uiState.snoozeInfo
-    val context = LocalContext.current
-    val alertLabel = stringResource(R.string.settings_balance_alert)
-    val alertStateDesc = if (expanded) "$alertLabel，已展开" else "$alertLabel，已折叠"
-
-    // 展开时刷新 snooze 状态
-    LaunchedEffect(expanded) {
-        if (expanded) viewModel.refreshSnoozeInfo()
-    }
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        border = null
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Button
-                        stateDescription = alertStateDesc
-                    }
-                    .clickable { expanded = !expanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Notifications,
-                        contentDescription = null,
-                        tint = if (snoozeInfo.anySnoozed) WalletColors.warning else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(stringResource(R.string.settings_balance_alert), style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold)
-                        // 折叠时显示：要么显示阈值，要么显示暂停状态
-                        if (snoozeInfo.anySnoozed) {
-                            val remainingMin = (snoozeInfo.maxRemainingMs / 60_000L).toInt().coerceAtLeast(1)
-                            Text(
-                                stringResource(R.string.settings_alert_snoozed_remaining, remainingMin),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = WalletColors.warning
-                            )
-                        } else if (uiState.alertEnabled && uiState.alertThreshold > 0f) {
-                            Text(
-                                stringResource(R.string.settings_alert_threshold_label, uiState.alertThreshold.toInt()),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                Icon(
-                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "折叠" else "展开", modifier = Modifier.size(20.dp)
-                )
-            }
-
-            if (expanded) {
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // ── Snooze 状态横幅 ──
-                if (snoozeInfo.anySnoozed) {
-                    SnoozeStatusBanner(snoozeInfo, viewModel, context)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                // ── 启用开关 ──
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.settings_alert_enable), style = MaterialTheme.typography.bodyMedium)
-                    Switch(
-                        checked = uiState.alertEnabled,
-                        onCheckedChange = { viewModel.setAlertEnabled(it) }
-                    )
-                }
-
-                if (uiState.alertEnabled) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(stringResource(R.string.settings_alert_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // ── 预警金额输入 ──
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = thresholdInput,
-                            onValueChange = { thresholdInput = it.filter { c -> c.isDigit() } },
-                            label = { Text(stringResource(R.string.settings_alert_amount)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = {
-                            val num = thresholdInput.toFloatOrNull()
-                            if (num != null && num > 0f) {
-                                viewModel.setAlertThreshold(num)
-                            }
-                        }, shape = RoundedCornerShape(8.dp)) {
-                            Text(stringResource(R.string.settings_confirm))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(stringResource(R.string.settings_alert_current, uiState.alertThreshold.toInt()),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                // ── 暂停时长设置 ──
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(stringResource(R.string.settings_alert_snooze_duration_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(stringResource(R.string.settings_alert_snooze_duration_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 快捷选择
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    listOf(30 to R.string.settings_alert_snooze_quick_30,
-                        60 to R.string.settings_alert_snooze_quick_60,
-                        120 to R.string.settings_alert_snooze_quick_120,
-                        240 to R.string.settings_alert_snooze_quick_240).forEach { (min, labelRes) ->
-                        SnoozeDurationChip(
-                            label = stringResource(labelRes),
-                            selected = uiState.snoozeDurationMinutes == min,
-                            onClick = { viewModel.setSnoozeDurationMinutes(min) }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(stringResource(R.string.settings_alert_snooze_duration_current, uiState.snoozeDurationMinutes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-// ── Snooze 状态横幅 ──
-
-@Composable
-private fun SnoozeStatusBanner(
-    snoozeInfo: com.balancesentinel.app.data.repository.SnoozeInfo,
-    viewModel: HomeViewModel,
-    context: Context
-) {
-    val remainingMin = (snoozeInfo.maxRemainingMs / 60_000L).toInt().coerceAtLeast(1)
-    val accountLabels = remember(snoozeInfo) {
-        val prefs = WidgetPrefs(context)
-        try {
-            val apiKeyManager = ApiKeyManager(context)
-            val accounts = apiKeyManager.getAccounts()
-            snoozeInfo.snoozedAccountIds.mapNotNull { id ->
-                accounts.find { it.id == id }?.label
-            }
-        } catch (_: Exception) { emptyList() }
-    }
-
-    Card(
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = WalletColors.warningBg)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = WalletColors.warning,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        stringResource(R.string.settings_alert_snoozed),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = WalletColors.warningText
-                    )
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    stringResource(R.string.settings_alert_snoozed_remaining, remainingMin),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = WalletColors.warningTextDim.copy(alpha = 0.8f)
-                )
-                if (accountLabels.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.settings_alert_snoozed_accounts, accountLabels.joinToString(", ")),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = WalletColors.warningTextDim.copy(alpha = 0.7f)
-                    )
-                }
-            }
-            Button(
-                onClick = {
-                    viewModel.clearAllSnooze()
-                    Toast.makeText(context,
-                        context.getString(R.string.settings_alert_snooze_cleared),
-                        Toast.LENGTH_SHORT).show()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = WalletColors.warning),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(stringResource(R.string.settings_alert_snooze_dismiss),
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White)
-            }
-        }
-    }
-}
-
-// ── Snooze 时长快选 Chip ──
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SnoozeDurationChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-        shape = RoundedCornerShape(16.dp)
-    )
-}
-
-// ═══════════════════════════════════════════════════════════
-// 余额异动提醒设置
-// ═══════════════════════════════════════════════════════════
-
-@Composable
-private fun ChangeAlertSettingsSection(
-    viewModel: HomeViewModel,
-    uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var amountInput by remember(uiState.changeAlertThreshold) {
-        mutableStateOf(if (uiState.changeAlertThreshold > 0f) uiState.changeAlertThreshold.toInt().toString() else "")
-    }
-    var periodInput by remember(uiState.changeAlertPeriodMinutes) {
-        mutableStateOf(if (uiState.changeAlertPeriodMinutes > 0) uiState.changeAlertPeriodMinutes.toString() else "")
-    }
-    val changeLabel = stringResource(R.string.settings_change_alert)
-    val changeStateDesc = if (expanded) "$changeLabel，已展开" else "$changeLabel，已折叠"
+private fun AlertSettingsEntryRow(onClick: () -> Unit) {
+    val alertLabel = stringResource(R.string.settings_alert_entry)
 
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Button
-                        stateDescription = changeStateDesc
-                    }
-                    .clickable { expanded = !expanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(CustomIcons.SwapHoriz, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(stringResource(R.string.settings_change_alert), style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold)
-                        if (uiState.changeAlertEnabled && uiState.changeAlertThreshold > 0f && uiState.changeAlertPeriodMinutes > 0) {
-                            Text(
-                                stringResource(R.string.change_alert_summary, uiState.changeAlertThreshold.toInt().toString(), uiState.changeAlertPeriodMinutes),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = alertLabel
                 }
+                .clickable { onClick() }
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "折叠" else "展开", modifier = Modifier.size(20.dp)
+                    Icons.Filled.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
                 )
-            }
-
-            if (expanded) {
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.settings_change_enable), style = MaterialTheme.typography.bodyMedium)
-                    Switch(
-                        checked = uiState.changeAlertEnabled,
-                        onCheckedChange = { viewModel.setChangeAlertEnabled(it) }
-                    )
-                }
-
-                if (uiState.changeAlertEnabled) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(stringResource(R.string.settings_change_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = amountInput,
-                        onValueChange = { amountInput = it.filter { c -> c.isDigit() } },
-                        label = { Text(stringResource(R.string.settings_change_amount)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = periodInput,
-                        onValueChange = { periodInput = it.filter { c -> c.isDigit() } },
-                        label = { Text(stringResource(R.string.settings_change_period)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = {
-                            val amount = amountInput.toFloatOrNull()
-                            val period = periodInput.toIntOrNull()
-                            if (amount != null && amount > 0f) {
-                                viewModel.setChangeAlertThreshold(amount)
-                            }
-                            if (period != null && period > 0) {
-                                viewModel.setChangeAlertPeriodMinutes(period)
-                            }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.settings_change_confirm))
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
                     Text(
-                        stringResource(R.string.change_alert_current, uiState.changeAlertThreshold.toInt().toString(), uiState.changeAlertPeriodMinutes),
-                        style = MaterialTheme.typography.labelSmall,
+                        stringResource(R.string.settings_alert_entry),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(R.string.settings_alert_entry_desc),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+            Icon(
+                Icons.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

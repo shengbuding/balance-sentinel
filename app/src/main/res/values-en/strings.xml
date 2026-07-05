@@ -142,6 +142,8 @@
     <string name="settings_change_amount">Change Amount</string>
     <string name="settings_change_period">Time Window (min)</string>
     <string name="settings_change_confirm">Confirm</string>
+    <string name="settings_alert_entry">Alert Settings</string>
+    <string name="settings_alert_entry_desc">Manage balance alerts and change notifications per account / currency</string>
     <string name="settings_data_management">Data Management</string>
     <string name="settings_close">Close</string>
     <string name="settings_data_management_desc">Export / Import config and historical data</string>
@@ -164,6 +166,29 @@
     <string name="interval_seconds">%1$ds</string>
     <string name="change_alert_summary">Change ≥ %1$s / %2$d min</string>
     <string name="change_alert_current">Current: ≥ %1$s / %2$d min</string>
+
+    <!-- ===== Alert Settings Screen ===== -->
+    <string name="alert_settings_title">Alert Settings</string>
+    <string name="alert_settings_balance_switch">Balance Alert</string>
+    <string name="alert_settings_change_switch">Change Alert</string>
+    <string name="alert_settings_account_label">Account: %1$s</string>
+    <string name="alert_settings_no_data_hint">No balance data yet. Refresh the home screen first.</string>
+    <string name="alert_settings_global_threshold">Global Thresholds</string>
+    <string name="alert_settings_balance_threshold_label">Balance Alert Threshold</string>
+    <string name="alert_settings_change_threshold_label">Change Amount Threshold</string>
+    <string name="alert_settings_change_period_label">Change Time Window</string>
+    <string name="alert_settings_snooze_label">Snooze Duration</string>
+    <string name="alert_settings_section_accounts">Per-Account / Per-Currency</string>
+    <string name="alert_settings_section_global">Global Settings</string>
+    <string name="alert_settings_threshold_hint">Enter amount</string>
+    <string name="alert_settings_period_hint">Minutes</string>
+
+    <!-- ===== Notification Display Settings ===== -->
+    <string name="alert_settings_notification_title">Extra Notification Wallets</string>
+    <string name="alert_settings_notification_wallet">Notif.</string>
+    <string name="alert_settings_notification_hint">Checked wallet balances appear in the notification bar. Use ↑↓ buttons to reorder.</string>
+    <string name="alert_settings_show_total">Show total balance</string>
+    <string name="notification_total_entry">Total %1$s%2$s</string>
 
     <!-- ===== Settings Alarm Stats ===== -->
     <string name="alarm_stats_format">Set %1$d  Fired %2$d  Overwritten %3$d  Dropped %4$d</string>
