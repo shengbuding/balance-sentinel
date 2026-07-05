@@ -142,7 +142,10 @@
     <string name="settings_change_period">时间窗口（分钟）</string>
     <string name="settings_change_confirm">确认设置</string>
     <string name="settings_data_management">数据管理</string>
+    <string name="settings_close">关闭</string>
     <string name="settings_data_management_desc">导出/导入配置与历史数据</string>
+    <string name="settings_privacy_policy">隐私政策</string>
+    <string name="settings_privacy_policy_desc">查看应用隐私政策</string>
     <string name="settings_log_entry">刷新日志</string>
     <string name="settings_toggle_unit">切换单位</string>
 

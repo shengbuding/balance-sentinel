@@ -142,7 +142,10 @@
     <string name="settings_change_period">Time Window (min)</string>
     <string name="settings_change_confirm">Confirm</string>
     <string name="settings_data_management">Data Management</string>
+    <string name="settings_close">Close</string>
     <string name="settings_data_management_desc">Export / Import config and historical data</string>
+    <string name="settings_privacy_policy">Privacy Policy</string>
+    <string name="settings_privacy_policy_desc">View app privacy policy</string>
     <string name="settings_log_entry">Refresh Log</string>
     <string name="settings_toggle_unit">Toggle Unit</string>
 
