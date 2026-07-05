@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import com.balancesentinel.app.ui.theme.WalletColors
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -196,14 +197,14 @@ private fun StatusSummaryPanel(summary: com.balancesentinel.app.data.repository.
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = if (summary.totalDropped > summary.totalFired)
-                                MaterialTheme.colorScheme.error else Color(0xFFFF9800)
+                                MaterialTheme.colorScheme.error else WalletColors.warning
                         )
                     } else if (summary.totalCancelled > 0 && total > 0) {
                         val arrivalPct = summary.totalFired * 100 / total
                         Text(
                             text = stringResource(R.string.alarm_arrival_rate_fired, "$arrivalPct", summary.totalFired, total),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (arrivalPct < 50) Color(0xFFFF9800)
+                            color = if (arrivalPct < 50) WalletColors.warning
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -253,14 +254,14 @@ private fun StatusChip(label: String, ok: Boolean, okText: String, failText: Str
         Text(text = "$label: ", style = MaterialTheme.typography.bodySmall)
         Surface(
             shape = RoundedCornerShape(4.dp),
-            color = if (ok) Color(0xFF4CAF50).copy(alpha = 0.15f)
+            color = if (ok) WalletColors.successBg
             else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
         ) {
             Text(
                 text = if (ok) okText else failText,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium,
-                color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error,
+                color = if (ok) WalletColors.success else MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
         }
@@ -315,18 +316,18 @@ private fun LogEntryRow(onClick: () -> Unit) {
 private fun BatteryOptimizationHint() {
     val context = LocalContext.current
     Card(shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))) {
+        colors = CardDefaults.cardColors(containerColor = WalletColors.warningBg)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Warning, contentDescription = null,
-                    tint = Color(0xFFFF9800), modifier = Modifier.size(24.dp))
+                    tint = WalletColors.warning, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.settings_autorefresh_limited_title),
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE65100))
+                        color = WalletColors.warningText)
                     Text(stringResource(R.string.settings_autorefresh_limited_desc),
-                        style = MaterialTheme.typography.bodySmall, color = Color(0xFFBF360C).copy(alpha = 0.8f))
+                        style = MaterialTheme.typography.bodySmall, color = WalletColors.warningTextDim.copy(alpha = 0.8f))
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
@@ -349,7 +350,7 @@ private fun BatteryOptimizationHint() {
                         continue
                     }
                 }
-            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+            }, colors = ButtonDefaults.buttonColors(containerColor = WalletColors.warning),
                 shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.settings_close_battery_opt), fontWeight = FontWeight.Medium)
             }
@@ -585,7 +586,7 @@ private fun AlertSettingsSection(
                     Icon(
                         Icons.Filled.Notifications,
                         contentDescription = null,
-                        tint = if (snoozeInfo.anySnoozed) Color(0xFFFF9800) else MaterialTheme.colorScheme.primary,
+                        tint = if (snoozeInfo.anySnoozed) WalletColors.warning else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -598,7 +599,7 @@ private fun AlertSettingsSection(
                             Text(
                                 stringResource(R.string.settings_alert_snoozed_remaining, remainingMin),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFFF9800)
+                                color = WalletColors.warning
                             )
                         } else if (uiState.alertEnabled && uiState.alertThreshold > 0f) {
                             Text(
@@ -733,7 +734,7 @@ private fun SnoozeStatusBanner(
 
     Card(
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
+        colors = CardDefaults.cardColors(containerColor = WalletColors.warningBg)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -745,7 +746,7 @@ private fun SnoozeStatusBanner(
                     Icon(
                         Icons.Filled.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFFF9800),
+                        tint = WalletColors.warning,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -753,20 +754,20 @@ private fun SnoozeStatusBanner(
                         stringResource(R.string.settings_alert_snoozed),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE65100)
+                        color = WalletColors.warningText
                     )
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     stringResource(R.string.settings_alert_snoozed_remaining, remainingMin),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFBF360C).copy(alpha = 0.8f)
+                    color = WalletColors.warningTextDim.copy(alpha = 0.8f)
                 )
                 if (accountLabels.isNotEmpty()) {
                     Text(
                         stringResource(R.string.settings_alert_snoozed_accounts, accountLabels.joinToString(", ")),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFBF360C).copy(alpha = 0.7f)
+                        color = WalletColors.warningTextDim.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -777,7 +778,7 @@ private fun SnoozeStatusBanner(
                         context.getString(R.string.settings_alert_snooze_cleared),
                         Toast.LENGTH_SHORT).show()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                colors = ButtonDefaults.buttonColors(containerColor = WalletColors.warning),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(stringResource(R.string.settings_alert_snooze_dismiss),

@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyPoint
+import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.data.engine.DepletionEstimate
 import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayPoint
@@ -283,7 +284,7 @@ private fun IntradayCard(
                     Text(
                         text = "▲",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF4CAF50)
+                        color = WalletColors.success
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
@@ -296,7 +297,7 @@ private fun IntradayCard(
                     Text(
                         text = "◆",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF7C4DFF)
+                        color = WalletColors.granted
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
@@ -317,21 +318,21 @@ private fun IntradayCard(
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
                         value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
-                        color = Color(0xFFE53E3E)
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
                         value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
-                        color = Color(0xFF4CAF50)
+                        color = WalletColors.success
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
                         value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
-                        color = Color(0xFF7C4DFF)
+                        color = WalletColors.granted
                     )
                 }
 
@@ -340,8 +341,8 @@ private fun IntradayCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 val netColor = when {
-                    bill.netChange > 0 -> Color(0xFF4CAF50)
-                    bill.netChange < 0 -> Color(0xFFE53E3E)
+                    bill.netChange > 0 -> WalletColors.success
+                    bill.netChange < 0 -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 val prefix = if (bill.netChange >= 0) "+" else ""
@@ -471,7 +472,7 @@ private fun DailyCard(
                     Text(
                         text = "▲",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF4CAF50)
+                        color = WalletColors.success
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
@@ -485,7 +486,7 @@ private fun DailyCard(
                         Text(
                             text = "●",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF9E9E9E)
+                            color = WalletColors.neutralGrey
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -507,21 +508,21 @@ private fun DailyCard(
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
                         value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
-                        color = Color(0xFFE53E3E)
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
                         value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
-                        color = Color(0xFF4CAF50)
+                        color = WalletColors.success
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
                         value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
-                        color = Color(0xFF7C4DFF)
+                        color = WalletColors.granted
                     )
                 }
 
@@ -530,8 +531,8 @@ private fun DailyCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 val netColor = when {
-                    bill.netChange > 0 -> Color(0xFF4CAF50)
-                    bill.netChange < 0 -> Color(0xFFE53E3E)
+                    bill.netChange > 0 -> WalletColors.success
+                    bill.netChange < 0 -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 val prefix = if (bill.netChange >= 0) "+" else ""
@@ -578,9 +579,9 @@ private fun DailyCard(
                             valueColor = MaterialTheme.colorScheme.onSurface
                         )
                         val estColor = when {
-                            estimate.daysRemaining < 3 -> Color(0xFFE53E3E)
-                            estimate.daysRemaining < 7 -> Color(0xFFFF9800)
-                            else -> Color(0xFF4CAF50)
+                            estimate.daysRemaining < 3 -> MaterialTheme.colorScheme.error
+                            estimate.daysRemaining < 7 -> WalletColors.warning
+                            else -> WalletColors.success
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
@@ -622,7 +623,7 @@ private fun DailyCard(
                     Text(
                         text = stringResource(R.string.insights_trend_stable),
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color(0xFF4CAF50),
+                        color = WalletColors.success,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -682,8 +683,8 @@ private fun IntradayLineChart(
     val lineColor = MaterialTheme.colorScheme.primary
     val textColor = android.graphics.Color.argb(0x99, 0x6B, 0x6E, 0x8A)
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-    val topUpMarkerColor = Color(0xFF4CAF50)
-    val grantMarkerColor = Color(0xFF7C4DFF)
+    val topUpMarkerColor = WalletColors.success
+    val grantMarkerColor = WalletColors.granted
     val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
 
     Canvas(modifier = modifier) {
@@ -943,9 +944,9 @@ private fun DailyLineChart(
     val lineColor = MaterialTheme.colorScheme.primary
     val textColor = android.graphics.Color.argb(0x99, 0x6B, 0x6E, 0x8A)
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-    val topUpMarkerColor = Color(0xFF4CAF50)
-    val grantMarkerColor = Color(0xFF7C4DFF)
-    val gapColor = Color(0xFF9E9E9E)
+    val topUpMarkerColor = WalletColors.success
+    val grantMarkerColor = WalletColors.granted
+    val gapColor = WalletColors.neutralGrey
 
     Canvas(modifier = modifier) {
         if (data.isEmpty()) return@Canvas

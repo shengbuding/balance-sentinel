@@ -8,6 +8,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -16,6 +19,62 @@ private val DeepSeekBlue = Color(0xFF4D6BFE)
 private val DeepSeekBlueDark = Color(0xFF3B50D4)
 private val SurfaceLight = Color(0xFFF8F9FC)
 private val OnSurfaceLight = Color(0xFF1A1C2E)
+
+// ── Semantic colors (深色/浅色自适应) ──
+@Immutable
+data class WalletSemanticColors(
+    val success: Color,
+    val warning: Color,
+    val granted: Color,
+    val neutralGrey: Color,
+    val warningBg: Color,
+    val warningText: Color,
+    val warningTextDim: Color,
+    val successBg: Color,
+    val warningBgTransparent: Color,
+    val neutralBg: Color,
+)
+
+private val LightSemanticColors = WalletSemanticColors(
+    success = Color(0xFF4CAF50),
+    warning = Color(0xFFFF9800),
+    granted = Color(0xFF7C4DFF),
+    neutralGrey = Color(0xFF9E9E9E),
+    warningBg = Color(0xFFFFF3E0),
+    warningText = Color(0xFFE65100),
+    warningTextDim = Color(0xFFBF360C),
+    successBg = Color(0xFF4CAF50).copy(alpha = 0.15f),
+    warningBgTransparent = Color(0xFFFF9800).copy(alpha = 0.15f),
+    neutralBg = Color(0xFF9E9E9E).copy(alpha = 0.15f),
+)
+
+private val DarkSemanticColors = WalletSemanticColors(
+    success = Color(0xFF81C784),
+    warning = Color(0xFFFFB74D),
+    granted = Color(0xFFB39DDB),
+    neutralGrey = Color(0xFF9E9E9E),
+    warningBg = Color(0xFF3E2723),
+    warningText = Color(0xFFFFCC80),
+    warningTextDim = Color(0xFFFFAB91),
+    successBg = Color(0xFF81C784).copy(alpha = 0.15f),
+    warningBgTransparent = Color(0xFFFFB74D).copy(alpha = 0.15f),
+    neutralBg = Color(0xFF757575).copy(alpha = 0.15f),
+)
+
+val LocalWalletColors = staticCompositionLocalOf { LightSemanticColors }
+
+object WalletColors {
+    val success: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.success
+    val warning: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.warning
+    val granted: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.granted
+    val neutralGrey: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.neutralGrey
+    val warningBg: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.warningBg
+    val warningText: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.warningText
+    val warningTextDim: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.warningTextDim
+    val successBg: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.successBg
+    val warningBgTransparent: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.warningBgTransparent
+    val neutralBg: Color @Composable @ReadOnlyComposable get() = LocalWalletColors.current.neutralBg
+}
 
 // ── Light color scheme ──
 private val LightColorScheme = lightColorScheme(
@@ -69,8 +128,15 @@ fun DeepSeekBalanceTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    val semanticColors = if (darkTheme) DarkSemanticColors else LightSemanticColors
     MaterialTheme(
         colorScheme = colorScheme,
-        content = content
+        content = {
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalWalletColors provides semanticColors
+            ) {
+                content()
+            }
+        }
     )
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import com.balancesentinel.app.ui.theme.WalletColors
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -288,11 +289,11 @@ private fun ManualAutoLogItem(entry: RefreshLogEntry) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
                 color = if (isManual) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                else Color(0xFF4CAF50).copy(alpha = 0.15f)) {
+                else WalletColors.successBg) {
                 Text(
                     stringResource(if (isManual) R.string.log_manual_label else R.string.log_auto_label),
                     style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
-                    color = if (isManual) MaterialTheme.colorScheme.primary else Color(0xFF4CAF50),
+                    color = if (isManual) MaterialTheme.colorScheme.primary else WalletColors.success,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -319,13 +320,13 @@ private fun ScheduleLogItem(entry: RefreshLogEntry) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
                 color = if (isFailed) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                else if (isDegraded) Color(0xFFFF9800).copy(alpha = 0.15f)
-                else Color(0xFF9E9E9E).copy(alpha = 0.15f)) {
+                else if (isDegraded) WalletColors.warningBgTransparent
+                else WalletColors.neutralBg) {
                 Text(
                     stringResource(when { isFailed -> R.string.log_failed_schedule; isDegraded -> R.string.log_degraded_schedule; else -> R.string.log_scheduled }),
                     style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
                     color = when { isFailed -> MaterialTheme.colorScheme.error
-                        isDegraded -> Color(0xFFFF9800); else -> Color(0xFF757575) },
+                        isDegraded -> WalletColors.warning; else -> WalletColors.neutralGrey },
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -419,10 +420,10 @@ private fun ServiceStartLogItem(entry: RefreshLogEntry) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
-                color = Color(0xFF4CAF50).copy(alpha = 0.15f)) {
+                color = WalletColors.successBg) {
                 Text(stringResource(R.string.log_service_start_label),
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium, color = Color(0xFF4CAF50),
+                    fontWeight = FontWeight.Medium, color = WalletColors.success,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -443,11 +444,11 @@ private fun WatchdogLogItem(entry: RefreshLogEntry) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
                 color = if (isFailed) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                else Color(0xFFFF9800).copy(alpha = 0.15f)) {
+                else WalletColors.warningBgTransparent) {
                 Text(stringResource(R.string.log_watchdog_label),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    color = if (isFailed) MaterialTheme.colorScheme.error else Color(0xFFFF9800),
+                    color = if (isFailed) MaterialTheme.colorScheme.error else WalletColors.warning,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
             }
             Spacer(modifier = Modifier.width(8.dp))

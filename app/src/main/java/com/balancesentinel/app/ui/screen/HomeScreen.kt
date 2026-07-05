@@ -35,6 +35,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -462,9 +463,9 @@ private fun SimpleStatusBar(uiState: com.balancesentinel.app.ui.viewmodel.HomeUi
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val (svcColor, svcText) = when {
-                    summary.serviceStarting -> Pair(Color(0xFFFF9800), stringResource(R.string.home_service_starting))
-                    summary.serviceAlive    -> Pair(Color(0xFF4CAF50), stringResource(R.string.settings_service_running))
-                    else                    -> Pair(Color(0xFFE53E3E), stringResource(R.string.settings_service_stopped))
+                    summary.serviceStarting -> Pair(WalletColors.warning, stringResource(R.string.home_service_starting))
+                    summary.serviceAlive    -> Pair(WalletColors.success, stringResource(R.string.settings_service_running))
+                    else                    -> Pair(MaterialTheme.colorScheme.error, stringResource(R.string.settings_service_stopped))
                 }
                 Surface(
                     modifier = Modifier.size(8.dp),
@@ -477,7 +478,7 @@ private fun SimpleStatusBar(uiState: com.balancesentinel.app.ui.viewmodel.HomeUi
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val batColor = if (!summary.batteryOptimizing) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                val batColor = if (!summary.batteryOptimizing) WalletColors.success else WalletColors.warning
                 Surface(
                     modifier = Modifier.size(8.dp),
                     shape = RoundedCornerShape(4.dp),
