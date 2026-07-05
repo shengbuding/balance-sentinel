@@ -151,6 +151,12 @@
     <string name="settings_privacy_policy_desc">查看应用隐私政策</string>
     <string name="settings_log_entry">刷新日志</string>
     <string name="settings_toggle_unit">切换单位</string>
+    <string name="settings_refresh_stats">刷新统计</string>
+    <string name="refresh_stats_success_rate">成功率: %s</string>
+    <string name="refresh_stats_no_data">暂无刷新数据</string>
+    <string name="refresh_stats_format">成功 %1$d / 失败 %2$d / 跳过 %3$d（共 %4$d 次）</string>
+    <string name="refresh_stats_last_success">上次成功: %s</string>
+    <string name="refresh_stats_consecutive_fail">连续失败: %d 次</string>
 
     <!-- ===== Settings Alarm Method Labels ===== -->
     <string name="alarm_method_alarm_clock">系统闹钟级</string>

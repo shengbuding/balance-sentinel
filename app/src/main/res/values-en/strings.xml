@@ -151,6 +151,12 @@
     <string name="settings_privacy_policy_desc">View app privacy policy</string>
     <string name="settings_log_entry">Refresh Log</string>
     <string name="settings_toggle_unit">Toggle Unit</string>
+    <string name="settings_refresh_stats">Refresh Statistics</string>
+    <string name="refresh_stats_success_rate">Success rate: %s</string>
+    <string name="refresh_stats_no_data">No refresh data yet</string>
+    <string name="refresh_stats_format">Success %1$d / Fail %2$d / Skip %3$d (%4$d total)</string>
+    <string name="refresh_stats_last_success">Last success: %s</string>
+    <string name="refresh_stats_consecutive_fail">Consecutive failures: %d</string>
 
     <!-- ===== Settings Alarm Method Labels ===== -->
     <string name="alarm_method_alarm_clock">Alarm Clock</string>

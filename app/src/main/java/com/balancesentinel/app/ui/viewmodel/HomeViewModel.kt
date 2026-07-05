@@ -25,6 +25,8 @@ import com.balancesentinel.app.data.repository.MidnightScheduler
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.RefreshStats
+import com.balancesentinel.app.data.repository.RefreshStatsStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.UsageSnapshot
@@ -67,6 +69,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val _refreshStats = MutableStateFlow<RefreshStats?>(null)
+    val refreshStats: StateFlow<RefreshStats?> = _refreshStats.asStateFlow()
+
+    fun loadRefreshStats() {
+        viewModelScope.launch {
+            try {
+                _refreshStats.value = RefreshStatsStore.getStats(getApplication())
+            } catch (_: Exception) {
+                _refreshStats.value = null
+            }
+        }
+    }
 
     init {
         apiKeyManager.migrateLegacyKeyIfNeeded()

@@ -62,7 +62,7 @@ data class WidgetConfig(
     val accountId: String,
     val currency: String
 ) {
-    companion object {
+    companion object Const {
         /** 哨兵值，表示小组件显示全部账户的汇总余额 */
         const val TOTAL_ACCOUNT_ID = "__total__"
     }

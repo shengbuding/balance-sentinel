@@ -18,7 +18,9 @@ import javax.net.ssl.SSLException
 /**
  * DeepSeek API 服务 — 通过 OkHttp 调用 /user/balance
  */
-class DeepSeekApiService {
+class DeepSeekApiService(
+    private val baseUrl: String = "https://api.deepseek.com"
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -91,7 +93,7 @@ class DeepSeekApiService {
     @Throws(IOException::class, IllegalStateException::class)
     fun getBalance(apiKey: String): BalanceResponse {
         val request = Request.Builder()
-            .url("https://api.deepseek.com/user/balance")
+            .url("$baseUrl/user/balance")
             .header("Authorization", "Bearer $apiKey")
             .header("Accept", "application/json")
             .get()
@@ -122,7 +124,7 @@ class DeepSeekApiService {
     @Throws(IOException::class, IllegalStateException::class)
     fun getUsage(apiKey: String, startDate: String? = null, endDate: String? = null): UsageResponse {
         val url = buildString {
-            append("https://api.deepseek.com/v1/usage")
+            append("$baseUrl/v1/usage")
             if (startDate != null || endDate != null) {
                 append("?")
                 if (startDate != null) append("start_date=$startDate")

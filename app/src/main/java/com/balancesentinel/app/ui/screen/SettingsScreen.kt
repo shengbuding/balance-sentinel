@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.repository.RefreshStats
 
 
 import com.balancesentinel.app.ui.CustomIcons
@@ -52,6 +53,7 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
 
     LaunchedEffect(Unit) {
         viewModel.loadStatusSummary()
+        viewModel.loadRefreshStats()
     }
 
     // 拦截系统返回键/手势，回到首页而非退出应用
@@ -75,6 +77,7 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
+        val refreshStats by viewModel.refreshStats.collectAsStateWithLifecycle()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -97,6 +100,9 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
 
             // ── 系统状态面板 ──
             StatusSummaryPanel(uiState.statusSummary)
+
+            // ── 刷新统计仪表盘 ──
+            RefreshStatsCard(refreshStats)
 
             // ── 刷新日志入口 ──
             LogEntryRow(onClick = onNavigateToLog)
@@ -238,6 +244,88 @@ private fun StatusSummaryPanel(summary: com.balancesentinel.app.data.repository.
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 刷新统计仪表盘
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun RefreshStatsCard(stats: RefreshStats?) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                stringResource(R.string.settings_refresh_stats),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            if (stats == null || stats.totalAttempts == 0) {
+                Text(
+                    stringResource(R.string.refresh_stats_no_data),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val rateText = if (stats.successRate >= 0) "${stats.successRate}%" else "--"
+                Text(
+                    stringResource(R.string.refresh_stats_success_rate, rateText),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        stats.successRate < 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+                        stats.successRate >= 80 -> WalletColors.success
+                        stats.successRate >= 50 -> WalletColors.warning
+                        else -> MaterialTheme.colorScheme.error
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    stringResource(
+                        R.string.refresh_stats_format,
+                        stats.successes, stats.failures, stats.skipped, stats.totalAttempts
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (stats.consecutiveFailures > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        stringResource(R.string.refresh_stats_consecutive_fail, stats.consecutiveFailures),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                if (stats.lastSuccessTime > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    val diff = System.currentTimeMillis() - stats.lastSuccessTime
+                    val timeText = when {
+                        diff < 60_000 -> stringResource(R.string.time_just_now)
+                        diff < 3_600_000 -> stringResource(R.string.time_minutes_ago, (diff / 60_000).toInt())
+                        diff < 86_400_000 -> stringResource(R.string.time_hours_ago, (diff / 3_600_000).toInt())
+                        else -> {
+                            val sdf = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+                            sdf.format(java.util.Date(stats.lastSuccessTime))
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.refresh_stats_last_success, timeText),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
