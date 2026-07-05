@@ -25,6 +25,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -269,6 +274,7 @@ private fun StatusChip(label: String, ok: Boolean, okText: String, failText: Str
 
 @Composable
 private fun LogEntryRow(onClick: () -> Unit) {
+    val logEntryLabel = stringResource(R.string.settings_log_entry)
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -276,6 +282,10 @@ private fun LogEntryRow(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = logEntryLabel
+                }
                 .clickable { onClick() }
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -440,6 +450,11 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
         }
     }
 
+    val refreshLabel = stringResource(R.string.settings_auto_refresh)
+    val stateDesc = if (expanded) "$refreshLabel，已展开" else "$refreshLabel，已折叠"
+    val minutesLabel = stringResource(R.string.settings_minutes)
+    val secondsLabel = stringResource(R.string.settings_seconds)
+
     val displayLabel = if (isMinutes) {
         val min = currentIntervalSec / 60
         val sec = currentIntervalSec % 60
@@ -455,7 +470,12 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        stateDescription = stateDesc
+                    }
+                    .clickable { expanded = !expanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -468,7 +488,8 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
                 }
                 Icon(
                     if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null, modifier = Modifier.size(20.dp))
+                    contentDescription = if (expanded) "折叠" else "展开",
+                    modifier = Modifier.size(20.dp))
             }
             Text(stringResource(R.string.settings_refresh_interval_label, displayLabel),
                 style = MaterialTheme.typography.bodySmall,
@@ -494,6 +515,10 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surface)
+                            .semantics {
+                                role = Role.Switch
+                                stateDescription = if (isMinutes) minutesLabel else secondsLabel
+                            }
                             .clickable { isMinutes = !isMinutes }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -532,6 +557,8 @@ private fun AlertSettingsSection(
     }
     val snoozeInfo = uiState.snoozeInfo
     val context = LocalContext.current
+    val alertLabel = stringResource(R.string.settings_balance_alert)
+    val alertStateDesc = if (expanded) "$alertLabel，已展开" else "$alertLabel，已折叠"
 
     // 展开时刷新 snooze 状态
     LaunchedEffect(expanded) {
@@ -545,7 +572,12 @@ private fun AlertSettingsSection(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        stateDescription = alertStateDesc
+                    }
+                    .clickable { expanded = !expanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -579,7 +611,7 @@ private fun AlertSettingsSection(
                 }
                 Icon(
                     if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null, modifier = Modifier.size(20.dp)
+                    contentDescription = if (expanded) "折叠" else "展开", modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -785,6 +817,8 @@ private fun ChangeAlertSettingsSection(
     var periodInput by remember(uiState.changeAlertPeriodMinutes) {
         mutableStateOf(if (uiState.changeAlertPeriodMinutes > 0) uiState.changeAlertPeriodMinutes.toString() else "")
     }
+    val changeLabel = stringResource(R.string.settings_change_alert)
+    val changeStateDesc = if (expanded) "$changeLabel，已展开" else "$changeLabel，已折叠"
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -792,7 +826,12 @@ private fun ChangeAlertSettingsSection(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        stateDescription = changeStateDesc
+                    }
+                    .clickable { expanded = !expanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -814,7 +853,7 @@ private fun ChangeAlertSettingsSection(
                 }
                 Icon(
                     if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null, modifier = Modifier.size(20.dp)
+                    contentDescription = if (expanded) "折叠" else "展开", modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -899,6 +938,7 @@ private fun ChangeAlertSettingsSection(
 @Composable
 private fun PrivacyPolicyRow() {
     var showDialog by remember { mutableStateOf(false) }
+    val privacyLabel = stringResource(R.string.settings_privacy_policy)
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -907,6 +947,10 @@ private fun PrivacyPolicyRow() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = privacyLabel
+                }
                 .clickable { showDialog = true }
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1001,6 +1045,8 @@ private val PRIVACY_POLICY_TEXT = """
 
 @Composable
 private fun DataManagementEntryRow(onClick: () -> Unit) {
+    val dataLabel = stringResource(R.string.settings_data_management)
+
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -1008,6 +1054,10 @@ private fun DataManagementEntryRow(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = dataLabel
+                }
                 .clickable { onClick() }
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

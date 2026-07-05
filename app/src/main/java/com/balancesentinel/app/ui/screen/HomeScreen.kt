@@ -36,6 +36,8 @@ import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.balancesentinel.app.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
@@ -311,10 +313,14 @@ private fun AccountBalanceCard(
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        modifier = Modifier.combinedClickable(
-            onClick = {},
-            onLongClick = onLongPress
-        )
+        modifier = Modifier
+            .semantics(mergeDescendants = true) {
+                contentDescription = accountLabel + "，长按可删除"
+            }
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongPress
+            )
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             // 标题行

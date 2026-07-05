@@ -28,6 +28,9 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.R
 
@@ -178,7 +181,11 @@ private fun RefreshLogSection(
             // 日志上限设置行
             if (!showMaxEditor) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { showMaxEditor = true }.padding(vertical = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) { role = androidx.compose.ui.semantics.Role.Button }
+                        .clickable { showMaxEditor = true }
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
