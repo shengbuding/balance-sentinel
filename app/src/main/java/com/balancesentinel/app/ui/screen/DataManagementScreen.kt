@@ -96,6 +96,26 @@ fun DataManagementScreen(
         }
     }
 
+    // ── 历史数据导入 launcher ──
+    val importDataLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val result = DataExporter.importAndApply(context, uri)
+            if (result != null) {
+                val (summaries, records) = result
+                if (summaries > 0 || records > 0) {
+                    Toast.makeText(context, context.getString(R.string.data_import_history_success, summaries, records), Toast.LENGTH_SHORT).show()
+                    viewModel.loadStats()
+                } else {
+                    Toast.makeText(context, context.getString(R.string.data_import_history_empty), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, context.getString(R.string.data_import_history_fail), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // ── 配置导入 launcher ──
     val importConfigLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -238,6 +258,14 @@ fun DataManagementScreen(
                 description = stringResource(R.string.data_export_history_desc),
                 buttonText = stringResource(R.string.data_export_btn),
                 onAction = { exportDataLauncher.launch("wallet_sentinel_data.json") }
+            )
+
+            ActionCard(
+                icon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.data_import_history_title),
+                description = stringResource(R.string.data_import_history_desc),
+                buttonText = stringResource(R.string.data_import_history_btn),
+                onAction = { importDataLauncher.launch(arrayOf("application/json", "*/*")) }
             )
 
             ActionCard(
