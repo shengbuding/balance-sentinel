@@ -6,7 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import com.example.deepseekbalance.data.model.RefreshLogEntry
 import com.example.deepseekbalance.data.model.RefreshLogType
 import com.example.deepseekbalance.data.repository.RefreshLogStore
@@ -89,7 +89,7 @@ class KeepAliveReceiver : BroadcastReceiver() {
         val svcDead = RefreshScheduler.isServiceDead(context, 90_000L) // 90 秒超时
 
         if (svcDead) {
-            Log.w("KeepAlive", "Service dead detected — restarting via foreground service")
+            Logger.w("KeepAlive", "Service dead detected — restarting via foreground service")
             try {
                 val svcIntent = Intent(context, BalanceRefreshService::class.java)
                 context.startForegroundService(svcIntent)
@@ -98,7 +98,7 @@ class KeepAliveReceiver : BroadcastReceiver() {
                     message = "KeepAlive 检测到服务冻结，已通过前台服务重启"
                 ))
             } catch (e: Exception) {
-                Log.e("KeepAlive", "Failed to restart service", e)
+                Logger.e("KeepAlive", "Failed to restart service", e)
                 RefreshLogStore.addEntry(context, RefreshLogEntry(
                     id = now, type = RefreshLogType.WATCHDOG, timestamp = now,
                     message = "KeepAlive 重启失败: ${e.message?.take(40)}"

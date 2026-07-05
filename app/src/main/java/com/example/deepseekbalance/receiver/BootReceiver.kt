@@ -3,7 +3,7 @@ package com.example.deepseekbalance.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import com.example.deepseekbalance.service.BalanceRefreshService
 
 /**
@@ -20,13 +20,13 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             try {
-                Log.i("BootReceiver", "BOOT_COMPLETED — starting service")
+                Logger.i("BootReceiver", "BOOT_COMPLETED — starting service")
                 val serviceIntent = Intent(context, BalanceRefreshService::class.java)
                 context.startService(serviceIntent) // 非前台启动，Service 自行 promote
                 // 设定初始 keepalive 闹钟 — Service 2 分钟内未上线则由 KeepAliveReceiver 拉起
                 KeepAliveReceiver.schedule(context)
             } catch (e: Exception) {
-                Log.e("BootReceiver", "Failed to start service", e)
+                Logger.e("BootReceiver", "Failed to start service", e)
             }
         }
     }

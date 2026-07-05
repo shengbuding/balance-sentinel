@@ -13,7 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import com.example.deepseekbalance.DeepSeekApp
 import com.example.deepseekbalance.R
 import com.example.deepseekbalance.data.api.DeepSeekApiService
@@ -50,7 +50,7 @@ class BalanceRefreshService : Service() {
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {
         override fun run() {
-            Log.i(TAG, "Scheduled self-destruct — stopping service")
+            Logger.i(TAG, "Scheduled self-destruct — stopping service")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -75,7 +75,7 @@ class BalanceRefreshService : Service() {
             startForeground(DeepSeekApp.NOTIFICATION_ID,
                 notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
         } catch (e: Exception) {
-            Log.e(TAG, "startForeground failed", e)
+            Logger.e(TAG, "startForeground failed", e)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -122,15 +122,15 @@ class BalanceRefreshService : Service() {
                 System.currentTimeMillis() + 1000L, // 1 秒后重启
                 pending
             )
-            Log.i(TAG, "onTaskRemoved — scheduled restart via AlarmManager in 1s")
+            Logger.i(TAG, "onTaskRemoved — scheduled restart via AlarmManager in 1s")
         } catch (e: Exception) {
-            Log.e(TAG, "onTaskRemoved — failed to schedule restart", e)
+            Logger.e(TAG, "onTaskRemoved — failed to schedule restart", e)
         }
     }
 
     private fun startLoop() {
         isLoopRunning = true
-        Log.i(TAG, "Refresh loop started")
+        Logger.i(TAG, "Refresh loop started")
         handler.post(refreshTask)
 
         // 指数退避自毁：3h → 6h → 12h（基于重启次数）
@@ -140,7 +140,7 @@ class BalanceRefreshService : Service() {
             restartCount == 2 -> 6 * 3_600_000L   // 6 小时
             else              -> 12 * 3_600_000L  // 12 小时（上限）
         }
-        Log.i(TAG, "Self-destruct scheduled in ${selfDestructMs / 3_600_000}h (restart #$restartCount)")
+        Logger.i(TAG, "Self-destruct scheduled in ${selfDestructMs / 3_600_000}h (restart #$restartCount)")
         handler.postDelayed(restartRunnable, selfDestructMs)
     }
 
@@ -148,7 +148,7 @@ class BalanceRefreshService : Service() {
         isLoopRunning = false
         handler.removeCallbacks(refreshTask)
         handler.removeCallbacks(restartRunnable)
-        Log.i(TAG, "Refresh loop stopped")
+        Logger.i(TAG, "Refresh loop stopped")
     }
 
     // ── 核心刷新（多账户） ──
@@ -158,7 +158,7 @@ class BalanceRefreshService : Service() {
 
         // 防并发刷新风暴：上一轮刷新未结束时忽略新请求
         if (isRefreshing) {
-            Log.w(TAG, "Skipping refresh — previous round still in progress")
+            Logger.w(TAG, "Skipping refresh — previous round still in progress")
             return
         }
         isRefreshing = true
@@ -241,7 +241,7 @@ class BalanceRefreshService : Service() {
                                     changeCount++
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Auto refresh failed for ${account.label}", e)
+                            Logger.e(TAG, "Auto refresh failed for ${account.label}", e)
                         }
                     }
 
@@ -281,7 +281,7 @@ class BalanceRefreshService : Service() {
                     RefreshScheduler.heartbeat(this)
 
                 } catch (e: Exception) {
-                    Log.e(TAG, "Auto refresh batch failed", e)
+                    Logger.e(TAG, "Auto refresh batch failed", e)
                     notificationHelper.sendForegroundNotification(getString(R.string.service_notif_query_failed), e.message ?: e.javaClass.simpleName)
                 }
 

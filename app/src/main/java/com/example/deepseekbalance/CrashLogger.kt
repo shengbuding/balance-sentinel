@@ -1,7 +1,7 @@
 package com.example.deepseekbalance
 
 import android.app.Application
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -24,7 +24,7 @@ object CrashLogger {
             // Write to file with immediate sync to survive crash
             writeCrash(app, throwable)
             // Also log to logcat
-            Log.e("CrashLogger", "FATAL", throwable)
+            Logger.e("CrashLogger", "FATAL", throwable)
             // Re-throw to system handler
             originalHandler?.uncaughtException(thread, throwable)
         }

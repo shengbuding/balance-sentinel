@@ -3,7 +3,7 @@ package com.example.deepseekbalance.widget
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.ComponentName
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
@@ -73,7 +73,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 super.onReceive(context, intent)
             }
         } catch (e: Exception) {
-            Log.e("StaticWidget", "onReceive error", e)
+            Logger.e("StaticWidget", "onReceive error", e)
             WidgetErrorLogger.log(context, e)
         }
     }
@@ -152,7 +152,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("StaticWidget", "Manual refresh failed", e)
+                Logger.e("StaticWidget", "Manual refresh failed", e)
             } finally {
                 pendingResult.finish()
                 if (svcDead) {
@@ -294,7 +294,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     private fun restartServiceNow(context: Context) {
         try {
-            Log.w("StaticWidget", "Watchdog restarting Foreground Service")
+            Logger.w("StaticWidget", "Watchdog restarting Foreground Service")
             RefreshScheduler.recordRestart(context)
             val svcIntent = Intent(context, BalanceRefreshService::class.java)
             val now = System.currentTimeMillis()

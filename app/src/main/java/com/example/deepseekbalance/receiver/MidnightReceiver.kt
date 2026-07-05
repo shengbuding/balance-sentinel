@@ -3,7 +3,7 @@ package com.example.deepseekbalance.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import com.example.deepseekbalance.data.repository.CleanupScheduler
 import com.example.deepseekbalance.data.repository.MidnightScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -19,14 +19,14 @@ class MidnightReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != MidnightScheduler.ACTION_MIDNIGHT) return
 
-        Log.i("MidnightReceiver", "Midnight aggregation triggered")
+        Logger.i("MidnightReceiver", "Midnight aggregation triggered")
         try {
             CoroutineScope(Dispatchers.IO).launch {
                 CleanupScheduler.runCleanup(context)
-                Log.i("MidnightReceiver", "Cleanup completed")
+                Logger.i("MidnightReceiver", "Cleanup completed")
             }
         } catch (e: Exception) {
-            Log.e("MidnightReceiver", "Aggregation failed", e)
+            Logger.e("MidnightReceiver", "Aggregation failed", e)
         } finally {
             MidnightScheduler.schedule(context)
         }

@@ -211,7 +211,7 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(this, BalanceRefreshService::class.java)
             ContextCompat.startForegroundService(this, intent)
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to start refresh service", e)
+            com.example.deepseekbalance.data.util.Logger.e("MainActivity", "Failed to start refresh service", e)
         }
     }
 }

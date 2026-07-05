@@ -4,7 +4,7 @@ import android.app.Application
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
-import android.util.Log
+import com.example.deepseekbalance.data.util.Logger
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -351,7 +351,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 } catch (e: Exception) {
-                    Log.e("HomeViewModel", "refreshBalance failed for ${account.label}", e)
+                    Logger.e("HomeViewModel", "refreshBalance failed for ${account.label}", e)
                     newBalances[account.id] = null
                 }
             }
@@ -406,7 +406,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) {}
             }
         } catch (e: Exception) {
-            Log.e("HomeViewModel", "updateAllWidgets failed", e)
+            Logger.e("HomeViewModel", "updateAllWidgets failed", e)
         }
     }
 
