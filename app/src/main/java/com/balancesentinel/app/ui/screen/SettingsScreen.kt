@@ -1,6 +1,8 @@
 package com.balancesentinel.app.ui.screen
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -120,6 +122,9 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
                     onClear = { viewModel.clearCrashes() }
                 )
             }
+
+            // ── 交流与反馈 ──
+            CommunityCard()
 
             // ── 版本信息 ──
             VersionInfo()
@@ -512,6 +517,83 @@ private fun VersionInfo() {
             Text(stringResource(R.string.settings_about_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 交流与反馈
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun CommunityCard() {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val communityLabel = stringResource(R.string.settings_community)
+    val qqHint = stringResource(R.string.settings_qq_copy_hint)
+    val githubUrl = "https://github.com/shengbuding/balance-sentinel"
+    val qqGroup = "1049954410"
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(communityLabel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // GitHub
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "GitHub"
+                    }
+                    .clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl))
+                        context.startActivity(intent)
+                    }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Share, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("GitHub", style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(githubUrl, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // QQ 群
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "QQ 群 $qqGroup"
+                    }
+                    .clickable {
+                        clipboard.setText(AnnotatedString(qqGroup))
+                    }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AccountCircle, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("QQ 群: $qqGroup", style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(qqHint, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

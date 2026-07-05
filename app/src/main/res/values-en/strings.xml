@@ -107,6 +107,8 @@
     <string name="settings_crash_log">Crash Log (%1$d)</string>
     <string name="settings_copy">Copy</string>
     <string name="settings_clear">Clear</string>
+    <string name="settings_community">Community &amp; Feedback</string>
+    <string name="settings_qq_copy_hint">Tap to copy group number</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Wallet Sentinel v%1$s</string>
     <string name="settings_about_desc">View DeepSeek API account balances on your home screen with auto-refresh and widgets.</string>
