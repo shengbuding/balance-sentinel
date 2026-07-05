@@ -418,6 +418,20 @@
     <string name="widget_config_account">Select Account</string>
     <string name="widget_config_currency">Select Currency</string>
 
+    <!-- ===== Onboarding ===== -->
+    <string name="onboarding_welcome_title">Welcome to Balance Sentinel</string>
+    <string name="onboarding_welcome_desc">Monitor your DeepSeek API account balance\nat a glance on your home screen widget</string>
+    <string name="onboarding_features_title">Key Features</string>
+    <string name="onboarding_features_desc">Three core capabilities to protect your API balance</string>
+    <string name="onboarding_feat_refresh">Auto-refresh in background, no manual checks</string>
+    <string name="onboarding_feat_alert">Low balance alerts + anomaly notifications</string>
+    <string name="onboarding_feat_widget">Home screen widget for at-a-glance balance</string>
+    <string name="onboarding_start_title">Get Started</string>
+    <string name="onboarding_start_desc">Add your DeepSeek API Key\nto start monitoring your balance</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_get_started">Get Started</string>
+
     <!-- ===== Misc ===== -->
     <string name="default_account_label">Default Account</string>
 </resources>
