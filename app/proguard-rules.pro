@@ -10,7 +10,7 @@
 }
 
 # Keep data model classes used with kotlinx.serialization
--keep class com.example.deepseekbalance.data.model.** {
+-keep class com.balancesentinel.app.data.model.** {
     *;
 }
 
@@ -23,7 +23,7 @@
 -dontwarn com.google.errorprone.annotations.**
 
 # === Widget classes ===
--keep class com.example.deepseekbalance.widget.** { *; }
+-keep class com.balancesentinel.app.widget.** { *; }
 
 # === Compose (safe mode) ===
 -keep class androidx.compose.** { *; }

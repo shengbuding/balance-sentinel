@@ -16,11 +16,11 @@ if (hasKeystoreConfig) {
 }
 
 android {
-    namespace = "com.example.deepseekbalance"
+    namespace = "com.balancesentinel.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.deepseekbalance"
+        applicationId = "com.balancesentinel.app"
         minSdk = 35
         targetSdk = 35
         versionCode = 1

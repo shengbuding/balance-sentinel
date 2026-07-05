@@ -9,4 +9,4 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen"
-    android:configure="com.example.deepseekbalance.widget.WidgetConfigActivity" />
+    android:configure="com.balancesentinel.app.widget.WidgetConfigActivity" />

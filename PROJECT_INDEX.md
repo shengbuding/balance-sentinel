@@ -8,7 +8,7 @@ Generated: 2026-07-05
 
 **DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + Glance AppWidgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking).
 
-- **Package**: `com.example.deepseekbalance`
+- **Package**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11

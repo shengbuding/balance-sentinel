@@ -377,8 +377,8 @@ Google Play 对 `SCHEDULE_EXACT_ALARM`、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_CO
 **位置**: `app/build.gradle.kts:19`
 
 ```kotlin
-namespace = "com.example.deepseekbalance"
-applicationId = "com.example.deepseekbalance"
+namespace = "com.balancesentinel.app"
+applicationId = "com.balancesentinel.app"
 ```
 
 `com.example.*` 是保留命名空间，Google Play **不允许**发布。需要改为你自己的域名（如 `com.yourdomain.balancesentinel` 或 `io.github.yourname.deepseekbalance`）。

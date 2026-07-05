@@ -82,9 +82,9 @@
 - [ ] **Step 1: 创建 IntradayModels.kt**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.RawRecord
 
 /**
  * IntradayEngine 的输入 — 24h 滑动窗口。
@@ -130,10 +130,10 @@ data class IntradayBillReport(
 - [ ] **Step 2: 创建 DailyModels.kt**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.DailySummary
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.DailySummary
+import com.balancesentinel.app.data.model.RawRecord
 
 /**
  * DailyEngine 的输入 — 长期日历天视图。
@@ -216,9 +216,9 @@ git commit -m "feat: add IntradayModels and DailyModels for dual-engine insights
 - [ ] **Step 1: 创建 IntradayEngineTest — 空输入和单记录测试**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.RawRecord
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -268,16 +268,16 @@ class IntradayEngineTest {
 export JAVA_HOME="C:/Program Files/Amazon Corretto/jdk17.0.19_10"
 export ANDROID_HOME="$HOME/Android/Sdk"
 cd /c/Users/Administrator/DeepSeekBalance
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.IntradayEngineTest" 2>&1 | tail -10
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.IntradayEngineTest" 2>&1 | tail -10
 ```
 预期: 编译失败 — `IntradayEngine` 未定义
 
 - [ ] **Step 3: 实现 IntradayEngine 最小版本（满足以上三个测试）**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.RawRecord
 
 object IntradayEngine {
 
@@ -355,7 +355,7 @@ object IntradayEngine {
 - [ ] **Step 4: 运行测试验证通过**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.IntradayEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.IntradayEngineTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 3 tests passed
 
@@ -383,7 +383,7 @@ fun `normal consumption between two refreshes`() {
 - [ ] **Step 6: 运行测试验证通过**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.IntradayEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.IntradayEngineTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 4 tests passed
 
@@ -487,7 +487,7 @@ fun `currency filter applies correctly`() {
 - [ ] **Step 10: 运行全部测试**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.IntradayEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.IntradayEngineTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 10 tests passed
 
@@ -516,10 +516,10 @@ git commit -m "feat: add IntradayEngine with 24h sliding window analysis"
 - [ ] **Step 1: 创建 DailyEngineTest — 基础测试**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.DailySummary
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.DailySummary
+import com.balancesentinel.app.data.model.RawRecord
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -575,16 +575,16 @@ class DailyEngineTest {
 - [ ] **Step 2: 运行测试验证失败**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.DailyEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.DailyEngineTest" 2>&1 | tail -5
 ```
 预期: 编译失败
 
 - [ ] **Step 3: 实现 DailyEngine**
 
 ```kotlin
-package com.example.deepseekbalance.data.engine
+package com.balancesentinel.app.data.engine
 
-import com.example.deepseekbalance.data.model.DailySummary
+import com.balancesentinel.app.data.model.DailySummary
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -696,7 +696,7 @@ object DailyEngine {
 - [ ] **Step 4: 运行测试验证通过**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.DailyEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.DailyEngineTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 3 tests passed
 
@@ -774,7 +774,7 @@ fun `today raw records override today summary`() {
 - [ ] **Step 6: 运行全部测试**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.engine.DailyEngineTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.engine.DailyEngineTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 9 tests passed
 
@@ -994,7 +994,7 @@ fun `records no longer auto-clear on date change`() {
 - [ ] **Step 4: 运行测试**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.repository.RawRecordStoreTest" 2>&1 | tail -10
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.repository.RawRecordStoreTest" 2>&1 | tail -10
 ```
 预期: 所有测试通过（新+旧）
 
@@ -1207,7 +1207,7 @@ fun `ensureContinuity does not fill today`() {
 - [ ] **Step 4: 运行测试**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.repository.DailySummaryStoreTest" 2>&1 | tail -10
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.repository.DailySummaryStoreTest" 2>&1 | tail -10
 ```
 预期: 所有测试通过
 
@@ -1236,11 +1236,11 @@ git commit -m "feat: DailySummaryStore adds upsert, range query, ensureContinuit
 - [ ] **Step 1: 创建 CleanupSchedulerTest**
 
 ```kotlin
-package com.example.deepseekbalance.data.repository
+package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.example.deepseekbalance.data.model.RawRecord
+import com.balancesentinel.app.data.model.RawRecord
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
@@ -1321,17 +1321,17 @@ class CleanupSchedulerTest {
 - [ ] **Step 2: 运行测试验证失败**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.repository.CleanupSchedulerTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.repository.CleanupSchedulerTest" 2>&1 | tail -5
 ```
 预期: 编译失败 — CleanupScheduler 未定义
 
 - [ ] **Step 3: 实现 CleanupScheduler**
 
 ```kotlin
-package com.example.deepseekbalance.data.repository
+package com.balancesentinel.app.data.repository
 
 import android.content.Context
-import com.example.deepseekbalance.data.engine.RecordAggregator
+import com.balancesentinel.app.data.engine.RecordAggregator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -1407,7 +1407,7 @@ object CleanupScheduler {
 - [ ] **Step 4: 运行测试验证通过**
 
 ```bash
-./gradlew.bat testDebugUnitTest --no-daemon --tests "com.example.deepseekbalance.data.repository.CleanupSchedulerTest" 2>&1 | tail -5
+./gradlew.bat testDebugUnitTest --no-daemon --tests "com.balancesentinel.app.data.repository.CleanupSchedulerTest" 2>&1 | tail -5
 ```
 预期: BUILD SUCCESSFUL, 3 tests passed
 
@@ -1438,7 +1438,7 @@ kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
 ```
 
 同时移除不再需要的 import: `DailySummaryStore`, `SimpleDateFormat`, `Date`, `Locale`（如无其他引用）。
-添加 import: `com.example.deepseekbalance.data.repository.CleanupScheduler`, `kotlinx.coroutines.*`
+添加 import: `com.balancesentinel.app.data.repository.CleanupScheduler`, `kotlinx.coroutines.*`
 
 - [ ] **Step 6: 修改 HomeViewModel — 聚合路径使用 CleanupScheduler**
 
@@ -1474,7 +1474,7 @@ private fun scheduleMidnightAndCheckSummary() {
 ```
 
 移除不再需要的 import: `SimpleDateFormat`, `Date`（如无其他引用）。
-添加 import: `com.example.deepseekbalance.data.repository.CleanupScheduler`
+添加 import: `com.balancesentinel.app.data.repository.CleanupScheduler`
 
 - [ ] **Step 7: 运行全部测试确认无回归**
 
@@ -1512,26 +1512,26 @@ git commit -m "feat: add CleanupScheduler, wire into MidnightReceiver and HomeVi
 替换整个 InsightsViewModel.kt:
 
 ```kotlin
-package com.example.deepseekbalance.ui.viewmodel
+package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.deepseekbalance.data.engine.DailyBillReport
-import com.example.deepseekbalance.data.engine.DailyEngine
-import com.example.deepseekbalance.data.engine.DailyInput
-import com.example.deepseekbalance.data.engine.DailyOutput
-import com.example.deepseekbalance.data.engine.DailyPoint
-import com.example.deepseekbalance.data.engine.DepletionEstimate
-import com.example.deepseekbalance.data.engine.IntradayBillReport
-import com.example.deepseekbalance.data.engine.IntradayEngine
-import com.example.deepseekbalance.data.engine.IntradayInput
-import com.example.deepseekbalance.data.engine.IntradayOutput
-import com.example.deepseekbalance.data.engine.IntradayPoint
-import com.example.deepseekbalance.data.model.AccountInfo
-import com.example.deepseekbalance.data.repository.ApiKeyManager
-import com.example.deepseekbalance.data.repository.DailySummaryStore
-import com.example.deepseekbalance.data.repository.RawRecordStore
+import com.balancesentinel.app.data.engine.DailyBillReport
+import com.balancesentinel.app.data.engine.DailyEngine
+import com.balancesentinel.app.data.engine.DailyInput
+import com.balancesentinel.app.data.engine.DailyOutput
+import com.balancesentinel.app.data.engine.DailyPoint
+import com.balancesentinel.app.data.engine.DepletionEstimate
+import com.balancesentinel.app.data.engine.IntradayBillReport
+import com.balancesentinel.app.data.engine.IntradayEngine
+import com.balancesentinel.app.data.engine.IntradayInput
+import com.balancesentinel.app.data.engine.IntradayOutput
+import com.balancesentinel.app.data.engine.IntradayPoint
+import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.RawRecordStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
