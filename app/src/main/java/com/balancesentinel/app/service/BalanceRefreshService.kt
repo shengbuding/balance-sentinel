@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import com.balancesentinel.app.data.engine.ServiceHealthTracker
+import com.balancesentinel.app.data.repository.RefreshStatsStore
 import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.CrashLogger
@@ -163,6 +165,7 @@ class BalanceRefreshService : Service() {
         // 防并发刷新风暴：上一轮刷新未结束时忽略新请求
         if (isRefreshing) {
             Logger.w(TAG, "Skipping refresh — previous round still in progress")
+            RefreshStatsStore.recordSkipped(this)
             return
         }
         isRefreshing = true
@@ -311,9 +314,13 @@ class BalanceRefreshService : Service() {
                     // 标记 & 心跳
                     RefreshScheduler.markFired(this)
                     RefreshScheduler.heartbeat(this)
+                    ServiceHealthTracker.recordSuccess(this)
+                    RefreshStatsStore.recordSuccess(this)
 
                 } catch (e: Exception) {
                     Logger.e(TAG, "Auto refresh batch failed", e)
+                    ServiceHealthTracker.recordFailure(this)
+                    RefreshStatsStore.recordFailure(this)
                     CrashLogger.logNonFatal(TAG, e)
                     notificationHelper.sendForegroundNotification(getString(R.string.service_notif_query_failed), e.message ?: e.javaClass.simpleName)
                 }
@@ -329,11 +336,22 @@ class BalanceRefreshService : Service() {
     }
 
     private fun scheduleNext() {
-        val intervalSec = widgetPrefs.refreshIntervalSeconds
-        val intervalMs = if (intervalSec > 0) intervalSec * 1000L else 30_000L
+        val baseIntervalSec = widgetPrefs.refreshIntervalSeconds
+        val baseIntervalMs = if (baseIntervalSec > 0) baseIntervalSec * 1000L else 30_000L
+
+        // 保护模式下降频到每小时一次
+        val inProtection = ServiceHealthTracker.isInProtectionMode(this)
+        val intervalMs = if (inProtection) 3_600_000L else baseIntervalMs
+
+        if (inProtection) {
+            Logger.w(TAG, "Protection mode active — reduced refresh to every 60 min")
+        }
 
         RefreshScheduler.recordSchedule(
-            this, intervalSec, System.currentTimeMillis() + intervalMs, "foreground_service"
+            this,
+            if (inProtection) 3600 else baseIntervalSec,
+            System.currentTimeMillis() + intervalMs,
+            if (inProtection) "protection_mode" else "foreground_service"
         )
         KeepAliveReceiver.schedule(this)
         handler.removeCallbacks(refreshTask)
