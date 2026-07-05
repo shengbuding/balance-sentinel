@@ -26,6 +26,34 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kover)
+}
+
+// Kover 覆盖率基线配置
+kover {
+    reports {
+        filters {
+            // 排除非源码类
+            excludes {
+                // Android generated classes
+                classes("com.balancesentinel.app.BuildConfig")
+                classes("com.balancesentinel.app.R*")
+                // Compose preview composable functions
+                annotatedBy("*Preview")
+                // 数据类（自动生成方法）
+                classes("com.balancesentinel.app.data.model.*_*")
+            }
+        }
+        verify {
+            rule {
+                // 基线规则：仅记录不阻断，后续版本逐步提高
+                bound {
+                    minValue = 1  // 最低覆盖率
+                    maxValue = 100
+                }
+            }
+        }
+    }
 }
 
 // Release 签名配置 — 从 keystore.properties 读取（该文件不提交到 git）

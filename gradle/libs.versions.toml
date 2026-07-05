@@ -15,6 +15,7 @@ mockk = "1.13.14"
 robolectric = "4.14.1"
 androidx-test-core = "1.6.1"
 kotlinx-coroutines = "1.9.0"
+kover = "0.9.1"
 
 [libraries]
 # AndroidX
@@ -53,3 +54,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
