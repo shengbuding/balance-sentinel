@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.repository
 
+import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.UsageSnapshot
@@ -44,7 +45,7 @@ object UsageDataStore {
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
             getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("UsageDataStore", "operation failed", e) }
     }
 
     /**
@@ -87,7 +88,7 @@ object UsageDataStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_SNAPSHOTS).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("UsageDataStore", "operation failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

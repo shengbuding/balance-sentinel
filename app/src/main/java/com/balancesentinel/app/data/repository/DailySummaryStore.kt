@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.repository
 
+import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.engine.RecordAggregator
@@ -41,7 +42,7 @@ object DailySummaryStore {
             summaries.sortBy { it.date }
             val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
             getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("DailySummaryStore", "saveSummary failed", e) }
     }
 
     /**
@@ -202,7 +203,7 @@ object DailySummaryStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_SUMMARIES).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("DailySummaryStore", "saveSummary failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

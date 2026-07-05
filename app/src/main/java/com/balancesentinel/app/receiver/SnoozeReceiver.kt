@@ -1,4 +1,5 @@
 package com.balancesentinel.app.receiver
+import com.balancesentinel.app.data.util.Logger
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -26,7 +27,7 @@ class SnoozeReceiver : BroadcastReceiver() {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
             nm.cancel(1002 + (accountId.hashCode() and 0xFFFF))  // alert
             nm.cancel(2002 + (accountId.hashCode() and 0xFFFF))  // change
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("SnoozeReceiver", "snooze failed", e) }
     }
 
 }

@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.balancesentinel.app.data.util.Logger
 import java.util.Calendar
 
 /**
@@ -63,6 +64,6 @@ object MidnightScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarm.cancel(pending)
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("MidnightScheduler", "schedule failed", e) }
     }
 }

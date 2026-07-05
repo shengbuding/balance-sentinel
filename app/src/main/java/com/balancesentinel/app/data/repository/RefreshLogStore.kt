@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.repository
 
+import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -63,7 +64,7 @@ object RefreshLogStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_ENTRIES).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("RefreshLogStore", "operation failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

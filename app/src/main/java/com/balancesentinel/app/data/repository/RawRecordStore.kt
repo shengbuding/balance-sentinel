@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.repository
 
+import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.RawRecord
@@ -102,7 +103,7 @@ object RawRecordStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_RECORDS).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
     }
 
     /**
@@ -119,7 +120,7 @@ object RawRecordStore {
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
                 getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
     }
 
     /** 内部读取，不做日期过滤 */
@@ -181,7 +182,7 @@ object RawRecordStore {
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
                 getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

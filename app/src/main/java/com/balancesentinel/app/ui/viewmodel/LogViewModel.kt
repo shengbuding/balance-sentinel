@@ -1,4 +1,5 @@
 package com.balancesentinel.app.ui.viewmodel
+import com.balancesentinel.app.data.util.Logger
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -45,7 +46,7 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 missedCount = allLogs.count { it.type == RefreshLogType.MISSED }
             )
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }
     }
 
     fun selectLogType(type: RefreshLogType?) {
@@ -67,7 +68,7 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
         try {
             RefreshLogStore.clear(getApplication())
             _uiState.value = _uiState.value.copy(refreshLogs = emptyList(), missedCount = 0)
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }
     }
 
     fun setLogMax(count: Int) {
@@ -96,13 +97,13 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val app = getApplication<Application>()
             _uiState.value = _uiState.value.copy(crashLogs = CrashLogger.getCrashes(app))
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }
     }
 
     fun clearCrashes() {
         try {
             CrashLogger.clear(getApplication())
             _uiState.value = _uiState.value.copy(crashLogs = emptyList())
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }
     }
 }

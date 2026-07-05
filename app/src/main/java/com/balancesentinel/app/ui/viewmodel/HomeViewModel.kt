@@ -123,7 +123,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     lastRefreshTime = allBalances.maxOfOrNull { it.lastUpdated } ?: 0L
                 )
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     // ── 午夜调度 ──
@@ -134,7 +134,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 CleanupScheduler.runCleanup(getApplication())
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     // ── 崩溃日志 ──
@@ -143,14 +143,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val app = getApplication<Application>()
             _uiState.value = _uiState.value.copy(crashLogs = CrashLogger.getCrashes(app))
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     fun clearCrashes() {
         try {
             CrashLogger.clear(getApplication())
             _uiState.value = _uiState.value.copy(crashLogs = emptyList())
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     // ── 账户管理 ──
@@ -195,7 +195,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val context = getApplication<Application>()
             val intent = Intent(context, BalanceRefreshService::class.java)
             ContextCompat.startForegroundService(context, intent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     fun setAlertEnabled(enabled: Boolean) {
@@ -371,7 +371,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             records = usage.data
                         ))
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
             }
 
             _uiState.value = _uiState.value.copy(
@@ -407,7 +407,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         context.sendBroadcast(intent)
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
             }
         } catch (e: Exception) {
             Logger.e("HomeViewModel", "updateAllWidgets failed", e)
@@ -419,7 +419,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 statusSummary = RefreshScheduler.getStatusSummary(getApplication())
             )
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 
     private fun checkMissedRefreshes() {
@@ -445,6 +445,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             if (missed.isNotEmpty()) {
                 missed.forEach { RefreshLogStore.addEntry(app, it) }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
 }
