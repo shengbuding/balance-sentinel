@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置 — HTTPS 证书固定 (Certificate Pinning)
+  拒绝一切非 api.deepseek.com 真实证书的 MITM 代理。
+
+  引脚更新：当 DeepSeek 更换 SSL 证书时，App 需要同步更新 pin。
+  获取新 SPKI hash 的命令：
+    echo | openssl s_client -servername api.deepseek.com -connect api.deepseek.com:443 2>/dev/null \
+      | openssl x509 -pubkey -noout 2>/dev/null \
+      | openssl pkey -pubin -outform DER 2>/dev/null \
+      | openssl dgst -sha256 -binary 2>/dev/null | base64
+
+  建议同时保留旧 pin 和新 pin 一段时间以平滑过渡。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.deepseek.com</domain>
+        <pin-set expiration="2027-07-01">
+            <!-- Leaf certificate SPKI (2026-07) -->
+            <pin digest="SHA-256">IS95653JtE1/bNto9qa5E/NHBmBbRDmfaLM+btVVTCk=</pin>
+            <!-- 备用：证书更新时追加新 pin，旧 pin 保留一段时间 -->
+        </pin-set>
+    </domain-config>
+    <!-- 其他域名的 HTTPS 流量：不固定证书但要求加密 -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
