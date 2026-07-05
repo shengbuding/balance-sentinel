@@ -442,6 +442,8 @@
     <string name="widget_config_title">配置小组件</string>
     <string name="widget_config_account">选择账户</string>
     <string name="widget_config_currency">选择币种</string>
+    <string name="widget_config_total_account">总余额 (全部账户)</string>
+    <string name="widget_title_total">总余额</string>
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">欢迎使用钱包哨兵</string>

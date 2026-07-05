@@ -80,12 +80,16 @@ class WidgetConfigActivity : ComponentActivity() {
                         val defaultAccountLabel = accounts.firstOrNull()?.label ?: ""
 
                         var selectedAccountId by remember { mutableStateOf(defaultAccountId) }
+                        var isTotalSelected by remember { mutableStateOf(false) }
                         var selectedCurrency by remember { mutableStateOf("CNY") }
 
                         // 账户下拉
                         var accountExpanded by remember { mutableStateOf(false) }
-                        val selectedLabel = accounts.find { it.id == selectedAccountId }?.label
-                            ?: defaultAccountLabel
+                        val selectedLabel = when {
+                            isTotalSelected -> stringResource(R.string.widget_config_total_account)
+                            else -> accounts.find { it.id == selectedAccountId }?.label
+                                ?: defaultAccountLabel
+                        }
 
                         Text(
                             text = stringResource(R.string.widget_config_account),
@@ -97,14 +101,21 @@ class WidgetConfigActivity : ComponentActivity() {
                             onExpandedChange = { accountExpanded = it },
                             selectedLabel = selectedLabel,
                             accounts = accounts,
+                            showTotalOption = true,
+                            onTotalSelected = {
+                                isTotalSelected = true
+                                selectedAccountId = ""
+                                accountExpanded = false
+                            },
                             onAccountSelected = { account ->
+                                isTotalSelected = false
                                 selectedAccountId = account.id
                                 accountExpanded = false
                             }
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // 币种下拉
+                        // 币种下拉（总余额时禁用，走聚合逻辑自动选币种）
                         var currencyExpanded by remember { mutableStateOf(false) }
                         Text(
                             text = stringResource(R.string.widget_config_currency),
@@ -116,6 +127,7 @@ class WidgetConfigActivity : ComponentActivity() {
                             onExpandedChange = { currencyExpanded = it },
                             selectedCurrency = selectedCurrency,
                             currencies = currencies,
+                            enabled = !isTotalSelected,
                             onCurrencySelected = { currency ->
                                 selectedCurrency = currency
                                 currencyExpanded = false
@@ -135,10 +147,11 @@ class WidgetConfigActivity : ComponentActivity() {
                                 Text(stringResource(R.string.home_cancel))
                             }
                             Button(onClick = {
-                                if (selectedAccountId.isNotEmpty()) {
+                                val accountId = if (isTotalSelected) WidgetConfig.TOTAL_ACCOUNT_ID else selectedAccountId
+                                if (accountId.isNotEmpty()) {
                                     WidgetConfigStore.saveConfig(
                                         this@WidgetConfigActivity, appWidgetId,
-                                        selectedAccountId, selectedCurrency
+                                        accountId, selectedCurrency
                                     )
                                     // 立即刷新 Widget
                                     val manager = AppWidgetManager.getInstance(this@WidgetConfigActivity)
@@ -169,6 +182,8 @@ private fun AccountDropdown(
     onExpandedChange: (Boolean) -> Unit,
     selectedLabel: String,
     accounts: List<com.balancesentinel.app.data.model.AccountInfo>,
+    showTotalOption: Boolean = false,
+    onTotalSelected: (() -> Unit)? = null,
     onAccountSelected: (com.balancesentinel.app.data.model.AccountInfo) -> Unit
 ) {
     ExposedDropdownMenuBox(
@@ -188,6 +203,12 @@ private fun AccountDropdown(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) }
         ) {
+            if (showTotalOption && onTotalSelected != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.widget_config_total_account)) },
+                    onClick = { onTotalSelected() }
+                )
+            }
             accounts.forEach { account ->
                 DropdownMenuItem(
                     text = { Text(account.label.ifEmpty { account.id }) },
@@ -205,23 +226,25 @@ private fun CurrencyDropdown(
     onExpandedChange: (Boolean) -> Unit,
     selectedCurrency: String,
     currencies: List<String>,
+    enabled: Boolean = true,
     onCurrencySelected: (String) -> Unit
 ) {
     ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = onExpandedChange
+        expanded = expanded && enabled,
+        onExpandedChange = { if (enabled) onExpandedChange(it) }
     ) {
         OutlinedTextField(
-            value = selectedCurrency,
+            value = if (enabled) selectedCurrency else "—",
             onValueChange = {},
             readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            enabled = enabled,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor()
         )
         ExposedDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && enabled,
             onDismissRequest = { onExpandedChange(false) }
         ) {
             currencies.forEach { currency ->

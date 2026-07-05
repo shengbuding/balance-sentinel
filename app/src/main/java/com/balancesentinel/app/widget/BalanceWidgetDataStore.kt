@@ -66,37 +66,62 @@ object BalanceWidgetDataStore {
 
     /**
      * 汇总所有可用账户的总余额。
-     * 优先使用 CNY 币种的汇总，如果没有则使用第一种币种。
+     * 按币种汇总后取总额最大的两个币种（0 总额不显示）。
      */
     fun getAggregatedBalance(context: Context): AggregatedBalance? {
         val balances = getAllBalances(context)
         if (balances.isEmpty()) return null
+        return aggregateTopTwo(balances)
+    }
 
-        // 按币种分组汇总
+    /**
+     * 从余额列表中提取总额最大的两个币种（总额为 0 的币种不显示）。
+     */
+    fun aggregateTopTwo(balances: List<AccountBalance>): AggregatedBalance? {
+        if (balances.isEmpty()) return null
+
+        // 按币种汇总
         val byCurrency = balances.groupBy { it.currency }
-        val primaryCurrency = if (byCurrency.containsKey("CNY")) "CNY" else byCurrency.keys.first()
+        val currencyTotals = byCurrency.mapValues { (_, entries) ->
+            entries.sumOf { it.totalBalance.toDoubleOrNull() ?: 0.0 }
+        }
+        // 按总额降序，取前两个非零币种
+        val sorted = currencyTotals.entries
+            .filter { it.value > 0.0 }
+            .sortedByDescending { it.value }
+            .take(2)
 
-        val total = byCurrency[primaryCurrency]?.sumOf {
-            it.totalBalance.toDoubleOrNull() ?: 0.0
-        } ?: 0.0
+        if (sorted.isEmpty()) {
+            // 所有币种总额都为 0，回退使用第一个币种
+            val first = byCurrency.keys.first()
+            return AggregatedBalance(
+                totalBalance = "0.00", currency = first,
+                isAvailable = balances.all { it.isAvailable },
+                grantedBalance = "0.00", toppedUpBalance = "0.00",
+                accountCount = balances.map { it.accountId }.distinct().size,
+                lastUpdated = balances.maxOf { it.lastUpdated }
+            )
+        }
 
-        val granted = byCurrency[primaryCurrency]?.sumOf {
-            it.grantedBalance.toDoubleOrNull() ?: 0.0
-        } ?: 0.0
+        val primary = sorted[0]
+        val total = primary.value
+        val currency = primary.key
+        val granted = byCurrency[currency]?.sumOf { it.grantedBalance.toDoubleOrNull() ?: 0.0 } ?: 0.0
+        val toppedUp = byCurrency[currency]?.sumOf { it.toppedUpBalance.toDoubleOrNull() ?: 0.0 } ?: 0.0
 
-        val toppedUp = byCurrency[primaryCurrency]?.sumOf {
-            it.toppedUpBalance.toDoubleOrNull() ?: 0.0
-        } ?: 0.0
-
-        val allAvailable = balances.all { it.isAvailable }
+        val secondary = sorted.getOrNull(1)
+        val total2 = secondary?.value ?: 0.0
+        val currency2 = secondary?.key ?: ""
 
         return AggregatedBalance(
             totalBalance = "%.2f".format(total),
-            currency = primaryCurrency,
-            isAvailable = allAvailable,
+            currency = currency,
+            totalBalance2 = if (total2 > 0) "%.2f".format(total2) else "",
+            currency2 = if (total2 > 0) currency2 else "",
+            isAvailable = balances.all { it.isAvailable },
             grantedBalance = "%.2f".format(granted),
             toppedUpBalance = "%.2f".format(toppedUp),
-            accountCount = balances.size,
+            accountCount = balances.map { it.accountId }.distinct().size,
             lastUpdated = balances.maxOf { it.lastUpdated }
         )
     }
@@ -126,6 +151,8 @@ data class AccountBalance(
 data class AggregatedBalance(
     val totalBalance: String,
     val currency: String,
+    val totalBalance2: String = "",
+    val currency2: String = "",
     val isAvailable: Boolean,
     val grantedBalance: String,
     val toppedUpBalance: String,

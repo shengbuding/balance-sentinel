@@ -442,6 +442,8 @@
     <string name="widget_config_title">Configure Widget</string>
     <string name="widget_config_account">Select Account</string>
     <string name="widget_config_currency">Select Currency</string>
+    <string name="widget_config_total_account">Total Balance (All Accounts)</string>
+    <string name="widget_title_total">Total Balance</string>
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">Welcome to Balance Sentinel</string>

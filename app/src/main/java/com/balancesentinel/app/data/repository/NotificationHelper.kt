@@ -181,9 +181,20 @@ class NotificationHelper(private val context: Context) {
         status: String,
         extraWallets: List<AccountBalance>,
         showTotal: Boolean = true,
-        totalPosition: Int = 0
+        totalPosition: Int = 0,
+        totalBalance2: String = "",
+        totalCurrency2: String = ""
     ): android.app.Notification {
         val symbol = FormatUtils.currencySymbol(totalCurrency)
+
+        // 构建总余额条目文本（可能包含两个币种）
+        val totalEntryText = buildString {
+            append(context.getString(R.string.notification_total_entry, symbol, totalBalance))
+            if (totalBalance2.isNotEmpty() && (totalBalance2.toDoubleOrNull() ?: 0.0) > 0) {
+                val symbol2 = FormatUtils.currencySymbol(totalCurrency2)
+                append(" · $symbol2$totalBalance2")
+            }
+        }
 
         // 构建余额条目列表：总余额按排序位置插入
         val entries = mutableListOf<String>()
@@ -191,7 +202,7 @@ class NotificationHelper(private val context: Context) {
         var totalInserted = false
         for (pos in 0 until (extraWallets.size + (if (showTotal) 1 else 0))) {
             if (showTotal && !totalInserted && pos == totalPosition.coerceIn(0, extraWallets.size)) {
-                entries.add(context.getString(R.string.notification_total_entry, symbol, totalBalance))
+                entries.add(totalEntryText)
                 totalInserted = true
             } else {
                 if (walletIdx < extraWallets.size) {
@@ -257,19 +268,22 @@ class NotificationHelper(private val context: Context) {
         return builder.build()
     }
 
-    /** 更新前台 Service 常驻通知（v2.5 签名）。 */
+    /** 更新前台 Service 常驻通知（v2.7 双币种签名）。 */
     fun sendBalanceNotification(
         totalBalance: String,
         totalCurrency: String,
         status: String,
         extraWallets: List<AccountBalance>,
         showTotal: Boolean = true,
-        totalPosition: Int = 0
+        totalPosition: Int = 0,
+        totalBalance2: String = "",
+        totalCurrency2: String = ""
     ) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(
             DeepSeekApp.NOTIFICATION_ID,
-            buildBalanceNotification(totalBalance, totalCurrency, status, extraWallets, showTotal, totalPosition)
+            buildBalanceNotification(totalBalance, totalCurrency, status, extraWallets, showTotal, totalPosition,
+                totalBalance2, totalCurrency2)
         )
     }
 

@@ -187,7 +187,14 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         // 读取 per-widget 配置
         val config = WidgetConfigStore.getConfig(context, widgetId)
-        val agg = if (config != null) {
+        val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
+            // 总余额模式：仅聚合当前有效账户
+            val keyManager = ApiKeyManager(context)
+            val validAccountIds = keyManager.getAccounts().map { it.id }.toSet()
+            val validBalances = BalanceWidgetDataStore.getAllBalances(context)
+                .filter { it.accountId in validAccountIds }
+            if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
+        } else if (config != null) {
             // 仅显示选定账户+币种
             val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
             val matching = accountBalances.filter {
@@ -206,30 +213,56 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 )
             } else null
         } else {
-            // 未配置 → 汇总显示（legacy）
-            BalanceWidgetDataStore.getAggregatedBalance(context)
+            // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
+            val keyManager = ApiKeyManager(context)
+            val validAccountIds = keyManager.getAccounts().map { it.id }.toSet()
+            val validBalances = BalanceWidgetDataStore.getAllBalances(context)
+                .filter { it.accountId in validAccountIds }
+            if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         }
 
         if (agg != null) {
-            val symbol = when (agg.currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> agg.currency }
-            val total = FormatUtils.formatAmount(agg.totalBalance)
+            val balanceText = formatBalanceDisplay(agg)
             val timeText = formatRefreshTime(context, agg.lastUpdated)
-            val label = if (agg.accountCount > 1) context.getString(R.string.widget_title_multi, agg.accountCount)
-                else context.getString(R.string.widget_default_title)
+
+            // 标题显示钱包来源
+            val label = when {
+                config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
+                    context.getString(R.string.widget_title_total)
+                config != null -> {
+                    val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+                    val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
+                    accLabel.ifEmpty { context.getString(R.string.widget_default_title) }
+                }
+                agg.accountCount > 1 -> context.getString(R.string.widget_title_multi, agg.accountCount)
+                else -> context.getString(R.string.widget_default_title)
+            }
 
             if (isExpanded) {
                 views.setTextViewText(R.id.widget_title, label)
                 views.setTextViewText(R.id.widget_status, if (agg.isAvailable) context.getString(R.string.widget_status_available)
                     else context.getString(R.string.widget_status_partial))
-                views.setTextViewText(R.id.widget_balance, "$symbol$total")
+                views.setTextViewText(R.id.widget_balance, balanceText)
+                val symbol = currencySymbol(agg.currency)
                 views.setTextViewText(R.id.widget_granted, context.getString(R.string.balance_granted, "$symbol${FormatUtils.formatAmount(agg.grantedBalance)}"))
                 views.setTextViewText(R.id.widget_topped_up, context.getString(R.string.balance_topped_up, "$symbol${FormatUtils.formatAmount(agg.toppedUpBalance)}"))
                 views.setTextViewText(R.id.widget_refresh_time, timeText)
                 views.setViewVisibility(R.id.widget_detail_row, android.view.View.VISIBLE)
             } else {
-                views.setTextViewText(R.id.widget_title, if (agg.accountCount > 1) context.getString(R.string.widget_title_compact_multi, agg.accountCount)
-                    else context.getString(R.string.widget_title_compact))
-                views.setTextViewText(R.id.widget_balance, "$symbol$total")
+                // 紧凑模式标题同样显示钱包来源
+                val compactLabel = when {
+                    config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
+                        context.getString(R.string.widget_title_total)
+                    config != null -> {
+                        val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+                        val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
+                        accLabel.ifEmpty { context.getString(R.string.widget_title_compact) }
+                    }
+                    agg.accountCount > 1 -> context.getString(R.string.widget_title_compact_multi, agg.accountCount)
+                    else -> context.getString(R.string.widget_title_compact)
+                }
+                views.setTextViewText(R.id.widget_title, compactLabel)
+                views.setTextViewText(R.id.widget_balance, balanceText)
                 views.setTextViewText(R.id.widget_status, if (agg.isAvailable) context.getString(R.string.widget_status_available)
                     else context.getString(R.string.widget_status_insufficient))
                 views.setTextViewText(R.id.widget_refresh_time, timeText)
@@ -413,6 +446,27 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             else -> SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
         }
     }
+
+    /**
+     * 从有效余额列表中聚合总余额（最多两个非零币种）。
+     */
+    private fun aggregateBalances(balances: List<AccountBalance>): AggregatedBalance? {
+        return BalanceWidgetDataStore.aggregateTopTwo(balances)
+    }
+
+    /** 格式化余额展示文本，双币种用 · 分隔 */
+    private fun formatBalanceDisplay(agg: AggregatedBalance): String {
+        val sb = StringBuilder()
+        sb.append("${currencySymbol(agg.currency)}${FormatUtils.formatAmount(agg.totalBalance)}")
+        val hasSecond = agg.totalBalance2.isNotEmpty() && (agg.totalBalance2.toDoubleOrNull() ?: 0.0) > 0
+        if (hasSecond) {
+            sb.append(" · ${currencySymbol(agg.currency2)}${FormatUtils.formatAmount(agg.totalBalance2)}")
+        }
+        return sb.toString()
+    }
+
+    private fun currencySymbol(currency: String): String =
+        when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
 
     companion object {
         const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"

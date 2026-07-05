@@ -186,8 +186,7 @@ class BalanceRefreshService : Service() {
                     }
 
                     val now = System.currentTimeMillis()
-                    var totalAggregated = 0.0
-                    var primaryCurrency = "CNY"
+                    val currencyTotals = mutableMapOf<String, Double>()
                     var allAvailable = true
                     var hasData = false
                     var alertCount = 0
@@ -226,16 +225,10 @@ class BalanceRefreshService : Service() {
                                     timestamp = now, message = account.label
                                 ))
 
-                                // 汇总统计（首选 CNY 币种）
-                                if (!hasData || info.currency == "CNY") {
-                                    if (info.currency == "CNY" && !hasData) {
-                                        primaryCurrency = "CNY"
-                                        totalAggregated = 0.0
-                                    }
-                                    if (info.currency == primaryCurrency) {
-                                        totalAggregated += info.totalBalance.toDoubleOrNull() ?: 0.0
-                                    }
-                                }
+                                // 按币种汇总（所有币种都计入）
+                                val amount = info.totalBalance.toDoubleOrNull() ?: 0.0
+                                currencyTotals[info.currency] = (currencyTotals[info.currency] ?: 0.0) + amount
+
                                 if (!response.isAvailable) allAvailable = false
                                 hasData = true
 
@@ -269,7 +262,17 @@ class BalanceRefreshService : Service() {
 
                     // 通知栏显示：总余额可选，额外钱包按用户排序横向附加
                     if (hasData) {
-                        val total = FormatUtils.formatAmount("%.2f".format(totalAggregated))
+                        // 取总额最大的两个非零币种
+                        val sortedTotals = currencyTotals.entries
+                            .filter { it.value > 0.0 }
+                            .sortedByDescending { it.value }
+                            .take(2)
+                        val primaryCurrency = sortedTotals.firstOrNull()?.key ?: "CNY"
+                        val total = FormatUtils.formatAmount("%.2f".format(sortedTotals.firstOrNull()?.value ?: 0.0))
+                        val secondCurrency = sortedTotals.getOrNull(1)?.key ?: ""
+                        val total2 = if (secondCurrency.isNotEmpty())
+                            FormatUtils.formatAmount("%.2f".format(sortedTotals[1].value)) else ""
+
                         val status = if (allAvailable) getString(R.string.service_notif_status_available)
                             else getString(R.string.service_notif_status_partial)
                         val showTotal = widgetPrefs.showTotalBalanceInNotification
@@ -295,7 +298,8 @@ class BalanceRefreshService : Service() {
                             widgetPrefs.getNotificationWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "") else -1
 
                         notificationHelper.sendBalanceNotification(
-                            total, primaryCurrency, status, orderedWallets, showTotal, totalPos
+                            total, primaryCurrency, status, orderedWallets, showTotal, totalPos,
+                            total2, secondCurrency
                         )
                     } else {
                         notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_no_data))
