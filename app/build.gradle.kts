@@ -1,5 +1,26 @@
 import java.util.Properties
 
+// 自动版本号：CI 环境变量 BUILD_NUMBER 优先，否则用 git commit 数
+fun gitCommitCount(): Int {
+    val ciBuild = System.getenv("BUILD_NUMBER")
+    if (!ciBuild.isNullOrBlank()) return ciBuild.toIntOrNull() ?: 1
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+            .directory(rootProject.projectDir)
+            .start()
+        process.inputStream.bufferedReader().readText().trim().toInt()
+    } catch (_: Exception) { 1 }
+}
+
+fun gitVersionName(): String {
+    return try {
+        val process = ProcessBuilder("git", "describe", "--tags", "--always", "--dirty")
+            .directory(rootProject.projectDir)
+            .start()
+        process.inputStream.bufferedReader().readText().trim()
+    } catch (_: Exception) { "1.0.0" }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,8 +44,8 @@ android {
         applicationId = "com.balancesentinel.app"
         minSdk = 35
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = gitCommitCount()
+        versionName = gitVersionName()
     }
 
     buildTypes {
