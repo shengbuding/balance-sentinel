@@ -82,6 +82,9 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
     // 通知栏钱包排序列表（驱动 UI 重组的 key）
     var orderVersion by remember { mutableStateOf(0) }
 
+    // 响应式版本号：用于在 prefs 写入后触发 UI 重组
+    var globalApplyVersion by remember { mutableStateOf(0) }
+
     BackHandler(onBack = onBack)
 
     Scaffold(
@@ -181,6 +184,20 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
             // ── 区域 2: 全局参数 ──
             SectionHeader(stringResource(R.string.alert_settings_section_global))
 
+            // 派生响应式标签（globalApplyVersion 变化时重新计算）
+            val alertCurrentLabel = key(globalApplyVersion) {
+                stringResource(R.string.settings_alert_current, prefs.alertThreshold.toInt())
+            }
+            val changeCurrentLabel = key(globalApplyVersion) {
+                stringResource(R.string.settings_alert_current, prefs.changeAlertThreshold.toInt())
+            }
+            val periodCurrentLabel = key(globalApplyVersion) {
+                if (prefs.changeAlertPeriodMinutes > 0)
+                    stringResource(R.string.settings_alert_snooze_duration_current, prefs.changeAlertPeriodMinutes)
+                else ""
+            }
+            val snoozeCurrentMinutes = key(globalApplyVersion) { prefs.snoozeDurationMinutes }
+
             // 余额预警阈值
             ThresholdCard(
                 icon = { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
@@ -189,13 +206,14 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
                 inputValue = alertThresholdInput,
                 onInputChange = { alertThresholdInput = it.filter { c -> c.isDigit() } },
                 currentValue = prefs.alertThreshold,
-                currentLabel = stringResource(R.string.settings_alert_current, prefs.alertThreshold.toInt()),
+                currentLabel = alertCurrentLabel,
                 onApply = {
                     val num = alertThresholdInput.toFloatOrNull()
                     if (num != null && num > 0f) {
                         prefs.alertThreshold = num
                         prefs.clearAllSnooze()
                         snoozeInfo = prefs.getSnoozeInfo()
+                        globalApplyVersion++
                     }
                 }
             )
@@ -208,13 +226,14 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
                 inputValue = changeThresholdInput,
                 onInputChange = { changeThresholdInput = it.filter { c -> c.isDigit() } },
                 currentValue = prefs.changeAlertThreshold,
-                currentLabel = stringResource(R.string.settings_alert_current, prefs.changeAlertThreshold.toInt()),
+                currentLabel = changeCurrentLabel,
                 onApply = {
                     val num = changeThresholdInput.toFloatOrNull()
                     if (num != null && num > 0f) {
                         prefs.changeAlertThreshold = num
                         prefs.clearAllSnooze()
                         snoozeInfo = prefs.getSnoozeInfo()
+                        globalApplyVersion++
                     }
                 }
             )
@@ -227,22 +246,22 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
                 inputValue = changePeriodInput,
                 onInputChange = { changePeriodInput = it.filter { c -> c.isDigit() } },
                 currentValue = prefs.changeAlertPeriodMinutes.toFloat(),
-                currentLabel = if (prefs.changeAlertPeriodMinutes > 0)
-                    stringResource(R.string.settings_alert_snooze_duration_current, prefs.changeAlertPeriodMinutes)
-                else "",
+                currentLabel = periodCurrentLabel,
                 onApply = {
                     val num = changePeriodInput.toIntOrNull()
                     if (num != null && num > 0) {
                         prefs.changeAlertPeriodMinutes = num
+                        globalApplyVersion++
                     }
                 }
             )
 
             // 暂停时长快选
             SnoozeDurationCard(
-                currentMinutes = prefs.snoozeDurationMinutes,
+                currentMinutes = snoozeCurrentMinutes,
                 onSelect = { minutes ->
                     prefs.snoozeDurationMinutes = minutes
+                    globalApplyVersion++
                 }
             )
         }
