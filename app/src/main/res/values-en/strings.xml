@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== App Identity ===== -->
+    <string name="app_name">Wallet Sentinel</string>
+    <string name="widget_name">Balance Widget</string>
+    <string name="widget_description">View API account balance on home screen</string>
+
+    <!-- ===== Home Screen ===== -->
+    <string name="home_title">Wallet Sentinel</string>
+    <string name="home_refresh">Refresh</string>
+    <string name="home_settings">Settings</string>
+    <string name="home_add_account">Add Account</string>
+    <string name="home_delete_account_title">Delete Account</string>
+    <string name="home_delete_account_confirm">Delete "%1$s"? Cache and alert state will be cleared.</string>
+    <string name="home_delete">Delete</string>
+    <string name="home_cancel">Cancel</string>
+    <string name="home_save">Save</string>
+    <string name="home_add">Add</string>
+    <string name="home_empty_title">No accounts yet</string>
+    <string name="home_empty_subtitle">Tap the + button to add a DeepSeek API Key</string>
+    <string name="home_no_data">No balance data</string>
+    <string name="home_query_failed">Query failed</string>
+    <string name="home_status_available">Available</string>
+    <string name="home_status_insufficient">Low</string>
+    <string name="home_service_starting">Starting…</string>
+    <string name="home_just_now">Just now</string>
+    <string name="home_minutes_ago">%1$d min ago</string>
+    <string name="home_hours_ago">%1$d hr ago</string>
+
+    <!-- ===== Add Account Dialog ===== -->
+    <string name="add_account_title">Add Account</string>
+    <string name="add_account_label">Account Name</string>
+    <string name="add_account_label_placeholder">e.g. Personal, Business</string>
+    <string name="add_account_key_label">API Key</string>
+    <string name="add_account_key_hint">Enter your API Key</string>
+    <string name="add_account_show_key">Show</string>
+    <string name="add_account_hide_key">Hide</string>
+
+    <!-- ===== Balance Card ===== -->
+    <string name="balance_total">%1$s Total Balance</string>
+    <string name="balance_granted">Granted: %1$s</string>
+    <string name="balance_topped_up">Topped Up: %1$s</string>
+
+    <!-- ===== Insights Screen ===== -->
+    <string name="insights_title">Insights</string>
+    <string name="insights_empty">No data yet\nTrend analysis will appear after balance refresh</string>
+    <string name="insights_trend_title">Balance Trend &amp; Forecast</string>
+    <string name="insights_trend_7d">7d</string>
+    <string name="insights_trend_14d">14d</string>
+    <string name="insights_trend_30d">30d</string>
+    <string name="insights_trend_90d">90d</string>
+    <string name="insights_trend_1y">1y</string>
+    <string name="insights_intraday_title">24h</string>
+    <string name="insights_daily_title">Long-term</string>
+    <string name="insights_data_insufficient">Not enough data</string>
+    <string name="insights_trend_stable">Trend stable</string>
+    <string name="insights_trend_insufficient">Insufficient data for forecast</string>
+    <string name="insights_current_balance">Current Balance</string>
+    <string name="insights_daily_consumption">Daily Usage</string>
+    <string name="insights_estimated_days">Est. Remaining</string>
+    <string name="insights_days_remaining">%.0f days</string>
+    <string name="insights_chart_value_format">%.1fK</string>
+    <string name="insights_bill_title">Billing Report</string>
+    <string name="insights_today">Today</string>
+    <string name="insights_this_week">This Week</string>
+    <string name="insights_this_month">This Month</string>
+    <string name="insights_net_prefix">Net %1$s%2$.2f</string>
+    <string name="insights_all_accounts">All Accounts</string>
+    <string name="insights_token_title">Token Usage</string>
+    <string name="insights_label_consumed">Spent</string>
+    <string name="insights_label_topped_up">Top-up</string>
+    <string name="insights_label_granted">Granted</string>
+    <string name="insights_label_chart_actual">Actual</string>
+    <string name="insights_label_chart_topup">Top-up</string>
+    <string name="insights_label_net">Net Change</string>
+    <string name="insights_period_label">Last %1$d days</string>
+    <string name="insights_estimation_method">Based on last %1$d days net-balance linear regression</string>
+
+    <!-- ===== Settings Screen ===== -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_system_status">System Status</string>
+    <string name="settings_front_service">Foreground Service</string>
+    <string name="settings_battery_opt">Battery Optimization</string>
+    <string name="settings_surviving">Alive</string>
+    <string name="settings_stopped">Stopped</string>
+    <string name="settings_disabled">Disabled</string>
+    <string name="settings_limited">Restricted</string>
+    <string name="settings_service_running">Service Running</string>
+    <string name="settings_service_stopped">Service Stopped</string>
+    <string name="settings_battery_ok">Battery Optimization Off</string>
+    <string name="settings_battery_restricted">Battery Restricted</string>
+    <string name="settings_alarm_label">Alarm</string>
+    <string name="settings_alarm_none">Alarm: None</string>
+    <string name="settings_alarm_format">Alarm: %1$s</string>
+    <string name="settings_expected_schedule">Scheduled: %1$s</string>
+    <string name="settings_delayed_format">Delayed %1$dm%2$ds</string>
+    <string name="settings_waiting">Waiting…</string>
+    <string name="settings_last_heartbeat">Last heartbeat: %1$ds ago</string>
+    <string name="settings_autorefresh_limited_title">Auto-refresh Restricted</string>
+    <string name="settings_autorefresh_limited_desc">Background service has been killed by the system. Disable battery optimization to fix:</string>
+    <string name="settings_close_battery_opt">Disable Battery Optimization</string>
+    <string name="settings_battery_guide_title">Keep Background Refresh</string>
+    <string name="settings_battery_guide_desc">Balance Sentinel needs to run in the background to auto-refresh balances. Disabling battery optimization prevents the system from killing the service. You can also change this later in Settings.</string>
+    <string name="settings_later">Later</string>
+    <string name="settings_crash_log">Crash Log (%1$d)</string>
+    <string name="settings_copy">Copy</string>
+    <string name="settings_clear">Clear</string>
+    <string name="settings_about">About</string>
+    <string name="settings_about_version">Wallet Sentinel v%1$s</string>
+    <string name="settings_about_desc">View DeepSeek API account balances on your home screen with auto-refresh and widgets.</string>
+    <string name="settings_auto_refresh">Auto Refresh</string>
+    <string name="settings_refresh_interval_label">Refresh Interval: %1$s</string>
+    <string name="settings_value">Value</string>
+    <string name="settings_minutes">min</string>
+    <string name="settings_seconds">sec</string>
+    <string name="settings_confirm">OK</string>
+    <string name="settings_current_label">Current: %1$s</string>
+    <string name="settings_balance_alert">Balance Alert</string>
+    <string name="settings_alert_threshold_label">Threshold: %1$d</string>
+    <string name="settings_alert_enable">Enable Alert</string>
+    <string name="settings_alert_hint">Send notification when balance drops below threshold</string>
+    <string name="settings_alert_amount">Alert Threshold</string>
+    <string name="settings_alert_current">Current threshold: %1$d</string>
+    <string name="settings_alert_snoozed">⚠ Alert Paused</string>
+    <string name="settings_alert_snoozed_remaining">%1$d min remaining</string>
+    <string name="settings_alert_snoozed_accounts">Paused accounts: %1$s</string>
+    <string name="settings_alert_snooze_dismiss">Resume</string>
+    <string name="settings_alert_snooze_duration_label">Snooze Duration</string>
+    <string name="settings_alert_snooze_duration_hint">How long the "Snooze" action in notifications lasts (minutes)</string>
+    <string name="settings_alert_snooze_duration_current">Current snooze duration: %1$d min</string>
+    <string name="settings_alert_snooze_duration_unit">min</string>
+    <string name="settings_alert_snooze_quick_30">30m</string>
+    <string name="settings_alert_snooze_quick_60">1h</string>
+    <string name="settings_alert_snooze_quick_120">2h</string>
+    <string name="settings_alert_snooze_quick_240">4h</string>
+    <string name="settings_alert_snooze_cleared">Alert snooze cleared</string>
+    <string name="settings_change_alert">Balance Change Alert</string>
+    <string name="settings_change_enable">Enable Change Alert</string>
+    <string name="settings_change_hint">Notify when balance changes beyond threshold within time window</string>
+    <string name="settings_change_amount">Change Amount</string>
+    <string name="settings_change_period">Time Window (min)</string>
+    <string name="settings_change_confirm">Confirm</string>
+    <string name="settings_data_management">Data Management</string>
+    <string name="settings_data_management_desc">Export / Import config and historical data</string>
+    <string name="settings_log_entry">Refresh Log</string>
+    <string name="settings_toggle_unit">Toggle Unit</string>
+
+    <!-- ===== Settings Alarm Method Labels ===== -->
+    <string name="alarm_method_alarm_clock">Alarm Clock</string>
+    <string name="alarm_method_exact">Exact Alarm</string>
+    <string name="alarm_method_inexact">Inexact Alarm (degraded)</string>
+    <string name="alarm_method_failed">Failed</string>
+    <string name="alarm_method_service_loop">Foreground Service Loop</string>
+    <string name="alarm_method_none">None</string>
+
+    <!-- ===== Settings Time/Interval Formatting ===== -->
+    <string name="interval_minutes">%1$d min</string>
+    <string name="interval_min_sec">%1$dm %2$ds</string>
+    <string name="interval_seconds">%1$ds</string>
+    <string name="change_alert_summary">Change ≥ %1$s / %2$d min</string>
+    <string name="change_alert_current">Current: ≥ %1$s / %2$d min</string>
+
+    <!-- ===== Settings Alarm Stats ===== -->
+    <string name="alarm_stats_format">Set %1$d  Fired %2$d  Overwritten %3$d  Dropped %4$d</string>
+    <string name="alarm_arrival_rate">Arrival: %1$s%% · Dropped %2$d</string>
+    <string name="alarm_arrival_rate_fired">Arrival: %1$s%% (%2$d/%3$d)</string>
+
+    <!-- ===== Log Screen ===== -->
+    <string name="log_title">Refresh Log</string>
+    <string name="log_export">Export Log</string>
+    <string name="log_clear">Clear Log</string>
+    <string name="log_all">All</string>
+    <string name="log_manual">Manual</string>
+    <string name="log_auto">Auto</string>
+    <string name="log_schedule">Schedule</string>
+    <string name="log_missed">Missed</string>
+    <string name="log_service">Service</string>
+    <string name="log_watchdog">Watchdog</string>
+    <string name="log_total_records">%1$d records</string>
+    <string name="log_missed_count">%1$d missed</string>
+    <string name="log_no_logs">No logs</string>
+    <string name="log_max_limit">Storage limit: %1$d entries</string>
+    <string name="log_modify">Modify</string>
+    <string name="log_show_all">Show All (%1$d entries)</string>
+    <string name="log_collapse">Collapse</string>
+    <string name="log_range">Range: 10–1000 entries</string>
+    <string name="log_entries_label">Log Entries</string>
+    <string name="log_manual_label">Manual</string>
+    <string name="log_auto_label">Auto</string>
+    <string name="log_failed_schedule">Schedule Failed</string>
+    <string name="log_degraded_schedule">Schedule Degraded</string>
+    <string name="log_scheduled">Scheduled</string>
+    <string name="log_missed_refresh">Missed Refresh</string>
+    <string name="log_service_died">Service Died</string>
+    <string name="log_service_start_label">Service Started</string>
+    <string name="log_service_start_message">Foreground refresh service started</string>
+    <string name="log_watchdog_label">Watchdog</string>
+    <string name="log_crash_log">Crash Log (%1$d)</string>
+    <string name="log_exported_toast">Log exported: %1$s</string>
+
+    <!-- ===== Data Management Screen ===== -->
+    <string name="data_title">Data Management</string>
+    <string name="data_back">Back</string>
+    <string name="data_export_history_title">Export History Data</string>
+    <string name="data_export_history_desc">Export daily summaries and raw records as a JSON file</string>
+    <string name="data_export_btn">Export Data</string>
+    <string name="data_export_config_title">Export Config</string>
+    <string name="data_export_config_desc">Export all accounts and settings as a JSON file for backup or migration</string>
+    <string name="data_export_config_btn">Export Config</string>
+    <string name="data_import_config_title">Import Config</string>
+    <string name="data_import_config_desc">Import accounts and settings from a JSON file (overwrites current config)</string>
+    <string name="data_import_config_btn">Import Config</string>
+    <string name="data_debug_report_title">Debug Report</string>
+    <string name="data_debug_report_desc">Export system status, logs, crashes, and device info as a text file</string>
+    <string name="data_debug_report_btn">Export Report</string>
+    <string name="data_export_success">Data exported</string>
+    <string name="data_export_fail">Export failed</string>
+    <string name="data_no_data">No data to export</string>
+    <string name="data_config_export_success">Config exported</string>
+    <string name="data_config_export_fail">Export failed</string>
+    <string name="data_config_import_success">Config imported (%1$d accounts)</string>
+    <string name="data_config_import_fail">Import failed: could not parse config file</string>
+    <string name="data_debug_report_success">Debug report exported: %1$s</string>
+    <string name="data_export_exception">Export exception: %1$s</string>
+
+    <!-- ===== Data Management: Storage Stats ===== -->
+    <string name="data_storage_stats_title">Storage Statistics</string>
+    <string name="data_stat_empty">No data yet</string>
+    <string name="data_stat_raw_records">Raw Records</string>
+    <string name="data_stat_raw_records_value">%1$d records (%2$d days)</string>
+    <string name="data_stat_daily_summaries">Daily Summaries</string>
+    <string name="data_stat_usage_snapshots">Usage Snapshots</string>
+    <string name="data_stat_refresh_logs">Refresh Logs</string>
+    <string name="data_stat_widget_errors">Widget Errors</string>
+    <string name="data_stat_widget_balances">Widget Balance Cache</string>
+    <string name="data_stat_crash_logs">Crash Logs</string>
+    <string name="data_stat_alarm_counters">Alarm Counters</string>
+    <string name="data_stat_alarm_set">Set</string>
+    <string name="data_stat_alarm_fired">Fired</string>
+    <string name="data_stat_alarm_cancel">Cancel</string>
+    <string name="data_stat_alarm_drop">Drop</string>
+
+    <!-- ===== Data Management: Sections ===== -->
+    <string name="data_section_clear">Clear Data</string>
+    <string name="data_section_reset">Reset</string>
+    <string name="data_section_export_import">Export / Import</string>
+
+    <!-- ===== Data Management: Clear Actions ===== -->
+    <string name="data_clear_raw_records_title">Clear Raw Records</string>
+    <string name="data_clear_raw_records_desc">Delete all raw balance snapshots returned by the API</string>
+    <string name="data_clear_raw_records_btn">Clear</string>
+    <string name="data_clear_summaries_title">Clear Daily Summaries</string>
+    <string name="data_clear_summaries_desc">Delete all daily balance summaries and trend data</string>
+    <string name="data_clear_summaries_btn">Clear</string>
+    <string name="data_clear_usage_title">Clear Usage Snapshots</string>
+    <string name="data_clear_usage_desc">Delete all token consumption usage data</string>
+    <string name="data_clear_usage_btn">Clear</string>
+    <string name="data_clear_logs_title">Clear Refresh Logs</string>
+    <string name="data_clear_logs_desc">Delete all auto-refresh log entries</string>
+    <string name="data_clear_logs_btn">Clear</string>
+    <string name="data_clear_widget_errors_title">Clear Widget Error Logs</string>
+    <string name="data_clear_widget_errors_desc">Delete all widget rendering error records</string>
+    <string name="data_clear_widget_errors_btn">Clear</string>
+
+    <!-- ===== Data Management: Reset Actions ===== -->
+    <string name="data_reset_alarm_title">Reset Alarm Counters</string>
+    <string name="data_reset_alarm_desc">Reset set/fired/cancelled/dropped counters to zero</string>
+    <string name="data_reset_alarm_btn">Reset</string>
+    <string name="data_reset_settings_title">Reset All Settings</string>
+    <string name="data_reset_settings_desc">Restore widget settings, refresh interval, and alert thresholds to defaults</string>
+    <string name="data_reset_settings_btn">Reset</string>
+    <string name="data_reset_app_title">Reset Entire App</string>
+    <string name="data_reset_app_desc">Clear all data, reset all settings, remove all accounts. This cannot be undone!</string>
+    <string name="data_reset_app_btn">Reset Everything</string>
+
+    <!-- ===== Data Management: Confirm Dialog ===== -->
+    <string name="data_confirm_title">Confirm Action</string>
+    <string name="data_confirm">Confirm</string>
+    <string name="data_cancel">Cancel</string>
+    <string name="data_confirm_clear_records">Are you sure you want to clear all raw balance records? This cannot be undone.</string>
+    <string name="data_confirm_clear_summaries">Are you sure you want to clear all daily summaries? This cannot be undone.</string>
+    <string name="data_confirm_clear_usage">Are you sure you want to clear all usage snapshots? This cannot be undone.</string>
+    <string name="data_confirm_clear_logs">Are you sure you want to clear all refresh logs? This cannot be undone.</string>
+    <string name="data_confirm_clear_widget_errors">Are you sure you want to clear all widget error logs?</string>
+    <string name="data_confirm_reset_alarm">Are you sure you want to reset alarm counters?</string>
+    <string name="data_confirm_reset_settings">Are you sure you want to reset all settings to defaults? Widget configs will be cleared.</string>
+    <string name="data_confirm_reset_app">Are you sure you want to reset the entire app? All data, settings, and accounts will be permanently deleted. This cannot be undone!</string>
+
+    <!-- ===== Data Management: Toast ===== -->
+    <string name="data_cleared_toast">Data cleared</string>
+    <string name="data_reset_toast">Reset complete</string>
+    <string name="data_reset_app_toast">App has been completely reset</string>
+
+    <!-- ===== Notification Channels ===== -->
+    <string name="channel_service_name">Balance Monitor</string>
+    <string name="channel_service_desc">Wallet Sentinel balance refresh status</string>
+    <string name="channel_alert_name">Balance Alert</string>
+    <string name="channel_alert_desc">Push notification when balance drops below threshold</string>
+    <string name="channel_usage_name">Usage Stats</string>
+    <string name="channel_usage_desc">Token consumption and usage summary notifications</string>
+
+    <!-- ===== Alert Notifications ===== -->
+    <string name="alert_low_title">Wallet Sentinel - Low Balance</string>
+    <string name="alert_low_content">%1$s balance %2$s%3$.4f, below threshold %2$s%4$.0f</string>
+    <string name="alert_change_title">Wallet Sentinel - Balance Change</string>
+    <string name="alert_change_increased">increased</string>
+    <string name="alert_change_decreased">decreased</string>
+    <string name="alert_change_content">%1$s balance %2$s by %3$s%4$.2f (%5$s%6$.4f → %5$s%7$.4f) in %8$d min</string>
+    <string name="alert_action_view">View Details</string>
+    <string name="alert_action_snooze">Snooze 1h</string>
+    <string name="alert_group_title">Wallet Sentinel - Alert Summary</string>
+    <string name="alert_group_content">%1$d account(s) low balance, %2$d account(s) changed</string>
+
+    <!-- ===== Widget Text ===== -->
+    <string name="widget_default_title">Wallet Sentinel</string>
+    <string name="widget_title_multi">Wallet Sentinel (%1$d)</string>
+    <string name="widget_title_compact">Sentinel</string>
+    <string name="widget_title_compact_multi">Sentinel x%1$d</string>
+    <string name="widget_status_available">Available</string>
+    <string name="widget_status_partial">Partial</string>
+    <string name="widget_status_insufficient">Low</string>
+    <string name="widget_query_balance">Check Balance</string>
+    <string name="widget_button_refresh">%(1$d accounts)</string>
+    <string name="widget_refresh_manual">Widget manual refresh %(1$d accounts)</string>
+    <string name="widget_refresh_watchdog">Watchdog: refreshed %1$d accounts</string>
+    <string name="widget_watchdog_restarted">Watchdog: service dead, force restarted</string>
+    <string name="widget_watchdog_restart_fail">Watchdog: restart failed (system blocked: %1$s)</string>
+    <string name="widget_watchdog_alarm_set">Watchdog alarm set</string>
+    <string name="widget_watchdog_alarm_fail">Alarm setup failed</string>
+    <string name="widget_no_alarm_manager">Cannot get AlarmManager</string>
+
+    <!-- ===== Service Notification ===== -->
+    <string name="service_notif_connecting">Connecting…</string>
+    <string name="service_notif_add_key">Please add an API Key in the app</string>
+    <string name="service_notif_no_data">No balance data</string>
+    <string name="service_notif_query_failed">Query failed</string>
+    <string name="service_notif_status_available">Available</string>
+    <string name="service_notif_status_partial">Partially Low</string>
+    <string name="service_started_message">Foreground refresh service started</string>
+    <string name="service_stopped_message">Refresh service stopped (auto-refresh unavailable)</string>
+    <string name="service_killed_message">Killed by system %1$d times. OnePlus/ColorOS may freeze the app in background.</string>
+    <string name="service_not_running_hint">Service not running. Disable battery optimization below to fix.</string>
+
+    <!-- ===== KeepAlive ===== -->
+    <string name="keepalive_thawed">KeepAlive detected freeze, restarted via foreground service</string>
+    <string name="keepalive_restart_fail">KeepAlive restart failed: %1$s</string>
+
+    <!-- ===== API Errors ===== -->
+    <string name="api_error_401">Invalid API Key (401 Unauthorized)</string>
+    <string name="api_error_429">Too many requests, please try later (429)</string>
+    <string name="api_error_usage_401">Invalid API Key (401)</string>
+    <string name="api_error_usage_429">Too many requests (429)</string>
+    <string name="api_error_generic">API error %1$d: %2$s</string>
+    <string name="api_error_usage_generic">API error %1$d</string>
+    <string name="api_error_network">Network error: %1$s - %2$s</string>
+    <string name="api_error_network_no_detail">No detail</string>
+    <string name="api_error_usage_fail">Usage query failed: %1$s</string>
+    <string name="api_error_request_fail">Request failed</string>
+
+    <!-- ===== Error / Status (existing IDs preserved) ===== -->
+    <string name="api_key_label">API Key</string>
+    <string name="api_key_hint">Enter your API Key</string>
+    <string name="save">Save</string>
+    <string name="refresh">Refresh</string>
+    <string name="balance">Balance</string>
+    <string name="granted">Granted</string>
+    <string name="topped_up">Topped Up</string>
+    <string name="available">Available</string>
+    <string name="unavailable">Unavailable</string>
+    <string name="error_network">Network error, check connection</string>
+    <string name="error_auth">Invalid API Key</string>
+    <string name="loading">Loading…</string>
+    <string name="no_key">Please set API Key first</string>
+    <string name="service_running">Service Running</string>
+    <string name="service_stopped">Service Stopped</string>
+    <string name="battery_ok">Battery Optimization Off</string>
+    <string name="battery_restricted">Battery Restricted</string>
+
+    <!-- ===== Time Formatting ===== -->
+    <string name="time_just_now">Just now</string>
+    <string name="time_minutes_ago">%1$dm ago</string>
+    <string name="time_hours_ago">%1$dh ago</string>
+    <string name="time_month_day_format">MMM d</string>
+    <string name="time_date_format">MM-dd HH:mm</string>
+
+    <!-- ===== Currency ===== -->
+    <string name="currency_cny">¥</string>
+    <string name="currency_usd">$</string>
+    <string name="currency_eur">€</string>
+
+    <!-- ===== Widget Config ===== -->
+    <string name="widget_config_title">Configure Widget</string>
+    <string name="widget_config_account">Select Account</string>
+    <string name="widget_config_currency">Select Currency</string>
+
+    <!-- ===== Misc ===== -->
+    <string name="default_account_label">Default Account</string>
+</resources>

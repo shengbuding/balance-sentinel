@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== App Identity (existing IDs preserved) ===== -->
+    <string name="app_name">钱包哨兵</string>
+    <string name="widget_name">余额小组件</string>
+    <string name="widget_description">在桌面查看 API 账户余额</string>
+
+    <!-- ===== Home Screen ===== -->
+    <string name="home_title">钱包哨兵</string>
+    <string name="home_refresh">刷新</string>
+    <string name="home_settings">设置</string>
+    <string name="home_add_account">添加账户</string>
+    <string name="home_delete_account_title">删除账户</string>
+    <string name="home_delete_account_confirm">确定要删除「%1$s」吗？该账户的缓存和预警状态将被清除。</string>
+    <string name="home_delete">删除</string>
+    <string name="home_cancel">取消</string>
+    <string name="home_save">保存</string>
+    <string name="home_add">添加</string>
+    <string name="home_empty_title">还没有添加账户</string>
+    <string name="home_empty_subtitle">点击右下角 + 按钮添加 DeepSeek API Key</string>
+    <string name="home_no_data">暂无余额数据</string>
+    <string name="home_query_failed">查询失败</string>
+    <string name="home_status_available">可用</string>
+    <string name="home_status_insufficient">不足</string>
+    <string name="home_service_starting">启动中…</string>
+    <string name="home_just_now">刚刚刷新</string>
+    <string name="home_minutes_ago">%1$d 分钟前</string>
+    <string name="home_hours_ago">%1$d 小时前</string>
+
+    <!-- ===== Add Account Dialog ===== -->
+    <string name="add_account_title">添加账户</string>
+    <string name="add_account_label">账户名称</string>
+    <string name="add_account_label_placeholder">例如：个人号、企业号</string>
+    <string name="add_account_key_label">API Key</string>
+    <string name="add_account_key_hint">输入你的 API Key</string>
+    <string name="add_account_show_key">显示</string>
+    <string name="add_account_hide_key">隐藏</string>
+
+    <!-- ===== Balance Card ===== -->
+    <string name="balance_total">%1$s 总余额</string>
+    <string name="balance_granted">赠送: %1$s</string>
+    <string name="balance_topped_up">充值: %1$s</string>
+
+    <!-- ===== Insights Screen ===== -->
+    <string name="insights_title">洞察</string>
+    <string name="insights_empty">暂无数据\n刷新余额后将在此展示趋势分析</string>
+    <string name="insights_trend_title">余额趋势与预估</string>
+    <string name="insights_trend_7d">7天</string>
+    <string name="insights_trend_14d">14天</string>
+    <string name="insights_trend_30d">30天</string>
+    <string name="insights_trend_90d">90天</string>
+    <string name="insights_trend_1y">1年</string>
+    <string name="insights_intraday_title">24小时</string>
+    <string name="insights_daily_title">长期趋势</string>
+    <string name="insights_data_insufficient">数据不足</string>
+    <string name="insights_trend_stable">趋势稳定</string>
+    <string name="insights_trend_insufficient">数据不足，无法预估</string>
+    <string name="insights_current_balance">当前余额</string>
+    <string name="insights_daily_consumption">日均消费</string>
+    <string name="insights_estimated_days">预计可用</string>
+    <string name="insights_days_remaining">%.0f 天</string>
+    <string name="insights_chart_value_format">%.1f万</string>
+    <string name="insights_bill_title">账单报表</string>
+    <string name="insights_today">今日</string>
+    <string name="insights_this_week">本周</string>
+    <string name="insights_this_month">本月</string>
+    <string name="insights_net_prefix">净%1$s%2$.2f</string>
+    <string name="insights_all_accounts">全部账户</string>
+    <string name="insights_token_title">Token 消耗</string>
+    <string name="insights_label_consumed">消耗</string>
+    <string name="insights_label_topped_up">充值</string>
+    <string name="insights_label_granted">赠送</string>
+    <string name="insights_label_chart_actual">实际余额</string>
+    <string name="insights_label_chart_topup">充值/赠送</string>
+    <string name="insights_label_net">净变化</string>
+    <string name="insights_period_label">最近%1$d天</string>
+    <string name="insights_estimation_method">基于最近%1$d天净余额线性回归</string>
+
+    <!-- ===== Settings Screen ===== -->
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_system_status">系统状态</string>
+    <string name="settings_front_service">前台服务</string>
+    <string name="settings_battery_opt">电池优化</string>
+    <string name="settings_surviving">存活</string>
+    <string name="settings_stopped">已停止</string>
+    <string name="settings_disabled">已关闭</string>
+    <string name="settings_limited">限制中</string>
+    <string name="settings_service_running">服务运行中</string>
+    <string name="settings_service_stopped">服务已停止</string>
+    <string name="settings_battery_ok">电池优化已关闭</string>
+    <string name="settings_battery_restricted">电池受限</string>
+    <string name="settings_alarm_label">闹钟</string>
+    <string name="settings_alarm_none">闹钟: 无</string>
+    <string name="settings_alarm_format">闹钟: %1$s</string>
+    <string name="settings_expected_schedule">预定: %1$s</string>
+    <string name="settings_delayed_format">已延迟 %1$d分%2$d秒</string>
+    <string name="settings_waiting">等待中…</string>
+    <string name="settings_last_heartbeat">最后心跳: %1$d 秒前</string>
+    <string name="settings_autorefresh_limited_title">自动刷新被系统限制</string>
+    <string name="settings_autorefresh_limited_desc">检测到后台服务被系统杀死。关闭电池优化可解决此问题：</string>
+    <string name="settings_close_battery_opt">关闭电池优化</string>
+    <string name="settings_battery_guide_title">保持后台刷新</string>
+    <string name="settings_battery_guide_desc">钱包哨兵需要后台运行才能自动刷新余额。关闭电池优化可防止系统在后台杀死服务。您也可以稍后在设置中关闭。</string>
+    <string name="settings_later">稍后再说</string>
+    <string name="settings_crash_log">崩溃日志 (%1$d)</string>
+    <string name="settings_copy">复制</string>
+    <string name="settings_clear">清除</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_version">钱包哨兵 v%1$s</string>
+    <string name="settings_about_desc">在桌面查看 DeepSeek API 账户余额，支持自动刷新和小组件。</string>
+    <string name="settings_auto_refresh">自动刷新</string>
+    <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
+    <string name="settings_value">数值</string>
+    <string name="settings_minutes">分钟</string>
+    <string name="settings_seconds">秒</string>
+    <string name="settings_confirm">确定</string>
+    <string name="settings_current_label">当前: %1$s</string>
+    <string name="settings_balance_alert">余额预警</string>
+    <string name="settings_alert_threshold_label">阈值: %1$d</string>
+    <string name="settings_alert_enable">启用预警</string>
+    <string name="settings_alert_hint">当余额低于以下金额时发送通知</string>
+    <string name="settings_alert_amount">预警金额</string>
+    <string name="settings_alert_current">当前阈值: %1$d</string>
+    <string name="settings_alert_snoozed">⚠ 预警已暂停</string>
+    <string name="settings_alert_snoozed_remaining">剩余 %1$d 分钟</string>
+    <string name="settings_alert_snoozed_accounts">已暂停账户: %1$s</string>
+    <string name="settings_alert_snooze_dismiss">解除暂停</string>
+    <string name="settings_alert_snooze_duration_label">暂停时长</string>
+    <string name="settings_alert_snooze_duration_hint">用户通知中选择暂停后生效的时长（分钟）</string>
+    <string name="settings_alert_snooze_duration_current">当前暂停时长: %1$d 分钟</string>
+    <string name="settings_alert_snooze_duration_unit">分钟</string>
+    <string name="settings_alert_snooze_quick_30">30分</string>
+    <string name="settings_alert_snooze_quick_60">1小时</string>
+    <string name="settings_alert_snooze_quick_120">2小时</string>
+    <string name="settings_alert_snooze_quick_240">4小时</string>
+    <string name="settings_alert_snooze_cleared">已解除预警暂停</string>
+    <string name="settings_change_alert">异动提醒</string>
+    <string name="settings_change_enable">启用异动提醒</string>
+    <string name="settings_change_hint">当余额在指定时间内变动超过设定金额时发送通知</string>
+    <string name="settings_change_amount">变动金额</string>
+    <string name="settings_change_period">时间窗口（分钟）</string>
+    <string name="settings_change_confirm">确认设置</string>
+    <string name="settings_data_management">数据管理</string>
+    <string name="settings_data_management_desc">导出/导入配置与历史数据</string>
+    <string name="settings_log_entry">刷新日志</string>
+    <string name="settings_toggle_unit">切换单位</string>
+
+    <!-- ===== Settings Alarm Method Labels ===== -->
+    <string name="alarm_method_alarm_clock">系统闹钟级</string>
+    <string name="alarm_method_exact">精确闹钟</string>
+    <string name="alarm_method_inexact">普通闹钟 (降级)</string>
+    <string name="alarm_method_failed">失败</string>
+    <string name="alarm_method_service_loop">前台服务循环</string>
+    <string name="alarm_method_none">无</string>
+
+    <!-- ===== Settings Time/Interval Formatting ===== -->
+    <string name="interval_minutes">%1$d分钟</string>
+    <string name="interval_min_sec">%1$d分%2$d秒</string>
+    <string name="interval_seconds">%1$d秒</string>
+    <string name="change_alert_summary">变动 &gt;= %1$s / %2$d分钟</string>
+    <string name="change_alert_current">当前: &gt;= %1$s / %2$d分钟</string>
+
+    <!-- ===== Settings Alarm Stats ===== -->
+    <string name="alarm_stats_format">设%1$d 触发%2$d 覆盖%3$d 丢弃%4$d</string>
+    <string name="alarm_arrival_rate">到达: %1$s%% · 丢弃%2$d</string>
+    <string name="alarm_arrival_rate_fired">到达: %1$s%% (%2$d/%3$d)</string>
+
+    <!-- ===== Log Screen ===== -->
+    <string name="log_title">刷新日志</string>
+    <string name="log_export">导出日志</string>
+    <string name="log_clear">清除日志</string>
+    <string name="log_all">全部</string>
+    <string name="log_manual">手动</string>
+    <string name="log_auto">自动</string>
+    <string name="log_schedule">调度</string>
+    <string name="log_missed">遗漏</string>
+    <string name="log_service">服务</string>
+    <string name="log_watchdog">看门狗</string>
+    <string name="log_total_records">共 %1$d 条记录</string>
+    <string name="log_missed_count">%1$d 次遗漏</string>
+    <string name="log_no_logs">暂无日志</string>
+    <string name="log_max_limit">存储上限: %1$d 条</string>
+    <string name="log_modify">修改</string>
+    <string name="log_show_all">查看全部 (%1$d 条)</string>
+    <string name="log_collapse">收起</string>
+    <string name="log_range">范围: 10-1000 条</string>
+    <string name="log_entries_label">日志条数</string>
+    <string name="log_manual_label">手动</string>
+    <string name="log_auto_label">自动</string>
+    <string name="log_failed_schedule">调度失败</string>
+    <string name="log_degraded_schedule">调度降级</string>
+    <string name="log_scheduled">已设闹钟</string>
+    <string name="log_missed_refresh">刷新遗漏</string>
+    <string name="log_service_died">服务死亡</string>
+    <string name="log_service_start_label">服务启动</string>
+    <string name="log_service_start_message">前台刷新服务已启动</string>
+    <string name="log_watchdog_label">看门狗</string>
+    <string name="log_crash_log">崩溃日志 (%1$d)</string>
+    <string name="log_exported_toast">日志已导出: %1$s</string>
+
+    <!-- ===== Data Management Screen ===== -->
+    <string name="data_title">数据管理</string>
+    <string name="data_back">返回</string>
+    <string name="data_export_history_title">导出历史数据</string>
+    <string name="data_export_history_desc">导出日摘要和原始刷新记录为 JSON 文件</string>
+    <string name="data_export_btn">导出数据</string>
+    <string name="data_export_config_title">导出配置</string>
+    <string name="data_export_config_desc">导出所有账户和设置为 JSON 文件，用于备份或迁移</string>
+    <string name="data_export_config_btn">导出配置</string>
+    <string name="data_import_config_title">导入配置</string>
+    <string name="data_import_config_desc">从 JSON 文件导入账户和设置（将覆盖当前配置）</string>
+    <string name="data_import_config_btn">导入配置</string>
+    <string name="data_debug_report_title">调试报告</string>
+    <string name="data_debug_report_desc">导出系统状态、日志、崩溃和设备信息为文本文件</string>
+    <string name="data_debug_report_btn">导出报告</string>
+    <string name="data_export_success">数据已导出</string>
+    <string name="data_export_fail">导出失败</string>
+    <string name="data_no_data">暂无数据可导出</string>
+    <string name="data_config_export_success">配置已导出</string>
+    <string name="data_config_export_fail">导出失败</string>
+    <string name="data_config_import_success">配置已导入 (%1$d 个账户)</string>
+    <string name="data_config_import_fail">导入失败：无法解析配置文件</string>
+    <string name="data_debug_report_success">调试报告已导出: %1$s</string>
+    <string name="data_export_exception">导出异常: %1$s</string>
+
+    <!-- ===== Data Management: Storage Stats ===== -->
+    <string name="data_storage_stats_title">存储统计</string>
+    <string name="data_stat_empty">暂无数据</string>
+    <string name="data_stat_raw_records">原始记录</string>
+    <string name="data_stat_raw_records_value">%1$d 条 (%2$d 天)</string>
+    <string name="data_stat_daily_summaries">日摘要</string>
+    <string name="data_stat_usage_snapshots">用量快照</string>
+    <string name="data_stat_refresh_logs">刷新日志</string>
+    <string name="data_stat_widget_errors">小组件错误</string>
+    <string name="data_stat_widget_balances">小组件余额缓存</string>
+    <string name="data_stat_crash_logs">崩溃日志</string>
+    <string name="data_stat_alarm_counters">闹钟计数器</string>
+    <string name="data_stat_alarm_set">设置</string>
+    <string name="data_stat_alarm_fired">触发</string>
+    <string name="data_stat_alarm_cancel">覆盖</string>
+    <string name="data_stat_alarm_drop">丢弃</string>
+
+    <!-- ===== Data Management: Sections ===== -->
+    <string name="data_section_clear">清除数据</string>
+    <string name="data_section_reset">重置</string>
+    <string name="data_section_export_import">导出 / 导入</string>
+
+    <!-- ===== Data Management: Clear Actions ===== -->
+    <string name="data_clear_raw_records_title">清除原始记录</string>
+    <string name="data_clear_raw_records_desc">删除所有 API 返回的原始余额快照</string>
+    <string name="data_clear_raw_records_btn">清除</string>
+    <string name="data_clear_summaries_title">清除日摘要</string>
+    <string name="data_clear_summaries_desc">删除所有每日余额摘要和趋势数据</string>
+    <string name="data_clear_summaries_btn">清除</string>
+    <string name="data_clear_usage_title">清除用量快照</string>
+    <string name="data_clear_usage_desc">删除所有 Token 消耗用量数据</string>
+    <string name="data_clear_usage_btn">清除</string>
+    <string name="data_clear_logs_title">清除刷新日志</string>
+    <string name="data_clear_logs_desc">删除所有自动刷新日志条目</string>
+    <string name="data_clear_logs_btn">清除</string>
+    <string name="data_clear_widget_errors_title">清除小组件错误日志</string>
+    <string name="data_clear_widget_errors_desc">删除所有小组件渲染错误记录</string>
+    <string name="data_clear_widget_errors_btn">清除</string>
+
+    <!-- ===== Data Management: Reset Actions ===== -->
+    <string name="data_reset_alarm_title">重置闹钟计数器</string>
+    <string name="data_reset_alarm_desc">将闹钟设置/触发/覆盖/丢弃计数器归零</string>
+    <string name="data_reset_alarm_btn">重置</string>
+    <string name="data_reset_settings_title">重置全部设置</string>
+    <string name="data_reset_settings_desc">恢复小组件设置、刷新间隔、预警阈值到默认值</string>
+    <string name="data_reset_settings_btn">重置</string>
+    <string name="data_reset_app_title">重置整个应用</string>
+    <string name="data_reset_app_desc">清除所有数据、重置所有设置、删除所有账户。此操作不可撤销！</string>
+    <string name="data_reset_app_btn">重置全部</string>
+
+    <!-- ===== Data Management: Confirm Dialog ===== -->
+    <string name="data_confirm_title">确认操作</string>
+    <string name="data_confirm">确认</string>
+    <string name="data_cancel">取消</string>
+    <string name="data_confirm_clear_records">确定要清除所有原始余额记录吗？此操作不可撤销。</string>
+    <string name="data_confirm_clear_summaries">确定要清除所有日摘要吗？此操作不可撤销。</string>
+    <string name="data_confirm_clear_usage">确定要清除所有用量快照吗？此操作不可撤销。</string>
+    <string name="data_confirm_clear_logs">确定要清除所有刷新日志吗？此操作不可撤销。</string>
+    <string name="data_confirm_clear_widget_errors">确定要清除所有小组件错误日志吗？</string>
+    <string name="data_confirm_reset_alarm">确定要重置闹钟计数器吗？</string>
+    <string name="data_confirm_reset_settings">确定要重置所有设置到默认值吗？小组件配置将被清除。</string>
+    <string name="data_confirm_reset_app">确定要重置整个应用吗？所有数据、设置和账户将被永久删除，此操作不可撤销！</string>
+
+    <!-- ===== Data Management: Toast ===== -->
+    <string name="data_cleared_toast">数据已清除</string>
+    <string name="data_reset_toast">已重置</string>
+    <string name="data_reset_app_toast">应用已完全重置</string>
+
+    <!-- ===== Notification Channels ===== -->
+    <string name="channel_service_name">余额监控</string>
+    <string name="channel_service_desc">钱包哨兵余额刷新状态</string>
+    <string name="channel_alert_name">余额预警</string>
+    <string name="channel_alert_desc">余额低于设定阈值时推送预警</string>
+    <string name="channel_usage_name">用量统计</string>
+    <string name="channel_usage_desc">Token 消耗和用量摘要通知</string>
+
+    <!-- ===== Alert Notifications ===== -->
+    <string name="alert_low_title">钱包哨兵 - 余额不足预警</string>
+    <string name="alert_low_content">%1$s当前余额 %2$s%3$.4f，低于预警阈值 %2$s%4$.0f</string>
+    <string name="alert_change_title">钱包哨兵 - 余额异动提醒</string>
+    <string name="alert_change_increased">增加</string>
+    <string name="alert_change_decreased">减少</string>
+    <string name="alert_change_content">%1$s余额%2$s %3$s%4$.2f（%5$s%6$.4f → %5$s%7$.4f），%8$d分钟内变动触发提醒</string>
+    <string name="alert_action_view">查看详情</string>
+    <string name="alert_action_snooze">暂停预警</string>
+    <string name="alert_group_title">钱包哨兵 - 余额预警汇总</string>
+    <string name="alert_group_content">%1$d 个账户触发余额预警，%2$d 个账户触发异动提醒</string>
+
+    <!-- ===== Widget Text ===== -->
+    <string name="widget_default_title">钱包哨兵</string>
+    <string name="widget_title_multi">钱包哨兵 (%1$d)</string>
+    <string name="widget_title_compact">哨兵</string>
+    <string name="widget_title_compact_multi">哨兵x%1$d</string>
+    <string name="widget_status_available">可用</string>
+    <string name="widget_status_partial">部分不足</string>
+    <string name="widget_status_insufficient">不足</string>
+    <string name="widget_query_balance">查询余额</string>
+    <string name="widget_button_refresh">%(1$d 个账户)</string>
+    <string name="widget_refresh_manual">小组件手动刷新 %(1$d 个账户)</string>
+    <string name="widget_refresh_watchdog">看门狗：已刷新 %1$d 个账户</string>
+    <string name="widget_watchdog_restarted">看门狗：服务已死，已强制重启</string>
+    <string name="widget_watchdog_restart_fail">看门狗：重启失败（系统阻止: %1$s）</string>
+    <string name="widget_watchdog_alarm_set">看门狗闹钟已设定</string>
+    <string name="widget_watchdog_alarm_fail">闹钟设置失败</string>
+    <string name="widget_no_alarm_manager">无法获取 AlarmManager</string>
+
+    <!-- ===== Service Notification ===== -->
+    <string name="service_notif_connecting">连接中…</string>
+    <string name="service_notif_add_key">请在 App 中添加 API Key</string>
+    <string name="service_notif_no_data">无余额数据</string>
+    <string name="service_notif_query_failed">查询失败</string>
+    <string name="service_notif_status_available">可用</string>
+    <string name="service_notif_status_partial">部分不足</string>
+    <string name="service_started_message">前台刷新服务已启动</string>
+    <string name="service_stopped_message">前台刷新服务已停止（无法自动刷新）</string>
+    <string name="service_killed_message">已被系统杀死 %1$d 次。OnePlus/ColorOS 可能在后台自动冻结应用。</string>
+    <string name="service_not_running_hint">服务未运行。点击下方按钮关闭电池优化可解决</string>
+
+    <!-- ===== KeepAlive ===== -->
+    <string name="keepalive_thawed">KeepAlive 检测到服务冻结，已通过前台服务重启</string>
+    <string name="keepalive_restart_fail">KeepAlive 重启失败: %1$s</string>
+
+    <!-- ===== API Errors ===== -->
+    <string name="api_error_401">API Key 无效 (401 Unauthorized)</string>
+    <string name="api_error_429">请求过于频繁，请稍后再试 (429)</string>
+    <string name="api_error_usage_401">API Key 无效 (401)</string>
+    <string name="api_error_usage_429">请求过于频繁 (429)</string>
+    <string name="api_error_generic">API 返回错误 %1$d: %2$s</string>
+    <string name="api_error_usage_generic">API 返回错误 %1$d</string>
+    <string name="api_error_network">网络错误: %1$s — %2$s</string>
+    <string name="api_error_network_no_detail">无详情</string>
+    <string name="api_error_usage_fail">用量查询失败: %1$s</string>
+    <string name="api_error_request_fail">请求失败</string>
+
+    <!-- ===== Error / Status (existing IDs preserved) ===== -->
+    <string name="api_key_label">API Key</string>
+    <string name="api_key_hint">输入你的 API Key</string>
+    <string name="save">保存</string>
+    <string name="refresh">刷新</string>
+    <string name="balance">余额</string>
+    <string name="granted">赠送</string>
+    <string name="topped_up">充值</string>
+    <string name="available">可用</string>
+    <string name="unavailable">不可用</string>
+    <string name="error_network">网络错误，请检查连接</string>
+    <string name="error_auth">API Key 无效</string>
+    <string name="loading">查询中…</string>
+    <string name="no_key">请先设置 API Key</string>
+    <string name="service_running">服务运行中</string>
+    <string name="service_stopped">服务已停止</string>
+    <string name="battery_ok">电池优化已关闭</string>
+    <string name="battery_restricted">电池受限</string>
+
+    <!-- ===== Time Formatting ===== -->
+    <string name="time_just_now">刚刚</string>
+    <string name="time_minutes_ago">%1$d分钟前</string>
+    <string name="time_hours_ago">%1$d小时前</string>
+    <string name="time_month_day_format">M月d日</string>
+    <string name="time_date_format">MM-dd HH:mm</string>
+
+    <!-- ===== Currency ===== -->
+    <string name="currency_cny">¥</string>
+    <string name="currency_usd">$</string>
+    <string name="currency_eur">€</string>
+
+    <!-- ===== Widget Config ===== -->
+    <string name="widget_config_title">配置小组件</string>
+    <string name="widget_config_account">选择账户</string>
+    <string name="widget_config_currency">选择币种</string>
+
+    <!-- ===== Misc ===== -->
+    <string name="default_account_label">默认账户</string>
+</resources>
