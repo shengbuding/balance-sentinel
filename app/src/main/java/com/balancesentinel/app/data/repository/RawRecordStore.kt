@@ -17,6 +17,7 @@ import java.util.Locale
  */
 object RawRecordStore {
 
+    private const val TAG = "RawRecordStore"
     private const val PREFS_NAME = "raw_records"
     private const val KEY_RECORDS = "records"
 
@@ -56,7 +57,8 @@ object RawRecordStore {
             getRecordsInternal(context).filter {
                 dateFormat.format(Date(it.timestamp)) == today
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get today records: ${e.message}")
             emptyList()
         }
     }
@@ -67,7 +69,8 @@ object RawRecordStore {
     fun getAllRecords(context: Context): List<RawRecord> {
         return try {
             getRecordsInternal(context)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get all records: ${e.message}")
             emptyList()
         }
     }
@@ -81,7 +84,8 @@ object RawRecordStore {
             getRecordsInternal(context).filter {
                 dateFormat.format(Date(it.timestamp)) == today && it.accountId == accountId
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get today records for account: ${e.message}")
             emptyList()
         }
     }
@@ -92,7 +96,8 @@ object RawRecordStore {
     fun getAllRecordsForAccount(context: Context, accountId: String): List<RawRecord> {
         return try {
             getRecordsInternal(context).filter { it.accountId == accountId }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get all records for account: ${e.message}")
             emptyList()
         }
     }
@@ -103,7 +108,7 @@ object RawRecordStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_RECORDS).apply()
-        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
     }
 
     /**
@@ -120,7 +125,7 @@ object RawRecordStore {
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
                 getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
             }
-        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "removeRecords failed", e) }
     }
 
     /** 内部读取，不做日期过滤 */
@@ -135,7 +140,8 @@ object RawRecordStore {
     fun getRecordsSince(context: Context, timestamp: Long): List<RawRecord> {
         return try {
             getRecordsInternal(context).filter { it.timestamp >= timestamp }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get records since: ${e.message}")
             emptyList()
         }
     }
@@ -148,7 +154,8 @@ object RawRecordStore {
             getRecordsInternal(context).filter {
                 dateFormat.format(Date(it.timestamp)) == date
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get records for date: ${e.message}")
             emptyList()
         }
     }
@@ -161,7 +168,8 @@ object RawRecordStore {
             getRecordsInternal(context)
                 .map { dateFormat.format(Date(it.timestamp)) }
                 .distinct()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to get distinct dates: ${e.message}")
             emptyList()
         }
     }
@@ -182,7 +190,7 @@ object RawRecordStore {
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
                 getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
             }
-        } catch (e: Exception) { Logger.w("RawRecordStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "removeByDate failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

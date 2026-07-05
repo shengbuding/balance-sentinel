@@ -2,6 +2,7 @@ package com.balancesentinel.app.widget
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.Json
  */
 object WidgetConfigStore {
 
+    private const val TAG = "WidgetConfigStore"
     private const val PREFS_NAME = "widget_configs"
     private const val KEY_CONFIGS = "configs"
 
@@ -42,7 +44,8 @@ object WidgetConfigStore {
             // Store keys as strings, convert back to Int
             val stringMap = json.decodeFromString<Map<String, WidgetConfig>>(raw)
             stringMap.mapKeys { it.key.toIntOrNull() ?: -1 }.filterKeys { it >= 0 }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse widget configs: ${e.message}")
             emptyMap()
         }
     }

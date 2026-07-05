@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import android.net.Uri
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -43,6 +44,8 @@ data class ConfigSettings(
 )
 
 object ConfigManager {
+
+    private const val TAG = "ConfigManager"
 
     private val json = Json {
         prettyPrint = true
@@ -136,6 +139,7 @@ object ConfigManager {
             } ?: return null
             json.decodeFromString<AppConfig>(content)
         } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse imported config: ${e.message}")
             null
         }
     }

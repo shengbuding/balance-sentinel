@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 
 /**
@@ -259,7 +260,10 @@ class WidgetPrefs(context: Context) {
             return try {
                 kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
                     .decodeFromString<List<String>>(raw)
-            } catch (_: Exception) { emptyList() }
+            } catch (e: Exception) {
+                    Logger.w(TAG, "Failed to parse notification wallet order: ${e.message}")
+                    emptyList()
+                }
         }
         // 从旧版布尔 key 迁移
         val migrated = mutableListOf<String>()
@@ -367,6 +371,7 @@ class WidgetPrefs(context: Context) {
     }
 
     companion object {
+        private const val TAG = "WidgetPrefs"
         const val KEY_INTERVAL = "refresh_interval_seconds"
         const val DEFAULT_INTERVAL = 30     // 30 seconds
         const val KEY_LOG_MAX = "log_max_entries"

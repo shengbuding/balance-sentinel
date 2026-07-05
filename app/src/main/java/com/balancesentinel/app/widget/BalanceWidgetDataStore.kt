@@ -2,6 +2,7 @@ package com.balancesentinel.app.widget
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.Json
  */
 object BalanceWidgetDataStore {
 
+    private const val TAG = "BalanceWidgetDataStore"
     private const val PREFS_NAME = "widget_balance_cache"
     private const val KEY_BALANCES = "account_balances"
 
@@ -59,7 +61,8 @@ object BalanceWidgetDataStore {
         val raw = p.getString(KEY_BALANCES, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<AccountBalance>>(raw)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse widget balances: ${e.message}")
             emptyList()
         }
     }

@@ -16,6 +16,7 @@ import java.util.Locale
  */
 object UsageDataStore {
 
+    private const val TAG = "UsageDataStore"
     private const val PREFS_NAME = "usage_snapshots"
     private const val KEY_SNAPSHOTS = "snapshots"
     private const val MAX_SNAPSHOTS = 90
@@ -45,7 +46,7 @@ object UsageDataStore {
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
             getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w("UsageDataStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "saveSnapshot failed", e) }
     }
 
     /**
@@ -55,7 +56,8 @@ object UsageDataStore {
         return try {
             val raw = getPrefs(context).getString(KEY_SNAPSHOTS, null) ?: return emptyList()
             json.decodeFromString(ListSerializer(UsageSnapshot.serializer()), raw)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse usage snapshots: ${e.message}")
             emptyList()
         }
     }
@@ -88,7 +90,7 @@ object UsageDataStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_SNAPSHOTS).apply()
-        } catch (e: Exception) { Logger.w("UsageDataStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

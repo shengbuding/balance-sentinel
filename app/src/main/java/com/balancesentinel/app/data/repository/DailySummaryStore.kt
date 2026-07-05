@@ -18,6 +18,7 @@ import java.util.Locale
  */
 object DailySummaryStore {
 
+    private const val TAG = "DailySummaryStore"
     private const val PREFS_NAME = "daily_summaries"
     private const val KEY_SUMMARIES = "summaries"
 
@@ -42,7 +43,7 @@ object DailySummaryStore {
             summaries.sortBy { it.date }
             val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
             getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (e: Exception) { Logger.w("DailySummaryStore", "saveSummary failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "saveSummary failed", e) }
     }
 
     /**
@@ -52,7 +53,8 @@ object DailySummaryStore {
         return try {
             val raw = getPrefs(context).getString(KEY_SUMMARIES, null) ?: return emptyList()
             json.decodeFromString(ListSerializer(DailySummary.serializer()), raw)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse daily summaries: ${e.message}")
             emptyList()
         }
     }
@@ -193,7 +195,8 @@ object DailySummaryStore {
             val serialized =
                 json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
             getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to ensure continuity: ${e.message}")
         }
     }
 
@@ -203,7 +206,7 @@ object DailySummaryStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_SUMMARIES).apply()
-        } catch (e: Exception) { Logger.w("DailySummaryStore", "saveSummary failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

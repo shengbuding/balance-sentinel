@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
  */
 object RefreshLogStore {
 
+    private const val TAG = "RefreshLogStore"
     private const val PREFS_NAME = "refresh_log_store"
     private const val KEY_ENTRIES = "entries"
     const val DEFAULT_MAX_ENTRIES = 100
@@ -53,7 +54,8 @@ object RefreshLogStore {
         return try {
             val raw = getPrefs(context).getString(KEY_ENTRIES, null) ?: return emptyList()
             json.decodeFromString(ListSerializer(RefreshLogEntry.serializer()), raw)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse refresh log entries: ${e.message}")
             emptyList()
         }
     }
@@ -64,7 +66,7 @@ object RefreshLogStore {
     fun clear(context: Context) {
         try {
             getPrefs(context).edit().remove(KEY_ENTRIES).apply()
-        } catch (e: Exception) { Logger.w("RefreshLogStore", "operation failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
