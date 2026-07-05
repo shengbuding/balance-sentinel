@@ -46,14 +46,31 @@ object ConfigManager {
     }
 
     /**
+     * API Key 脱敏：保留前 4 后 4 位，中间用 **** 替代。
+     * 长度不足 8 的短 Key 全量替换为 [REDACTED]。
+     */
+    fun redactApiKey(key: String): String {
+        if (key.length < 8) return "[REDACTED]"
+        return "${key.take(4)}****${key.takeLast(4)}"
+    }
+
+    /** 判断是否已脱敏（导入时跳过此类账户） */
+    fun isRedactedApiKey(key: String): Boolean {
+        return key.contains("****") || key == "[REDACTED]"
+    }
+
+    /**
      * 将当前配置序列化为 JSON 字符串。
+     * API Key 自动脱敏，防止通过分享/备份泄露。
      */
     fun buildConfig(
         context: Context,
         apiKeyManager: ApiKeyManager,
         widgetPrefs: WidgetPrefs
     ): String {
-        val accounts = apiKeyManager.getAccounts()
+        val accounts = apiKeyManager.getAccounts().map { account ->
+            account.copy(apiKey = redactApiKey(account.apiKey))
+        }
         val settings = ConfigSettings(
             refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
             alertEnabled = widgetPrefs.alertEnabled,
@@ -117,15 +134,20 @@ object ConfigManager {
 
     /**
      * 将导入的配置应用到 App：覆盖所有账户和设置。
+     * @return 跳过的账户数（API Key 已脱敏无法恢复的账户）。
      */
     fun applyConfig(
         config: AppConfig,
         apiKeyManager: ApiKeyManager,
         widgetPrefs: WidgetPrefs
-    ) {
+    ): Int {
+        // 过滤已脱敏的账户（导出的 Key 带 **** 无法使用）
+        val validAccounts = config.accounts.filter { !isRedactedApiKey(it.apiKey) }
+        val skipped = config.accounts.size - validAccounts.size
+
         // 清空现有账户，写入导入账户
         apiKeyManager.clearAll()
-        for (account in config.accounts) {
+        for (account in validAccounts) {
             apiKeyManager.addAccount(account.label, account.apiKey)
         }
 
@@ -138,13 +160,16 @@ object ConfigManager {
         widgetPrefs.changeAlertThreshold = s.changeAlertThreshold
         widgetPrefs.changeAlertPeriodMinutes = s.changeAlertPeriodMinutes
         widgetPrefs.logMaxEntries = s.logMaxEntries
+
+        return skipped
     }
 
     /**
      * 便捷方法：直接从 Context 创建依赖并应用配置。
      * 用于没有 ViewModel 的独立页面。
+     * @return 跳过的账户数。
      */
-    fun applyConfigDirectly(context: Context, config: AppConfig) {
-        applyConfig(config, ApiKeyManager(context), WidgetPrefs(context))
+    fun applyConfigDirectly(context: Context, config: AppConfig): Int {
+        return applyConfig(config, ApiKeyManager(context), WidgetPrefs(context))
     }
 }

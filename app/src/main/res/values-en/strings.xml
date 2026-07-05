@@ -223,7 +223,9 @@
     <string name="data_config_export_success">Config exported</string>
     <string name="data_config_export_fail">Export failed</string>
     <string name="data_config_import_success">Config imported (%1$d accounts)</string>
+    <string name="data_config_import_skipped">%1$d account(s) skipped: API key was redacted. Re-add manually.</string>
     <string name="data_config_import_fail">Import failed: could not parse config file</string>
+    <string name="data_config_export_warning">Exported config contains redacted API keys (first 4 + last 4 chars). Re-enter full keys after import.</string>
     <string name="data_debug_report_success">Debug report exported: %1$s</string>
     <string name="data_export_exception">Export exception: %1$s</string>
 

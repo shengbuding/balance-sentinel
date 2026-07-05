@@ -256,11 +256,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 应用导入的配置并刷新全部 UI 状态 */
     fun applyImportedConfig(config: AppConfig) {
-        ConfigManager.applyConfig(config, apiKeyManager, widgetPrefs)
+        val skipped = ConfigManager.applyConfig(config, apiKeyManager, widgetPrefs)
         loadAccounts()
+        val importMsg = if (skipped > 0) {
+            getApplication<android.app.Application>().getString(R.string.data_config_import_skipped, skipped)
+        } else null
         _uiState.value = _uiState.value.copy(
             accounts = apiKeyManager.getAccounts(),
             accountBalances = emptyMap(),
+            errorMessage = importMsg ?: _uiState.value.errorMessage,
             refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
             alertEnabled = widgetPrefs.alertEnabled,
             alertThreshold = widgetPrefs.alertThreshold,

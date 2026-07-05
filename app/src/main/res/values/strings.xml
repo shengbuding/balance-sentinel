@@ -223,7 +223,9 @@
     <string name="data_config_export_success">配置已导出</string>
     <string name="data_config_export_fail">导出失败</string>
     <string name="data_config_import_success">配置已导入 (%1$d 个账户)</string>
+    <string name="data_config_import_skipped">%1$d 个账户因 API Key 已脱敏被跳过，请手动重新添加</string>
     <string name="data_config_import_fail">导入失败：无法解析配置文件</string>
+    <string name="data_config_export_warning">导出的配置文件包含脱敏后的 API Key（仅保留首尾各 4 位），导入后需手动补全完整 Key</string>
     <string name="data_debug_report_success">调试报告已导出: %1$s</string>
     <string name="data_export_exception">导出异常: %1$s</string>
 

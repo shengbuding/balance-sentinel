@@ -88,6 +88,8 @@ fun DataManagementScreen(
             val ok = ConfigManager.exportToUri(context, uri, keyMgr, prefs)
             if (ok) {
                 Toast.makeText(context, context.getString(R.string.data_config_export_success), Toast.LENGTH_SHORT).show()
+                // 提示用户 API Key 已脱敏
+                Toast.makeText(context, context.getString(R.string.data_config_export_warning), Toast.LENGTH_LONG).show()
             } else {
                 Toast.makeText(context, context.getString(R.string.data_config_export_fail), Toast.LENGTH_SHORT).show()
             }
@@ -101,8 +103,12 @@ fun DataManagementScreen(
         if (uri != null) {
             val config = ConfigManager.importFromUri(context, uri)
             if (config != null) {
-                ConfigManager.applyConfigDirectly(context, config)
-                Toast.makeText(context, context.getString(R.string.data_config_import_success, config.accounts.size), Toast.LENGTH_SHORT).show()
+                val skipped = ConfigManager.applyConfigDirectly(context, config)
+                if (skipped > 0) {
+                    Toast.makeText(context, context.getString(R.string.data_config_import_skipped, skipped), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, context.getString(R.string.data_config_import_success, config.accounts.size), Toast.LENGTH_SHORT).show()
+                }
                 viewModel.loadStats()
             } else {
                 Toast.makeText(context, context.getString(R.string.data_config_import_fail), Toast.LENGTH_SHORT).show()
