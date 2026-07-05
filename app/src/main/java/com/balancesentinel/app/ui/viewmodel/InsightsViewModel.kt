@@ -80,7 +80,10 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                     if (it.isNotEmpty() && currencies.contains(it)) it
                     else currencies.firstOrNull() ?: ""
                 }
+                // 多账户场景：null 时自动选中首个账户，避免引擎层 filterAccountId==null
+                // 短路导致多账户记录混合（per-pair 分析不能跨账户）
                 val accountId = _uiState.value.selectedAccountId
+                    ?: accounts.firstOrNull()?.id
                 val rangeDays = _uiState.value.rangeDays
 
                 // ── Intraday: 24h 滑动窗口 ──
@@ -97,6 +100,7 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     accounts = accounts,
+                    selectedAccountId = accountId,
                     availableCurrencies = currencies,
                     selectedCurrency = currency,
                     intradayOutput = intradayOutput,
@@ -114,7 +118,9 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectAccount(accountId: String?) {
-        _uiState.value = _uiState.value.copy(selectedAccountId = accountId)
+        // null → 自动选中首个账户（引擎 per-pair 分析不支持跨账户混合）
+        val resolved = accountId ?: _uiState.value.accounts.firstOrNull()?.id
+        _uiState.value = _uiState.value.copy(selectedAccountId = resolved)
         loadData()
     }
 
