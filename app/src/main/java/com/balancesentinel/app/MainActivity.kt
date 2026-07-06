@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.ui.CustomIcons
@@ -95,6 +97,12 @@ class MainActivity : ComponentActivity() {
 
                 // 首次启动电池优化引导
                 var showBatteryGuide by remember { mutableStateOf(false) }
+
+                // Update checker auto-check state (once per session)
+                var updateCheckPerformed by remember { mutableStateOf(false) }
+                var showAutoUpdateDialog by remember { mutableStateOf(false) }
+                var autoUpdateRelease by remember { mutableStateOf<com.balancesentinel.app.data.model.GitHubRelease?>(null) }
+                var autoUpdateCurrentVersion by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) {
                     if (BatteryOptimizationHelper.shouldShowGuide(context)) {
                         showBatteryGuide = true
@@ -128,6 +136,23 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Auto update dialog
+                if (showAutoUpdateDialog && autoUpdateRelease != null) {
+                    com.balancesentinel.app.ui.screen.UpdateDialog(
+                        release = autoUpdateRelease!!,
+                        currentVersion = autoUpdateCurrentVersion,
+                        onDismiss = { showAutoUpdateDialog = false },
+                        onSkipVersion = {
+                            com.balancesentinel.app.data.update.UpdatePrefs(context)
+                                .skippedVersion = autoUpdateRelease!!.tagName
+                            showAutoUpdateDialog = false
+                        },
+                        onRemindLater = {
+                            showAutoUpdateDialog = false
+                        }
+                    )
+                }
+
                 // 每次切换页面时重新加载数据
                 LaunchedEffect(currentScreen) {
                     when (currentScreen) {
@@ -137,6 +162,31 @@ class MainActivity : ComponentActivity() {
                         Screen.LOG -> logViewModel.loadLogs()
                         Screen.DATA_MANAGEMENT -> dataManagementViewModel.loadStats()
                         else -> {}
+                    }
+                }
+
+                // Auto-check for updates when navigating to Settings
+                LaunchedEffect(currentScreen) {
+                    if (currentScreen == Screen.SETTINGS && !updateCheckPerformed) {
+                        updateCheckPerformed = true
+                        val prefs = com.balancesentinel.app.data.update.UpdatePrefs(context)
+                        if (prefs.shouldAutoCheckToday()) {
+                            val checker = com.balancesentinel.app.data.update.UpdateChecker()
+                            val result = withContext(Dispatchers.IO) {
+                                checker.checkForUpdate(context)
+                            }
+                            when (result) {
+                                is com.balancesentinel.app.data.update.UpdateResult.UpdateAvailable -> {
+                                    if (!prefs.shouldSkipVersion(result.release.tagName)) {
+                                        autoUpdateRelease = result.release
+                                        autoUpdateCurrentVersion = result.currentVersion
+                                        showAutoUpdateDialog = true
+                                        prefs.markPromptedToday()
+                                    }
+                                }
+                                else -> { /* silent skip */ }
+                            }
+                        }
                     }
                 }
 
