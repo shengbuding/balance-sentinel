@@ -76,6 +76,14 @@
     <string name="insights_label_net">净变化</string>
     <string name="insights_period_label">最近%1$d天</string>
     <string name="insights_estimation_method">基于最近%1$d天净余额线性回归</string>
+    <string name="insights_chart_balance">余额</string>
+    <string name="insights_chart_consumption">消耗</string>
+    <string name="insights_history_title">历史日汇总</string>
+    <string name="insights_history_load_more">加载更多 (%d天)</string>
+    <string name="insights_history_all_loaded">已加载全部</string>
+    <string name="insights_history_open">开盘余额</string>
+    <string name="insights_history_close">收盘余额</string>
+    <string name="insights_history_samples">采样次数</string>
 
     <!-- ===== Settings Screen ===== -->
     <string name="settings_title">设置</string>
@@ -260,7 +268,7 @@
     <string name="data_config_import_skipped">%1$d 个账户因 API Key 已脱敏被跳过，请手动重新添加</string>
     <string name="data_config_import_fail">导入失败：无法解析配置文件</string>
     <string name="data_config_export_warning">导出的配置文件包含脱敏后的 API Key（仅保留首尾各 4 位），导入后需手动补全完整 Key</string>
-    <string name="data_debug_report_success">调试报告已导出: %1$s</string>
+    <string name="data_debug_report_success">调试报告已导出到 Downloads: %1$s</string>
     <string name="data_export_exception">导出异常: %1$s</string>
     <string name="data_import_history_title">导入历史数据</string>
     <string name="data_import_history_desc">从 JSON 文件导入日摘要和原始记录（将合并到现有数据，已存在的条目不会覆盖）</string>

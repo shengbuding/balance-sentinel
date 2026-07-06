@@ -76,6 +76,14 @@
     <string name="insights_label_net">Net Change</string>
     <string name="insights_period_label">Last %1$d days</string>
     <string name="insights_estimation_method">Based on last %1$d days net-balance linear regression</string>
+    <string name="insights_chart_balance">Balance</string>
+    <string name="insights_chart_consumption">Consumed</string>
+    <string name="insights_history_title">Daily History</string>
+    <string name="insights_history_load_more">Load more (%d days)</string>
+    <string name="insights_history_all_loaded">All loaded</string>
+    <string name="insights_history_open">Open</string>
+    <string name="insights_history_close">Close</string>
+    <string name="insights_history_samples">Samples</string>
 
     <!-- ===== Settings Screen ===== -->
     <string name="settings_title">Settings</string>
@@ -260,7 +268,7 @@
     <string name="data_config_import_skipped">%1$d account(s) skipped: API key was redacted. Re-add manually.</string>
     <string name="data_config_import_fail">Import failed: could not parse config file</string>
     <string name="data_config_export_warning">Exported config contains redacted API keys (first 4 + last 4 chars). Re-enter full keys after import.</string>
-    <string name="data_debug_report_success">Debug report exported: %1$s</string>
+    <string name="data_debug_report_success">Debug report exported to Downloads: %1$s</string>
     <string name="data_export_exception">Export exception: %1$s</string>
     <string name="data_import_history_title">Import History Data</string>
     <string name="data_import_history_desc">Import daily summaries and raw records from a JSON file (merges with existing data, existing entries are not overwritten)</string>
