@@ -449,30 +449,39 @@ private fun DailyCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 余额/消耗 图表模式切换
+            // 余额/消耗 图表模式切换（下划线样式，与时间 FilterChip 区分）
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 listOf(
                     "balance" to R.string.insights_chart_balance,
                     "consumed" to R.string.insights_chart_consumption
                 ).forEach { (mode, resId) ->
-                    FilterChip(
-                        selected = chartMode == mode,
-                        onClick = { onChartModeChange(mode) },
-                        label = {
-                            Text(
-                                stringResource(resId),
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1
-                            )
-                        },
-                        modifier = Modifier.height(28.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    val selected = chartMode == mode
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { onChartModeChange(mode) }
+                    ) {
+                        Text(
+                            stringResource(resId),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (selected)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                         )
-                    )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(24.dp)
+                                .height(2.dp)
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                        )
+                    }
                 }
             }
 
