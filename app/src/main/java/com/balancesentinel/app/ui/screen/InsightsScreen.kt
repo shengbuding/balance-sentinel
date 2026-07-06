@@ -2,6 +2,7 @@ package com.balancesentinel.app.ui.screen
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -130,7 +132,19 @@ fun InsightsScreen(
                 currency = uiState.selectedCurrency,
                 rangeDays = uiState.rangeDays,
                 insufficientData = uiState.dailyOutput?.insufficientData ?: true,
+                chartMode = uiState.chartMode,
+                onChartModeChange = { viewModel.setChartMode(it) },
                 onRangeDaysChange = { viewModel.setRangeDays(it) }
+            )
+
+            // ── Card 3: 历史日汇总 ──
+            DailyHistoryCard(
+                points = uiState.dailyOutput?.dailyPoints ?: emptyList(),
+                currency = uiState.selectedCurrency,
+                visibleCount = uiState.historyVisibleCount,
+                expandedDate = uiState.expandedDate,
+                onToggleExpand = { viewModel.toggleExpandDate(it) },
+                onLoadMore = { viewModel.loadMoreHistory() }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -381,6 +395,8 @@ private fun DailyCard(
     currency: String,
     rangeDays: Int,
     insufficientData: Boolean = false,
+    chartMode: String = "balance",
+    onChartModeChange: (String) -> Unit = {},
     onRangeDaysChange: (Int) -> Unit
 ) {
     Card(
@@ -431,6 +447,35 @@ private fun DailyCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 余额/消耗 图表模式切换
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    "balance" to R.string.insights_chart_balance,
+                    "consumed" to R.string.insights_chart_consumption
+                ).forEach { (mode, resId) ->
+                    FilterChip(
+                        selected = chartMode == mode,
+                        onClick = { onChartModeChange(mode) },
+                        label = {
+                            Text(
+                                stringResource(resId),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
+                        },
+                        modifier = Modifier.height(28.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             if (points.isEmpty()) {
@@ -446,6 +491,7 @@ private fun DailyCard(
             } else {
                 DailyLineChart(
                     data = points,
+                    chartMode = chartMode,
                     modifier = Modifier.fillMaxWidth().height(200.dp)
                 )
 
@@ -951,6 +997,7 @@ private fun IntradayLineChart(
 @Composable
 private fun DailyLineChart(
     data: List<DailyPoint>,
+    chartMode: String = "balance",
     modifier: Modifier = Modifier
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
@@ -963,7 +1010,11 @@ private fun DailyLineChart(
     Canvas(modifier = modifier) {
         if (data.isEmpty()) return@Canvas
 
-        val values = data.map { it.balance }
+        val values = if (chartMode == "consumed") {
+            data.map { it.consumed }
+        } else {
+            data.map { it.balance }
+        }
         val minVal = values.min()
         val maxVal = values.max()
         val rawRange = maxVal - minVal
@@ -1141,34 +1192,36 @@ private fun DailyLineChart(
             }
         }
 
-        // ── 充值日 ▲ 标记 ──
-        for (i in data.indices) {
-            if (data[i].toppedUp > 0f) {
-                val p = points[i]
-                val markerSize = 8.dp.toPx()
-                val triPath = Path().apply {
-                    moveTo(p.x, p.y - markerSize - 6.dp.toPx())
-                    lineTo(p.x - markerSize, p.y - 4.dp.toPx())
-                    lineTo(p.x + markerSize, p.y - 4.dp.toPx())
-                    close()
+        // ── 充值日 ▲ 标记（仅余额模式）──
+        if (chartMode == "balance") {
+            for (i in data.indices) {
+                if (data[i].toppedUp > 0f) {
+                    val p = points[i]
+                    val markerSize = 8.dp.toPx()
+                    val triPath = Path().apply {
+                        moveTo(p.x, p.y - markerSize - 6.dp.toPx())
+                        lineTo(p.x - markerSize, p.y - 4.dp.toPx())
+                        lineTo(p.x + markerSize, p.y - 4.dp.toPx())
+                        close()
+                    }
+                    drawPath(path = triPath, color = topUpMarkerColor)
                 }
-                drawPath(path = triPath, color = topUpMarkerColor)
             }
-        }
 
-        // ── 赠送日 ◆ 标记 ──
-        for (i in data.indices) {
-            if (data[i].granted > 0f) {
-                val p = points[i]
-                val m = 5.dp.toPx()
-                val diamondPath = Path().apply {
-                    moveTo(p.x, p.y - m - 6.dp.toPx())
-                    lineTo(p.x + m, p.y - 4.dp.toPx())
-                    lineTo(p.x, p.y - 4.dp.toPx() + m * 2)
-                    lineTo(p.x - m, p.y - 4.dp.toPx())
-                    close()
+            // ── 赠送日 ◆ 标记（仅余额模式）──
+            for (i in data.indices) {
+                if (data[i].granted > 0f) {
+                    val p = points[i]
+                    val m = 5.dp.toPx()
+                    val diamondPath = Path().apply {
+                        moveTo(p.x, p.y - m - 6.dp.toPx())
+                        lineTo(p.x + m, p.y - 4.dp.toPx())
+                        lineTo(p.x, p.y - 4.dp.toPx() + m * 2)
+                        lineTo(p.x - m, p.y - 4.dp.toPx())
+                        close()
+                    }
+                    drawPath(path = diamondPath, color = grantMarkerColor)
                 }
-                drawPath(path = diamondPath, color = grantMarkerColor)
             }
         }
 
@@ -1229,6 +1282,209 @@ private fun DailyLineChart(
                 )
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Card 3: 历史日汇总
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun DailyHistoryCard(
+    points: List<DailyPoint>,
+    currency: String,
+    visibleCount: Int,
+    expandedDate: String?,
+    onToggleExpand: (String) -> Unit,
+    onLoadMore: () -> Unit
+) {
+    if (points.isEmpty()) return
+
+    val reversed = points.reversed()
+    val visible = reversed.take(visibleCount)
+    val hasMore = visibleCount < reversed.size
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.insights_history_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            visible.forEach { point ->
+                val isExpanded = expandedDate == point.date
+                val isGap = point.consumed == 0f && point.toppedUp == 0f && point.granted == 0f
+
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (!isGap) Modifier.clickable { onToggleExpand(point.date) }
+                                else Modifier
+                            )
+                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = point.date,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isGap)
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (point.consumed > 0f) {
+                                Text(
+                                    text = "-${FormatUtils.currencySymbol(currency)}%.2f".format(point.consumed),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                            } else if (isGap) {
+                                Text(
+                                    text = "—",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+                            Text(
+                                text = "${FormatUtils.currencySymbol(currency)}%.2f".format(point.balance),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (!isGap) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isExpanded) "▼" else "▶",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    if (isExpanded) {
+                        val netChange = point.toppedUp + point.granted - point.consumed
+                        val netColor = when {
+                            netChange > 0 -> WalletColors.success
+                            netChange < 0 -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        val netPrefix = if (netChange >= 0) "+" else ""
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(12.dp)
+                        ) {
+                            HistoryDetailRow(stringResource(R.string.insights_label_consumed),
+                                "-${FormatUtils.currencySymbol(currency)}%.2f".format(point.consumed),
+                                MaterialTheme.colorScheme.error)
+                            if (point.toppedUp > 0f) {
+                                HistoryDetailRow(stringResource(R.string.insights_label_topped_up),
+                                    "+${FormatUtils.currencySymbol(currency)}%.2f".format(point.toppedUp),
+                                    WalletColors.success)
+                            }
+                            if (point.granted > 0f) {
+                                HistoryDetailRow(stringResource(R.string.insights_label_granted),
+                                    "+${FormatUtils.currencySymbol(currency)}%.2f".format(point.granted),
+                                    WalletColors.granted)
+                            }
+                            HistoryDetailRow(stringResource(R.string.insights_label_net),
+                                "$netPrefix${FormatUtils.currencySymbol(currency)}%.2f".format(netChange),
+                                netColor)
+                            HistoryDetailRow(stringResource(R.string.insights_history_open),
+                                "${FormatUtils.currencySymbol(currency)}%.2f".format(point.open),
+                                MaterialTheme.colorScheme.onSurfaceVariant)
+                            HistoryDetailRow(stringResource(R.string.insights_history_close),
+                                "${FormatUtils.currencySymbol(currency)}%.2f".format(point.balance),
+                                MaterialTheme.colorScheme.onSurfaceVariant)
+                            HistoryDetailRow(stringResource(R.string.insights_history_samples),
+                                "${point.sampleCount}",
+                                MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                if (point != visible.last()) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
+                        thickness = 0.5.dp
+                    )
+                }
+            }
+
+            if (hasMore) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(onClick = onLoadMore) {
+                        Text(
+                            text = stringResource(R.string.insights_history_load_more)
+                                .format(10),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            } else if (points.size > 7) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.insights_history_all_loaded),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryDetailRow(
+    label: String,
+    value: String,
+    valueColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = valueColor,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
