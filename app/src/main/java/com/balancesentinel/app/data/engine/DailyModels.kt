@@ -35,7 +35,9 @@ data class DailyPoint(
     val consumed: Float,
     val toppedUp: Float,
     val granted: Float,
-    val isGapFill: Boolean
+    val isGapFill: Boolean,
+    val open: Float = 0f,
+    val sampleCount: Int = 0
 )
 
 /**
