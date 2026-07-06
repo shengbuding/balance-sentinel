@@ -64,7 +64,12 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
 
     fun loadData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            // 切换账户/币种/时间范围时重置历史汇总状态，图表模式保持不变
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                historyVisibleCount = 7,
+                expandedDate = null
+            )
 
             try {
                 val summaries = DailySummaryStore.getSummaries(getApplication())

@@ -289,6 +289,31 @@ class InsightsViewModelTest {
         assertEquals("balance", viewModel.uiState.value.chartMode)
     }
 
+    @Test
+    fun `chartMode preserved but history reset on currency switch`() {
+        val now = System.currentTimeMillis()
+        RawRecordStore.addRecord(context, RawRecord("acc1", now, "CNY", 100f, 0f, 100f))
+        RawRecordStore.addRecord(context, RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f))
+
+        val viewModel = InsightsViewModel(app)
+        ShadowLooper.idleMainLooper()
+
+        // Set consumption mode and expand a row
+        viewModel.setChartMode("consumed")
+        viewModel.toggleExpandDate("2026-07-01")
+
+        assertEquals("consumed", viewModel.uiState.value.chartMode)
+        assertEquals("2026-07-01", viewModel.uiState.value.expandedDate)
+
+        // Switch currency → data reload, history reset, chartMode preserved
+        viewModel.selectCurrency("USD")
+        ShadowLooper.idleMainLooper()
+
+        assertEquals("consumed", viewModel.uiState.value.chartMode)  // preserved
+        assertNull(viewModel.uiState.value.expandedDate)              // reset
+        assertEquals(7, viewModel.uiState.value.historyVisibleCount)  // reset
+    }
+
     // ── History pagination ──
 
     @Test
