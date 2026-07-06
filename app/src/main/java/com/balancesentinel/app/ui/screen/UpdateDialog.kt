@@ -98,14 +98,20 @@ fun UpdateDialog(
             )
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            // Grant URI permission to any package that can handle the intent
-            context.grantUriPermission(
-                "android", apkUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            context.startActivity(intent)
+            // Fallback: ACTION_INSTALL_PACKAGE for devices where ACTION_VIEW doesn't trigger installer
+            val fallback = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                setData(apkUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                context.startActivity(fallback)
+            }
         } catch (e: Exception) {
             errorMessage = context.getString(R.string.update_install_failed)
             dialogState = DialogState.FAILED
