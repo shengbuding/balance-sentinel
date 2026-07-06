@@ -273,4 +273,77 @@ class InsightsViewModelTest {
         assertEquals(140f, trend[0].second) // day 4
         assertEquals(200f, trend.last().second) // day 10
     }
+
+    // ── Chart mode switching ──
+
+    @Test
+    fun `setChartMode updates state without reloading data`() {
+        val viewModel = InsightsViewModel(app)
+
+        assertEquals("balance", viewModel.uiState.value.chartMode)
+
+        viewModel.setChartMode("consumed")
+        assertEquals("consumed", viewModel.uiState.value.chartMode)
+
+        viewModel.setChartMode("balance")
+        assertEquals("balance", viewModel.uiState.value.chartMode)
+    }
+
+    // ── History pagination ──
+
+    @Test
+    fun `historyVisibleCount starts at 7`() {
+        val viewModel = InsightsViewModel(app)
+        assertEquals(7, viewModel.uiState.value.historyVisibleCount)
+    }
+
+    @Test
+    fun `loadMoreHistory increases visible count by 10 capped at data size`() {
+        val now = System.currentTimeMillis()
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        for (i in 1..30) {
+            val date = dateFormat.format(java.util.Date(now - (30 - i + 1) * 24 * 3600_000L))
+            DailySummaryStore.upsert(
+                context,
+                DailySummary(
+                    accountId = "acc1", date = date, currency = "CNY",
+                    open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
+                    granted = 0f, avgBalance = 95f, sampleCount = 5,
+                    toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
+                )
+            )
+        }
+
+        val viewModel = InsightsViewModel(app)
+        // Switch to 30-day range to include all 30 data points
+        viewModel.setRangeDays(30)
+        ShadowLooper.idleMainLooper()
+
+        assertEquals(7, viewModel.uiState.value.historyVisibleCount)
+
+        viewModel.loadMoreHistory()
+        assertEquals(17, viewModel.uiState.value.historyVisibleCount)
+
+        viewModel.loadMoreHistory()
+        assertEquals(27, viewModel.uiState.value.historyVisibleCount)
+
+        // Capped at dailyPoints.size (30)
+        viewModel.loadMoreHistory()
+        assertEquals(30, viewModel.uiState.value.historyVisibleCount)
+    }
+
+    // ── Expand/collapse ──
+
+    @Test
+    fun `toggleExpandDate toggles expanded date`() {
+        val viewModel = InsightsViewModel(app)
+
+        assertNull(viewModel.uiState.value.expandedDate)
+
+        viewModel.toggleExpandDate("2026-07-01")
+        assertEquals("2026-07-01", viewModel.uiState.value.expandedDate)
+
+        viewModel.toggleExpandDate("2026-07-01")
+        assertNull(viewModel.uiState.value.expandedDate)
+    }
 }

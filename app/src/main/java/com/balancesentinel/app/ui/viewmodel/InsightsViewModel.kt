@@ -34,7 +34,11 @@ data class InsightsUiState(
     /** IntradayEngine 输出 — 24h 滑动窗口 */
     val intradayOutput: IntradayOutput? = null,
     /** DailyEngine 输出 — 长期日历天视图 */
-    val dailyOutput: DailyOutput? = null
+    val dailyOutput: DailyOutput? = null,
+
+    val chartMode: String = "balance",
+    val historyVisibleCount: Int = 7,
+    val expandedDate: String? = null
 ) {
     val isEmpty: Boolean
         get() = (intradayOutput?.dataPointCount ?: 0) == 0 &&
@@ -128,5 +132,23 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         if (_uiState.value.rangeDays == days) return
         _uiState.value = _uiState.value.copy(rangeDays = days)
         loadData()
+    }
+
+    fun setChartMode(mode: String) {
+        _uiState.value = _uiState.value.copy(chartMode = mode)
+    }
+
+    fun loadMoreHistory() {
+        val current = _uiState.value
+        val maxDays = current.dailyOutput?.dailyPoints?.size ?: 0
+        val next = (current.historyVisibleCount + 10).coerceAtMost(maxDays)
+        _uiState.value = current.copy(historyVisibleCount = next)
+    }
+
+    fun toggleExpandDate(date: String) {
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            expandedDate = if (current.expandedDate == date) null else date
+        )
     }
 }
