@@ -710,7 +710,7 @@ private fun IntradayLineChart(
         val leftPadding = 84f
         val bottomPadding = 38f
         val topPadding = 38f
-        val rightPadding = 12f
+        val rightPadding = 84f
 
         val chartWidth = size.width - leftPadding - rightPadding
         val chartHeight = size.height - topPadding - bottomPadding
@@ -788,13 +788,14 @@ private fun IntradayLineChart(
         }
 
         // ── 最高点/最低点/当前金额横虚线 ──
+        // 标签在右侧；数值接近时上下错位避免重叠，仅真正重合时跳过
         if (rawRange > 0.0001f && data.size >= 2) {
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
             val highlightLineColor = lineColor.copy(alpha = 0.35f)
-            val highlightLabelPaint = android.graphics.Paint().apply {
+            val labelPaint = android.graphics.Paint().apply {
                 color = android.graphics.Color.argb(0xCC, 0x6B, 0x6E, 0x8A)
                 textSize = 34f
-                textAlign = android.graphics.Paint.Align.RIGHT
+                textAlign = android.graphics.Paint.Align.LEFT
                 isAntiAlias = true
             }
 
@@ -804,8 +805,15 @@ private fun IntradayLineChart(
             val minY = points[minIdx].y
             val curIdx = data.lastIndex
             val curY = points[curIdx].y
+            val curIsMax = kotlin.math.abs(curY - maxY) < 3f
+            val curIsMin = kotlin.math.abs(curY - minY) < 3f
+            val minIsMax = kotlin.math.abs(minY - maxY) < 3f
+            val nearCurMax = kotlin.math.abs(curY - maxY) < 36f
+            val nearCurMin = kotlin.math.abs(curY - minY) < 36f
+            val nearMinMax = kotlin.math.abs(minY - maxY) < 36f
+            val labelX = size.width - rightPadding + 8f
 
-            // 最高点横虚线 + 标签（上方）
+            // 最高点横虚线 + 标签（右侧上方）
             drawLine(
                 color = highlightLineColor,
                 start = Offset(leftPadding, maxY),
@@ -815,12 +823,12 @@ private fun IntradayLineChart(
             )
             drawContext.canvas.nativeCanvas.drawText(
                 formatChartValue(values[maxIdx]),
-                size.width - rightPadding - 4f, maxY - 6f,
-                highlightLabelPaint
+                labelX, maxY - 6f,
+                labelPaint
             )
 
-            // 当前金额横虚线 + 标签（下方，避免与最高点标签重叠）
-            if (kotlin.math.abs(curY - maxY) > 20f && kotlin.math.abs(curY - minY) > 20f) {
+            // 当前金额横虚线 + 标签（右侧；仅与最高点重合时跳过）
+            if (!curIsMax) {
                 drawLine(
                     color = highlightLineColor,
                     start = Offset(leftPadding, curY),
@@ -828,15 +836,17 @@ private fun IntradayLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
+                // 靠近最低点时放线上方，让最低点标签可放下方
+                val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
                 drawContext.canvas.nativeCanvas.drawText(
                     formatChartValue(values[curIdx]),
-                    size.width - rightPadding - 4f, curY + 42f,
-                    highlightLabelPaint
+                    labelX, curLabelY,
+                    labelPaint
                 )
             }
 
-            // 最低点横虚线 + 标签（上方）
-            if (kotlin.math.abs(minY - maxY) > 4f && kotlin.math.abs(minY - curY) > 20f) {
+            // 最低点横虚线 + 标签（右侧；仅与最高点或当前金额重合时跳过）
+            if (!minIsMax && !curIsMin) {
                 drawLine(
                     color = highlightLineColor,
                     start = Offset(leftPadding, minY),
@@ -844,10 +854,12 @@ private fun IntradayLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
+                // 靠近当前金额或最高点时放下方
+                val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
                 drawContext.canvas.nativeCanvas.drawText(
                     formatChartValue(values[minIdx]),
-                    size.width - rightPadding - 4f, minY - 6f,
-                    highlightLabelPaint
+                    labelX, minLabelY,
+                    labelPaint
                 )
             }
         }
@@ -971,7 +983,7 @@ private fun DailyLineChart(
         val leftPadding = 84f
         val bottomPadding = 38f
         val topPadding = 38f
-        val rightPadding = 12f
+        val rightPadding = 84f
 
         val chartWidth = size.width - leftPadding - rightPadding
         val chartHeight = size.height - topPadding - bottomPadding
@@ -1053,13 +1065,14 @@ private fun DailyLineChart(
         }
 
         // ── 最高点/最低点/当前金额横虚线 ──
+        // 标签在右侧；数值接近时上下错位避免重叠，仅真正重合时跳过
         if (rawRange > 0.0001f && data.size >= 2) {
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
             val highlightLineColor = lineColor.copy(alpha = 0.35f)
-            val highlightLabelPaint = android.graphics.Paint().apply {
+            val labelPaint = android.graphics.Paint().apply {
                 color = android.graphics.Color.argb(0xCC, 0x6B, 0x6E, 0x8A)
                 textSize = 34f
-                textAlign = android.graphics.Paint.Align.RIGHT
+                textAlign = android.graphics.Paint.Align.LEFT
                 isAntiAlias = true
             }
 
@@ -1069,8 +1082,15 @@ private fun DailyLineChart(
             val minY = points[minIdx].y
             val curIdx = data.lastIndex
             val curY = points[curIdx].y
+            val curIsMax = kotlin.math.abs(curY - maxY) < 3f
+            val curIsMin = kotlin.math.abs(curY - minY) < 3f
+            val minIsMax = kotlin.math.abs(minY - maxY) < 3f
+            val nearCurMax = kotlin.math.abs(curY - maxY) < 36f
+            val nearCurMin = kotlin.math.abs(curY - minY) < 36f
+            val nearMinMax = kotlin.math.abs(minY - maxY) < 36f
+            val labelX = size.width - rightPadding + 8f
 
-            // 最高点横虚线 + 标签（上方）
+            // 最高点横虚线 + 标签（右侧上方）
             drawLine(
                 color = highlightLineColor,
                 start = Offset(leftPadding, maxY),
@@ -1080,12 +1100,12 @@ private fun DailyLineChart(
             )
             drawContext.canvas.nativeCanvas.drawText(
                 formatChartValue(values[maxIdx]),
-                size.width - rightPadding - 4f, maxY - 6f,
-                highlightLabelPaint
+                labelX, maxY - 6f,
+                labelPaint
             )
 
-            // 当前金额横虚线 + 标签（下方，避免与最高点标签重叠）
-            if (kotlin.math.abs(curY - maxY) > 20f && kotlin.math.abs(curY - minY) > 20f) {
+            // 当前金额横虚线 + 标签（右侧；仅与最高点重合时跳过）
+            if (!curIsMax) {
                 drawLine(
                     color = highlightLineColor,
                     start = Offset(leftPadding, curY),
@@ -1093,15 +1113,17 @@ private fun DailyLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
+                // 靠近最低点时放线上方，让最低点标签可放下方
+                val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
                 drawContext.canvas.nativeCanvas.drawText(
                     formatChartValue(values[curIdx]),
-                    size.width - rightPadding - 4f, curY + 42f,
-                    highlightLabelPaint
+                    labelX, curLabelY,
+                    labelPaint
                 )
             }
 
-            // 最低点横虚线 + 标签（上方）
-            if (kotlin.math.abs(minY - maxY) > 4f && kotlin.math.abs(minY - curY) > 20f) {
+            // 最低点横虚线 + 标签（右侧；仅与最高点或当前金额重合时跳过）
+            if (!minIsMax && !curIsMin) {
                 drawLine(
                     color = highlightLineColor,
                     start = Offset(leftPadding, minY),
@@ -1109,10 +1131,12 @@ private fun DailyLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
+                // 靠近当前金额或最高点时放下方
+                val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
                 drawContext.canvas.nativeCanvas.drawText(
                     formatChartValue(values[minIdx]),
-                    size.width - rightPadding - 4f, minY - 6f,
-                    highlightLabelPaint
+                    labelX, minLabelY,
+                    labelPaint
                 )
             }
         }

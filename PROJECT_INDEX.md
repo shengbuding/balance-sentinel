@@ -6,14 +6,15 @@ Generated: 2026-07-05
 
 ## 1. Overview
 
-**DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + Glance AppWidgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking).
+**DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, and a service health tracker with protection mode.
 
 - **Package**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture**: MVVM
-- **Test count**: 195 (16 test classes, all passing)
+- **Test count**: 214+ unit tests (20 files) + 4 instrumented test files, all passing
+- **Release**: v1.0.0 (APK sideload, 暂不上架 Play Store)
 
 ---
 
@@ -23,7 +24,13 @@ Generated: 2026-07-05
 C:\Users\Administrator\
 ├── CLAUDE.md                          # Skill routing: gstack + Superpowers decision tree
 ├── DeepSeekBalance/                   # ★ Main Android project
-│   ├── README.md                      # Build instructions, API docs
+│   ├── README.md                      # Project overview, features, build guide
+│   ├── PROJECT_INDEX.md               # This file — full project map
+│   ├── PRODUCTION_AUDIT.md            # Production readiness audit (as of v1.0.0)
+│   ├── PRIVACY_POLICY.md              # Privacy policy (ML)
+│   ├── PLAY_CONSOLE_PERMISSIONS.md    # Play Console permission declarations
+│   ├── PLAY_STORE_LISTING.md          # Play Store listing draft
+│   ├── SIGNING.md                     # Release signing guide
 │   ├── build.gradle.kts               # Root build (Kotlin 2.1, Android 8.11)
 │   ├── settings.gradle.kts            # Settings
 │   ├── gradle.properties              # Gradle props
@@ -32,19 +39,23 @@ C:\Users\Administrator\
 │   ├── package.json                   # Node deps (sharp for icon conversion)
 │   ├── scripts/
 │   │   └── convert-rounded-icon.mjs   # Icon conversion script
-│   ├── docs/superpowers/
-│   │   ├── plans/2026-07-05-insights-rewrite.md      # Implementation plan
-│   │   └── specs/2026-07-05-insights-rewrite-design.md # Design doc
+│   ├── docs/
+│   │   ├── audit/data-safety-audit.md # Data safety audit report
+│   │   └── superpowers/
+│   │       ├── specs/2026-07-05-insights-rewrite-design.md     # v2.0 design
+│   │       ├── specs/2026-07-05-launch-readiness-design.md     # Launch prep design
+│   │       ├── plans/2026-07-05-insights-rewrite.md            # v2.0 implementation plan
+│   │       └── plans/2026-07-05-launch-readiness-plan.md       # Launch prep plan
 │   └── app/
 │       ├── build.gradle.kts           # App module build (Compose, OkHttp, etc.)
 │       ├── proguard-rules.pro         # ProGuard rules
 │       └── src/
 │           ├── main/
 │           │   ├── AndroidManifest.xml
-│           │   ├── java/com/example/deepseekbalance/
+│           │   ├── java/com/balancesentinel/app/
 │           │   └── res/               # Layouts, drawables, mipmaps, values, xml
-│           ├── test/                  # Unit tests (16 classes, 195 total)
-│           └── androidTest/           # Instrumented tests (1 class)
+│           ├── test/                  # Unit tests (20 classes, 214+ total)
+│           └── androidTest/           # Instrumented tests (1 class, 26 UI cases)
 │
 ├── .claude/                           # Claude Code config + session data
 │   ├── settings.json                  # Model config (deepseek-v4-pro), hooks
@@ -69,7 +80,7 @@ C:\Users\Administrator\
 
 ---
 
-## 3. Source Code Map (DeepSeekBalance/app/src/main/java/com/example/deepseekbalance/)
+## 3. Source Code Map (DeepSeekBalance/app/src/main/java/com/balancesentinel/app/)
 
 ### 3.1 Entry Points
 
@@ -106,6 +117,7 @@ C:\Users\Administrator\
 | `IntradayModels.kt` | Output types for IntradayEngine |
 | `DailyEngine.kt` | Calendar-day aggregation: consumed/toppedUp per day, trends, cumulative drift |
 | `DailyModels.kt` | Output types for DailyEngine |
+| `ServiceHealthTracker.kt` | Refresh health: consecutive failure tracking, alert threshold (≥3), protection mode (≥10 → 60-min interval) |
 
 #### Repository (`data/repository/`)
 
@@ -113,19 +125,20 @@ C:\Users\Administrator\
 |---|---|
 | `ApiKeyManager.kt` | AES-256 EncryptedSharedPreferences API key storage |
 | `BalanceRepository.kt` | Fetch balance + store snapshots, compute deltas |
-| `RawRecordStore.kt` | Raw usage records CRUD (Room-like JSON file store) |
+| `RawRecordStore.kt` | Raw usage records CRUD (SharedPreferences JSON store) |
 | `UsageDataStore.kt` | Processed usage data queries |
 | `DailySummaryStore.kt` | Daily aggregated summary persistence |
 | `RefreshLogStore.kt` | Refresh attempt + result logging |
-| `RefreshScheduler.kt` | Periodic background refresh (WorkManager) |
+| `RefreshScheduler.kt` | Periodic background refresh scheduling + heartbeat |
+| `RefreshStatsStore.kt` | Local refresh success-rate ring buffer (last 100) |
 | `MidnightScheduler.kt` | Daily midnight rollover trigger |
 | `CleanupScheduler.kt` | Old data pruning |
-| `AlertChecker.kt` | Balance threshold alerts |
-| `NotificationHelper.kt` | Android notifications |
-| `ConfigManager.kt` | App configuration settings |
+| `AlertChecker.kt` | Balance threshold + change alerts |
+| `NotificationHelper.kt` | Android notifications (alert/change/foreground/group-summary) |
+| `ConfigManager.kt` | App config export/import |
 | `DataExporter.kt` | CSV/JSON data export |
 | `LogExporter.kt` | Log export |
-| `WidgetPrefs.kt` | Widget configuration preferences |
+| `WidgetPrefs.kt` | Widget + notification preferences |
 
 ### 3.3 UI Layer
 
@@ -133,11 +146,15 @@ C:\Users\Administrator\
 
 | File | Purpose |
 |---|---|
-| `HomeScreen.kt` | Main balance display + refresh |
-| `InsightsScreen.kt` | v2.0 dual-engine insight cards |
-| `SettingsScreen.kt` | API key, refresh interval, alerts config |
-| `LogScreen.kt` | Refresh history viewer |
+| `HomeScreen.kt` | Main balance display + multi-account cards + manual refresh |
+| `InsightsScreen.kt` | v2.0 dual-engine insight cards, sparkline charts, per-pair analysis |
+| `SettingsScreen.kt` | API key, refresh interval, widget config, notification bar, refresh stats dashboard, community links |
+| `AlertSettingsScreen.kt` | Per-account per-currency alert thresholds, change detection, snooze duration |
+| `LogScreen.kt` | Refresh history + crash log viewer |
 | `DataManagementScreen.kt` | Export/cleanup/import tools |
+| `OnboardingScreen.kt` | First-run API key setup wizard |
+| `BackupRestoreScreen.kt` | Config backup/restore UI |
+| `ClearDataScreen.kt` | Selective data clearing (records, summaries, logs) |
 
 #### ViewModels (`ui/viewmodel/`)
 
@@ -178,7 +195,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (16 classes, 195 tests)
+## 4. Test Map (20 unit + 4 instrumented, 214+ tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -186,6 +203,11 @@ C:\Users\Administrator\
 | `RecordAggregatorTest.kt` | Partition + snapshot-diff primitives |
 | `IntradayEngineTest.kt` | Per-pair 24h burn rate, pace, spike detection |
 | `DailyEngineTest.kt` | Calendar-day consumed/toppedUp, trends, cumulative drift |
+
+### API Tests
+| File | What it covers |
+|---|---|
+| `DeepSeekApiServiceTest.kt` | OkHttp client, auth headers, JSON deserialization, error responses |
 
 ### Repository Tests
 | File | What it covers |
@@ -197,13 +219,20 @@ C:\Users\Administrator\
 | `RefreshLogStoreTest.kt` | Refresh logging CRUD |
 | `RefreshSchedulerTest.kt` | Periodic refresh scheduling |
 | `CleanupSchedulerTest.kt` | Old data pruning |
-| `AlertCheckerTest.kt` | Threshold alert logic |
+| `AlertCheckerTest.kt` | Threshold + change alert logic |
 | `WidgetPrefsTest.kt` | Widget config storage |
 
 ### Model Tests
 | File | What it covers |
 |---|---|
 | `BalanceResponseTest.kt` | JSON deserialization of API response |
+
+### Widget Tests
+| File | What it covers |
+|---|---|
+| `BalanceWidgetDataStoreTest.kt` | Widget balance cache + aggregation |
+| `WidgetConfigStoreTest.kt` | Per-widget instance config persistence |
+| `WidgetProviderTest.kt` | RemoteViews update + refresh logic |
 
 ### ViewModel Tests
 | File | What it covers |
@@ -212,10 +241,13 @@ C:\Users\Administrator\
 | `LogViewModelTest.kt` | Log screen VM |
 | `DataManagementViewModelTest.kt` | Export/cleanup VM |
 
-### Instrumented Tests
+### Instrumented Tests (androidTest)
 | File | What it covers |
 |---|---|
 | `HomeScreenTest.kt` | Compose UI test for home screen |
+| `OnboardingScreenTest.kt` | First-run API key setup flow |
+| `SettingsScreenTest.kt` | Settings screen interactions |
+| `InsightsScreenTest.kt` | Insights screen rendering |
 
 ---
 
@@ -241,11 +273,11 @@ C:\Users\Administrator\
 
 2. **RecordAggregator**: Shared primitive layer between both engines — partitions records by pair/window, computes snapshot diffs, delta accounting (consumed = opening - closing + toppedUp).
 
-3. **Widget Architecture**: Glance AppWidget with 5 size variants (2×1 through 5×1), light/dark/compact variants. Data flows via `WidgetPrefs` + `BalanceRefreshService`.
+3. **Widget Architecture**: RemoteViews AppWidget with 5 size variants (2×1 through 5×1), light/dark/compact variants. Data flows via `WidgetConfigStore` + `BalanceWidgetDataStore` + `BalanceRefreshService` foreground refresh.
 
 4. **Security**: AES-256 EncryptedSharedPreferences for API key storage, OkHttp with Bearer token auth.
 
-5. **Background Work**: WorkManager for periodic refresh + boot-triggered reschedule. Foreground service for widget updates.
+5. **Background Work**: Handler + foreground service for periodic refresh with keep-alive. BootReceiver + MidnightReceiver for lifecycle rescheduling. No WorkManager dependency.
 
 6. **Skill Routing**: CLAUDE.md decision tree routes user requests through Superpowers (creative/debug/TDD) → gstack (review/QA/deploy) pipeline.
 
@@ -268,11 +300,16 @@ C:\Users\Administrator\
 | Run all tests | `DeepSeekBalance/` — `./gradlew test` |
 | API endpoint | `DeepSeekApiService.kt` — `GET /user/balance` |
 | Insight logic | `IntradayEngine.kt` + `DailyEngine.kt` |
+| Health tracking | `ServiceHealthTracker.kt` |
 | Data storage | `RawRecordStore.kt`, `DailySummaryStore.kt`, `RefreshLogStore.kt` |
 | Widget layouts | `res/layout/widget_balance*.xml` (5 variants) |
 | Widget config | `res/xml/static_widget_info_*.xml` (5 sizes) |
+| Widget data | `BalanceWidgetDataStore.kt` + `WidgetConfigStore.kt` |
 | Theme | `Theme.kt` |
+| Signing | `SIGNING.md` |
+| Privacy | `PRIVACY_POLICY.md` + `docs/audit/data-safety-audit.md` |
+| Play Store | `PLAY_STORE_LISTING.md` + `PLAY_CONSOLE_PERMISSIONS.md` |
 | Memory index | `.claude/projects/C--Users-Administrator/memory/MEMORY.md` |
 | Skill routing | `CLAUDE.md` (project root) |
 | Claude settings | `.claude/settings.json` + `.claude/settings.local.json` |
-| Design doc | `docs/superpowers/specs/2026-07-05-insights-rewrite-design.md` |
+| Design docs | `docs/superpowers/specs/` |

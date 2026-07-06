@@ -99,6 +99,32 @@ class RecordAggregatorTest {
         assertEquals(0f, RecordAggregator.computeToppedUp(sorted))
     }
 
+    @Test
+    fun `toppedUp detects mid-day top-up even when followed by consumption`() {
+        // 模拟主钱包 7/5 场景：先消耗 → 充值 → 再消耗
+        // last-first 公式会返回 0，但累加正向跳变应该捕获充值
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 100f),   // toppedUpBalance start=100
+            RawRecord("acc1", 2000L, "CNY", 80f, 0f, 80f),      // 消耗 20，tu→80
+            RawRecord("acc1", 3000L, "CNY", 180f, 0f, 180f),    // 充值 100，tu→180
+            RawRecord("acc1", 4000L, "CNY", 150f, 0f, 150f),    // 消耗 30，tu→150
+        )
+        // last - first = 150-100 = 50，但实际只有一次充值 +100
+        assertEquals(100f, RecordAggregator.computeToppedUp(sorted))
+    }
+
+    @Test
+    fun `toppedUp accumulates multiple top-ups throughout the day`() {
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
+            RawRecord("acc1", 2000L, "CNY", 150f, 0f, 150f),   // +100
+            RawRecord("acc1", 3000L, "CNY", 130f, 0f, 130f),   // 消耗 20
+            RawRecord("acc1", 4000L, "CNY", 200f, 0f, 200f),   // +70
+            RawRecord("acc1", 5000L, "CNY", 180f, 0f, 180f),   // 消耗 20
+        )
+        assertEquals(170f, RecordAggregator.computeToppedUp(sorted)) // 100+70
+    }
+
     // ── computeGranted 测试 ──
 
     @Test

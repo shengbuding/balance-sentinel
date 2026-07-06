@@ -171,6 +171,14 @@ class BalanceRefreshService : Service() {
         isRefreshing = true
         CrashLogger.breadcrumb(TAG, "Refresh cycle started")
 
+        // Android 16+ 前台服务超时限制：每个刷新周期开始前重新进入前台状态
+        try {
+            startForeground(DeepSeekApp.NOTIFICATION_ID,
+                notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
+        } catch (e: Exception) {
+            Logger.e(TAG, "startForeground failed", e)
+        }
+
         // WakeLock 防止 CPU 在刷新期间休眠
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:refresh")
@@ -331,6 +339,12 @@ class BalanceRefreshService : Service() {
                 isRefreshing = false
                 try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
                 CrashLogger.breadcrumb(TAG, "Refresh cycle completed")
+
+                // Android 16+ 前台服务超时限制：刷新完成后退出前台状态
+                // STOP_FOREGROUND_DETACH 保留通知但解除前台绑定，避免超时被杀
+                try {
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                } catch (_: Exception) {}
             }
         }.start()
     }

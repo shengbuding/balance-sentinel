@@ -236,7 +236,8 @@ class DailySummaryStoreTest {
 
     @Test
     fun `aggregateAndSave with empty list does nothing`() {
-        DailySummaryStore.aggregateAndSave(context, emptyList())
+        // aggregateAndSave removed; test inline path
+        assertTrue(com.balancesentinel.app.data.engine.RecordAggregator.aggregate(emptyList(), "2026-01-01").isEmpty())
         assertTrue(DailySummaryStore.getSummaries(context).isEmpty())
     }
 
@@ -247,7 +248,11 @@ class DailySummaryStoreTest {
             RawRecord("acc1", 2000, "CNY", 80f, 10f, 70f),
             RawRecord("acc1", 3000, "CNY", 60f, 10f, 50f)
         )
-        DailySummaryStore.aggregateAndSave(context, records)
+        val summaryDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(records.first().timestamp))
+        val aggregated = com.balancesentinel.app.data.engine.RecordAggregator.aggregate(records, summaryDate)
+        for (summary in aggregated) {
+            DailySummaryStore.addSummary(context, summary)
+        }
 
         val summaries = DailySummaryStore.getSummaries(context)
         assertEquals(1, summaries.size)
@@ -264,7 +269,11 @@ class DailySummaryStoreTest {
             RawRecord("acc1", 1000, "CNY", 100f, 0f, 100f),
             RawRecord("acc1", 2000, "CNY", 200f, 0f, 200f)
         )
-        DailySummaryStore.aggregateAndSave(context, records)
+        val summaryDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(records.first().timestamp))
+        val aggregated = com.balancesentinel.app.data.engine.RecordAggregator.aggregate(records, summaryDate)
+        for (summary in aggregated) {
+            DailySummaryStore.addSummary(context, summary)
+        }
 
         val summaries = DailySummaryStore.getSummaries(context)
         assertEquals(1, summaries.size)
@@ -284,7 +293,11 @@ class DailySummaryStoreTest {
             RawRecord("acc2", 1000, "CNY", 200f, 0f, 200f),
             RawRecord("acc2", 2000, "CNY", 180f, 0f, 180f)
         )
-        DailySummaryStore.aggregateAndSave(context, records)
+        val summaryDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(records.first().timestamp))
+        val aggregated = com.balancesentinel.app.data.engine.RecordAggregator.aggregate(records, summaryDate)
+        for (summary in aggregated) {
+            DailySummaryStore.addSummary(context, summary)
+        }
 
         val all = DailySummaryStore.getSummaries(context)
         assertEquals(3, all.size) // CNY-acc1, USD-acc1, CNY-acc2
@@ -300,7 +313,11 @@ class DailySummaryStoreTest {
             RawRecord("acc1", recordDate, "CNY", 100f, 10f, 90f),
             RawRecord("acc1", recordDate + 3600_000L, "CNY", 90f, 10f, 80f)
         )
-        DailySummaryStore.aggregateAndSave(context, records)
+        val summaryDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(records.first().timestamp))
+        val aggregated = com.balancesentinel.app.data.engine.RecordAggregator.aggregate(records, summaryDate)
+        for (summary in aggregated) {
+            DailySummaryStore.addSummary(context, summary)
+        }
 
         val summaries = DailySummaryStore.getSummaries(context)
         assertEquals(1, summaries.size)

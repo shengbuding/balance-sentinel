@@ -49,13 +49,25 @@ object RecordAggregator {
             .toList()
     }
 
-    /** toppedUp = last.toppedUpBalance - first.toppedUpBalance，下限 0 */
-    fun computeToppedUp(sorted: List<RawRecord>): Float =
-        (sorted.last().toppedUpBalance - sorted.first().toppedUpBalance).coerceAtLeast(0f)
+    /** toppedUp = 累加每次 toppedUpBalance 的正向跳变 */
+    fun computeToppedUp(sorted: List<RawRecord>): Float {
+        var sum = 0f
+        for (i in 1 until sorted.size) {
+            val diff = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
+            if (diff > 0) sum += diff
+        }
+        return sum
+    }
 
-    /** granted = last.grantedBalance - first.grantedBalance，下限 0 */
-    fun computeGranted(sorted: List<RawRecord>): Float =
-        (sorted.last().grantedBalance - sorted.first().grantedBalance).coerceAtLeast(0f)
+    /** granted = 累加每次 grantedBalance 的正向跳变 */
+    fun computeGranted(sorted: List<RawRecord>): Float {
+        var sum = 0f
+        for (i in 1 until sorted.size) {
+            val diff = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
+            if (diff > 0) sum += diff
+        }
+        return sum
+    }
 
     /**
      * 消耗 = open - close + toppedUp + granted，下限 0。

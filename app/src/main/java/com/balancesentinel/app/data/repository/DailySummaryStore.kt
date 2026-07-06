@@ -3,9 +3,7 @@ package com.balancesentinel.app.data.repository
 import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
-import com.balancesentinel.app.data.engine.RecordAggregator
 import com.balancesentinel.app.data.model.DailySummary
-import com.balancesentinel.app.data.model.RawRecord
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
@@ -74,22 +72,6 @@ object DailySummaryStore {
     }
 
     /**
-     * 聚合原始记录 → 日摘要 → 保存 → 清空 RawRecord。
-     * 由午夜闹钟和 App 启动检测调用。
-     * 按币种分组各自生成一条 DailySummary。
-     */
-    fun aggregateAndSave(context: Context, rawRecords: List<RawRecord>) {
-        if (rawRecords.isEmpty()) return
-
-        // 用记录时间戳确定日期（午夜调度时 Date() 已是新一天，数据属于前一天）
-        val summaryDate = dateFormat.format(Date(rawRecords.first().timestamp))
-        val summaries = RecordAggregator.aggregate(rawRecords, summaryDate)
-        for (summary in summaries) {
-            addSummary(context, summary)
-        }
-    }
-
-    /**
      * 读取指定账户的日摘要。
      */
     fun getSummariesForAccount(context: Context, accountId: String): List<DailySummary> {
@@ -137,8 +119,8 @@ object DailySummaryStore {
     /**
      * 确保日期连续性。从 fromDate 到 toDate（不含今日）之间缺失的日期自动补零。
      *
-     * 前置条件: fromDate 对应的条目必须在 DailySummaryStore 中存在。
-     * DailySummaryStore 为空时不应调用此方法。
+     * 按 (accountId, currency) 分组独立处理，每组有各自的 carryBalance，
+     * 避免多账户场景下余额串号和补零遗漏。
      *
      * 补零日特征:
      *   open/close = 前一个有效日的收盘值
@@ -148,47 +130,58 @@ object DailySummaryStore {
     fun ensureContinuity(context: Context, fromDate: String, toDate: String) {
         try {
             val summaries = getSummaries(context).toMutableList()
-            val fromSummary = summaries.find { it.date == fromDate } ?: return
-            var carryBalance = fromSummary.close
-
             val today = dateFormat.format(Date())
 
-            val cal = java.util.Calendar.getInstance()
-            dateFormat.parse(fromDate)?.let { cal.time = it }
-            cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            // 按 (accountId, currency) 分组
+            val groups = summaries.groupBy { it.accountId to it.currency }
 
-            val toCal = java.util.Calendar.getInstance()
-            dateFormat.parse(toDate)?.let { toCal.time = it }
+            for ((_, groupSummaries) in groups) {
+                // 找到该组在 fromDate 范围内的最早日期
+                val groupEarliest = groupSummaries
+                    .filter { it.date >= fromDate }
+                    .minByOrNull { it.date } ?: continue
 
-            while (!cal.after(toCal)) {
-                val date = dateFormat.format(cal.time)
-                if (date >= today) break  // 不补今日
+                var carryBalance = groupEarliest.close
+                val accountId = groupEarliest.accountId
+                val currency = groupEarliest.currency
 
-                val exists = summaries.any { it.date == date }
-                if (!exists) {
-                    val currency = fromSummary.currency
-                    val accountId = fromSummary.accountId
-                    summaries.add(
-                        DailySummary(
-                            accountId = accountId,
-                            date = date,
-                            currency = currency,
-                            open = carryBalance,
-                            close = carryBalance,
-                            consumed = 0f,
-                            toppedUp = 0f,
-                            granted = 0f,
-                            avgBalance = carryBalance,
-                            sampleCount = 0,
-                            toppedUpBalanceClose = 0f,
-                            grantedBalanceClose = 0f
-                        )
-                    )
-                } else {
-                    // 更新 carryBalance 为该日的 close
-                    summaries.find { it.date == date }?.let { carryBalance = it.close }
-                }
+                // 该组已有日期的快速查找集合
+                val existingDates = groupSummaries.map { it.date }.toSet()
+
+                val cal = java.util.Calendar.getInstance()
+                dateFormat.parse(groupEarliest.date)?.let { cal.time = it }
                 cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+
+                val toCal = java.util.Calendar.getInstance()
+                dateFormat.parse(toDate)?.let { toCal.time = it }
+
+                while (!cal.after(toCal)) {
+                    val date = dateFormat.format(cal.time)
+                    if (date >= today) break
+
+                    if (date !in existingDates) {
+                        summaries.add(
+                            DailySummary(
+                                accountId = accountId,
+                                date = date,
+                                currency = currency,
+                                open = carryBalance,
+                                close = carryBalance,
+                                consumed = 0f,
+                                toppedUp = 0f,
+                                granted = 0f,
+                                avgBalance = carryBalance,
+                                sampleCount = 0,
+                                toppedUpBalanceClose = 0f,
+                                grantedBalanceClose = 0f
+                            )
+                        )
+                    } else {
+                        // 该日存在时，用该组的 close 推进 carryBalance
+                        groupSummaries.find { it.date == date }?.let { carryBalance = it.close }
+                    }
+                    cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+                }
             }
 
             summaries.sortBy { it.date }
