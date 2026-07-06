@@ -9,6 +9,21 @@ class DeepSeekApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.install(this)
+
+        // Clean up stale downloaded APKs from previous sessions
+        try {
+            val apkDir = java.io.File(cacheDir, "apk")
+            if (apkDir.exists()) {
+                apkDir.listFiles()?.forEach { file ->
+                    if (file.name.startsWith("update-") && file.name.endsWith(".apk")) {
+                        file.delete()
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Non-critical — don't block app startup
+        }
+
         createNotificationChannel()
         CrashLogger.breadcrumb("App", "onCreate complete")
     }
