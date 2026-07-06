@@ -42,7 +42,9 @@ object DailyEngine {
                 consumed = consumed,
                 toppedUp = todayTopUp,
                 granted = todayGrant,
-                isGapFill = false
+                isGapFill = false,
+                open = first.totalBalance,
+                sampleCount = todayFiltered.size
             )
         } else null
 
@@ -82,7 +84,8 @@ object DailyEngine {
             } else {
                 DailyPoint(
                     summary.date, summary.close, summary.consumed,
-                    summary.toppedUp, summary.granted, summary.sampleCount == 0
+                    summary.toppedUp, summary.granted, summary.sampleCount == 0,
+                    summary.open, summary.sampleCount
                 )
             }
         }.toMutableList()

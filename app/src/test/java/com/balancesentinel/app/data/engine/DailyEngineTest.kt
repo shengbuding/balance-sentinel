@@ -182,4 +182,36 @@ class DailyEngineTest {
         val todayPoint = output.dailyPoints.find { it.date == today }!!
         assertEquals(10f, todayPoint.granted, 0.01f)  // per-pair detected
     }
+
+    @Test
+    fun `daily point includes open and sampleCount from summary`() {
+        val summary = DailySummary(
+            accountId = "acc1", date = "2026-07-04", currency = "CNY",
+            open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
+            granted = 0f, avgBalance = 95f, sampleCount = 5,
+            toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
+        )
+        val input = DailyInput(listOf(summary), emptyList(), "CNY", null, 7)
+        val output = DailyEngine.compute(input)
+
+        val point = output.dailyPoints[0]
+        assertEquals(100f, point.open, 0.01f)
+        assertEquals(5, point.sampleCount)
+    }
+
+    @Test
+    fun `today point includes open and sampleCount from raw records`() {
+        val now = System.currentTimeMillis()
+        val todayRecords = listOf(
+            RawRecord("acc1", now - 2000L, "CNY", 100f, 0f, 100f),
+            RawRecord("acc1", now - 1000L, "CNY", 95f, 0f, 95f),
+            RawRecord("acc1", now, "CNY", 90f, 0f, 90f)
+        )
+        val input = DailyInput(emptyList(), todayRecords, "CNY", null, 7)
+        val output = DailyEngine.compute(input)
+
+        val point = output.dailyPoints[0]
+        assertEquals(100f, point.open, 0.01f)    // first record's totalBalance
+        assertEquals(3, point.sampleCount)        // 3 records
+    }
 }
