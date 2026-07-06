@@ -45,6 +45,12 @@ import com.balancesentinel.app.data.repository.RefreshStats
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.data.update.UpdateChecker
+import com.balancesentinel.app.data.update.UpdateResult
+import com.balancesentinel.app.data.update.UpdatePrefs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +133,7 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
             CommunityCard()
 
             // ── 版本信息 ──
-            VersionInfo()
+            VersionInfo(snackbarHostState)
         }
     }
 }
@@ -498,26 +504,144 @@ private fun CrashLogCard(
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun VersionInfo() {
+private fun VersionInfo(snackbarHostState: SnackbarHostState) {
     val context = LocalContext.current
-    val versionName = try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
-    } catch (_: Exception) { "1.0.0" }
+    val scope = rememberCoroutineScope()
+    val checker = remember { UpdateChecker() }
+
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (_: Exception) { "1.0.0" }
+    }
+
+    var isChecking by remember { mutableStateOf(false) }
+    var statusText by remember { mutableStateOf<String?>(null) } // null = default, text = up-to-date/error
+    var isUpToDate by remember { mutableStateOf(false) }
+    var isError by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var latestRelease by remember { mutableStateOf<com.balancesentinel.app.data.model.GitHubRelease?>(null) }
+    val updatePrefs = remember { UpdatePrefs(context) }
+
+    fun performCheck() {
+        if (isChecking) return
+        isChecking = true
+        statusText = context.getString(R.string.settings_checking)
+        isUpToDate = false
+        isError = false
+
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                checker.checkForUpdate(context)
+            }
+            isChecking = false
+            when (result) {
+                is UpdateResult.UpToDate -> {
+                    statusText = context.getString(R.string.settings_up_to_date)
+                    isUpToDate = true
+                    isError = false
+                }
+                is UpdateResult.UpdateAvailable -> {
+                    statusText = context.getString(R.string.settings_update_available, result.release.tagName)
+                    isUpToDate = false
+                    isError = false
+                    latestRelease = result.release
+                    showUpdateDialog = true
+                }
+                is UpdateResult.Error -> {
+                    statusText = result.message
+                    isUpToDate = false
+                    isError = true
+                    // Also show snackbar for manual check errors
+                    scope.launch {
+                        snackbarHostState.showSnackbar(result.message)
+                    }
+                }
+            }
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.settings_about),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(stringResource(R.string.settings_about_version, versionName),
+            Text(
+                stringResource(R.string.settings_about_version, versionName),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(stringResource(R.string.settings_about_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                stringResource(R.string.settings_about_desc),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Check update button row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = !isChecking) { performCheck() }
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = statusText ?: stringResource(R.string.settings_check_update),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        isUpToDate -> WalletColors.success
+                        isError -> MaterialTheme.colorScheme.error
+                        statusText != null && !isUpToDate && !isError -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = stringResource(R.string.settings_check_update),
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
+    }
+
+    // Update dialog
+    if (showUpdateDialog && latestRelease != null) {
+        UpdateDialog(
+            release = latestRelease!!,
+            currentVersion = versionName,
+            onDismiss = { showUpdateDialog = false },
+            onSkipVersion = {
+                updatePrefs.skippedVersion = latestRelease!!.tagName
+                showUpdateDialog = false
+            },
+            onRemindLater = {
+                updatePrefs.markPromptedToday()
+                showUpdateDialog = false
+            }
+        )
     }
 }
 
