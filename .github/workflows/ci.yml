@@ -30,9 +30,30 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-disabled: false
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            jdks
+          cache-artifact-bundling: full
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tail -300
+        continue-on-error: true
+
+      - name: Show test failures
+        if: failure()
+        run: |
+          echo "=== Test Failures ==="
+          for f in app/build/reports/tests/testDebugUnitTest/classes/*.html; do
+            if grep -q 'failures' "$f" 2>/dev/null; then
+              echo "--- $(basename $f) ---"
+              sed -n '/<pre>/,/<\/pre>/p' "$f" | sed 's/<[^>]*>//g' | head -20
+            fi
+          done
+          echo "=== Gradle Build Output ==="
+          find . -name "*.log" -path "*/build/*" -exec tail -20 {} \; 2>/dev/null
+          echo "=== End ==="
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
