@@ -47,7 +47,20 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-output.txt
+          GRADLE_EXIT=${PIPESTATUS[0]}
+          echo "GRADLE_EXIT_CODE=$GRADLE_EXIT" >> /tmp/gradle-output.txt
+          exit $GRADLE_EXIT
+
+      - name: Upload Gradle output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-output
+          path: /tmp/gradle-output.txt
+          retention-days: 7
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
