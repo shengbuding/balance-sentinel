@@ -23,23 +23,23 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-          # Download cmdline-tools
           mkdir -p $ANDROID_HOME/cmdline-tools
           cd $ANDROID_HOME/cmdline-tools
-          curl -sSO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          curl -sSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -qo commandlinetools-linux-11076708_latest.zip
           mv cmdline-tools latest 2>/dev/null || true
           rm commandlinetools-linux-11076708_latest.zip
 
-          # Accept licenses and install SDK 35
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" 2>&1
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses 2>/dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-35" "build-tools;34.0.0" "platform-tools"
 
-          echo "SDK installed at $ANDROID_HOME"
-          ls $ANDROID_HOME/platforms/
+          echo "=== SDK contents ==="
+          ls $ANDROID_HOME/platforms/ && ls $ANDROID_HOME/build-tools/
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -47,20 +47,7 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run unit tests
-        run: |
-          set +e
-          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-output.txt
-          GRADLE_EXIT=${PIPESTATUS[0]}
-          echo "GRADLE_EXIT_CODE=$GRADLE_EXIT" >> /tmp/gradle-output.txt
-          exit $GRADLE_EXIT
-
-      - name: Upload Gradle output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-output
-          path: /tmp/gradle-output.txt
-          retention-days: 7
+        run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
