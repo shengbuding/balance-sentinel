@@ -32,7 +32,29 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        id: tests
+        run: |
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test-output.txt
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Test output on failure
+        if: always()
+        run: |
+          echo "=== Last 100 lines of test output ==="
+          tail -100 test-output.txt 2>/dev/null || echo "No output file"
+          echo "=== Test HTML reports ==="
+          for f in app/build/reports/tests/testDebugUnitTest/classes/*.html; do
+            [ -f "$f" ] || continue
+            if grep -q 'class="failures"' "$f" 2>/dev/null; then
+              echo "FAIL: $(basename $f)"
+              sed -n '/<pre>/,/<\/pre>/p' "$f" | sed 's/<[^>]*>//g' | head -10
+            fi
+          done
+          echo "=== End ==="
+
+      - name: Fail if tests failed
+        if: steps.tests.outputs.EXIT_CODE != '0'
+        run: exit 1
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
