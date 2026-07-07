@@ -21,6 +21,12 @@ jobs:
           java-version: '17'
           distribution: 'corretto'
 
+      - name: Install system deps (Robolectric)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsqlite3-0 fontconfig libfontconfig1 2>/dev/null || true
+          echo "Installed deps"
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -34,27 +40,31 @@ jobs:
       - name: Run unit tests
         id: tests
         run: |
-          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test-output.txt
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace -Drobolectric.logging=stdout -Drobolectric.logging.enabled=true 2>&1 | tee test-output.txt
           echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
-      - name: Test output on failure
+      - name: Print test output
         if: always()
         run: |
-          echo "=== Last 100 lines of test output ==="
-          tail -100 test-output.txt 2>/dev/null || echo "No output file"
-          echo "=== Test HTML reports ==="
+          echo "=== Last 150 lines of test output ==="
+          tail -150 test-output.txt 2>/dev/null || echo "No output file"
+          echo "=== Test HTML failure details ==="
           for f in app/build/reports/tests/testDebugUnitTest/classes/*.html; do
             [ -f "$f" ] || continue
-            if grep -q 'class="failures"' "$f" 2>/dev/null; then
-              echo "FAIL: $(basename $f)"
-              sed -n '/<pre>/,/<\/pre>/p' "$f" | sed 's/<[^>]*>//g' | head -10
+            if grep -q 'failures' "$f" 2>/dev/null; then
+              echo "--- FAIL: $(basename $f .html) ---"
+              sed -n '/<pre>/,/<\/pre>/p' "$f" | sed 's/<[^>]*>//g' | head -15
             fi
           done
+          echo "=== Robolectric download logs ==="
+          find ~/.m2 -name "*.jar" -newer /tmp 2>/dev/null | head -5 || echo "No recent m2 jars"
           echo "=== End ==="
 
       - name: Fail if tests failed
         if: steps.tests.outputs.EXIT_CODE != '0'
-        run: exit 1
+        run: |
+          echo "Tests failed with exit code ${{ steps.tests.outputs.EXIT_CODE }}"
+          exit 1
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
