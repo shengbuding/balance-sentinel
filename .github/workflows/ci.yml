@@ -21,37 +21,27 @@ jobs:
           java-version: '17'
           distribution: 'corretto'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platforms;android-35
-            build-tools;35.0.0
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee gradle-output.txt
-        continue-on-error: true
+        env:
+          ANDROID_HOME: /tmp/android-sdk-dummy
+        run: |
+          mkdir -p $ANDROID_HOME
+          ./gradlew testDebugUnitTest --no-daemon
 
       - name: Run lint
-        run: ./gradlew lintDebug --no-daemon 2>&1 | tee -a gradle-output.txt
-        continue-on-error: true
+        env:
+          ANDROID_HOME: /tmp/android-sdk-dummy
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon 2>&1 | tee -a gradle-output.txt
-        continue-on-error: true
-
-      - name: Upload Gradle output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-output
-          path: gradle-output.txt
-          retention-days: 7
+        env:
+          ANDROID_HOME: /tmp/android-sdk-dummy
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload test report
         if: always()
