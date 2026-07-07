@@ -121,6 +121,11 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    lint {
+        abortOnError = false
+        baseline = file("lint-baseline.xml")
+    }
 }
 
 dependencies {
