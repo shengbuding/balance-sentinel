@@ -16,3 +16,7 @@ keystore.properties
 *.jks
 *.b64
 *.keystore
+# Local AI toolchain config (personal, not for sharing)
+CLAUDE.md
+AGENTS.md
+/docs/agents
