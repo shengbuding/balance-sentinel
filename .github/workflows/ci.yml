@@ -21,26 +21,38 @@ jobs:
           java-version: '17'
           distribution: 'corretto'
 
+      - name: Setup Android SDK
+        run: |
+          ANDROID_HOME=$HOME/android-sdk
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+
+          # Download cmdline-tools
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          curl -sSO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -qo commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest 2>/dev/null || true
+          rm commandlinetools-linux-11076708_latest.zip
+
+          # Accept licenses and install SDK 35
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" 2>&1
+
+          echo "SDK installed at $ANDROID_HOME"
+          ls $ANDROID_HOME/platforms/
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run unit tests
-        env:
-          ANDROID_HOME: /tmp/android-sdk-dummy
-        run: |
-          mkdir -p $ANDROID_HOME
-          ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Run lint
-        env:
-          ANDROID_HOME: /tmp/android-sdk-dummy
         run: ./gradlew lintDebug --no-daemon
 
       - name: Build debug APK
-        env:
-          ANDROID_HOME: /tmp/android-sdk-dummy
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload test report
