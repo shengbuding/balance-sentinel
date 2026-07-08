@@ -202,8 +202,8 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         /**
          * 合并多账户 Intraday 输出。
          *
-         * Trend points 按时间排序后用自适应 minInterval 去重，
-         * Bill report 对各账户求和。
+         * 同一时间戳（1s 容差）的跨账户点合并：余额/充值/赠送求和，
+         * 再按自适应 minInterval 去重，Bill report 对各账户求和。
          */
         fun mergeIntradayOutputs(outputs: List<IntradayOutput>): IntradayOutput {
             if (outputs.isEmpty()) return IntradayOutput(
@@ -211,27 +211,53 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
             )
             if (outputs.size == 1) return outputs[0]
 
+            // 收集所有点，按时间排序
             val allPoints = outputs.flatMap { it.trendPoints }.sortedBy { it.timestamp }
 
-            // 自适应间隔：数据稀疏时不限间隔，密集时避免点过多
+            // 第一步：同一秒内的点合并（余额/充值/赠送求和）
+            val mergedByTime = mutableListOf<IntradayPoint>()
+            var i = 0
+            while (i < allPoints.size) {
+                val groupTs = allPoints[i].timestamp
+                var sumBalance = 0f
+                var sumTopUp = 0f
+                var sumGrant = 0f
+                var hasTopUp = false
+                var hasGrant = false
+
+                while (i < allPoints.size && allPoints[i].timestamp - groupTs < 1000L) {
+                    val p = allPoints[i]
+                    sumBalance += p.actualBalance
+                    sumTopUp += p.topUpAmount
+                    sumGrant += p.grantAmount
+                    if (p.isTopUp) hasTopUp = true
+                    if (p.isGrant) hasGrant = true
+                    i++
+                }
+                mergedByTime.add(
+                    IntradayPoint(groupTs, sumBalance, hasTopUp, hasGrant, sumTopUp, sumGrant)
+                )
+            }
+
+            // 第二步：自适应间隔去重
             val minInterval = when {
-                allPoints.size <= 20 -> 0L
-                allPoints.size <= 60 -> 15_000L
+                mergedByTime.size <= 20 -> 0L
+                mergedByTime.size <= 60 -> 15_000L
                 else -> 30_000L
             }
 
-            val merged = if (minInterval == 0L || allPoints.isEmpty()) {
-                allPoints
+            val merged = if (minInterval == 0L || mergedByTime.isEmpty()) {
+                mergedByTime
             } else {
-                val result = mutableListOf(allPoints[0])
-                for (i in 1 until allPoints.size) {
-                    if (allPoints[i].timestamp - result.last().timestamp >= minInterval) {
-                        result.add(allPoints[i])
+                val result = mutableListOf(mergedByTime[0])
+                for (j in 1 until mergedByTime.size) {
+                    if (mergedByTime[j].timestamp - result.last().timestamp >= minInterval) {
+                        result.add(mergedByTime[j])
                     }
                 }
                 // 确保尾部不丢点
-                if (result.last().timestamp != allPoints.last().timestamp) {
-                    result.add(allPoints.last())
+                if (result.last().timestamp != mergedByTime.last().timestamp) {
+                    result.add(mergedByTime.last())
                 }
                 result
             }
