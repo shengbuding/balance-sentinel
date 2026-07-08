@@ -123,7 +123,6 @@
     <string name="settings_community">Community &amp; Feedback</string>
     <string name="settings_qq_copy_hint">Tap to copy group number</string>
     <string name="settings_language">Language</string>
-    <string name="settings_language_desc">Switch app display language</string>
     <string name="settings_language_dialog_title">Select Language</string>
     <string name="settings_language_system">Follow System</string>
     <string name="settings_about">About</string>

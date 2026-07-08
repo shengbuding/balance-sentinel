@@ -195,7 +195,7 @@ private fun SettingsMainPage(
             }
 
             SettingsNavCard(
-                icon = { Icon(Icons.Filled.Person, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                icon = { Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_language),
                 description = languageLabel,
                 onClick = { showLanguageDialog = true }

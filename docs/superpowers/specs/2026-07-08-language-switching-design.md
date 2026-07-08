@@ -82,7 +82,7 @@ Compose 自动重组 → 所有 stringResource() 立即切换
 
 | 决策 | 结论 |
 |------|------|
-| 切换方式 | 即时生效（AppCompatDelegate），不提示重启 |
+| 切换方式 | 即时生效（LocaleManager），不提示重启 |
 | 默认行为 | 跟随系统语言 |
 | 入口位置 | 设置主页新增导航卡片（「关于」之前） |
 | 底层 API | LocaleManager.applicationLocales（平台 API，minSdk=35） |
