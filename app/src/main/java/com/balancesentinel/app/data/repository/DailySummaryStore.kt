@@ -194,6 +194,20 @@ object DailySummaryStore {
     }
 
     /**
+     * 删除指定 (date, currency, accountId) 的日摘要。
+     */
+    fun deleteSummary(context: Context, date: String, currency: String, accountId: String) {
+        try {
+            val summaries = getSummaries(context).toMutableList()
+            summaries.removeAll {
+                it.date == date && it.currency == currency && it.accountId == accountId
+            }
+            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
+            getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+        } catch (e: Exception) { Logger.w(TAG, "deleteSummary failed", e) }
+    }
+
+    /**
      * 清除全部日摘要。
      */
     fun clear(context: Context) {
