@@ -80,6 +80,19 @@
     <string name="insights_label_net">Net Change</string>
     <string name="insights_period_label">Last %1$d days</string>
     <string name="insights_estimation_method">Based on last %1$d days net-balance linear regression</string>
+
+    <!-- Depletion estimate method labels (localized via EstimateMethod enum) -->
+    <string name="estimate_linear_regression">Linear regression based on last %1$d days of consumption</string>
+    <string name="estimate_average">Average consumption estimate based on last %1$d days</string>
+    <string name="estimate_simple_count">Estimate based on %1$d days of consumption data</string>
+    <string name="estimate_multi_linear">Multi-account linear regression based on last %1$d days</string>
+    <string name="estimate_multi_average">Multi-account average consumption estimate based on last %1$d days</string>
+    <string name="estimate_multi_simple">Multi-account estimate based on %1$d days of consumption</string>
+    <string name="depletion_date_format">%1$d/%2$d</string>
+    <string name="depletion_date_unknown">—</string>
+
+    <!-- Privacy policy (full text) -->
+    <string name="privacy_policy_full_text">Wallet Sentinel — Privacy Policy\n\nLast Updated: July 8, 2026\n\nOverview\nWallet Sentinel is a DeepSeek API balance monitoring tool. We take your privacy and data security seriously.\n\nInformation We Collect\n• DeepSeek API Key: Stored only in encrypted storage on this device, used solely for balance queries\n• We do NOT collect: personal identity information, device identifiers, location data, contacts, etc.\n\nData Usage\nYour API Key is used exclusively to query api.deepseek.com for balance information. All data transmission is encrypted via HTTPS. Retrieved balance data is stored only locally on your device.\n\nData Sharing\nWe do not share, sell, or transmit any of your data to any third party.\n\nData Security\n• API Key stored using Android EncryptedSharedPreferences (AES-256)\n• All network requests encrypted via HTTPS\n• App backup disabled\n• API Key auto-redacted in log output\n\nData Deletion\nYou can delete all data any time in the Data Management page. Uninstalling the app will automatically clear all local data.\n\nPermissions\n• INTERNET — Query API balance\n• FOREGROUND_SERVICE — Background scheduled refresh\n• POST_NOTIFICATIONS — Balance alert notifications\n• RECEIVE_BOOT_COMPLETED — Start on boot\n• SCHEDULE_EXACT_ALARM — Precise scheduling\n• WAKE_LOCK — Prevent CPU sleep\n\nThird-Party Services\nOnly connects to the official DeepSeek API. No third-party analytics, advertising, or tracking SDKs.\n\nFor privacy-related inquiries, please contact us via GitHub Issues.\n\nThis policy applies to the Wallet Sentinel Android app (package: com.balancesentinel.app).\n</string>
     <string name="insights_chart_balance">Balance</string>
     <string name="insights_chart_consumption">Consumed</string>
     <string name="insights_history_title">Daily History</string>

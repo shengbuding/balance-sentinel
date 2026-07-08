@@ -1133,7 +1133,7 @@ private fun PrivacyPolicyRow() {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
-                    Text(PRIVACY_POLICY_TEXT, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.privacy_policy_full_text), style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -1201,45 +1201,3 @@ private fun LanguageDialog(
     )
 }
 
-private val PRIVACY_POLICY_TEXT = """
-    钱包哨兵 — 隐私政策
-
-    最后更新日期：2026 年 7 月 8 日
-
-    概述
-    钱包哨兵是一款 DeepSeek API 余额监控工具。我们高度重视您的隐私和数据安全。
-
-    我们收集的信息
-    • DeepSeek API Key：仅存储在本设备的加密存储中，用于查询余额
-    • 不收集：个人身份信息、设备标识符、位置信息、联系人等
-
-    数据使用
-    API Key 仅用于向 api.deepseek.com 发起余额查询。所有数据传输通过 HTTPS 加密。查询到的余额数据仅存储在设备本地。
-
-    数据共享
-    我们不会将您的任何数据分享、出售或传输给任何第三方。
-
-    数据安全
-    • API Key 使用 Android EncryptedSharedPreferences（AES-256）存储
-    • 所有网络请求通过 HTTPS 加密
-    • 应用备份已禁用
-    • 日志输出自动脱敏 API Key
-
-    数据删除
-    您可以在「数据管理」页面随时删除所有数据。卸载 App 会自动清除所有本地数据。
-
-    权限说明
-    • INTERNET — 查询 API 余额
-    • FOREGROUND_SERVICE — 后台定时刷新
-    • POST_NOTIFICATIONS — 余额告警通知
-    • RECEIVE_BOOT_COMPLETED — 开机自启
-    • SCHEDULE_EXACT_ALARM — 精确定时
-    • WAKE_LOCK — 防 CPU 休眠
-
-    第三方服务
-    仅连接 DeepSeek 官方 API，无第三方分析/广告/追踪 SDK。
-
-    如有隐私相关问题，请通过 GitHub Issues 联系我们。
-
-    本政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。
-""".trimIndent()

@@ -144,7 +144,8 @@ object DailyEngine {
 
         // 尝试线性回归（需 ≥3 点且分母非零）；否则直接用均值
         val dailyRate: Float
-        val methodLabel: String
+        val method: EstimateMethod
+        val methodDays: Int
 
         if (withConsumption.size >= 3) {
             val xValues = withConsumption.indices.map { it.toFloat() }
@@ -157,35 +158,39 @@ object DailyEngine {
                 val slope = (n * sumXY - sumX * sumY) / denominator
                 if (slope > 0f) {
                     dailyRate = slope
-                    methodLabel = "基于最近${rangeDays}天消耗数据线性回归"
+                    method = EstimateMethod.LINEAR_REGRESSION
                 } else {
                     dailyRate = meanRate
-                    methodLabel = "基于最近${rangeDays}天平均消耗估算"
+                    method = EstimateMethod.AVERAGE
                 }
             } else {
                 dailyRate = meanRate
-                methodLabel = "基于最近${rangeDays}天平均消耗估算"
+                method = EstimateMethod.AVERAGE
             }
+            methodDays = rangeDays
         } else {
             dailyRate = meanRate
-            methodLabel = "基于${withConsumption.size}天消耗数据估算"
+            method = EstimateMethod.SIMPLE_COUNT
+            methodDays = withConsumption.size
         }
 
         val daysRemaining = lastBalance / dailyRate
 
-        val depletionDate = try {
+        val (depletionMonth, depletionDay) = try {
             val cal = Calendar.getInstance()
             cal.add(Calendar.DAY_OF_MONTH, daysRemaining.roundToInt())
-            "${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日"
+            (cal.get(Calendar.MONTH) + 1) to cal.get(Calendar.DAY_OF_MONTH)
         } catch (_: Exception) {
-            "—"
+            0 to 0
         }
 
         return DepletionEstimate(
             dailyRate = dailyRate,
             daysRemaining = daysRemaining,
-            depletionDate = depletionDate,
-            methodLabel = methodLabel
+            depletionMonth = depletionMonth,
+            depletionDay = depletionDay,
+            method = method,
+            methodDays = methodDays
         )
     }
 

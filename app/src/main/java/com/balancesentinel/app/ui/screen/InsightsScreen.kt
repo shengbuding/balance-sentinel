@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
@@ -705,7 +706,10 @@ private fun DailyCard(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = estimate.depletionDate,
+                                    text = if (estimate.depletionMonth > 0)
+                                        stringResource(R.string.depletion_date_format, estimate.depletionMonth, estimate.depletionDay)
+                                    else
+                                        stringResource(R.string.depletion_date_unknown),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = estColor.copy(alpha = 0.7f)
                                 )
@@ -713,7 +717,7 @@ private fun DailyCard(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = estimate.methodLabel,
+                            text = estimate.method.resolve(LocalContext.current, estimate.methodDays),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )

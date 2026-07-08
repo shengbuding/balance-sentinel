@@ -80,6 +80,19 @@
     <string name="insights_label_net">净变化</string>
     <string name="insights_period_label">最近%1$d天</string>
     <string name="insights_estimation_method">基于最近%1$d天净余额线性回归</string>
+
+    <!-- 消耗预估方法标签（引擎层结构化 key，Composable 层解析） -->
+    <string name="estimate_linear_regression">基于最近%1$d天消耗数据线性回归</string>
+    <string name="estimate_average">基于最近%1$d天平均消耗估算</string>
+    <string name="estimate_simple_count">基于%1$d天消耗数据估算</string>
+    <string name="estimate_multi_linear">基于最近%1$d天多账户消耗数据线性回归</string>
+    <string name="estimate_multi_average">基于最近%1$d天多账户平均消耗估算</string>
+    <string name="estimate_multi_simple">基于%1$d天多账户消耗数据估算</string>
+    <string name="depletion_date_format">%1$d月%2$d日</string>
+    <string name="depletion_date_unknown">—</string>
+
+    <!-- 隐私政策全文（长文本） -->
+    <string name="privacy_policy_full_text">钱包哨兵 — 隐私政策\n\n最后更新日期：2026 年 7 月 8 日\n\n概述\n钱包哨兵是一款 DeepSeek API 余额监控工具。我们高度重视您的隐私和数据安全。\n\n我们收集的信息\n• DeepSeek API Key：仅存储在本设备的加密存储中，用于查询余额\n• 不收集：个人身份信息、设备标识符、位置信息、联系人等\n\n数据使用\nAPI Key 仅用于向 api.deepseek.com 发起余额查询。所有数据传输通过 HTTPS 加密。查询到的余额数据仅存储在设备本地。\n\n数据共享\n我们不会将您的任何数据分享、出售或传输给任何第三方。\n\n数据安全\n• API Key 使用 Android EncryptedSharedPreferences（AES-256）存储\n• 所有网络请求通过 HTTPS 加密\n• 应用备份已禁用\n• 日志输出自动脱敏 API Key\n\n数据删除\n您可以在「数据管理」页面随时删除所有数据。卸载 App 会自动清除所有本地数据。\n\n权限说明\n• INTERNET — 查询 API 余额\n• FOREGROUND_SERVICE — 后台定时刷新\n• POST_NOTIFICATIONS — 余额告警通知\n• RECEIVE_BOOT_COMPLETED — 开机自启\n• SCHEDULE_EXACT_ALARM — 精确定时\n• WAKE_LOCK — 防 CPU 休眠\n\n第三方服务\n仅连接 DeepSeek 官方 API，无第三方分析/广告/追踪 SDK。\n\n如有隐私相关问题，请通过 GitHub Issues 联系我们。\n\n本政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。\n</string>
     <string name="insights_chart_balance">余额</string>
     <string name="insights_chart_consumption">消耗</string>
     <string name="insights_history_title">历史日汇总</string>

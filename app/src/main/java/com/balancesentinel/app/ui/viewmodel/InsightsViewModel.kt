@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.engine.DailyInput
 import com.balancesentinel.app.data.engine.DailyOutput
 import com.balancesentinel.app.data.engine.DailyPoint
 import com.balancesentinel.app.data.engine.DepletionEstimate
+import com.balancesentinel.app.data.engine.EstimateMethod
 import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayEngine
 import com.balancesentinel.app.data.engine.IntradayInput
@@ -362,7 +363,8 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
             if (meanRate <= 0f) return null
 
             val dailyRate: Float
-            val methodLabel: String
+            val method: EstimateMethod
+            val methodDays: Int
 
             if (withConsumption.size >= 3) {
                 val xValues = withConsumption.indices.map { it.toFloat() }
@@ -375,35 +377,39 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                     val slope = (n * sumXY - sumX * sumY) / denominator
                     if (slope > 0f) {
                         dailyRate = slope
-                        methodLabel = "基于最近${rangeDays}天多账户消耗数据线性回归"
+                        method = EstimateMethod.MULTI_ACCOUNT_LINEAR_REGRESSION
                     } else {
                         dailyRate = meanRate
-                        methodLabel = "基于最近${rangeDays}天多账户平均消耗估算"
+                        method = EstimateMethod.MULTI_ACCOUNT_AVERAGE
                     }
                 } else {
                     dailyRate = meanRate
-                    methodLabel = "基于最近${rangeDays}天多账户平均消耗估算"
+                    method = EstimateMethod.MULTI_ACCOUNT_AVERAGE
                 }
+                methodDays = rangeDays
             } else {
                 dailyRate = meanRate
-                methodLabel = "基于${withConsumption.size}天消耗数据估算"
+                method = EstimateMethod.MULTI_ACCOUNT_SIMPLE_COUNT
+                methodDays = withConsumption.size
             }
 
             val daysRemaining = lastBalance / dailyRate
 
-            val depletionDate = try {
+            val (depletionMonth, depletionDay) = try {
                 val cal = Calendar.getInstance()
                 cal.add(Calendar.DAY_OF_MONTH, daysRemaining.roundToInt())
-                "${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日"
+                (cal.get(Calendar.MONTH) + 1) to cal.get(Calendar.DAY_OF_MONTH)
             } catch (_: Exception) {
-                "—"
+                0 to 0
             }
 
             return DepletionEstimate(
                 dailyRate = dailyRate,
                 daysRemaining = daysRemaining,
-                depletionDate = depletionDate,
-                methodLabel = methodLabel
+                depletionMonth = depletionMonth,
+                depletionDay = depletionDay,
+                method = method,
+                methodDays = methodDays
             )
         }
     }

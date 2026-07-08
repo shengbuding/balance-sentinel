@@ -52,12 +52,38 @@ data class DailyBillReport(
 )
 
 /**
+ * 消耗预估方法枚举 — 结构化表示计算方式，UI 层通过 resolve() 解析为本地化字符串。
+ */
+enum class EstimateMethod {
+    LINEAR_REGRESSION,
+    AVERAGE,
+    SIMPLE_COUNT,
+    MULTI_ACCOUNT_LINEAR_REGRESSION,
+    MULTI_ACCOUNT_AVERAGE,
+    MULTI_ACCOUNT_SIMPLE_COUNT;
+
+    fun resolve(context: android.content.Context, days: Int): String {
+        val resId = when (this) {
+            LINEAR_REGRESSION -> com.balancesentinel.app.R.string.estimate_linear_regression
+            AVERAGE -> com.balancesentinel.app.R.string.estimate_average
+            SIMPLE_COUNT -> com.balancesentinel.app.R.string.estimate_simple_count
+            MULTI_ACCOUNT_LINEAR_REGRESSION -> com.balancesentinel.app.R.string.estimate_multi_linear
+            MULTI_ACCOUNT_AVERAGE -> com.balancesentinel.app.R.string.estimate_multi_average
+            MULTI_ACCOUNT_SIMPLE_COUNT -> com.balancesentinel.app.R.string.estimate_multi_simple
+        }
+        return context.getString(resId, days)
+    }
+}
+
+/**
  * 消耗预估（基于 consumed 值线性回归）。
  * null = 数据不足或消耗趋近于零。
  */
 data class DepletionEstimate(
     val dailyRate: Float,
     val daysRemaining: Float,
-    val depletionDate: String,
-    val methodLabel: String
+    val depletionMonth: Int,
+    val depletionDay: Int,
+    val method: EstimateMethod,
+    val methodDays: Int
 )
