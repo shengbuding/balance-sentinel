@@ -4,6 +4,9 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import com.balancesentinel.app.data.repository.WidgetPrefs
 
 class DeepSeekApp : Application() {
     override fun onCreate() {
@@ -25,6 +28,16 @@ class DeepSeekApp : Application() {
         }
 
         createNotificationChannel()
+
+        // 恢复用户语言偏好（未设置则跟随系统）
+        val savedLanguage = WidgetPrefs(this).language
+        if (savedLanguage != null) {
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags(savedLanguage)
+            )
+            CrashLogger.breadcrumb("App", "Locale restored: $savedLanguage")
+        }
+
         CrashLogger.breadcrumb("App", "onCreate complete")
     }
 
