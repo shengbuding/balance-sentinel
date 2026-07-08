@@ -10,6 +10,9 @@ on:
         required: true
         default: 'v1.2.0'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     name: Build & Attach APK
@@ -73,6 +76,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Create release if not exists, then upload APK
+          gh release view "${{ steps.version.outputs.tag }}" --repo ${{ github.repository }} 2>/dev/null \
+            || gh release create "${{ steps.version.outputs.tag }}" \
+                --title "${{ steps.version.outputs.tag }}" \
+                --notes "Release ${{ steps.version.outputs.tag }}" \
+                --repo ${{ github.repository }}
           gh release upload "${{ steps.version.outputs.tag }}" \
             balance-sentinel-${{ steps.version.outputs.tag }}.apk \
             --repo ${{ github.repository }} \
