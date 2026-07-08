@@ -2,7 +2,6 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
-import com.balancesentinel.app.data.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -12,28 +11,13 @@ import java.util.Locale
 /**
  * 清理调度器：聚合旧原始记录 → 日摘要 → 补零 → 删除。
  * 在午夜闹钟和 App 启动时调用，两者执行相同逻辑互为冗余。
- *
- * ## 数据版本自愈
- * 当聚合公式修复后发现历史摘要数据损坏时，递增 [SUMMARY_DATA_VERSION]
- * 即可触发全量清除 + 从原始记录重建，无需手动清数据。
  */
 object CleanupScheduler {
-
-    private const val TAG = "CleanupScheduler"
-
-    /**
-     * 摘要数据格式版本。递增此值会触发全量重建：
-     * - 2: 修复 RecordAggregator.computeToppedUp 缺少 isNearInteger 守卫（曾误判 9.93 元虚假充值）
-     */
-    private const val SUMMARY_DATA_VERSION = 2
-    private const val MIGRATION_PREFS = "cleanup_migration"
-    private const val KEY_DATA_VERSION = "summary_data_version"
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     /**
      * 执行一轮完整清理：
-     * 0. 数据版本迁移（自愈）：版本不匹配时清除全部摘要，强制从原始记录重建
      * 1. 非今日的日期立即聚合 → 写入 DailySummaryStore
      * 2. 补零间隙
      * 3. 删除超过 24 小时的旧记录（已聚合 + 安全延迟）
@@ -42,15 +26,6 @@ object CleanupScheduler {
         try {
             val today = dateFormat.format(Date())
             val now = System.currentTimeMillis()
-
-            // Step 0: 数据版本迁移 — 版本递增时全量重建摘要
-            val migrationPrefs = context.getSharedPreferences(MIGRATION_PREFS, Context.MODE_PRIVATE)
-            val storedVersion = migrationPrefs.getInt(KEY_DATA_VERSION, 1)
-            if (storedVersion < SUMMARY_DATA_VERSION) {
-                Logger.i(TAG, "Data version $storedVersion -> $SUMMARY_DATA_VERSION, rebuilding all summaries")
-                DailySummaryStore.clear(context)
-                migrationPrefs.edit().putInt(KEY_DATA_VERSION, SUMMARY_DATA_VERSION).apply()
-            }
 
             // 缓存已有摘要，避免循环内重复反序列化
             val existingSummaries = DailySummaryStore.getSummaries(context)
