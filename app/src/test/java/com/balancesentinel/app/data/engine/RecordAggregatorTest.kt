@@ -50,7 +50,7 @@ class RecordAggregatorTest {
         assertEquals(1, result.size)
         assertEquals(100f, result[0].open)
         assertEquals(60f, result[0].close)
-        // consumed = open - close + toppedUp + granted = 100-60+0+0 = 40
+        // consumed 逐对累加：100→80 (-20) + 80→60 (-20) = 40，toppedUp/granted 无正向跳变
         assertEquals(40f, result[0].consumed)
         assertEquals(3, result[0].sampleCount)
     }

@@ -102,14 +102,28 @@ class DailyEngineTest {
     }
 
     @Test
-    fun `no estimate with insufficient data`() {
+    fun `estimate works with single consumption day`() {
         val summaries = listOf(
             DailySummary("acc1", "2026-07-01", "CNY", 100f, 90f, 10f, 0f, 0f, 95f, 3, 0f, 0f)
         )
         val input = DailyInput(summaries, emptyList(), "CNY", null, 7)
         val output = DailyEngine.compute(input)
 
-        assertNull(output.estimate)  // only 1 data point with consumption
+        // 1 天消耗数据也给出预估（均值 10f/天，余额 90f → 9 天）
+        assertNotNull(output.estimate)
+        assertEquals(10f, output.estimate!!.dailyRate, 0.01f)
+        assertEquals(9f, output.estimate.daysRemaining, 0.01f)
+    }
+
+    @Test
+    fun `no estimate when zero consumption data`() {
+        val summaries = listOf(
+            DailySummary("acc1", "2026-07-01", "CNY", 100f, 100f, 0f, 0f, 0f, 100f, 3, 0f, 0f)
+        )
+        val input = DailyInput(summaries, emptyList(), "CNY", null, 7)
+        val output = DailyEngine.compute(input)
+
+        assertNull(output.estimate)  // consumed = 0, no consumption days
     }
 
     @Test

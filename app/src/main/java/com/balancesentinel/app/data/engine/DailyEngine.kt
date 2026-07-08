@@ -105,7 +105,7 @@ object DailyEngine {
 
         val estimate = computeDepletionEstimate(dailyPoints, input.rangeDays)
         val withConsumption = dailyPoints.filter { it.consumed > 0f }
-        val insufficientData = withConsumption.size < 3
+        val insufficientData = withConsumption.isEmpty()
 
         return DailyOutput(
             dailyPoints = dailyPoints,
@@ -130,25 +130,47 @@ object DailyEngine {
         rangeDays: Int
     ): DepletionEstimate? {
         val withConsumption = points.filter { it.consumed > 0f }
-        if (withConsumption.size < 3) return null
-
-        val xValues = withConsumption.indices.map { it.toFloat() }
-        val yValues = withConsumption.map { it.consumed }
-        val n = withConsumption.size.toFloat()
-
-        val sumX = xValues.sum()
-        val sumY = yValues.sum()
-        val sumXY = xValues.zip(yValues).sumOf { (x, y) -> (x * y).toDouble() }.toFloat()
-        val sumX2 = xValues.sumOf { (it * it).toDouble() }.toFloat()
-
-        val denominator = n * sumX2 - sumX * sumX
-        if (denominator == 0f) return null
-
-        val slope = (n * sumXY - sumX * sumY) / denominator
-        if (slope <= 0f) return null
+        if (withConsumption.isEmpty()) return null
 
         val lastBalance = points.lastOrNull()?.balance ?: return null
-        val daysRemaining = lastBalance / slope
+
+        val yValues = withConsumption.map { it.consumed }
+        val n = withConsumption.size.toFloat()
+        val sumY = yValues.sum()
+        val meanRate = sumY / n
+
+        if (meanRate <= 0f) return null
+
+        // 尝试线性回归（需 ≥3 点且分母非零）；否则直接用均值
+        val dailyRate: Float
+        val methodLabel: String
+
+        if (withConsumption.size >= 3) {
+            val xValues = withConsumption.indices.map { it.toFloat() }
+            val sumX = xValues.sum()
+            val sumXY = xValues.zip(yValues).sumOf { (x, y) -> (x * y).toDouble() }.toFloat()
+            val sumX2 = xValues.sumOf { (it * it).toDouble() }.toFloat()
+            val denominator = n * sumX2 - sumX * sumX
+
+            if (denominator != 0f) {
+                val slope = (n * sumXY - sumX * sumY) / denominator
+                if (slope > 0f) {
+                    dailyRate = slope
+                    methodLabel = "基于最近${rangeDays}天消耗数据线性回归"
+                } else {
+                    dailyRate = meanRate
+                    methodLabel = "基于最近${rangeDays}天平均消耗估算"
+                }
+            } else {
+                dailyRate = meanRate
+                methodLabel = "基于最近${rangeDays}天平均消耗估算"
+            }
+        } else {
+            dailyRate = meanRate
+            methodLabel = "基于${withConsumption.size}天消耗数据估算"
+        }
+
+        val daysRemaining = lastBalance / dailyRate
 
         val depletionDate = try {
             val cal = Calendar.getInstance()
@@ -159,10 +181,10 @@ object DailyEngine {
         }
 
         return DepletionEstimate(
-            dailyRate = slope,
+            dailyRate = dailyRate,
             daysRemaining = daysRemaining,
             depletionDate = depletionDate,
-            methodLabel = "基于最近${rangeDays}天消耗数据线性回归"
+            methodLabel = methodLabel
         )
     }
 

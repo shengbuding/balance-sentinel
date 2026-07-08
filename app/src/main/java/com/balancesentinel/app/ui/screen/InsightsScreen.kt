@@ -632,87 +632,110 @@ private fun DailyCard(
                 }
             }
 
-            // 消耗预估
-            if (estimate != null) {
+            // 消耗预估 — 有数据时始终显示标题和帮助图标
+            if (points.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                 Spacer(modifier = Modifier.height(12.dp))
 
                 var showEstimateHelp by remember { mutableStateOf(false) }
 
-                Column {
-                    // 标题行 + 帮助图标
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.insights_estimate_title),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        IconButton(
-                            onClick = { showEstimateHelp = true },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.Info,
-                                contentDescription = stringResource(R.string.insights_estimate_help),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        EstimateMetric(
-                            label = stringResource(R.string.insights_current_balance),
-                            value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
-                                points.lastOrNull()?.balance ?: 0f
-                            ),
-                            valueColor = MaterialTheme.colorScheme.onSurface
-                        )
-                        EstimateMetric(
-                            label = stringResource(R.string.insights_daily_consumption),
-                            value = "${FormatUtils.currencySymbol(currency)}%.2f".format(estimate.dailyRate),
-                            valueColor = MaterialTheme.colorScheme.onSurface
-                        )
-                        val estColor = when {
-                            estimate.daysRemaining < 3 -> MaterialTheme.colorScheme.error
-                            estimate.daysRemaining < 7 -> WalletColors.warning
-                            else -> WalletColors.success
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = stringResource(R.string.insights_estimated_days),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = stringResource(R.string.insights_days_remaining)
-                                    .format(estimate.daysRemaining),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = estColor,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = estimate.depletionDate,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = estColor.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
+                // 标题行 + 帮助图标（始终可见）
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = estimate.methodLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        text = stringResource(R.string.insights_estimate_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    IconButton(
+                        onClick = { showEstimateHelp = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Info,
+                            contentDescription = stringResource(R.string.insights_estimate_help),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                when {
+                    estimate != null -> {
+                        // 有预估 — 显示三项指标 + 方法说明
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            EstimateMetric(
+                                label = stringResource(R.string.insights_current_balance),
+                                value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
+                                    points.lastOrNull()?.balance ?: 0f
+                                ),
+                                valueColor = MaterialTheme.colorScheme.onSurface
+                            )
+                            EstimateMetric(
+                                label = stringResource(R.string.insights_daily_consumption),
+                                value = "${FormatUtils.currencySymbol(currency)}%.2f".format(estimate.dailyRate),
+                                valueColor = MaterialTheme.colorScheme.onSurface
+                            )
+                            val estColor = when {
+                                estimate.daysRemaining < 3 -> MaterialTheme.colorScheme.error
+                                estimate.daysRemaining < 7 -> WalletColors.warning
+                                else -> WalletColors.success
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = stringResource(R.string.insights_estimated_days),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = stringResource(R.string.insights_days_remaining)
+                                        .format(estimate.daysRemaining),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = estColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = estimate.depletionDate,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = estColor.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = estimate.methodLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                    !insufficientData -> {
+                        // 数据充足但无预估 — 余额稳定或增长（斜率 ≤ 0）
+                        Text(
+                            text = stringResource(R.string.insights_trend_stable),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = WalletColors.success,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    else -> {
+                        // 数据不足 (< 3 个有消耗的天)
+                        Text(
+                            text = stringResource(R.string.insights_trend_insufficient),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
 
                 // 帮助弹窗
@@ -728,40 +751,6 @@ private fun DailyCard(
                                 Text(stringResource(R.string.settings_close))
                             }
                         }
-                    )
-                }
-            } else if (points.isNotEmpty() && !insufficientData) {
-                // 数据充足但无消耗预估 — 余额稳定或增长（斜率 ≤ 0）
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.insights_trend_stable),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = WalletColors.success,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else if (points.isNotEmpty() && insufficientData) {
-                // 数据不足 (< 3 个有消耗的天) — 无法预估
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.insights_trend_insufficient),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
