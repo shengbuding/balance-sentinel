@@ -89,6 +89,7 @@
     <string name="settings_title">设置</string>
     <string name="settings_back">返回</string>
     <string name="settings_system_status">系统状态</string>
+    <string name="settings_system_status_desc">查看服务运行状态、刷新统计和系统日志</string>
     <string name="settings_front_service">前台服务</string>
     <string name="settings_battery_opt">电池优化</string>
     <string name="settings_surviving">存活</string>
@@ -121,6 +122,7 @@
     <string name="settings_about_version">钱包哨兵 v%1$s</string>
     <string name="settings_about_desc">在桌面查看 DeepSeek API 账户余额，支持自动刷新和小组件。</string>
     <string name="settings_auto_refresh">自动刷新</string>
+    <string name="settings_refresh_desc">配置余额查询间隔和刷新策略</string>
     <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
     <string name="settings_value">数值</string>
     <string name="settings_minutes">分钟</string>
@@ -160,6 +162,7 @@
     <string name="settings_privacy_policy">隐私政策</string>
     <string name="settings_privacy_policy_desc">查看应用隐私政策</string>
     <string name="settings_log_entry">刷新日志</string>
+    <string name="settings_log_entry_desc">查看 API 调用记录和异常日志</string>
     <string name="settings_toggle_unit">切换单位</string>
     <string name="settings_refresh_stats">刷新统计</string>
     <string name="refresh_stats_success_rate">成功率: %s</string>

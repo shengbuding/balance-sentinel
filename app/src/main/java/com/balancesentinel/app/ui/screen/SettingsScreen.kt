@@ -52,20 +52,76 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// ═══════════════════════════════════════════════════════════
+// 子页面枚举
+// ═══════════════════════════════════════════════════════════
+
+private enum class SettingsPage { Main, Refresh, SystemStatus, About }
+
+// ═══════════════════════════════════════════════════════════
+// 设置主入口 — 内部页面路由
+// ═══════════════════════════════════════════════════════════
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit, onNavigateToDataManagement: () -> Unit, onNavigateToAlertSettings: () -> Unit) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
+    var currentPage by remember { mutableStateOf(SettingsPage.Main) }
 
     LaunchedEffect(Unit) {
         viewModel.loadStatusSummary()
         viewModel.loadRefreshStats()
     }
 
-    // 拦截系统返回键/手势，回到首页而非退出应用
-    BackHandler(onBack = onBack)
+    // 拦截系统返回键/手势
+    BackHandler {
+        when (currentPage) {
+            SettingsPage.Main -> onBack()
+            else -> currentPage = SettingsPage.Main
+        }
+    }
+
+    when (currentPage) {
+        SettingsPage.Main -> SettingsMainPage(
+            viewModel = viewModel,
+            onBack = onBack,
+            onNavigateToAlertSettings = onNavigateToAlertSettings,
+            onNavigateToDataManagement = onNavigateToDataManagement,
+            onNavigateToRefresh = { currentPage = SettingsPage.Refresh },
+            onNavigateToSystemStatus = { currentPage = SettingsPage.SystemStatus },
+            onNavigateToAbout = { currentPage = SettingsPage.About }
+        )
+        SettingsPage.Refresh -> RefreshSettingsPage(
+            viewModel = viewModel,
+            onBack = { currentPage = SettingsPage.Main }
+        )
+        SettingsPage.SystemStatus -> SystemStatusPage(
+            viewModel = viewModel,
+            onBack = { currentPage = SettingsPage.Main },
+            onNavigateToLog = onNavigateToLog
+        )
+        SettingsPage.About -> AboutPage(
+            onBack = { currentPage = SettingsPage.Main }
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 主页面 — 导航卡片列表（按使用频率排列）
+// ═══════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsMainPage(
+    viewModel: HomeViewModel,
+    onBack: () -> Unit,
+    onNavigateToAlertSettings: () -> Unit,
+    onNavigateToDataManagement: () -> Unit,
+    onNavigateToRefresh: () -> Unit,
+    onNavigateToSystemStatus: () -> Unit,
+    onNavigateToAbout: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -82,58 +138,252 @@ fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        }
     ) { padding ->
-        val refreshStats by viewModel.refreshStats.collectAsStateWithLifecycle()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ── 刷新设置 ──
+            // 1. 刷新设置 — 最常用
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_auto_refresh),
+                description = stringResource(R.string.settings_refresh_desc),
+                onClick = onNavigateToRefresh
+            )
+
+            // 2. 预警设置
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_alert_entry),
+                description = stringResource(R.string.settings_alert_entry_desc),
+                onClick = onNavigateToAlertSettings
+            )
+
+            // 3. 系统状态
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_system_status),
+                description = stringResource(R.string.settings_system_status_desc),
+                onClick = onNavigateToSystemStatus
+            )
+
+            // 4. 数据管理
+            SettingsNavCard(
+                icon = { Icon(CustomIcons.SaveAlt, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_data_management),
+                description = stringResource(R.string.settings_data_management_desc),
+                onClick = onNavigateToDataManagement
+            )
+
+            // 5. 关于与反馈 — 最少用
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_about),
+                description = stringResource(R.string.settings_about_desc),
+                onClick = onNavigateToAbout
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 通用导航卡片组件
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun SettingsNavCard(
+    icon: @Composable () -> Unit,
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = title
+                }
+                .clickable { onClick() }
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                icon()
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Icon(
+                Icons.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 子页面：刷新设置
+// ═══════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_auto_refresh)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
             WidgetSettingsSection(viewModel, uiState.refreshIntervalSeconds)
+        }
+    }
+}
 
-            // ── 预警设置入口 ──
-            AlertSettingsEntryRow(onClick = onNavigateToAlertSettings)
+// ═══════════════════════════════════════════════════════════
+// 子页面：系统状态
+// ═══════════════════════════════════════════════════════════
 
-            // ── 数据管理入口 ──
-            DataManagementEntryRow(onClick = onNavigateToDataManagement)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SystemStatusPage(
+    viewModel: HomeViewModel,
+    onBack: () -> Unit,
+    onNavigateToLog: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val refreshStats by viewModel.refreshStats.collectAsStateWithLifecycle()
 
-            // ── 隐私政策 ──
-            PrivacyPolicyRow()
-
-            // ── 系统状态面板 ──
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_system_status)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 服务状态面板
             StatusSummaryPanel(uiState.statusSummary)
 
-            // ── 刷新统计仪表盘 ──
-            RefreshStatsCard(refreshStats)
-
-            // ── 刷新日志入口 ──
-            LogEntryRow(onClick = onNavigateToLog)
-
-            // ── 电池优化提示 ──
-            // 仅在电池优化开启且服务不健康时显示；关闭电池优化或服务恢复后自动消失
+            // 电池优化提示
             if (uiState.statusSummary?.batteryOptimizing == true && uiState.statusSummary?.serviceAlive != true) {
                 BatteryOptimizationHint()
             }
 
-            // ── 崩溃日志 ──
+            // 刷新统计仪表盘
+            RefreshStatsCard(refreshStats)
+
+            // 刷新日志入口
+            SettingsNavCard(
+                icon = { Icon(CustomIcons.History, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_log_entry),
+                description = stringResource(R.string.settings_log_entry_desc),
+                onClick = onNavigateToLog
+            )
+
+            // 崩溃日志
             if (uiState.crashLogs.isNotEmpty()) {
                 CrashLogCard(
                     crashes = uiState.crashLogs,
                     onClear = { viewModel.clearCrashes() }
                 )
             }
+        }
+    }
+}
 
-            // ── 交流与反馈 ──
-            CommunityCard()
+// ═══════════════════════════════════════════════════════════
+// 子页面：关于与反馈
+// ═══════════════════════════════════════════════════════════
 
-            // ── 版本信息 ──
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutPage(onBack: () -> Unit) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_about)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             VersionInfo(snackbarHostState)
+            CommunityCard()
+            PrivacyPolicyRow()
         }
     }
 }
@@ -358,46 +608,6 @@ private fun StatusChip(label: String, ok: Boolean, okText: String, failText: Str
                 color = if (ok) WalletColors.success else MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
-        }
-    }
-}
-
-
-// ═══════════════════════════════════════════════════════════
-// 刷新日志入口
-// ═══════════════════════════════════════════════════════════
-
-@Composable
-private fun LogEntryRow(onClick: () -> Unit) {
-    val logEntryLabel = stringResource(R.string.settings_log_entry)
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    role = Role.Button
-                    contentDescription = logEntryLabel
-                }
-                .clickable { onClick() }
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(CustomIcons.History, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(stringResource(R.string.settings_log_entry),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold)
-            }
-            Icon(Icons.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -833,62 +1043,7 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
 }
 
 // ═══════════════════════════════════════════════════════════
-// 预警设置入口
-// ═══════════════════════════════════════════════════════════
-
-@Composable
-private fun AlertSettingsEntryRow(onClick: () -> Unit) {
-    val alertLabel = stringResource(R.string.settings_alert_entry)
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    role = Role.Button
-                    contentDescription = alertLabel
-                }
-                .clickable { onClick() }
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Notifications,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        stringResource(R.string.settings_alert_entry),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        stringResource(R.string.settings_alert_entry_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Icon(
-                Icons.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
-// 隐私政策入口
+// 隐私政策
 // ═══════════════════════════════════════════════════════════
 
 @Composable
@@ -994,49 +1149,3 @@ private val PRIVACY_POLICY_TEXT = """
 
     本政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。
 """.trimIndent()
-
-// ═══════════════════════════════════════════════════════════
-// 数据管理入口
-// ═══════════════════════════════════════════════════════════
-
-@Composable
-private fun DataManagementEntryRow(onClick: () -> Unit) {
-    val dataLabel = stringResource(R.string.settings_data_management)
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    role = Role.Button
-                    contentDescription = dataLabel
-                }
-                .clickable { onClick() }
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(CustomIcons.SaveAlt, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(stringResource(R.string.settings_data_management),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.settings_data_management_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Icon(Icons.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp))
-        }
-    }
-}
-

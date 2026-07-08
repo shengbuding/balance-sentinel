@@ -89,6 +89,7 @@
     <string name="settings_title">Settings</string>
     <string name="settings_back">Back</string>
     <string name="settings_system_status">System Status</string>
+    <string name="settings_system_status_desc">View service health, refresh statistics, and system logs</string>
     <string name="settings_front_service">Foreground Service</string>
     <string name="settings_battery_opt">Battery Optimization</string>
     <string name="settings_surviving">Alive</string>
@@ -121,6 +122,7 @@
     <string name="settings_about_version">Wallet Sentinel v%1$s</string>
     <string name="settings_about_desc">View DeepSeek API account balances on your home screen with auto-refresh and widgets.</string>
     <string name="settings_auto_refresh">Auto Refresh</string>
+    <string name="settings_refresh_desc">Configure balance query interval and refresh strategy</string>
     <string name="settings_refresh_interval_label">Refresh Interval: %1$s</string>
     <string name="settings_value">Value</string>
     <string name="settings_minutes">min</string>
@@ -160,6 +162,7 @@
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_privacy_policy_desc">View app privacy policy</string>
     <string name="settings_log_entry">Refresh Log</string>
+    <string name="settings_log_entry_desc">View API call history and error logs</string>
     <string name="settings_toggle_unit">Toggle Unit</string>
     <string name="settings_refresh_stats">Refresh Statistics</string>
     <string name="refresh_stats_success_rate">Success rate: %s</string>
