@@ -50,6 +50,17 @@ class WidgetPrefs(context: Context) {
         get() = prefs.getInt(KEY_SNOOZE_DURATION_MINUTES, DEFAULT_SNOOZE_MINUTES)
         set(value) = prefs.edit().putInt(KEY_SNOOZE_DURATION_MINUTES, value.coerceIn(5, 1440)).apply()
 
+    /** 用户选择的语言偏好，null = 未设置 = 跟随系统 */
+    var language: String?
+        get() = prefs.getString(KEY_LANGUAGE, null)
+        set(value) {
+            if (value != null) {
+                prefs.edit().putString(KEY_LANGUAGE, value).apply()
+            } else {
+                prefs.edit().remove(KEY_LANGUAGE).apply()
+            }
+        }
+
     // ── 按账户隔离的去重状态 ──
 
     fun getLastAlertedBalance(accountId: String): Float =
@@ -393,6 +404,7 @@ class WidgetPrefs(context: Context) {
         const val KEY_NOTIFICATION_SELECTED = "notification_selected"
         const val KEY_NOTIFICATION_WALLET_ORDER = "notification_wallet_order"
         const val KEY_NOTIFICATION_TOTAL = "__total__"
+        const val KEY_LANGUAGE = "pref_language"
     }
 }
 
