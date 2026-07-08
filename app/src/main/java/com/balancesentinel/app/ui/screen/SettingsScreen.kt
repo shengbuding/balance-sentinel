@@ -49,8 +49,8 @@ import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
 import com.balancesentinel.app.data.update.UpdatePrefs
 import com.balancesentinel.app.data.repository.WidgetPrefs
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
+import android.app.LocaleManager
+import android.os.LocaleList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -207,14 +207,11 @@ private fun SettingsMainPage(
                     onDismiss = { showLanguageDialog = false },
                     onConfirm = { selected ->
                         widgetPrefs.language = selected
-                        if (selected != null) {
-                            AppCompatDelegate.setApplicationLocales(
-                                LocaleListCompat.forLanguageTags(selected)
-                            )
+                        val localeManager = context.getSystemService(LocaleManager::class.java)
+                        localeManager.applicationLocales = if (selected != null) {
+                            LocaleList.forLanguageTags(selected)
                         } else {
-                            AppCompatDelegate.setApplicationLocales(
-                                LocaleListCompat.getEmptyLocaleList()
-                            )
+                            LocaleList.getEmptyLocaleList()
                         }
                         showLanguageDialog = false
                     }

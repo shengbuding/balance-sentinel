@@ -1,11 +1,11 @@
 package com.balancesentinel.app
 
 import android.app.Application
+import android.app.LocaleManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
+import android.os.LocaleList
 import com.balancesentinel.app.data.repository.WidgetPrefs
 
 class DeepSeekApp : Application() {
@@ -32,9 +32,8 @@ class DeepSeekApp : Application() {
         // 恢复用户语言偏好（未设置则跟随系统）
         val savedLanguage = WidgetPrefs(this).language
         if (savedLanguage != null) {
-            AppCompatDelegate.setApplicationLocales(
-                LocaleListCompat.forLanguageTags(savedLanguage)
-            )
+            val localeManager = getSystemService(LocaleManager::class.java)
+            localeManager.applicationLocales = LocaleList.forLanguageTags(savedLanguage)
             CrashLogger.breadcrumb("App", "Locale restored: $savedLanguage")
         }
 
