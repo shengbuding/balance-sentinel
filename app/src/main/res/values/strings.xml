@@ -122,6 +122,10 @@
     <string name="settings_clear">清除</string>
     <string name="settings_community">交流与反馈</string>
     <string name="settings_qq_copy_hint">点击复制群号</string>
+    <string name="settings_language">语言 / Language</string>
+    <string name="settings_language_desc">切换应用显示语言</string>
+    <string name="settings_language_dialog_title">选择语言</string>
+    <string name="settings_language_system">跟随系统</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_version">钱包哨兵 v%1$s</string>
     <string name="settings_about_desc">在桌面查看 DeepSeek API 账户余额，支持自动刷新和小组件。</string>
