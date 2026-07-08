@@ -7,7 +7,7 @@
 
 ## 1. 概述
 
-在设置页面添加中英双语切换，使用 AndroidX AppCompat 的 `setApplicationLocales()` API，即时生效无需重启。架构天然支持日后扩展更多语种（只需新增 values 资源文件夹 + 一行枚举值）。
+在设置页面添加中英双语切换，使用 Android 平台 `LocaleManager.applicationLocales` API（minSdk=35，ComponentActivity 原生支持），即时生效无需重启。架构天然支持日后扩展更多语种（只需新增 values 资源文件夹 + 一行枚举值）。
 
 ## 2. 用户行为
 
@@ -24,7 +24,7 @@
 WidgetPrefs.setLanguage("zh" | "en")
     │
     ▼
-AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(...))
+localeManager.applicationLocales = LocaleList.forLanguageTags(...)
     │
     ▼
 Compose 自动重组 → 所有 stringResource() 立即切换
@@ -85,5 +85,5 @@ Compose 自动重组 → 所有 stringResource() 立即切换
 | 切换方式 | 即时生效（AppCompatDelegate），不提示重启 |
 | 默认行为 | 跟随系统语言 |
 | 入口位置 | 设置主页新增导航卡片（「关于」之前） |
-| 底层 API | AppCompatDelegate.setApplicationLocales()（AndroidX 1.6+） |
+| 底层 API | LocaleManager.applicationLocales（平台 API，minSdk=35） |
 | 通知渠道 | 首次创建后不随语言切换更新（Android 限制，影响可忽略） |

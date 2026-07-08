@@ -6,11 +6,11 @@
 
 **Architecture:** WidgetPrefs 持久化语言偏好 → DeepSeekApp.onCreate() 启动恢复 → SettingsScreen 新增导航卡片 + 单选 Dialog 触发切换 → Compose 自动重组反映变更。
 
-**Tech Stack:** Kotlin + Jetpack Compose + AndroidX AppCompat 1.6+ (已集成) + SharedPreferences
+**Tech Stack:** Kotlin + Jetpack Compose + Android `LocaleManager` API (API 33+, minSdk=35) + SharedPreferences
 
 ## Global Constraints
 
-- AppCompatDelegate.setApplicationLocales() — AndroidX 已集成，无新依赖
+- `localeManager.applicationLocales = LocaleList.forLanguageTags()` — 平台 API，ComponentActivity 可用
 - 即时生效，不提示重启
 - 未设置偏好时跟随系统语言
 - 入口：设置主页「关于」卡片之前
@@ -118,7 +118,7 @@ git commit -m "feat: add language switching string resources"
 
 **Interfaces:**
 - Consumes: `WidgetPrefs.language: String?` (from Task 1)
-- Uses: `androidx.appcompat.app.AppCompatDelegate`, `androidx.core.os.LocaleListCompat`
+- Uses: `android.app.LocaleManager`, `android.os.LocaleList`
 
 - [ ] **Step 1: 在 onCreate() 末尾添加语言恢复逻辑**
 
@@ -128,9 +128,8 @@ git commit -m "feat: add language switching string resources"
 // 恢复用户语言偏好（未设置则跟随系统）
 val savedLanguage = WidgetPrefs(this).language
 if (savedLanguage != null) {
-    androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
-        androidx.core.os.LocaleListCompat.forLanguageTags(savedLanguage)
-    )
+    val localeManager = getSystemService(LocaleManager::class.java)
+    localeManager.applicationLocales = LocaleList.forLanguageTags(savedLanguage)
     CrashLogger.breadcrumb("App", "Locale restored: $savedLanguage")
 }
 ```
@@ -162,15 +161,15 @@ git commit -m "feat: restore language preference on app startup"
 - Consumes: `WidgetPrefs.language: String?` (from Task 1)
 - Consumes: `R.string.settings_language`, `R.string.settings_language_desc`, `R.string.settings_language_dialog_title`, `R.string.settings_language_system` (from Task 2)
 - Consumes: `R.string.home_cancel`, `R.string.settings_confirm` (existing)
-- Uses: `androidx.appcompat.app.AppCompatDelegate`, `androidx.core.os.LocaleListCompat`
+- Uses: `android.app.LocaleManager`, `android.os.LocaleList`
 
 - [ ] **Step 1: 新增 import 语句**
 
 在 `SettingsScreen.kt` 的 import 区域末尾，添加：
 
 ```kotlin
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
+import android.app.LocaleManager
+import android.os.LocaleList
 import com.balancesentinel.app.data.repository.WidgetPrefs
 ```
 
@@ -265,14 +264,11 @@ if (showLanguageDialog) {
         onDismiss = { showLanguageDialog = false },
         onConfirm = { selected ->
             widgetPrefs.language = selected
-            if (selected != null) {
-                AppCompatDelegate.setApplicationLocales(
-                    LocaleListCompat.forLanguageTags(selected)
-                )
+            val localeManager = context.getSystemService(LocaleManager::class.java)
+            localeManager.applicationLocales = if (selected != null) {
+                LocaleList.forLanguageTags(selected)
             } else {
-                AppCompatDelegate.setApplicationLocales(
-                    LocaleListCompat.getEmptyLocaleList()
-                )
+                LocaleList.getEmptyLocaleList()
             }
             showLanguageDialog = false
         }
