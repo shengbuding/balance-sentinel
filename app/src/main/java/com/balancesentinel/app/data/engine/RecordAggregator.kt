@@ -49,12 +49,16 @@ object RecordAggregator {
             .toList()
     }
 
-    /** toppedUp = 累加每次 toppedUpBalance 的正向跳变 */
+    /**
+     * toppedUp = 累加每次 toppedUpBalance 的正向跳变。
+     * 仅计入 >=1 且接近整数的跳变（与 IntradayEngine/DailyEngine 守卫一致），
+     * 避免 API 浮点漂移被误判为充值。
+     */
     fun computeToppedUp(sorted: List<RawRecord>): Float {
         var sum = 0f
         for (i in 1 until sorted.size) {
             val diff = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
-            if (diff > 0) sum += diff
+            if (diff >= 1f && isNearInteger(diff)) sum += diff
         }
         return sum
     }
@@ -67,6 +71,11 @@ object RecordAggregator {
             if (diff > 0) sum += diff
         }
         return sum
+    }
+
+    private fun isNearInteger(value: Float): Boolean {
+        val frac = value - value.toLong().toFloat()
+        return frac < 0.01f || frac > 0.99f
     }
 
     /**
