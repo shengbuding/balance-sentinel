@@ -200,10 +200,11 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
 
     companion object {
         /**
-         * 合并多账户 Intraday 输出。
+         * 合并多账户 Intraday 输出（carry-forward 算法）。
          *
-         * 同一时间戳（1s 容差）的跨账户点合并：余额/充值/赠送求和，
-         * 再按自适应 minInterval 去重，Bill report 对各账户求和。
+         * 在每个唯一时间戳上，维护各账户的最后已知余额并求和，
+         * 确保图表始终反映全部账户的余额总和而非交替震荡。
+         * 最后用自适应 minInterval 降采样，Bill report 对各账户求和。
          */
         fun mergeIntradayOutputs(outputs: List<IntradayOutput>): IntradayOutput {
             if (outputs.isEmpty()) return IntradayOutput(
@@ -211,53 +212,53 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
             )
             if (outputs.size == 1) return outputs[0]
 
-            // 收集所有点，按时间排序
-            val allPoints = outputs.flatMap { it.trendPoints }.sortedBy { it.timestamp }
-
-            // 第一步：同一秒内的点合并（余额/充值/赠送求和）
-            val mergedByTime = mutableListOf<IntradayPoint>()
-            var i = 0
-            while (i < allPoints.size) {
-                val groupTs = allPoints[i].timestamp
-                var sumBalance = 0f
-                var sumTopUp = 0f
-                var sumGrant = 0f
-                var hasTopUp = false
-                var hasGrant = false
-
-                while (i < allPoints.size && allPoints[i].timestamp - groupTs < 1000L) {
-                    val p = allPoints[i]
-                    sumBalance += p.actualBalance
-                    sumTopUp += p.topUpAmount
-                    sumGrant += p.grantAmount
-                    if (p.isTopUp) hasTopUp = true
-                    if (p.isGrant) hasGrant = true
-                    i++
+            // 构建每个时间戳 → 哪些账户在此刻有新数据
+            val updatesByTs = linkedMapOf<Long, MutableList<Pair<Int, IntradayPoint>>>()
+            for ((idx, output) in outputs.withIndex()) {
+                for (point in output.trendPoints) {
+                    updatesByTs.getOrPut(point.timestamp) { mutableListOf() }
+                        .add(idx to point)
                 }
-                mergedByTime.add(
-                    IntradayPoint(groupTs, sumBalance, hasTopUp, hasGrant, sumTopUp, sumGrant)
-                )
             }
 
-            // 第二步：自适应间隔去重
+            // Carry-forward：按时间推进，维护每个账户的最后已知余额
+            val lastPerAccount = mutableMapOf<Int, IntradayPoint>()
+            val merged = mutableListOf<IntradayPoint>()
+
+            for ((ts, updates) in updatesByTs) {
+                // 更新有变化的账户
+                for ((idx, point) in updates) {
+                    lastPerAccount[idx] = point
+                }
+                // 此时刻各账户的余额/充值/赠送求和
+                val totalBalance = lastPerAccount.values.sumOf { it.actualBalance.toDouble() }.toFloat()
+                val tsTopUpAmt = updates.sumOf { (_, p) -> p.topUpAmount.toDouble() }.toFloat()
+                val tsGrantAmt = updates.sumOf { (_, p) -> p.grantAmount.toDouble() }.toFloat()
+                val tsHasTopUp = updates.any { (_, p) -> p.isTopUp }
+                val tsHasGrant = updates.any { (_, p) -> p.isGrant }
+
+                merged.add(IntradayPoint(ts, totalBalance, tsHasTopUp, tsHasGrant, tsTopUpAmt, tsGrantAmt))
+            }
+
+            // 自适应间隔降采样
             val minInterval = when {
-                mergedByTime.size <= 20 -> 0L
-                mergedByTime.size <= 60 -> 15_000L
+                merged.size <= 20 -> 0L
+                merged.size <= 60 -> 15_000L
                 else -> 30_000L
             }
 
-            val merged = if (minInterval == 0L || mergedByTime.isEmpty()) {
-                mergedByTime
+            val sampled = if (minInterval == 0L || merged.isEmpty()) {
+                merged
             } else {
-                val result = mutableListOf(mergedByTime[0])
-                for (j in 1 until mergedByTime.size) {
-                    if (mergedByTime[j].timestamp - result.last().timestamp >= minInterval) {
-                        result.add(mergedByTime[j])
+                val result = mutableListOf(merged[0])
+                for (j in 1 until merged.size) {
+                    if (merged[j].timestamp - result.last().timestamp >= minInterval) {
+                        result.add(merged[j])
                     }
                 }
-                // 确保尾部不丢点
-                if (result.last().timestamp != mergedByTime.last().timestamp) {
-                    result.add(mergedByTime.last())
+                // 始终保留尾点（当前余额依赖它）
+                if (result.last().timestamp < merged.last().timestamp) {
+                    result.add(merged.last())
                 }
                 result
             }
@@ -267,22 +268,22 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
             val totalGranted = outputs.sumOf { it.billReport.granted.toDouble() }.toFloat()
 
             return IntradayOutput(
-                trendPoints = merged,
+                trendPoints = sampled,
                 billReport = IntradayBillReport(
                     consumed = totalConsumed,
                     toppedUp = totalToppedUp,
                     granted = totalGranted,
                     netChange = totalToppedUp + totalGranted - totalConsumed
                 ),
-                dataPointCount = merged.size
+                dataPointCount = sampled.size
             )
         }
 
         /**
          * 合并多账户 Daily 输出。
          *
-         * 按日期合并 dailyPoints：同一天的各账户数据求和（balance/open/consumed/toppedUp/granted），
-         * Bill report 对各账户求和。
+         * 按日期合并 dailyPoints：同一天的各账户数据求和，
+         * Bill report 对各账户求和，消耗预估基于合并后的数据重新计算。
          */
         fun mergeDailyOutputs(outputs: List<DailyOutput>, rangeDays: Int): DailyOutput {
             if (outputs.isEmpty()) return DailyOutput(
@@ -318,8 +319,8 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
             val totalToppedUp = merged.sumOf { it.toppedUp.toDouble() }.toFloat()
             val totalGranted = merged.sumOf { it.granted.toDouble() }.toFloat()
 
-            // 消耗预估沿用首个有效输出（多账户合并后线性回归需重新计算，暂用首个非空）
-            val estimate = outputs.firstOrNull { it.estimate != null }?.estimate
+            // 基于合并后的数据重新计算消耗预估
+            val estimate = computeMergedEstimate(merged, rangeDays)
 
             val withConsumption = merged.filter { it.consumed > 0f }
             val insufficientData = withConsumption.size < 3
@@ -337,6 +338,52 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                 periodLabel = periodLabel,
                 isEmpty = merged.isEmpty(),
                 insufficientData = insufficientData
+            )
+        }
+
+        /**
+         * 基于合并后的 dailyPoints 重新计算消耗预估。
+         * 对各账户的 dailyRate 求和，用合并后的总余额和总日耗率计算剩余天数。
+         */
+        private fun computeMergedEstimate(
+            points: List<DailyPoint>,
+            rangeDays: Int
+        ): DepletionEstimate? {
+            val withConsumption = points.filter { it.consumed > 0f }
+            if (withConsumption.size < 3) return null
+
+            // 线性回归计算合并后的日均消耗率
+            val xValues = withConsumption.indices.map { it.toFloat() }
+            val yValues = withConsumption.map { it.consumed }
+            val n = withConsumption.size.toFloat()
+
+            val sumX = xValues.sum()
+            val sumY = yValues.sum()
+            val sumXY = xValues.zip(yValues).sumOf { (x, y) -> (x * y).toDouble() }.toFloat()
+            val sumX2 = xValues.sumOf { (it * it).toDouble() }.toFloat()
+
+            val denominator = n * sumX2 - sumX * sumX
+            if (denominator == 0f) return null
+
+            val slope = (n * sumXY - sumX * sumY) / denominator
+            if (slope <= 0f) return null
+
+            val lastBalance = points.lastOrNull()?.balance ?: return null
+            val daysRemaining = lastBalance / slope
+
+            val depletionDate = try {
+                val cal = Calendar.getInstance()
+                cal.add(Calendar.DAY_OF_MONTH, daysRemaining.roundToInt())
+                "${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日"
+            } catch (_: Exception) {
+                "—"
+            }
+
+            return DepletionEstimate(
+                dailyRate = slope,
+                daysRemaining = daysRemaining,
+                depletionDate = depletionDate,
+                methodLabel = "基于最近${rangeDays}天多账户消耗数据线性回归"
             )
         }
     }
