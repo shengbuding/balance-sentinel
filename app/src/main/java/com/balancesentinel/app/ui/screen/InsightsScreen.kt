@@ -378,6 +378,20 @@ private fun IntradayCard(
                     )
                 }
             }
+
+            // 当前余额
+            if (points.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                Spacer(modifier = Modifier.height(12.dp))
+                LabeledLine(
+                    label = stringResource(R.string.insights_current_balance),
+                    value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
+                        points.lastOrNull()?.actualBalance ?: 0f
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
