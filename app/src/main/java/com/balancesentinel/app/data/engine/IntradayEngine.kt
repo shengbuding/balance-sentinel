@@ -2,8 +2,14 @@ package com.balancesentinel.app.data.engine
 
 import com.balancesentinel.app.data.model.RawRecord
 
+/**
+ * 日内引擎 — 24h 滑动窗口，per-pair 余额追踪。
+ *
+ * 分析最近 24 小时的原始记录，计算消耗速率、spike 检测和预估耗尽时间。
+ */
 object IntradayEngine {
 
+    /** 计算 24h 窗口内的日内洞察 */
     fun compute(input: IntradayInput): IntradayOutput {
         val now = System.currentTimeMillis()
         val cutoff = now - 24 * 3600_000L

@@ -14,9 +14,9 @@
 | **简短说明 (EN)** | Real-time DeepSeek API balance monitor with alerts, widgets & insights |
 | **应用类别** | 财务 |
 | **应用类别 (次要)** | 工具 |
-| **网站** | https://github.com/<your-username>/DeepSeekBalance |
-| **电子邮件** | <your-email>@example.com |
-| **隐私政策** | https://github.com/<your-username>/DeepSeekBalance/blob/master/PRIVACY_POLICY.md |
+| **网站** | https://github.com/shengbuding/balance-sentinel |
+| **电子邮件** | shengbuding@gmail.com |
+| **隐私政策** | https://github.com/shengbuding/balance-sentinel/blob/main/PRIVACY_POLICY.md |
 
 ---
 

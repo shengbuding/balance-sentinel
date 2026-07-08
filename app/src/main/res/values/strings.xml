@@ -393,8 +393,9 @@
     <string name="widget_status_partial">部分不足</string>
     <string name="widget_status_insufficient">不足</string>
     <string name="widget_query_balance">查询余额</string>
-    <string name="widget_button_refresh">%(1$d 个账户)</string>
-    <string name="widget_refresh_manual">小组件手动刷新 %(1$d 个账户)</string>
+    <string name="widget_sparkline_desc">余额趋势迷你图</string>
+    <string name="widget_button_refresh">(%1$d 个账户)</string>
+    <string name="widget_refresh_manual">小组件手动刷新 (%1$d 个账户)</string>
     <string name="widget_refresh_watchdog">看门狗：已刷新 %1$d 个账户</string>
     <string name="widget_watchdog_restarted">看门狗：服务已死，已强制重启</string>
     <string name="widget_watchdog_restart_fail">看门狗：重启失败（系统阻止: %1$s）</string>
@@ -484,6 +485,8 @@
 
     <!-- ===== Misc ===== -->
     <string name="default_account_label">默认账户</string>
+    <string name="label_currency">币种</string>
+    <string name="label_download_complete">✓ 下载完成</string>
 
     <!-- Update checker -->
     <string name="update_dialog_title">发现新版本</string>

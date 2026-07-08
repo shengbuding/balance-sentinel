@@ -122,8 +122,9 @@ object DailyEngine {
 
     /**
      * Linear regression on (index, consumed) over points with consumption > 0.
-     * Requires at least 3 data points and a positive slope.
-     * Returns null if data is insufficient or consumption is flat/declining.
+     * Uses linear regression when >= 3 data points with positive slope;
+     * falls back to mean rate for 1-2 points.
+     * Returns null only when there is zero consumption (balance never decreased).
      */
     private fun computeDepletionEstimate(
         points: List<DailyPoint>,

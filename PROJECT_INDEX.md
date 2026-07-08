@@ -1,6 +1,6 @@
 # Project Index — DeepSeek Balance Sentinel
 
-Generated: 2026-07-05
+Generated: 2026-07-08
 
 ---
 
@@ -13,8 +13,8 @@ Generated: 2026-07-05
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture**: MVVM
-- **Test count**: 214+ unit tests (20 files) + 4 instrumented test files, all passing
-- **Release**: v1.0.0 (APK sideload, 暂不上架 Play Store)
+- **Test count**: 254+ unit tests (22 files) + 4 instrumented test files, all passing
+- **Release**: v1.1.1 (APK sideload, 暂不上架 Play Store)
 
 ---
 
@@ -31,7 +31,7 @@ C:\Users\Administrator\
 │   ├── PLAY_CONSOLE_PERMISSIONS.md    # Play Console permission declarations
 │   ├── PLAY_STORE_LISTING.md          # Play Store listing draft
 │   ├── SIGNING.md                     # Release signing guide
-│   ├── build.gradle.kts               # Root build (Kotlin 2.1, Android 8.11)
+│   ├── build.gradle.kts               # Root build (Kotlin 2.1, AGP 8.7.3)
 │   ├── settings.gradle.kts            # Settings
 │   ├── gradle.properties              # Gradle props
 │   ├── local.properties               # SDK path
@@ -45,7 +45,11 @@ C:\Users\Administrator\
 │   │       ├── specs/2026-07-05-insights-rewrite-design.md     # v2.0 design
 │   │       ├── specs/2026-07-05-launch-readiness-design.md     # Launch prep design
 │   │       ├── plans/2026-07-05-insights-rewrite.md            # v2.0 implementation plan
-│   │       └── plans/2026-07-05-launch-readiness-plan.md       # Launch prep plan
+│   │       ├── plans/2026-07-05-launch-readiness-plan.md       # Launch prep plan
+│   │       ├── specs/2026-07-06-insights-consumption-chart-and-history-design.md
+│   │       ├── specs/2026-07-06-update-checker-design.md
+│   │       ├── plans/2026-07-06-insights-consumption-chart-and-history-plan.md
+│   │       └── plans/2026-07-06-update-checker-plan.md
 │   └── app/
 │       ├── build.gradle.kts           # App module build (Compose, OkHttp, etc.)
 │       ├── proguard-rules.pro         # ProGuard rules
@@ -54,8 +58,8 @@ C:\Users\Administrator\
 │           │   ├── AndroidManifest.xml
 │           │   ├── java/com/balancesentinel/app/
 │           │   └── res/               # Layouts, drawables, mipmaps, values, xml
-│           ├── test/                  # Unit tests (20 classes, 214+ total)
-│           └── androidTest/           # Instrumented tests (1 class, 26 UI cases)
+│           ├── test/                  # Unit tests (22 classes, 254+ total)
+│           └── androidTest/           # Instrumented tests (4 classes, 27 UI cases)
 │
 ├── .claude/                           # Claude Code config + session data
 │   ├── settings.json                  # Model config (deepseek-v4-pro), hooks
@@ -108,6 +112,14 @@ C:\Users\Administrator\
 |---|---|
 | `DeepSeekApiService.kt` | OkHttp client — `GET https://api.deepseek.com/user/balance` |
 
+#### Update (`data/update/`)
+
+| File | Purpose |
+|---|---|
+| `UpdateChecker.kt` | GitHub Releases API client for update detection |
+| `UpdatePrefs.kt` | Update check preferences (last prompt date, skipped version) |
+| `ApkDownloader.kt` | APK download with progress tracking |
+
 #### Engine — v2.0 Dual Engine (`data/engine/`)
 
 | File | Purpose |
@@ -155,6 +167,7 @@ C:\Users\Administrator\
 | `OnboardingScreen.kt` | First-run API key setup wizard |
 | `BackupRestoreScreen.kt` | Config backup/restore UI |
 | `ClearDataScreen.kt` | Selective data clearing (records, summaries, logs) |
+| `UpdateDialog.kt` | In-app update dialog with download progress |
 
 #### ViewModels (`ui/viewmodel/`)
 
@@ -195,7 +208,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (20 unit + 4 instrumented, 214+ tests)
+## 4. Test Map (22 unit + 4 instrumented, 254+ tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -249,6 +262,12 @@ C:\Users\Administrator\
 | `SettingsScreenTest.kt` | Settings screen interactions |
 | `InsightsScreenTest.kt` | Insights screen rendering |
 
+### Update Tests
+| File | What it covers |
+|---|---|
+| `UpdateCheckerTest.kt` | GitHub Releases API + semver comparison |
+| `UpdatePrefsTest.kt` | Update preference persistence |
+
 ---
 
 ## 5. Memory Index (`.claude/projects/C--Users-Administrator/memory/`)
@@ -287,7 +306,7 @@ C:\Users\Administrator\
 
 - **Model backend**: DeepSeek API (Anthropic-compatible endpoint) — `deepseek-v4-pro` for all tiers
 - **Hooks**: PreToolUse gate on Grep/Glob (codebase memory discovery); SessionStart reminders on start/resume/clear/compact
-- **Skills active**: brainstorming, find-skills, frontend-design, gstack, requesting-code-review, systematic-debugging, TDD, ui-ux-pro-max, using-superpowers, writing-plans, codebase-memory, skill-creator
+- **Skills active**: brainstorming, find-skills, frontend-design, gstack, receiving-code-review, diagnosing-bugs, TDD, ui-ux-pro-max, using-superpowers, writing-plans, codebase-memory, skill-creator
 - **Permission model**: Allowlisted Bash, WebSearch, WebFetch, Skill invocations
 
 ---

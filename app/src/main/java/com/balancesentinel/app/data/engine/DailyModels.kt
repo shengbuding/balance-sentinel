@@ -23,7 +23,7 @@ data class DailyOutput(
     val estimate: DepletionEstimate?,
     val periodLabel: String,
     val isEmpty: Boolean,
-    val insufficientData: Boolean = false   // 数据不足（<3 个有消耗的数据点），无法计算趋势预估
+    val insufficientData: Boolean = false   // 数据不足（0 个有消耗的数据点），无法计算趋势预估
 )
 
 /**

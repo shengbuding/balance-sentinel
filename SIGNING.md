@@ -30,8 +30,8 @@ keytool -genkey -v \
   -keyalg RSA \
   -keysize 2048 \
   -validity 10000 \
-  -storepass "balance-sentinel-release-2026" \
-  -keypass "balance-sentinel-release-2026" \
+  -storepass "<your-keystore-password>" \
+  -keypass "<your-keystore-password>" \
   -dname "CN=Balance Sentinel, OU=Dev, O=Balance Sentinel, L=Beijing, ST=Beijing, C=CN"
 ```
 
@@ -50,8 +50,8 @@ keytool -genkey -v \
 
 | 密码 | 值 |
 |---|---|
-| **Keystore 密码** | `balance-sentinel-release-2026` |
-| **Key 密码** | `balance-sentinel-release-2026` |
+| **Keystore 密码** | `<your-keystore-password>` |
+| **Key 密码** | `<your-keystore-password>` |
 
 > ⚠️ 以上密码和 `.jks` 文件应存储在密码管理器（1Password / Bitwarden / KeePass）中。
 > 不要将密码以明文形式存放在公开仓库。
@@ -141,9 +141,9 @@ CI/CD 环境不使用 `keystore.properties` 文件，改为环境变量：
 
 ```bash
 export ANDROID_KEYSTORE_B64=$(base64 -w0 deepseek-balance.jks)
-export ANDROID_KEYSTORE_PASSWORD="balance-sentinel-release-2026"
+export ANDROID_KEYSTORE_PASSWORD="<your-keystore-password>"
 export ANDROID_KEY_ALIAS="deepseek"
-export ANDROID_KEY_PASSWORD="balance-sentinel-release-2026"
+export ANDROID_KEY_PASSWORD="<your-keystore-password>"
 ```
 
 CI 脚本在构建前解码 keystore：

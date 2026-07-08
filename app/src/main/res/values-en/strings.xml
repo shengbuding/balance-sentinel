@@ -115,7 +115,7 @@
     <string name="settings_autorefresh_limited_desc">Background service has been killed by the system. Disable battery optimization to fix:</string>
     <string name="settings_close_battery_opt">Disable Battery Optimization</string>
     <string name="settings_battery_guide_title">Keep Background Refresh</string>
-    <string name="settings_battery_guide_desc">Balance Sentinel needs to run in the background to auto-refresh balances. Disabling battery optimization prevents the system from killing the service. You can also change this later in Settings.</string>
+    <string name="settings_battery_guide_desc">Wallet Sentinel needs to run in the background to auto-refresh balances. Disabling battery optimization prevents the system from killing the service. You can also change this later in Settings.</string>
     <string name="settings_later">Later</string>
     <string name="settings_crash_log">Crash Log (%1$d)</string>
     <string name="settings_copy">Copy</string>
@@ -393,8 +393,9 @@
     <string name="widget_status_partial">Partial</string>
     <string name="widget_status_insufficient">Low</string>
     <string name="widget_query_balance">Check Balance</string>
-    <string name="widget_button_refresh">%(1$d accounts)</string>
-    <string name="widget_refresh_manual">Widget manual refresh %(1$d accounts)</string>
+    <string name="widget_sparkline_desc">Balance trend sparkline</string>
+    <string name="widget_button_refresh">(%1$d accounts)</string>
+    <string name="widget_refresh_manual">Widget manual refresh (%1$d accounts)</string>
     <string name="widget_refresh_watchdog">Watchdog: refreshed %1$d accounts</string>
     <string name="widget_watchdog_restarted">Watchdog: service dead, force restarted</string>
     <string name="widget_watchdog_restart_fail">Watchdog: restart failed (system blocked: %1$s)</string>
@@ -469,7 +470,7 @@
     <string name="widget_title_total">Total Balance</string>
 
     <!-- ===== Onboarding ===== -->
-    <string name="onboarding_welcome_title">Welcome to Balance Sentinel</string>
+    <string name="onboarding_welcome_title">Welcome to Wallet Sentinel</string>
     <string name="onboarding_welcome_desc">Monitor your DeepSeek API account balance\nat a glance on your home screen widget</string>
     <string name="onboarding_features_title">Key Features</string>
     <string name="onboarding_features_desc">Three core capabilities to protect your API balance</string>
@@ -484,4 +485,28 @@
 
     <!-- ===== Misc ===== -->
     <string name="default_account_label">Default Account</string>
+    <string name="label_currency">Currency</string>
+    <string name="label_download_complete">✓ Download Complete</string>
+
+    <!-- Update checker -->
+    <string name="update_dialog_title">New Version Available</string>
+    <string name="update_current_version">Current version v%1$s</string>
+    <string name="update_latest_version">Latest version %1$s</string>
+    <string name="update_download">Download Update</string>
+    <string name="update_open_link">Open Download Link</string>
+    <string name="update_remind_later">Remind Later</string>
+    <string name="update_skip_version">Skip This Version</string>
+    <string name="update_cancel_download">Cancel Download</string>
+    <string name="update_install">Install</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_close">Close</string>
+    <string name="update_downloading">Downloading... %1$d%%</string>
+    <string name="update_download_failed">Download failed: %1$s</string>
+    <string name="update_download_failed_offer_link">Download failed. Open download link?</string>
+    <string name="update_install_failed">Cannot open installer. Please download manually.</string>
+    <string name="settings_check_update">Check for Updates</string>
+    <string name="settings_checking">Checking...</string>
+    <string name="settings_up_to_date">Up to date</string>
+    <string name="settings_update_available">New version v%1$s available</string>
+    <string name="update_release_date">Release date: %1$s</string>
 </resources>

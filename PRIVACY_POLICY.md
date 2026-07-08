@@ -39,7 +39,7 @@
 - API Key 使用 Android EncryptedSharedPreferences（AES-256 加密）存储
 - 所有网络请求通过 HTTPS 加密传输
 - 应用备份已禁用（`allowBackup=false`），防止通过 adb backup 或 Google Backup 泄露数据
-- 日志输出自动脱敏 API Key（替代为 `sk-***`）
+- 日志输出自动脱敏 API Key（替代为 `sk-***`；崩溃日志同样经过脱敏处理）
 
 ## 数据删除
 
@@ -60,7 +60,11 @@
 
 ## 第三方服务
 
-本应用仅连接 DeepSeek 官方 API（api.deepseek.com）。不集成任何第三方分析、广告或追踪 SDK。
+本应用连接以下服务：
+- DeepSeek 官方 API（api.deepseek.com）— 余额查询和用量统计
+- GitHub API（api.github.com）— 检查应用更新
+
+不集成任何第三方分析、广告或追踪 SDK。
 
 ## 儿童隐私
 
@@ -73,7 +77,7 @@
 ## 联系我们
 
 如有隐私相关问题，请通过 GitHub Issues 联系：
-[https://github.com/username/balancesentinel/issues](https://github.com/username/balancesentinel/issues)
+[https://github.com/shengbuding/balance-sentinel/issues](https://github.com/shengbuding/balance-sentinel/issues)
 
 ---
 *本隐私政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。*

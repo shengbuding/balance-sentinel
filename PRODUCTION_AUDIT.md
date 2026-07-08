@@ -1,6 +1,6 @@
 # 钱包哨兵 — 上线前全面审计
 
-日期：2026-07-05（原始审计） / 更新：2026-07-05（v1.0.0 发布后）
+日期：2026-07-05（原始审计） / 更新：2026-07-08（v1.1.1 后复审）
 
 审计范围：所有源码、资源、构建配置、测试、架构
 
@@ -25,13 +25,18 @@
 | 中-11 | package name | ✅ 已修复 | `namespace = "com.balancesentinel.app"`（从未使用 com.example） |
 | 中-13 | 后台任务追踪 | ✅ 已修复 | `RefreshStatsStore` — 本地刷新成功率环形缓冲区（最近 100 次） |
 | 中-3 | ProGuard 规则 | ✅ 已修正 | 不使用 Glance（RemoteViews）、不使用 WorkManager，无需对应规则 |
+| 严重-2 | allowBackup=true | ✅ 已修复 | AndroidManifest.xml 已设置 allowBackup=false |
+| 高-1 | HTTPS 证书固定 | ✅ 已修复 | network_security_config.xml 已配置 SHA-256 证书固定 |
+| 高-2 | 配置导出明文 Key | ✅ 已修复 | ConfigManager.redactApiKey() 自动脱敏 |
+| 中-6 | OkHttp 无重试 | ✅ 已修复 | DeepSeekApiService.RetryInterceptor 已添加（指数退避 1s/2s，最多 3 次） |
+| 低-2 | 无覆盖率工具 | ✅ 已修复 | Kover 已配置（app/build.gradle.kts） |
 
 ### 关键指标更新
 
 | 指标 | 审计时 | v1.0.0 |
 |------|--------|--------|
-| 单元测试文件 | 16 | 20 |
-| 测试数量 | 195 | 214+ |
+| 单元测试文件 | 16 | 22 |
+| 测试数量 | 195 | 254+ |
 | Instrumented 测试 | 1 | 4 |
 | 静默 catch 块 | 32+ | ~25（已减少） |
 
@@ -50,7 +55,7 @@
 | 观测与监控 | — | 2 | 0 | 1 |
 | 代码质量与架构 | — | — | 2 | — |
 
-共原始 24 项，**已修复/改善 13 项**，剩余 11 项待处理。
+共原始 24 项，**已修复/改善 18 项**，剩余 6 项待处理。
 
 ---
 
@@ -74,7 +79,11 @@ Log.e(TAG, "Auto refresh failed for ${account.label}", e)
 
 ---
 
-### ❌ 严重-2：`allowBackup="true"` 导致加密密钥可被提取
+### ✅ 严重-2：allowBackup — 已修复
+
+> ✅ v1.1.0 已修复：AndroidManifest.xml 第 14 行已设为 `android:allowBackup=\"false\"`。
+
+原始审计建议：
 
 **位置**: `AndroidManifest.xml:14`
 
@@ -105,7 +114,9 @@ android:dataExtractionRules="@xml/data_extraction_rules"
 
 ---
 
-### ⚠️ 高-1：OkHttp 未启用证书固定 (Certificate Pinning)
+### ✅ 高-1：证书固定 — 已修复（network_security_config.xml 方式）
+
+> ✅ v1.1.0 已修复：通过 `network_security_config.xml` 声明式证书固定（SHA-256 pin for api.deepseek.com），而非 OkHttp CertificatePinner。两种方案等效。
 
 **位置**: `DeepSeekApiService.kt:18-21`
 
@@ -247,7 +258,9 @@ GitHub Actions CI workflow 已添加，自动执行 `assembleDebug` + `testDebug
 
 ---
 
-### ⚡ 低-2：无代码覆盖率基线
+### ✅ 低-2：覆盖率基线 — 已配置 Kover
+
+> ✅ v1.1.0 已配置：app/build.gradle.kts 第 36-60 行有完整 Kover 配置（含过滤器与验证规则）。
 
 没有配置 JaCoCo 或 Kover 覆盖率报告。建议至少生成一份覆盖率报告，作为质量基线。
 
@@ -286,7 +299,9 @@ GitHub Actions CI workflow 已添加，自动执行 `assembleDebug` + `testDebug
 
 ---
 
-### ⚙️ 中-6：OkHttp 无重试机制
+### ✅ 中-6：OkHttp 重试 — 已添加 RetryInterceptor
+
+> ✅ v1.1.0 已修复：DeepSeekApiService.RetryInterceptor 对 GET 请求自动重试（最多 3 次，指数退避 1s/2s），覆盖 ConnectException、SocketTimeoutException、UnknownHostException、SSLException 和 5xx。
 
 **位置**: `DeepSeekApiService.kt:18-21`
 
@@ -437,14 +452,12 @@ private val client = OkHttpClient.Builder()
 ### 阻断上线（剩余）
 | # | 问题 | 预计工时 | 状态 |
 |---|---|---|---|
-| 严重-1 | API Key 日志泄露 | 1h | 待修复 |
-| 严重-2 | allowBackup=true | 0.5h | 待修复 |
+| 严重-1 | API Key 日志泄露 | 1h | ⚠️ 已改善（Logger 封装脱敏，CrashLogger 仍待修复） |
 | 严重-3 | minSdk=35 设备兼容 | 4-8h | 如需上架则必修 |
 
 ### 上线前强烈建议（剩余）
 | # | 问题 | 预计工时 | 状态 |
 |---|---|---|---|
-| 高-1 | HTTPS 证书固定 | 1h | 待修复 |
 | 高-2 | 配置文件加密导出 | 2h | 待修复 |
 | 高-4 | UI 自动化测试补充 | 2h | 已有改善 |
 | 高-8 | 签名密钥安全备份 | 0.5h | 待确认 |
@@ -464,8 +477,8 @@ private val client = OkHttpClient.Builder()
 | 指标 | 审计时 | v1.0.0 |
 |---|---|---|
 | 总源文件 | 36 Kotlin + 11 widget | ~40 Kotlin + 11 widget |
-| 单元测试文件 | 16 | 20 |
-| 测试数量 | 195 (0 failures) | 214+ (0 failures) |
+| 单元测试文件 | 16 | 22 |
+| 测试数量 | 195 (0 failures) | 254+ (0 failures) |
 | Instrumented 测试 | 1 | 4 |
 | 静默 catch 块 | 32+ | ~25 |
 | 重复函数定义 | 3+ (`currencySymbol`) | 3+ (未变) |
@@ -476,13 +489,13 @@ private val client = OkHttpClient.Builder()
 
 ## 结论（更新后）
 
-**v1.0.0 发布状态**：已通过 GitHub Release v1.0.0 发布，签名正确（SHA-256 正式签名），APK 可直接安装。
+**v1.1.1 发布状态**：已通过 GitHub Release v1.1.1 发布，签名正确（SHA-256 正式签名），APK 可直接安装。
 
-**对于个人使用**：当前代码质量足够。214+ 测试全部通过，核心逻辑经验证。仍建议修复 严重-1（日志泄露）和 严重-2（allowBackup）。
+**对于个人使用**：当前代码质量足够。254+ 测试全部通过，核心逻辑经验证。严重-2（allowBackup）、高-1（证书固定）、高-2（配置脱敏）、中-6（OkHttp 重试）、低-2（Kover 覆盖率）均已在 v1.1.0 修复。仍建议修复 严重-1（日志泄露）。
 
 **对于 Play Store 公开上线**：剩余待处理：
-- 4 项阻断：日志泄露、allowBackup、minSdk 适配、证书固定
+- 2 项阻断：日志泄露（已改善）、minSdk 适配
 - 需准备 Play Store 素材（截图、Feature Graphic、图标）
-- 估算剩余工时约 **10-15 小时**（较原始审计的 20-25 小时减少约一半）
+- 估算剩余工时约 **5-8 小时**（较 v1.0.0 的 10-15 小时进一步减少）
 
-**最关键的一条建议**：如果只做给自己用，当前 v1.0.0 已足够，修 `allowBackup=false` + 日志泄露即可。包名已是 `com.balancesentinel.app`，无需修改。
+**最关键的一条建议**：如果只做给自己用，当前 v1.1.1 已足够。包名已是 `com.balancesentinel.app`，无需修改。

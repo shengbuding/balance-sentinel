@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
 /**
- * DeepSeek API 服务 — 通过 OkHttp 调用 /user/balance
+ * DeepSeek API 服务 — 通过 OkHttp 调用 /user/balance 和 /v1/usage
  */
 class DeepSeekApiService(
     private val baseUrl: String = "https://api.deepseek.com"
@@ -88,7 +88,9 @@ class DeepSeekApiService(
     /**
      * 查询用户余额。
      * @param apiKey DeepSeek API Key
-     * @return BalanceResponse 或 null（网络/认证错误时抛出异常）
+     * @return BalanceResponse
+     * @throws IOException 网络/认证错误
+     * @throws IllegalStateException JSON 解析失败
      */
     @Throws(IOException::class, IllegalStateException::class)
     fun getBalance(apiKey: String): BalanceResponse {
@@ -118,8 +120,8 @@ class DeepSeekApiService(
     /**
      * 查询 API 用量统计。
      * @param apiKey DeepSeek API Key
-     * @param startDate 开始日期 "yyyy-MM-dd"，null = 30 天前
-     * @param endDate 结束日期 "yyyy-MM-dd"，null = 今天
+     * @param startDate 开始日期 "yyyy-MM-dd"，不传则不限定开始日期
+     * @param endDate 结束日期 "yyyy-MM-dd"，不传则不限定结束日期
      */
     @Throws(IOException::class, IllegalStateException::class)
     fun getUsage(apiKey: String, startDate: String? = null, endDate: String? = null): UsageResponse {

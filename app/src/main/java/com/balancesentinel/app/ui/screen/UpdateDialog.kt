@@ -196,7 +196,7 @@ fun UpdateDialog(
                     }
                     DialogState.COMPLETE -> {
                         Text(
-                            "✓ 下载完成",
+                            stringResource(R.string.label_download_complete),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary

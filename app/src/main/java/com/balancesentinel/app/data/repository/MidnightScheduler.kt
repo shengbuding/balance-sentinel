@@ -64,6 +64,6 @@ object MidnightScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarm.cancel(pending)
-        } catch (e: Exception) { Logger.w("MidnightScheduler", "schedule failed", e) }
+        } catch (e: Exception) { Logger.w("MidnightScheduler", "cancel failed", e) }
     }
 }

@@ -48,7 +48,7 @@ data class RefreshLogEntry(
     val intervalSeconds: Int = 0,
     /** 预定下次触发的时间 */
     val expectedTime: Long = 0,
-    /** 闹钟方法："exact" / "inexact" / "failed" */
+    /** 闹钟方法："alarm_clock" / "exact" / "inexact" / "foreground_service" / "protection_mode" / "failed" */
     val alarmMethod: String = "",
     /** 失败原因推测 */
     val missReason: String = ""

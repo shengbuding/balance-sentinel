@@ -69,12 +69,20 @@ object CrashLogger {
                 timestamp = now,
                 isFatal = false
             )
-            appendCrash(file, entry)
+            appendCrash(file, sanitize(entry))
             Logger.w(tag, "Non-fatal recorded", throwable)
         } catch (_: Throwable) {}
     }
 
     // ── 写入 ──
+
+    /** API Key 脱敏正则（与 Logger 保持一致） */
+    private val API_KEY_REGEX = Regex("""sk-[a-zA-Z0-9]{10,}""")
+    private const val REDACTED = "sk-***"
+
+    private fun sanitize(text: String): String {
+        return API_KEY_REGEX.replace(text, REDACTED)
+    }
 
     private fun writeCrash(thread: Thread, throwable: Throwable) {
         try {
@@ -88,7 +96,7 @@ object CrashLogger {
                 timestamp = now,
                 isFatal = true
             )
-            appendCrash(file, entry)
+            appendCrash(file, sanitize(entry))
         } catch (_: Throwable) {
             // Don't crash in the crash handler
         }

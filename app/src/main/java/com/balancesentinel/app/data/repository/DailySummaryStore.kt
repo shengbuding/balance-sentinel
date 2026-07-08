@@ -92,6 +92,7 @@ object DailySummaryStore {
 
     /**
      * 与 addSummary 一致：只插不覆盖（日摘要不可变）。
+     * 注：函数名为 upsert 仅为兼容旧调用方，实际行为是 insert-only。
      */
     fun upsert(context: Context, summary: DailySummary) {
         addSummary(context, summary)

@@ -368,7 +368,7 @@ private fun AccountAlertCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "币种",
+                        stringResource(R.string.label_currency),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)

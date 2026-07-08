@@ -10,7 +10,7 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
  * 暂停预警广播接收器。
  *
  * 用户点击通知中的 "暂停预警" 按钮触发。
- * 将当前时间 + 1 小时的 snooze 标记写入 WidgetPrefs，
+ * 暂停时长由用户设置决定（默认 60 分钟），
  * AlertChecker 在 check()/checkChange() 中检查该标记。
  */
 class SnoozeReceiver : BroadcastReceiver() {

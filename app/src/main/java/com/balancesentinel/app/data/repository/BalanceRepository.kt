@@ -8,8 +8,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /**
- * 余额数据仓库 — 组合 API 调用与本地缓存。
- * 所有网络请求切换到 IO 线程执行。
+ * 余额数据仓库 — 封装 API 调用，所有网络请求切换到 IO 线程执行。
  */
 class BalanceRepository(
     private val apiService: DeepSeekApiService = DeepSeekApiService()

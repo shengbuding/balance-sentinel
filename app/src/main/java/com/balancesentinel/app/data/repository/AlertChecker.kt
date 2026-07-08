@@ -10,7 +10,7 @@ import com.balancesentinel.app.receiver.SnoozeReceiver
  * - 余额 ≥ 阈值 → 重置上次触发余额（允许下次跌破再触发）
  * - 余额不变不重复推送
  * - 去重状态按 accountId 隔离
- * - Snooze 期间（1 小时）不推送任何通知
+ * - Snooze 期间（默认 60 分钟，可在设置中调整）不推送任何通知
  */
 object AlertChecker {
 

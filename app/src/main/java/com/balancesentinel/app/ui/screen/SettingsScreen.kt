@@ -1110,7 +1110,7 @@ private fun PrivacyPolicyRow() {
 private val PRIVACY_POLICY_TEXT = """
     钱包哨兵 — 隐私政策
 
-    最后更新日期：2026 年 7 月 5 日
+    最后更新日期：2026 年 7 月 8 日
 
     概述
     钱包哨兵是一款 DeepSeek API 余额监控工具。我们高度重视您的隐私和数据安全。
