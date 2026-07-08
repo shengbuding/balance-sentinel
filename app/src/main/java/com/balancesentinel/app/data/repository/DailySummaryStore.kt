@@ -24,20 +24,18 @@ object DailySummaryStore {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     /**
-     * 添加或覆盖一条日摘要（相同 date+currency 覆盖）。
+     * 添加一条日摘要（只插不覆盖）。
+     *
+     * 日摘要一旦写入即不可变。若 (date, currency, accountId) 已有摘要则静默跳过。
      */
     fun addSummary(context: Context, summary: DailySummary) {
         try {
             val summaries = getSummaries(context).toMutableList()
-            val existingIndex = summaries.indexOfFirst {
+            val alreadyExists = summaries.any {
                 it.date == summary.date && it.currency == summary.currency && it.accountId == summary.accountId
             }
-            if (existingIndex >= 0) {
-                summaries[existingIndex] = summary
-            } else {
-                summaries.add(summary)
-            }
-            // 按日期排序
+            if (alreadyExists) return  // 不可覆盖
+            summaries.add(summary)
             summaries.sortBy { it.date }
             val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
             getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
@@ -93,8 +91,7 @@ object DailySummaryStore {
     }
 
     /**
-     * 添加或覆盖日摘要（date+currency+accountId 唯一）。
-     * 用于今日数据实时覆写。与 addSummary 行为一致。
+     * 与 addSummary 一致：只插不覆盖（日摘要不可变）。
      */
     fun upsert(context: Context, summary: DailySummary) {
         addSummary(context, summary)
@@ -173,7 +170,8 @@ object DailySummaryStore {
                                 avgBalance = carryBalance,
                                 sampleCount = 0,
                                 toppedUpBalanceClose = 0f,
-                                grantedBalanceClose = 0f
+                                grantedBalanceClose = 0f,
+                                generatedAt = System.currentTimeMillis()
                             )
                         )
                     } else {

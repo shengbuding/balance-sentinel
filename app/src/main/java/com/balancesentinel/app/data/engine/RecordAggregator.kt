@@ -42,7 +42,8 @@ object RecordAggregator {
                     avgBalance = sorted.map { it.totalBalance }.average().toFloat(),
                     sampleCount = sorted.size,
                     toppedUpBalanceClose = sorted.last().toppedUpBalance,
-                    grantedBalanceClose = sorted.last().grantedBalance
+                    grantedBalanceClose = sorted.last().grantedBalance,
+                    generatedAt = System.currentTimeMillis()
                 )
             }
             .values

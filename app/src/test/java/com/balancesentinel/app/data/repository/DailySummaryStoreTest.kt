@@ -48,7 +48,7 @@ class DailySummaryStoreTest {
     }
 
     @Test
-    fun `add same date+currency+accountId overwrites`() {
+    fun `add same date+currency+accountId is ignored (immutable)`() {
         val s1 = DailySummary(
             accountId = "acc1", date = "2026-01-15", currency = "CNY",
             open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
@@ -60,11 +60,11 @@ class DailySummaryStoreTest {
             avgBalance = 90f, sampleCount = 10
         )
         DailySummaryStore.addSummary(context, s1)
-        DailySummaryStore.addSummary(context, s2)
+        DailySummaryStore.addSummary(context, s2)  // 第二次写入被忽略
         val all = DailySummaryStore.getSummaries(context)
         assertEquals(1, all.size)
-        assertEquals(80f, all[0].close)
-        assertEquals(10, all[0].sampleCount)
+        assertEquals(90f, all[0].close)     // 保留第一次的值
+        assertEquals(5, all[0].sampleCount) // 未被第二次覆盖
     }
 
     @Test
@@ -348,7 +348,7 @@ class DailySummaryStoreTest {
     }
 
     @Test
-    fun `upsert overwrites existing date+currency+account`() {
+    fun `upsert same key is ignored (immutable)`() {
         val s1 = DailySummary(
             accountId = "acc1", date = "2026-07-04", currency = "CNY",
             open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
@@ -363,12 +363,12 @@ class DailySummaryStoreTest {
             granted = 0f, avgBalance = 90f, sampleCount = 8,
             toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
         )
-        DailySummaryStore.upsert(context, s2)
+        DailySummaryStore.upsert(context, s2)  // 第二次写入被忽略
 
         val all = DailySummaryStore.getSummaries(context)
-        assertEquals(1, all.size)  // still 1 entry
-        assertEquals(20f, all[0].consumed, 0.01f)  // updated value
-        assertEquals(8, all[0].sampleCount)  // updated count
+        assertEquals(1, all.size)
+        assertEquals(10f, all[0].consumed, 0.01f)  // 保留第一次的值
+        assertEquals(5, all[0].sampleCount)          // 未被第二次覆盖
     }
 
     // ── Range query ──

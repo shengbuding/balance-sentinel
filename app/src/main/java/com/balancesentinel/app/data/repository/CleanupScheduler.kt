@@ -39,7 +39,7 @@ object CleanupScheduler {
                     val records = RawRecordStore.getRecordsForDate(context, date)
                     if (records.isEmpty()) continue
 
-                    // 已有摘要的 (currency, accountId) 跳过，避免用删减后的记录覆盖完整摘要
+                    // 已有摘要的 (currency, accountId) 跳过（日摘要不可覆盖）
                     val existingKeys = existingSummaries
                         .filter { it.date == date }
                         .map { it.currency to it.accountId }
@@ -48,13 +48,7 @@ object CleanupScheduler {
                     val summaries = RecordAggregator.aggregate(records, date)
                     for (summary in summaries) {
                         val key = summary.currency to summary.accountId
-                        if (key in existingKeys) {
-                            val existing = existingSummaries
-                                .find { it.date == date && it.currency == summary.currency && it.accountId == summary.accountId }
-                            if (existing != null && summary.sampleCount > existing.sampleCount) {
-                                DailySummaryStore.upsert(context, summary)
-                            }
-                        } else {
+                        if (key !in existingKeys) {
                             DailySummaryStore.upsert(context, summary)
                         }
                     }

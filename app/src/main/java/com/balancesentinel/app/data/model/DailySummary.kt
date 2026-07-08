@@ -41,5 +41,7 @@ data class DailySummary(
     /** 当日收盘时的 API topped_up_balance 绝对值（用于跨天充值检测） */
     val toppedUpBalanceClose: Float = 0f,
     /** 当日收盘时的 API granted_balance 绝对值（用于跨天赠送检测） */
-    val grantedBalanceClose: Float = 0f
+    val grantedBalanceClose: Float = 0f,
+    /** 摘要生成时间戳（创建瞬间的 System.currentTimeMillis()），不可变标识 */
+    val generatedAt: Long = 0L
 )
