@@ -58,6 +58,10 @@
     <string name="insights_trend_insufficient">数据不足，无法预估</string>
     <string name="insights_current_balance">当前余额</string>
     <string name="insights_daily_consumption">日均消费</string>
+    <string name="insights_estimate_title">消耗预估</string>
+    <string name="insights_estimate_help">功能说明</string>
+    <string name="insights_estimate_help_title">消耗预估说明</string>
+    <string name="insights_estimate_help_text">基于最近 N 天的历史消耗数据，通过线性回归拟合日均消耗率。\n\n剩余天数 = 当前余额 ÷ 日均消耗率\n耗尽日期 = 今天 + 剩余天数\n\n至少需要 3 天有消耗数据才能生成预估。若余额持续稳定或增长（斜率 ≤ 0），则不显示预估。</string>
     <string name="insights_estimated_days">预计可用</string>
     <string name="insights_days_remaining">%.0f 天</string>
     <string name="insights_chart_value_format">%.1f万</string>
