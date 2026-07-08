@@ -10,8 +10,8 @@
 | 字段 | 值 |
 |---|---|
 | **应用名称** (30 字符) | 钱包哨兵 — DeepSeek 余额监控 |
-| **简短说明** (80 字符) | 实时监控 DeepSeek API 余额，低余额预警，桌面小组件，消耗趋势分析 |
-| **简短说明 (EN)** | Real-time DeepSeek API balance monitor with alerts, widgets & insights |
+| **简短说明** (80 字符) | 实时监控 DeepSeek API 余额，低余额预警，桌面小组件，消耗趋势分析，中英双语 |
+| **简短说明 (EN)** | Real-time DeepSeek API balance monitor with alerts, widgets, insights & bilingual UI |
 | **应用类别** | 财务 |
 | **应用类别 (次要)** | 工具 |
 | **网站** | https://github.com/shengbuding/balance-sentinel |
@@ -42,6 +42,7 @@
 • 后台常驻服务 — 前台通知清晰展示刷新状态，支持电池优化白名单引导
 • 配置导入/导出 — 一键备份/恢复所有账户和设置
 • 崩溃自愈 — 系统杀死后台服务后自动通过看门狗闹钟恢复
+• 中英双语 — 设置中一键切换界面语言（简体中文 / English），自动保存偏好
 
 **隐私优先：**
 
@@ -78,6 +79,7 @@ Wallet Sentinel tracks every cent of your DeepSeek API balance in real time. Aut
 • **Persistent Background Service** — Foreground notification showing real-time refresh status with battery optimization guidance
 • **Config Import/Export** — One-tap backup and restore for all accounts and settings
 • **Crash Resilience** — Watchdog alarm automatically restarts background service if killed by the system
+• **Bilingual UI** — One-tap language switch (Simplified Chinese / English) with persistent preference
 
 **Privacy First:**
 
@@ -243,8 +245,9 @@ DeepSeek, API, balance, monitor, alert, widget, consumption, tracker, usage, bil
 
 ---
 
-## 更新日志
+## 更新日志 / Changelog
 
-| 日期 | 版本 | 变更 |
+| 日期 / Date | 版本 / Version | 变更 / Changes |
 |---|---|---|
-| 2026-07-05 | v1.0.0 | 初始版本准备上架 |
+| 2026-07-08 | v1.2.0 | 中英双语界面、隐私政策双语化、消耗预估标签/日期本地化 |
+| 2026-07-05 | v1.0.0 | 初始版本准备上架 / Initial listing draft |

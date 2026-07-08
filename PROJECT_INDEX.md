@@ -1,20 +1,22 @@
-# Project Index — DeepSeek Balance Sentinel
+# Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated: 2026-07-08
+Generated / 生成日期: 2026-07-08
 
 ---
 
-## 1. Overview
+## 1. Overview / 概述
 
-**DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, and a service health tracker with protection mode.
+**DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, bilingual Chinese/English UI, and a service health tracker with protection mode.
 
-- **Package**: `com.balancesentinel.app`
+**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控 DeepSeek API 余额的 Android 应用。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构 (v2.0)：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、多账户余额预警、中英双语界面和服务健康追踪保护模式。
+
+- **Package / 包名**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11
-- **Architecture**: MVVM
-- **Test count**: 254+ unit tests (22 files) + 4 instrumented test files, all passing
-- **Release**: v1.1.1 (APK sideload, 暂不上架 Play Store)
+- **Architecture / 架构**: MVVM
+- **Test count / 测试数**: 260 unit tests (22 files), all passing / 全部通过
+- **Release / 版本**: v1.2.0
 
 ---
 
@@ -150,7 +152,7 @@ C:\Users\Administrator\
 | `ConfigManager.kt` | App config export/import |
 | `DataExporter.kt` | CSV/JSON data export |
 | `LogExporter.kt` | Log export |
-| `WidgetPrefs.kt` | Widget + notification preferences |
+| `WidgetPrefs.kt` | Widget + notification + language preferences / 小组件 + 通知 + 语言偏好 |
 
 ### 3.3 UI Layer
 
@@ -160,7 +162,7 @@ C:\Users\Administrator\
 |---|---|
 | `HomeScreen.kt` | Main balance display + multi-account cards + manual refresh |
 | `InsightsScreen.kt` | v2.0 dual-engine insight cards, sparkline charts, per-pair analysis |
-| `SettingsScreen.kt` | API key, refresh interval, widget config, notification bar, refresh stats dashboard, community links |
+| `SettingsScreen.kt` | API key, refresh interval, widget config, notification bar, refresh stats dashboard, language switch, community links / API Key、刷新间隔、小组件、通知栏、统计仪表盘、语言切换、社区链接 |
 | `AlertSettingsScreen.kt` | Per-account per-currency alert thresholds, change detection, snooze duration |
 | `LogScreen.kt` | Refresh history + crash log viewer |
 | `DataManagementScreen.kt` | Export/cleanup/import tools |
@@ -208,7 +210,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (22 unit + 4 instrumented, 254+ tests)
+## 4. Test Map (22 unit + 4 instrumented, 260 tests)
 
 ### Engine Tests
 | File | What it covers |
