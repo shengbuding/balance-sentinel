@@ -48,6 +48,9 @@ import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
 import com.balancesentinel.app.data.update.UpdatePrefs
+import com.balancesentinel.app.data.repository.WidgetPrefs
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -180,7 +183,45 @@ private fun SettingsMainPage(
                 onClick = onNavigateToDataManagement
             )
 
-            // 5. 关于与反馈 — 最少用
+            // 5. 语言切换
+            val widgetPrefs = remember { WidgetPrefs(context) }
+            val currentLang = widgetPrefs.language
+            var showLanguageDialog by remember { mutableStateOf(false) }
+
+            val languageLabel = when (currentLang) {
+                "zh" -> "中文"
+                "en" -> "English"
+                else -> stringResource(R.string.settings_language_system)
+            }
+
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Language, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_language),
+                description = languageLabel,
+                onClick = { showLanguageDialog = true }
+            )
+
+            if (showLanguageDialog) {
+                LanguageDialog(
+                    currentLanguage = currentLang,
+                    onDismiss = { showLanguageDialog = false },
+                    onConfirm = { selected ->
+                        widgetPrefs.language = selected
+                        if (selected != null) {
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.forLanguageTags(selected)
+                            )
+                        } else {
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.getEmptyLocaleList()
+                            )
+                        }
+                        showLanguageDialog = false
+                    }
+                )
+            }
+
+            // 6. 关于与反馈 — 最少用
             SettingsNavCard(
                 icon = { Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_about),
@@ -1105,6 +1146,62 @@ private fun PrivacyPolicyRow() {
             }
         )
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 语言选择 Dialog
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun LanguageDialog(
+    currentLanguage: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String?) -> Unit
+) {
+    val systemLabel = stringResource(R.string.settings_language_system)
+    val languageOptions = remember {
+        listOf(
+            null to systemLabel,
+            "zh" to "中文",
+            "en" to "English"
+        )
+    }
+    var selected by remember { mutableStateOf(currentLanguage) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_language_dialog_title)) },
+        text = {
+            Column {
+                languageOptions.forEach { (code, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selected = code }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selected == code,
+                            onClick = { selected = code }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) {
+                Text(stringResource(R.string.settings_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_cancel))
+            }
+        }
+    )
 }
 
 private val PRIVACY_POLICY_TEXT = """
