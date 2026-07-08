@@ -145,89 +145,67 @@ class RecordAggregatorTest {
         assertEquals(0f, RecordAggregator.computeGranted(sorted))
     }
 
-    // ── computeConsumed 测试（accounting identity） ──
+    // ── computeConsumed 测试（逐对增量法） ──
 
     @Test
-    fun `consumed follows accounting identity`() {
-        // open=100, close=60, toppedUp=0, granted=0 → consumed = 40
+    fun `consumed captures pure balance drop`() {
+        // 余额从 100→60，toppedUp/granted 未变 → 纯消费 40
         val sorted = listOf(
             RawRecord("acc1", 1000L, "CNY", 100f, 0f, 100f),
-            RawRecord("acc1", 2000L, "CNY", 60f, 0f, 60f)
+            RawRecord("acc1", 2000L, "CNY", 60f, 0f, 100f)
         )
-        assertEquals(40f, RecordAggregator.computeConsumed(sorted, 0f, 0f))
+        assertEquals(40f, RecordAggregator.computeConsumed(sorted))
     }
 
     @Test
-    fun `consumed with top-up does not double-count`() {
-        // 用户充值50，余额从50→100，实际消耗 = open-close+toppedUp = 50-100+50 = 0
-        val sorted = listOf(
-            RawRecord("acc1", 1000L, "CNY", 50f, 0f, 0f),
-            RawRecord("acc1", 2000L, "CNY", 100f, 0f, 0f)
-        )
-        // toppedUp change: 100-0 = 100 (API toppedUpBalance reflects accumulated top-ups)
-        val toppedUp = RecordAggregator.computeToppedUp(
-            listOf(
-                RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
-                RawRecord("acc1", 2000L, "CNY", 100f, 0f, 150f)
-            )
-        )
-        assertEquals(100f, toppedUp)
-        val consumed = RecordAggregator.computeConsumed(
-            listOf(
-                RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
-                RawRecord("acc1", 2000L, "CNY", 100f, 0f, 150f)
-            ),
-            toppedUp, 0f
-        )
-        // 50-100+100+0 = 50 ≠ 0 → wait, that means 50 was consumed
-        // Actually, if they topped up 100 and balance only went from 50→100, they consumed 50
-        assertEquals(50f, consumed)
-    }
-
-    @Test
-    fun `consumed with both top-up and grant`() {
-        // Combined scenario: toppedUp=50, granted=30
-        val sorted = listOf(
-            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
-            RawRecord("acc1", 2000L, "CNY", 100f, 0f, 100f)
-        )
-        val toppedUp = RecordAggregator.computeToppedUp(
-            listOf(
-                RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
-                RawRecord("acc1", 2000L, "CNY", 100f, 0f, 100f)
-            )
-        )
-        assertEquals(50f, toppedUp)
-
-        val granted = RecordAggregator.computeGranted(
-            listOf(
-                RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
-                RawRecord("acc1", 2000L, "CNY", 100f, 30f, 100f)
-            )
-        )
-        assertEquals(30f, granted)
-
-        val consumed = RecordAggregator.computeConsumed(
-            listOf(
-                RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
-                RawRecord("acc1", 2000L, "CNY", 100f, 30f, 100f)
-            ),
-            toppedUp, granted
-        )
-        // 100-100+50+30 = 80
-        assertEquals(80f, consumed)
-    }
-
-    @Test
-    fun `consumed is never negative`() {
+    fun `consumed skips pair where toppedUpBalance changed`() {
+        // 充值区间：余额 50→100，toppedUpBalance 50→150 → 跳过，不计算消耗
         val sorted = listOf(
             RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
-            RawRecord("acc1", 2000L, "CNY", 200f, 0f, 200f) // huge top-up
+            RawRecord("acc1", 2000L, "CNY", 100f, 0f, 150f)
         )
-        val toppedUp = RecordAggregator.computeToppedUp(sorted)
-        val consumed = RecordAggregator.computeConsumed(sorted, toppedUp, 0f)
-        // 50-200+150 = 0, coerceAtLeast(0) = 0
+        assertEquals(0f, RecordAggregator.computeConsumed(sorted))
+    }
+
+    @Test
+    fun `consumed skips pair where grantedBalance changed`() {
+        // 赠送区间：grantedBalance 从 0→30 → 跳过
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
+            RawRecord("acc1", 2000L, "CNY", 100f, 30f, 50f)
+        )
+        assertEquals(0f, RecordAggregator.computeConsumed(sorted))
+    }
+
+    @Test
+    fun `consumed sums multiple pure consumption pairs`() {
+        // 三笔记录：两段纯消费 10+20=30
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 100f),
+            RawRecord("acc1", 2000L, "CNY", 90f, 0f, 100f),   // -10
+            RawRecord("acc1", 3000L, "CNY", 70f, 0f, 100f)    // -20
+        )
+        assertEquals(30f, RecordAggregator.computeConsumed(sorted))
+    }
+
+    @Test
+    fun `consumed skips top-up pair`() {
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
+            RawRecord("acc1", 2000L, "CNY", 200f, 0f, 200f) // top-up: balance +150, toppedUpBalance +150
+        )
+        val consumed = RecordAggregator.computeConsumed(sorted)
+        // 充值区间被跳过，没有纯消费
         assertEquals(0f, consumed)
-        assertTrue("consumed should be >= 0, was $consumed", consumed >= 0f)
+    }
+
+    @Test
+    fun `consumed tracks pure balance drop between top-up and grant`() {
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
+            RawRecord("acc1", 2000L, "CNY", 90f, 0f, 50f)   // balance -10, no top/grant change → consumed
+        )
+        val consumed = RecordAggregator.computeConsumed(sorted)
+        assertEquals(10f, consumed)
     }
 }

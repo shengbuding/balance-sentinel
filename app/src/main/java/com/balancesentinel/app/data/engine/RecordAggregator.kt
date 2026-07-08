@@ -29,7 +29,7 @@ object RecordAggregator {
                 val sorted = recs.sortedBy { it.timestamp }
                 val toppedUp = computeToppedUp(sorted)
                 val granted = computeGranted(sorted)
-                val consumed = computeConsumed(sorted, toppedUp, granted)
+                val consumed = computeConsumed(sorted)
                 DailySummary(
                     accountId = sorted.first().accountId,
                     date = date,
@@ -80,13 +80,24 @@ object RecordAggregator {
     }
 
     /**
-     * 消耗 = open - close + toppedUp + granted，下限 0。
-     * 基于会计恒等式，无需猜测每笔 delta 方向，避免退款/过期误判。
+     * 消耗 = 逐对累加 totalBalance 纯下降量。
+     *
+     * 跳过 toppedUpBalance 或 grantedBalance 发生变化的区间（该区间由充值/赠送解释），
+     * 只计入余额自然下降的幅度。不依赖充值和赠送值做会计公式反推。
      */
-    fun computeConsumed(sorted: List<RawRecord>, toppedUp: Float, granted: Float): Float {
-        val open = sorted.first().totalBalance
-        val close = sorted.last().totalBalance
-        return (open - close + toppedUp + granted).coerceAtLeast(0f)
+    fun computeConsumed(sorted: List<RawRecord>): Float {
+        var consumed = 0f
+        for (i in 1 until sorted.size) {
+            val balanceDelta = sorted[i].totalBalance - sorted[i - 1].totalBalance
+            val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
+            val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
+
+            // 充值/赠送区间跳过，剩余余额下降视为纯消费
+            if (topDelta >= 1f && isNearInteger(topDelta)) continue
+            if (grantDelta > 0f) continue
+            if (balanceDelta < 0f) consumed += -balanceDelta
+        }
+        return consumed
     }
 }
 

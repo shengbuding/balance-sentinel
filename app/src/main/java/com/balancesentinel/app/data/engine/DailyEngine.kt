@@ -34,8 +34,7 @@ object DailyEngine {
             val todayGrant = computeGrantFromRecords(todayFiltered)
             val first = todayFiltered.first()
             val last = todayFiltered.last()
-            val consumed = (first.totalBalance - last.totalBalance + todayTopUp + todayGrant)
-                .coerceAtLeast(0f)
+            val consumed = computeConsumedFromPairs(todayFiltered)
             DailyPoint(
                 date = today,
                 balance = last.totalBalance,
@@ -206,6 +205,24 @@ object DailyEngine {
             }
         }
         return total
+    }
+
+    /**
+     * 逐对消费计算 — 只累加余额纯下降区间（跳过充值/赠送区间），
+     * 与 [RecordAggregator.computeConsumed] 逻辑一致。
+     */
+    private fun computeConsumedFromPairs(sorted: List<RawRecord>): Float {
+        var consumed = 0f
+        for (i in 1 until sorted.size) {
+            val balanceDelta = sorted[i].totalBalance - sorted[i - 1].totalBalance
+            val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
+            val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
+
+            if (topDelta >= 1f && isNearInteger(topDelta)) continue
+            if (grantDelta > 0f) continue
+            if (balanceDelta < 0f) consumed += -balanceDelta
+        }
+        return consumed
     }
 
     private fun isNearInteger(value: Float): Boolean {
