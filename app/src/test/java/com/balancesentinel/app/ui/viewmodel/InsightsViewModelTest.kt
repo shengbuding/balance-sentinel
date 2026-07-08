@@ -13,13 +13,27 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 class InsightsViewModelTest {
 
     private lateinit var context: Context
     private lateinit var app: Application
+
+    /**
+     * Wait for the ViewModel's async coroutine (Dispatchers.Default) to settle.
+     * awaitViewModel(viewModel) only drains the main thread; the production
+     * code changed to launch(Dispatchers.Default) at 103587b, so tests must
+     * poll the StateFlow instead.
+     */
+    private fun awaitViewModel(viewModel: InsightsViewModel) {
+        val deadline = System.currentTimeMillis() + 5000
+        while (viewModel.uiState.value.isLoading && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        // Give the final state-copy write time to propagate
+        Thread.sleep(50)
+    }
 
     @Before
     fun setUp() {
@@ -50,7 +64,7 @@ class InsightsViewModelTest {
         )
 
         val viewModel = InsightsViewModel(app)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
         assertFalse("Loading should be false", state.isLoading)
@@ -66,7 +80,7 @@ class InsightsViewModelTest {
     @Test
     fun `loadData handles empty data gracefully`() {
         val viewModel = InsightsViewModel(app)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
         assertFalse("Loading should be false", state.isLoading)
@@ -102,7 +116,7 @@ class InsightsViewModelTest {
         )
 
         val viewModel = InsightsViewModel(app)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
         assertFalse("Loading should be false", state.isLoading)
@@ -126,6 +140,7 @@ class InsightsViewModelTest {
         )
 
         val viewModel = InsightsViewModel(app)
+        awaitViewModel(viewModel)
 
         // Initial load picks first currency (CNY)
         assertEquals("CNY", viewModel.uiState.value.selectedCurrency)
@@ -134,7 +149,7 @@ class InsightsViewModelTest {
 
         // Switch to USD
         viewModel.selectCurrency("USD")
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         assertEquals("USD", viewModel.uiState.value.selectedCurrency)
         assertEquals(1, viewModel.uiState.value.intradayOutput!!.dataPointCount)
@@ -148,7 +163,7 @@ class InsightsViewModelTest {
         assertEquals(7, viewModel.uiState.value.rangeDays)
 
         viewModel.setRangeDays(30)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
         assertEquals(30, viewModel.uiState.value.rangeDays)
 
         // Same value should not trigger reload
@@ -296,7 +311,7 @@ class InsightsViewModelTest {
         RawRecordStore.addRecord(context, RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f))
 
         val viewModel = InsightsViewModel(app)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         // Set consumption mode and expand a row
         viewModel.setChartMode("consumed")
@@ -307,7 +322,7 @@ class InsightsViewModelTest {
 
         // Switch currency → data reload, history reset, chartMode preserved
         viewModel.selectCurrency("USD")
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         assertEquals("consumed", viewModel.uiState.value.chartMode)  // preserved
         assertNull(viewModel.uiState.value.expandedDate)              // reset
@@ -342,7 +357,7 @@ class InsightsViewModelTest {
         val viewModel = InsightsViewModel(app)
         // Switch to 30-day range to include all 30 data points
         viewModel.setRangeDays(30)
-        ShadowLooper.idleMainLooper()
+        awaitViewModel(viewModel)
 
         assertEquals(7, viewModel.uiState.value.historyVisibleCount)
 
