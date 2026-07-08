@@ -1,15 +1,18 @@
 import java.util.Properties
 
-// 自动版本号：CI 环境变量 BUILD_NUMBER 优先，否则用 git commit 数
+// 自动版本号：CI 环境变量 BUILD_NUMBER 优先，否则用 git commit 数 + 偏移
+// 需要覆盖安装时提高 VERSION_OFFSET 即可，不影响 CI
+private val VERSION_OFFSET = 10
+
 fun gitCommitCount(): Int {
     val ciBuild = System.getenv("BUILD_NUMBER")
     if (!ciBuild.isNullOrBlank()) return ciBuild.toIntOrNull() ?: 1
-    return try {
+    return VERSION_OFFSET + (try {
         val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
             .directory(rootProject.projectDir)
             .start()
         process.inputStream.bufferedReader().readText().trim().toInt()
-    } catch (_: Exception) { 1 }
+    } catch (_: Exception) { 1 })
 }
 
 fun gitVersionName(): String {
