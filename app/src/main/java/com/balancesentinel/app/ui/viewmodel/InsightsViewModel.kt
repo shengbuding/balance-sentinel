@@ -3,20 +3,30 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyEngine
 import com.balancesentinel.app.data.engine.DailyInput
 import com.balancesentinel.app.data.engine.DailyOutput
+import com.balancesentinel.app.data.engine.DailyPoint
+import com.balancesentinel.app.data.engine.DepletionEstimate
+import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayEngine
 import com.balancesentinel.app.data.engine.IntradayInput
 import com.balancesentinel.app.data.engine.IntradayOutput
+import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.DailySummary
+import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import kotlin.math.roundToInt
 
 /**
  * 洞察 UI 状态 — 双引擎输出。
@@ -50,6 +60,8 @@ data class InsightsUiState(
  *
  * 读存储 → 分别构造 IntradayInput / DailyInput →
  * 调用 IntradayEngine.compute() / DailyEngine.compute() → 更新 UI state。
+ *
+ * 多账户全部账户模式：null accountId 时逐账户跑引擎再合并。
  */
 class InsightsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -63,8 +75,7 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadData() {
-        viewModelScope.launch {
-            // 切换账户/币种/时间范围时重置历史汇总状态，图表模式保持不变
+        viewModelScope.launch(Dispatchers.Default) {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
                 historyVisibleCount = 7,
@@ -76,8 +87,6 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                 val allRaw = RawRecordStore.getAllRecords(getApplication())
                 val currencies = (summaries.map { it.currency } + allRaw.map { it.currency }).distinct()
 
-                // Account info may fail when keystore is unavailable (e.g. test env);
-                // degrade gracefully with empty account list.
                 val accounts = try {
                     apiKeyManager.migrateLegacyKeyIfNeeded()
                     apiKeyManager.getAccounts()
@@ -89,22 +98,17 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                     if (it.isNotEmpty() && currencies.contains(it)) it
                     else currencies.firstOrNull() ?: ""
                 }
-                // 多账户场景：null 时自动选中首个账户，避免引擎层 filterAccountId==null
-                // 短路导致多账户记录混合（per-pair 分析不能跨账户）
                 val accountId = _uiState.value.selectedAccountId
-                    ?: accounts.firstOrNull()?.id
                 val rangeDays = _uiState.value.rangeDays
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
                 val recentRaw = RawRecordStore.getRecordsSince(getApplication(), cutoff)
-                val intradayInput = IntradayInput(recentRaw, currency, accountId)
-                val intradayOutput = IntradayEngine.compute(intradayInput)
+                val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
 
                 // ── Daily: 长期日历天视图 ──
                 val todayRaw = RawRecordStore.getTodayRecords(getApplication())
-                val dailyInput = DailyInput(summaries, todayRaw, currency, accountId, rangeDays)
-                val dailyOutput = DailyEngine.compute(dailyInput)
+                val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -121,15 +125,52 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 计算辅助：单账户走引擎，null=全部账户走逐账户引擎+合并
+    // ═══════════════════════════════════════════════════════════
+
+    private fun computeIntraday(
+        records: List<RawRecord>,
+        currency: String,
+        accountId: String?,
+        accounts: List<AccountInfo>
+    ): IntradayOutput {
+        // 单账户或无账户数据 → 直接调用引擎
+        if (accountId != null || accounts.isEmpty()) {
+            return IntradayEngine.compute(IntradayInput(records, currency, accountId))
+        }
+        // 全部账户模式 → 逐账户引擎 + 合并
+        val outputs = accounts.map { account ->
+            IntradayEngine.compute(IntradayInput(records, currency, account.id))
+        }
+        return mergeIntradayOutputs(outputs)
+    }
+
+    private fun computeDaily(
+        summaries: List<DailySummary>,
+        todayRaw: List<RawRecord>,
+        currency: String,
+        accountId: String?,
+        accounts: List<AccountInfo>,
+        rangeDays: Int
+    ): DailyOutput {
+        if (accountId != null || accounts.isEmpty()) {
+            return DailyEngine.compute(DailyInput(summaries, todayRaw, currency, accountId, rangeDays))
+        }
+        val outputs = accounts.map { account ->
+            DailyEngine.compute(DailyInput(summaries, todayRaw, currency, account.id, rangeDays))
+        }
+        return mergeDailyOutputs(outputs, rangeDays)
+    }
+
     fun selectCurrency(currency: String) {
         _uiState.value = _uiState.value.copy(selectedCurrency = currency)
         loadData()
     }
 
     fun selectAccount(accountId: String?) {
-        // null → 自动选中首个账户（引擎 per-pair 分析不支持跨账户混合）
-        val resolved = accountId ?: _uiState.value.accounts.firstOrNull()?.id
-        _uiState.value = _uiState.value.copy(selectedAccountId = resolved)
+        // 不再 fallback 到首个账户 — null 即全部账户，走合并路径
+        _uiState.value = _uiState.value.copy(selectedAccountId = accountId)
         loadData()
     }
 
@@ -155,5 +196,122 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         _uiState.value = current.copy(
             expandedDate = if (current.expandedDate == date) null else date
         )
+    }
+
+    companion object {
+        /**
+         * 合并多账户 Intraday 输出。
+         *
+         * Trend points 按时间排序后用自适应 minInterval 去重，
+         * Bill report 对各账户求和。
+         */
+        fun mergeIntradayOutputs(outputs: List<IntradayOutput>): IntradayOutput {
+            if (outputs.isEmpty()) return IntradayOutput(
+                emptyList(), IntradayBillReport(0f, 0f, 0f, 0f), 0
+            )
+            if (outputs.size == 1) return outputs[0]
+
+            val allPoints = outputs.flatMap { it.trendPoints }.sortedBy { it.timestamp }
+
+            // 自适应间隔：数据稀疏时不限间隔，密集时避免点过多
+            val minInterval = when {
+                allPoints.size <= 20 -> 0L
+                allPoints.size <= 60 -> 15_000L
+                else -> 30_000L
+            }
+
+            val merged = if (minInterval == 0L || allPoints.isEmpty()) {
+                allPoints
+            } else {
+                val result = mutableListOf(allPoints[0])
+                for (i in 1 until allPoints.size) {
+                    if (allPoints[i].timestamp - result.last().timestamp >= minInterval) {
+                        result.add(allPoints[i])
+                    }
+                }
+                // 确保尾部不丢点
+                if (result.last().timestamp != allPoints.last().timestamp) {
+                    result.add(allPoints.last())
+                }
+                result
+            }
+
+            val totalConsumed = outputs.sumOf { it.billReport.consumed.toDouble() }.toFloat()
+            val totalToppedUp = outputs.sumOf { it.billReport.toppedUp.toDouble() }.toFloat()
+            val totalGranted = outputs.sumOf { it.billReport.granted.toDouble() }.toFloat()
+
+            return IntradayOutput(
+                trendPoints = merged,
+                billReport = IntradayBillReport(
+                    consumed = totalConsumed,
+                    toppedUp = totalToppedUp,
+                    granted = totalGranted,
+                    netChange = totalToppedUp + totalGranted - totalConsumed
+                ),
+                dataPointCount = merged.size
+            )
+        }
+
+        /**
+         * 合并多账户 Daily 输出。
+         *
+         * 按日期合并 dailyPoints：同一天的各账户数据求和（balance/open/consumed/toppedUp/granted），
+         * Bill report 对各账户求和。
+         */
+        fun mergeDailyOutputs(outputs: List<DailyOutput>, rangeDays: Int): DailyOutput {
+            if (outputs.isEmpty()) return DailyOutput(
+                emptyList(), DailyBillReport(0f, 0f, 0f, 0f, ""), null, "", true, true
+            )
+            if (outputs.size == 1) return outputs[0]
+
+            val dateMap = linkedMapOf<String, DailyPoint>()
+            for (output in outputs) {
+                for (point in output.dailyPoints) {
+                    val existing = dateMap[point.date]
+                    if (existing == null) {
+                        dateMap[point.date] = point
+                    } else {
+                        dateMap[point.date] = DailyPoint(
+                            date = point.date,
+                            balance = existing.balance + point.balance,
+                            consumed = existing.consumed + point.consumed,
+                            toppedUp = existing.toppedUp + point.toppedUp,
+                            granted = existing.granted + point.granted,
+                            isGapFill = existing.isGapFill && point.isGapFill,
+                            open = existing.open + point.open,
+                            sampleCount = maxOf(existing.sampleCount, point.sampleCount)
+                        )
+                    }
+                }
+            }
+
+            val merged = dateMap.values.toList()
+            val periodLabel = outputs.firstOrNull()?.periodLabel ?: ""
+
+            val totalConsumed = merged.sumOf { it.consumed.toDouble() }.toFloat()
+            val totalToppedUp = merged.sumOf { it.toppedUp.toDouble() }.toFloat()
+            val totalGranted = merged.sumOf { it.granted.toDouble() }.toFloat()
+
+            // 消耗预估沿用首个有效输出（多账户合并后线性回归需重新计算，暂用首个非空）
+            val estimate = outputs.firstOrNull { it.estimate != null }?.estimate
+
+            val withConsumption = merged.filter { it.consumed > 0f }
+            val insufficientData = withConsumption.size < 3
+
+            return DailyOutput(
+                dailyPoints = merged,
+                billReport = DailyBillReport(
+                    consumed = totalConsumed,
+                    toppedUp = totalToppedUp,
+                    granted = totalGranted,
+                    netChange = totalToppedUp + totalGranted - totalConsumed,
+                    periodLabel = periodLabel
+                ),
+                estimate = estimate,
+                periodLabel = periodLabel,
+                isEmpty = merged.isEmpty(),
+                insufficientData = insufficientData
+            )
+        }
     }
 }
