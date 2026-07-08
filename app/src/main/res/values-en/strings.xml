@@ -61,7 +61,7 @@
     <string name="insights_estimate_title">Depletion Estimate</string>
     <string name="insights_estimate_help">Help</string>
     <string name="insights_estimate_help_title">About Depletion Estimate</string>
-    <string name="insights_estimate_help_text">Daily consumption rate is calculated via linear regression on the last N days of usage data.\n\nRemaining Days = Current Balance ÷ Daily Rate\nDepletion Date = Today + Remaining Days\n\nAt least 3 days with consumption data are required. If the balance is stable or growing (slope ≤ 0), no estimate is shown.</string>
+    <string name="insights_estimate_help_text">Daily consumption is the sum of pure balance drops between records, excluding top-ups and grants.\n\nWith ≥3 days of data and an upward trend, linear regression is used to fit the daily rate; otherwise the simple mean is used. An estimate is shown as long as at least 1 day has consumption.\n\nRemaining Days = Current Balance ÷ Daily Rate\nDepletion Date = Today + Remaining Days\n\nNo estimate is shown only when there is zero consumption (balance has never decreased).</string>
     <string name="insights_estimated_days">Est. Remaining</string>
     <string name="insights_days_remaining">%.0f days</string>
     <string name="insights_chart_value_format">%.1fK</string>
