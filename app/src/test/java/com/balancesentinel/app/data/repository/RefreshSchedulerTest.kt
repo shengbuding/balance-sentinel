@@ -190,4 +190,91 @@ class RefreshSchedulerTest {
         RefreshScheduler.resetAlarmCounters(context)
         assertEquals(0, state.totalAlarmsSet)
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // markStartRequested / isServiceStarting
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `markStartRequested sets start timestamp`() {
+        RefreshScheduler.markStartRequested(context)
+        // Verifying via isServiceStarting — should return true within 5s
+        assertTrue(RefreshScheduler.isServiceStarting(context))
+    }
+
+    @Test
+    fun `isServiceStarting returns false when no start requested`() {
+        assertFalse(RefreshScheduler.isServiceStarting(context))
+    }
+
+    @Test
+    fun `isServiceStarting returns false after heartbeat`() {
+        RefreshScheduler.markStartRequested(context)
+        RefreshScheduler.heartbeat(context)
+        assertFalse(RefreshScheduler.isServiceStarting(context))
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // isServiceDead — timeout edge cases
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `isServiceDead with zero timeout returns true immediately after heartbeat`() {
+        RefreshScheduler.heartbeat(context)
+        // timeoutMs=0 means any heartbeat is immediately expired
+        assertTrue(RefreshScheduler.isServiceDead(context, timeoutMs = 0L))
+    }
+
+    @Test
+    fun `isServiceDead returns false during start grace period`() {
+        RefreshScheduler.markStartRequested(context)
+        // Service is starting — should NOT be considered dead
+        assertFalse(RefreshScheduler.isServiceDead(context))
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // checkMissedRefresh — expired schedule path
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `checkMissedRefresh detects expired schedule`() {
+        val pastTime = System.currentTimeMillis() - 120_000 // 2 minutes ago
+        val state = RefreshScheduler.getState(context)
+        // Write a schedule that has already expired
+        val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putLong("expected_next_at", pastTime)
+            .putInt("scheduled_interval", 30)
+            .putString("alarm_method", "inexact")
+            .apply()
+
+        val missed = RefreshScheduler.checkMissedRefresh(context)
+        assertEquals(1, missed.size)
+        assertEquals("MISSED", missed[0].type.name)
+        assertTrue(missed[0].message.contains("延迟"))
+        // Should have incremented dropped counter
+        val newState = RefreshScheduler.getState(context)
+        assertEquals(1, newState.totalDropped)
+    }
+
+    @Test
+    fun `checkMissedRefresh returns empty within grace period`() {
+        val justScheduled = System.currentTimeMillis() + 30_000 // still in future
+        val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putLong("expected_next_at", justScheduled)
+            .putInt("scheduled_interval", 30)
+            .apply()
+
+        val missed = RefreshScheduler.checkMissedRefresh(context)
+        assertTrue(missed.isEmpty())
+    }
+
+    @Test
+    fun `checkMissedRefresh returns empty when expectedNextAt is zero`() {
+        val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
+        prefs.edit().putLong("expected_next_at", 0).putInt("scheduled_interval", 0).apply()
+        val missed = RefreshScheduler.checkMissedRefresh(context)
+        assertTrue(missed.isEmpty())
+    }
 }
