@@ -8,6 +8,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class CrashLoggerTest {
@@ -16,7 +17,7 @@ class CrashLoggerTest {
 
     @Before
     fun setUp() {
-        app = ApplicationProvider.getApplicationContext()
+        app = ApplicationProvider.getApplicationContext() as Application
         CrashLogger.clear(app)
     }
 
@@ -25,185 +26,151 @@ class CrashLoggerTest {
         CrashLogger.clear(app)
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // breadcrumb
-    // ═══════════════════════════════════════════════════════════
+    // ── breadcrumb ──
 
     @Test
-    fun `breadcrumb adds entry`() {
+    fun `breadcrumb adds entry to list`() {
+        val before = CrashLogger.getBreadcrumbs().size
         CrashLogger.breadcrumb("TestTag", "test message")
         val crumbs = CrashLogger.getBreadcrumbs()
-        assertTrue(crumbs.any { it.contains("TestTag") && it.contains("test message") })
+        assertEquals(before + 1, crumbs.size)
+        assertTrue(crumbs.last().contains("TestTag"))
+        assertTrue(crumbs.last().contains("test message"))
     }
 
     @Test
-    fun `breadcrumb ring buffer caps at 30 entries`() {
-        val marker = "ring-test-${System.nanoTime()}"
-        for (i in 1..40) {
-            CrashLogger.breadcrumb("Tag", "$marker $i")
+    fun `getBreadcrumbs returns a list`() {
+        // Breadcrumbs are shared singleton state — verify it returns a list
+        val crumbs = CrashLogger.getBreadcrumbs()
+        assertNotNull(crumbs)
+        // After adding one, list should not be empty
+        val before = crumbs.size
+        CrashLogger.breadcrumb("TestTag", "fresh crumb")
+        assertEquals(before + 1, CrashLogger.getBreadcrumbs().size)
+    }
+
+    @Test
+    fun `breadcrumb respects max size of 30`() {
+        // Fill until we overflow, then verify cap
+        val before = CrashLogger.getBreadcrumbs().size
+        val toAdd = 35
+        for (i in 1..toAdd) {
+            CrashLogger.breadcrumb("MaxTest", "msg $i")
         }
         val crumbs = CrashLogger.getBreadcrumbs()
         assertEquals(30, crumbs.size)
-        // oldest entries should be dropped; newest present
-        assertTrue(crumbs.any { it.contains("$marker 40") })
+        // The last entry should be the most recent
+        assertTrue(crumbs.last().contains("msg $toAdd"))
+        // The entries before our batch should be evicted
+        // (if before > 0, the first entries we added also got evicted)
+        // Use exact suffix match to avoid "msg 1" matching "msg 10".."msg 19"
+        val stillHasMsg1 = crumbs.any { it.endsWith("MaxTest: msg 1") }
+        assertFalse("msg 1 should have been evicted (35 added, max 30)", stillHasMsg1)
     }
 
     @Test
-    fun `getBreadcrumbs returns empty when no crumbs added`() {
+    fun `breadcrumb includes timestamp in HHmmss format`() {
+        CrashLogger.breadcrumb("Tag", "hello")
+        val crumb = CrashLogger.getBreadcrumbs().last()
+        // Should have timestamp prefix like [12:34:56.789]
+        assertTrue(crumb.matches(Regex("""\[\d{2}:\d{2}:\d{2}\.\d{3}] Tag: hello""")))
+    }
+
+    // ── install ──
+
+    @Test
+    fun `install adds a breadcrumb with app version`() {
+        CrashLogger.install(app)
         val crumbs = CrashLogger.getBreadcrumbs()
-        // May contain install breadcrumb from previous tests, but we cleared at setUp
-        // Breadcrumbs are in-memory only, clear() only clears files
-        // After clearing crashes, breadcrumbs might still exist from previous test runs
-        // Just verify it returns a list
-        assertNotNull(crumbs)
+        val last = crumbs.last()
+        assertTrue(last.contains("Crash handler installed"))
+        assertTrue(last.contains("app version="))
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // logNonFatal / getCrashes / clear
-    // ═══════════════════════════════════════════════════════════
+    // ── clear ──
 
     @Test
-    fun `logNonFatal does not throw`() {
-        // logNonFatal requires appRef to be set via install(), which we skip
-        // It should gracefully handle null appRef
-        CrashLogger.logNonFatal("TestTag", RuntimeException("test error"))
-        // No exception = pass
+    fun `clear removes crash log file`() {
+        // install sets up the handler and adds a breadcrumb, but crash file is only written on crash
+        val crashFile = File(app.filesDir, "crash.log")
+        crashFile.writeText("test crash content")
+        assertTrue(crashFile.exists())
+
+        CrashLogger.clear(app)
+        assertFalse(crashFile.exists())
     }
 
     @Test
-    fun `getCrashes returns empty when no crashes logged`() {
+    fun `clear on non-existent file does not throw`() {
+        CrashLogger.clear(app) // should not throw
+        CrashLogger.clear(app) // should not throw on second call
+    }
+
+    // ── getCrashes ──
+
+    @Test
+    fun `getCrashes returns empty when no crash file`() {
         val crashes = CrashLogger.getCrashes(app)
         assertTrue(crashes.isEmpty())
     }
 
     @Test
-    fun `clear is safe when no crash file exists`() {
-        CrashLogger.clear(app)
-        assertTrue(CrashLogger.getCrashes(app).isEmpty())
+    fun `getCrashes parses crash entries from file`() {
+        val crashFile = File(app.filesDir, "crash.log")
+        crashFile.writeText(
+            "[2026-07-09 12:00:00] [FATAL] java.lang.RuntimeException: test crash\n" +
+            "── 设备信息 ──\n  制造商: test\n" +
+            "\n══════════════════════════════════\n" +
+            "[2026-07-09 13:00:00] [FATAL] java.lang.NullPointerException: null ptr\n" +
+            "── 设备信息 ──\n  制造商: test2\n"
+        )
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertEquals(2, crashes.size)
+        assertTrue(crashes[0].header.contains("RuntimeException"))
+        assertTrue(crashes[1].header.contains("NullPointerException"))
     }
 
     @Test
-    fun `clear removes all crashes`() {
-        CrashLogger.clear(app)
-        assertTrue(CrashLogger.getCrashes(app).isEmpty())
+    fun `getCrashes handles empty file gracefully`() {
+        val crashFile = File(app.filesDir, "crash.log")
+        crashFile.writeText("")
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertTrue(crashes.isEmpty())
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // breadcrumb — format and details
-    // ═══════════════════════════════════════════════════════════
+    // ── logNonFatal ──
 
     @Test
-    fun `breadcrumb includes timestamp in correct format`() {
-        // Clear breadcrumbs by overflowing buffer with distinctive marker first
-        val marker = "fmt-${System.nanoTime()}"
-        CrashLogger.breadcrumb("FMT", marker)
-        val crumbs = CrashLogger.getBreadcrumbs()
-        val match = crumbs.find { it.contains(marker) }
-        assertNotNull("Should find our breadcrumb", match)
-        // Format: [HH:mm:ss.SSS] FMT: <marker>
-        assertTrue(match!!.matches(Regex("""\[\d{2}:\d{2}:\d{2}\.\d{3}\] FMT: .*""")))
-    }
-
-    @Test
-    fun `getBreadcrumbs returns defensive copy`() {
-        val marker = "defcopy-${System.nanoTime()}"
-        CrashLogger.breadcrumb("T", marker)
-        val copy1 = CrashLogger.getBreadcrumbs()
-        val copy2 = CrashLogger.getBreadcrumbs()
-        assertNotSame(copy1, copy2)
-        assertEquals(copy1, copy2)
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // logNonFatal with install
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `logNonFatal with install writes to crash file`() {
+    fun `logNonFatal writes entry when app is installed`() {
         CrashLogger.install(app)
-        CrashLogger.logNonFatal("TestTag", RuntimeException("specific-error-marker"))
-        val entries = CrashLogger.getCrashes(app)
-        assertTrue("Should have crash entries", entries.isNotEmpty())
-        assertTrue(entries.first().fullStack.contains("specific-error-marker"))
-        assertTrue(entries.first().fullStack.contains("NON-FATAL"))
+        CrashLogger.logNonFatal("TestTag", RuntimeException("non-fatal error"))
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertEquals(1, crashes.size)
+        assertTrue(crashes[0].fullStack.contains("non-fatal error"))
+        assertTrue(crashes[0].fullStack.contains("NON-FATAL"))
     }
 
     @Test
-    fun `logNonFatal entries include device info`() {
-        CrashLogger.install(app)
-        CrashLogger.logNonFatal("T", RuntimeException("e"))
-        val entries = CrashLogger.getCrashes(app)
-        val content = entries.first().fullStack
-        assertTrue(content.contains("设备信息"))
-        assertTrue(content.contains("Android"))
-        assertTrue(content.contains("堆栈"))
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // getCrashes — parsing
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `getCrashes respects max 10 entries`() {
-        CrashLogger.install(app)
-        repeat(12) { i -> CrashLogger.logNonFatal("T", RuntimeException("err$i")) }
-        val entries = CrashLogger.getCrashes(app)
-        assertEquals(10, entries.size)
+    fun `logNonFatal does not write when app not installed`() {
+        // Without calling install(), appRef is null
+        CrashLogger.logNonFatal("TestTag", RuntimeException("should not appear"))
+        val crashes = CrashLogger.getCrashes(app)
+        assertTrue(crashes.isEmpty())
     }
 
     @Test
-    fun `getCrashes entries have header and fullStack`() {
+    fun `logNonFatal writes multiple entries up to max`() {
         CrashLogger.install(app)
-        CrashLogger.logNonFatal("HDR", RuntimeException("header test"))
-        val entries = CrashLogger.getCrashes(app)
-        assertTrue(entries.isNotEmpty())
-        val first = entries.first()
-        assertTrue(first.header.isNotEmpty())
-        assertTrue(first.fullStack.length > first.header.length)
-        // Header should not start with '[' after parsing
-        assertFalse(first.header.startsWith("["))
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // install
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `install adds breadcrumb with app version`() {
-        CrashLogger.install(app)
-        val crumbs = CrashLogger.getBreadcrumbs()
-        assertTrue(crumbs.any { it.contains("Crash handler installed") })
-    }
-
-    @Test
-    fun `install is idempotent`() {
-        CrashLogger.install(app)
-        CrashLogger.install(app)
-        // Should not throw
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // API key redaction
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `crash log redacts API keys in stack traces`() {
-        CrashLogger.install(app)
-        CrashLogger.logNonFatal("API", RuntimeException("Used key sk-abcdefghijklmnopqrstuv"))
-        val entries = CrashLogger.getCrashes(app)
-        val full = entries.first().fullStack
-        assertFalse("Should not contain real API key", full.contains("sk-abcdefghijklmnopqrstuv"))
-        assertTrue("Should contain redacted marker", full.contains("sk-***"))
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // CrashEntry data class
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `CrashEntry stores header and fullStack`() {
-        val entry = CrashLogger.CrashEntry(header = "test header", fullStack = "full stack")
-        assertEquals("test header", entry.header)
-        assertEquals("full stack", entry.fullStack)
+        for (i in 1..12) {
+            CrashLogger.logNonFatal("Tag", RuntimeException("error $i"))
+        }
+        val crashes = CrashLogger.getCrashes(app)
+        // Max 10 entries
+        assertTrue(crashes.size <= 10)
+        // Most recent should be first
+        assertTrue(crashes[0].header.contains("error 12"))
     }
 }

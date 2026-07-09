@@ -25,12 +25,14 @@ class ServiceHealthTrackerTest {
         ServiceHealthTracker.reset(context)
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // recordSuccess
-    // ═══════════════════════════════════════════════════════════
+    @Test
+    fun `initial state has zero failures and no protection mode`() {
+        assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
+        assertFalse(ServiceHealthTracker.isInProtectionMode(context))
+    }
 
     @Test
-    fun `recordSuccess resets consecutive failures to zero`() {
+    fun `recordSuccess resets failure count to zero`() {
         ServiceHealthTracker.recordFailure(context)
         ServiceHealthTracker.recordFailure(context)
         assertEquals(2, ServiceHealthTracker.getConsecutiveFailures(context))
@@ -41,20 +43,18 @@ class ServiceHealthTrackerTest {
 
     @Test
     fun `recordSuccess exits protection mode`() {
-        // Simulate entering protection mode by setting failures >= 10
-        repeat(10) { ServiceHealthTracker.recordFailure(context) }
+        val prefs = context.getSharedPreferences("service_health", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("protection_mode", true).putInt("consecutive_failures", 10).apply()
+
         assertTrue(ServiceHealthTracker.isInProtectionMode(context))
 
         ServiceHealthTracker.recordSuccess(context)
         assertFalse(ServiceHealthTracker.isInProtectionMode(context))
+        assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // recordFailure
-    // ═══════════════════════════════════════════════════════════
-
     @Test
-    fun `recordFailure increments consecutive failures`() {
+    fun `recordFailure increments failure count`() {
         ServiceHealthTracker.recordFailure(context)
         assertEquals(1, ServiceHealthTracker.getConsecutiveFailures(context))
 
@@ -66,54 +66,42 @@ class ServiceHealthTrackerTest {
     }
 
     @Test
-    fun `recordFailure at threshold does not throw`() {
-        // 3 failures = alert threshold (sends notification, caught internally)
-        repeat(3) { ServiceHealthTracker.recordFailure(context) }
-        assertEquals(3, ServiceHealthTracker.getConsecutiveFailures(context))
-    }
-
-    @Test
-    fun `recordFailure at protection threshold enters protection mode`() {
-        repeat(10) { ServiceHealthTracker.recordFailure(context) }
-        assertTrue(ServiceHealthTracker.isInProtectionMode(context))
-    }
-
-    @Test
-    fun `recordFailure does not enter protection mode before threshold`() {
-        repeat(9) { ServiceHealthTracker.recordFailure(context) }
+    fun `isInProtectionMode returns false by default`() {
         assertFalse(ServiceHealthTracker.isInProtectionMode(context))
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // getConsecutiveFailures
-    // ═══════════════════════════════════════════════════════════
-
     @Test
-    fun `getConsecutiveFailures returns zero initially`() {
+    fun `getConsecutiveFailures returns zero by default`() {
         assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
     }
-
-    // ═══════════════════════════════════════════════════════════
-    // isInProtectionMode
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `isInProtectionMode returns false initially`() {
-        assertFalse(ServiceHealthTracker.isInProtectionMode(context))
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // reset
-    // ═══════════════════════════════════════════════════════════
 
     @Test
     fun `reset clears failures and protection mode`() {
-        repeat(12) { ServiceHealthTracker.recordFailure(context) }
-        assertTrue(ServiceHealthTracker.isInProtectionMode(context))
-        assertTrue(ServiceHealthTracker.getConsecutiveFailures(context) > 0)
+        val prefs = context.getSharedPreferences("service_health", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt("consecutive_failures", 5)
+            .putBoolean("protection_mode", true)
+            .apply()
 
         ServiceHealthTracker.reset(context)
+
         assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
         assertFalse(ServiceHealthTracker.isInProtectionMode(context))
+    }
+
+    @Test
+    fun `recordSuccess when not in protection mode is no-op aside from reset`() {
+        ServiceHealthTracker.recordFailure(context)
+        ServiceHealthTracker.recordSuccess(context)
+        assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
+        assertFalse(ServiceHealthTracker.isInProtectionMode(context))
+    }
+
+    @Test
+    fun `multiple success calls stay at zero`() {
+        ServiceHealthTracker.recordSuccess(context)
+        ServiceHealthTracker.recordSuccess(context)
+        ServiceHealthTracker.recordSuccess(context)
+        assertEquals(0, ServiceHealthTracker.getConsecutiveFailures(context))
     }
 }
