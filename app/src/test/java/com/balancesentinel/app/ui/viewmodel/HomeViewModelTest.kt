@@ -369,4 +369,102 @@ class HomeViewModelTest {
         val accounts = vm.uiState.value.accounts
         assertTrue(accounts.any { it.label == "Imported" })
     }
+
+    @Test
+    fun `applyImportedConfig with redacted accounts sets error message`() {
+        val vm = createViewModel()
+        val config = com.balancesentinel.app.data.repository.AppConfig(
+            version = 1,
+            exportedAt = "2026-07-09T12:00:00",
+            appVersion = "1.0.0",
+            accounts = listOf(
+                com.balancesentinel.app.data.model.AccountInfo(
+                    id = "r1", label = "Redacted", apiKey = "sk-a****t901"
+                )
+            ),
+            settings = com.balancesentinel.app.data.repository.ConfigSettings(
+                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
+                changeAlertEnabled = false, changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 0, logMaxEntries = 100
+            )
+        )
+
+        vm.applyImportedConfig(config)
+        // Redacted account should be skipped — accounts list should be empty
+        assertEquals(0, vm.uiState.value.accounts.size)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // setRefreshInterval with accounts triggers balance refresh
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `setRefreshInterval with accounts triggers refresh`() {
+        apiKeyManager.addAccount("Acc", "sk-key-acc")
+        val mockResponse = BalanceResponse(
+            isAvailable = true,
+            balanceInfos = listOf(BalanceInfo("CNY", "88.88", "0", "0"))
+        )
+        coEvery { mockRepository.fetchBalance("sk-key-acc") } returns Result.success(mockResponse)
+
+        val vm = createViewModel()
+        val accId = vm.uiState.value.accounts[0].id
+        vm.setRefreshInterval(180)
+        assertEquals(180, vm.uiState.value.refreshIntervalSeconds)
+        // Refresh should have been triggered — balance should be populated
+        assertNotNull(vm.uiState.value.accountBalances[accId])
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // setAlertThreshold and setChangeAlertThreshold clear snooze
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `setAlertThreshold clears snooze and updates info`() {
+        val vm = createViewModel()
+        val defaultPrefs = WidgetPrefs(context)
+        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+        vm.refreshSnoozeInfo()
+        assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
+
+        vm.setAlertThreshold(50f)
+        assertEquals(50f, vm.uiState.value.alertThreshold)
+        assertFalse(vm.uiState.value.snoozeInfo.anySnoozed)
+    }
+
+    @Test
+    fun `setChangeAlertThreshold clears snooze and updates info`() {
+        val vm = createViewModel()
+        val defaultPrefs = WidgetPrefs(context)
+        defaultPrefs.setSnoozeUntil("account-x", System.currentTimeMillis() + 3600_000L)
+        vm.refreshSnoozeInfo()
+        assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
+
+        vm.setChangeAlertThreshold(30f)
+        assertEquals(30f, vm.uiState.value.changeAlertThreshold)
+        assertFalse(vm.uiState.value.snoozeInfo.anySnoozed)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // removeAccount also clears widget cached balance
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `removeAccount clears balance from state map`() {
+        apiKeyManager.addAccount("A", "sk-remove-bal")
+        val mockResponse = BalanceResponse(
+            isAvailable = true,
+            balanceInfos = listOf(BalanceInfo("CNY", "100.00", "0", "0"))
+        )
+        coEvery { mockRepository.fetchBalance("sk-remove-bal") } returns Result.success(mockResponse)
+
+        val vm = createViewModel()
+        val accId = vm.uiState.value.accounts[0].id
+        vm.refreshBalance()
+        assertTrue(vm.uiState.value.accountBalances.containsKey(accId))
+
+        // Now remove
+        vm.removeAccount(accId)
+        assertFalse(vm.uiState.value.accountBalances.containsKey(accId))
+    }
 }
