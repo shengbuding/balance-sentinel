@@ -49,6 +49,18 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
+      - name: Show test failures
+        if: always()
+        run: |
+          echo "=== Test Results ==="
+          for f in app/build/test-results/testDebugUnitTest/TEST-*.xml; do
+            if grep -q 'failures="[1-9]"\|errors="[1-9]"' "$f" 2>/dev/null; then
+              echo "FAILED: $(basename $f)"
+              grep -A5 '<testcase.*<failure\|<testcase.*<error' "$f" | head -100
+            fi
+          done
+          echo "=== End Test Results ==="
+
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
 
