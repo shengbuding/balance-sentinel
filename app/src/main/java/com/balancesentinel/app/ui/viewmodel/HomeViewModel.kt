@@ -61,7 +61,7 @@ data class HomeUiState(
     val snoozeDurationMinutes: Int = 60
 )
 
-class HomeViewModel(
+class HomeViewModel @JvmOverloads constructor(
     application: Application,
     // test-only: inject mocks for unit testing
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
