@@ -38,7 +38,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -53,7 +54,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -68,7 +70,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -85,7 +88,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -101,7 +105,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -121,7 +126,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = { called = true },
                 onNavigateToLog = {},
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -138,7 +144,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = { called = true },
-                onNavigateToDataManagement = {}
+                onNavigateToDataManagement = {},
+                onNavigateToAlertSettings = {}
             )
         }
 
@@ -155,7 +162,8 @@ class SettingsScreenTest {
                 viewModel = vm,
                 onBack = {},
                 onNavigateToLog = {},
-                onNavigateToDataManagement = { called = true }
+                onNavigateToDataManagement = { called = true },
+                onNavigateToAlertSettings = {}
             )
         }
 

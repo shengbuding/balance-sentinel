@@ -77,6 +77,7 @@ android {
         targetSdk = 35
         versionCode = gitCommitCount()
         versionName = gitVersionName()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Release 签名配置（签名文件路径和密码从 keystore.properties 读取）
@@ -164,5 +165,9 @@ dependencies {
 
     // Test (Instrumented / Compose UI)
     androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
 }
