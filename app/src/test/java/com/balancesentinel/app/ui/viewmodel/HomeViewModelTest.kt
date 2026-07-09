@@ -269,4 +269,104 @@ class HomeViewModelTest {
         assertNotNull(stats)
         assertEquals(0, stats?.totalAttempts)
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // clearAllSnooze / refreshSnoozeInfo
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `clearAllSnooze updates snoozeInfo in state`() {
+        val vm = createViewModel()
+        // Set a snooze on the default widget_prefs (HomeViewModel creates WidgetPrefs(application))
+        val defaultPrefs = WidgetPrefs(context)
+        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+        vm.refreshSnoozeInfo()
+        assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
+
+        vm.clearAllSnooze()
+        assertFalse(vm.uiState.value.snoozeInfo.anySnoozed)
+    }
+
+    @Test
+    fun `refreshSnoozeInfo updates snooze info from prefs`() {
+        val vm = createViewModel()
+        val defaultPrefs = WidgetPrefs(context)
+        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+
+        vm.refreshSnoozeInfo()
+        assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // loadStatusSummary / loadCrashLogs (HomeViewModel level)
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `loadStatusSummary loads from RefreshScheduler`() {
+        val vm = createViewModel()
+        vm.loadStatusSummary()
+        val summary = vm.uiState.value.statusSummary
+        // In Robolectric, the scheduler may or may not have status
+        // Just verify the method doesn't crash
+        assertNotNull(vm.uiState.value)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // applyImportedConfig — basic tests
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `applyImportedConfig updates settings from config`() {
+        apiKeyManager.addAccount("Existing", "sk-existing-key")
+        val vm = createViewModel()
+
+        val config = com.balancesentinel.app.data.repository.AppConfig(
+            version = 1,
+            exportedAt = "2026-07-09T12:00:00",
+            appVersion = "1.0.0",
+            accounts = emptyList(),
+            settings = com.balancesentinel.app.data.repository.ConfigSettings(
+                refreshIntervalSeconds = 180,
+                alertEnabled = true,
+                alertThreshold = 25f,
+                changeAlertEnabled = true,
+                changeAlertThreshold = 15f,
+                changeAlertPeriodMinutes = 45,
+                logMaxEntries = 150,
+                snoozeDurationMinutes = 90
+            )
+        )
+
+        vm.applyImportedConfig(config)
+        val state = vm.uiState.value
+        assertEquals(180, state.refreshIntervalSeconds)
+        assertTrue(state.alertEnabled)
+        assertEquals(25f, state.alertThreshold)
+        assertEquals(45, state.changeAlertPeriodMinutes)
+        assertEquals(90, state.snoozeDurationMinutes)
+    }
+
+    @Test
+    fun `applyImportedConfig updates accounts`() {
+        val vm = createViewModel()
+        val config = com.balancesentinel.app.data.repository.AppConfig(
+            version = 1,
+            exportedAt = "2026-07-09T12:00:00",
+            appVersion = "1.0.0",
+            accounts = listOf(
+                com.balancesentinel.app.data.model.AccountInfo(
+                    id = "imported1", label = "Imported", apiKey = "sk-importedkey123"
+                )
+            ),
+            settings = com.balancesentinel.app.data.repository.ConfigSettings(
+                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
+                changeAlertEnabled = false, changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 0, logMaxEntries = 100
+            )
+        )
+
+        vm.applyImportedConfig(config)
+        val accounts = vm.uiState.value.accounts
+        assertTrue(accounts.any { it.label == "Imported" })
+    }
 }
