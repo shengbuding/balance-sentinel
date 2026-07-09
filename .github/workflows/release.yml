@@ -60,7 +60,7 @@ jobs:
           echo "Building release for $TAG"
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
