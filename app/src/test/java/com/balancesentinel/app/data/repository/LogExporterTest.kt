@@ -149,4 +149,123 @@ class LogExporterTest {
         file.delete()
         assertFalse(file.exists())
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // toLogLine — all RefreshLogType variants
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `export includes SERVICE_DIED and SERVICE_START type labels`() {
+        val now = System.currentTimeMillis()
+        RefreshLogStore.addEntries(context, listOf(
+            RefreshLogEntry(id = 1L, type = RefreshLogType.SERVICE_DIED,
+                timestamp = now, message = "service died",
+                missReason = "已被系统杀死 3 次"),
+            RefreshLogEntry(id = 2L, type = RefreshLogType.SERVICE_START,
+                timestamp = now, message = "service started")
+        ))
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("[服务死") || content.contains("服务死"))
+        assertTrue(content.contains("[服务启") || content.contains("服务启"))
+    }
+
+    @Test
+    fun `export includes WATCHDOG type label`() {
+        val now = System.currentTimeMillis()
+        RefreshLogStore.addEntries(context, listOf(
+            RefreshLogEntry(id = 1L, type = RefreshLogType.WATCHDOG,
+                timestamp = now, message = "watchdog check")
+        ))
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("[看门狗") || content.contains("看门狗"))
+    }
+
+    @Test
+    fun `export includes interval and expectedTime in log lines`() {
+        val now = System.currentTimeMillis()
+        RefreshLogStore.addEntries(context, listOf(
+            RefreshLogEntry(id = 1L, type = RefreshLogType.SCHEDULE,
+                timestamp = now, message = "scheduled refresh",
+                intervalSeconds = 120, expectedTime = now + 120000)
+        ))
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("2分钟") || content.contains("120秒") || content.contains("间隔"))
+        assertTrue(content.contains("预定") || content.contains("expected"))
+    }
+
+    @Test
+    fun `export includes missReason when present`() {
+        val now = System.currentTimeMillis()
+        RefreshLogStore.addEntries(context, listOf(
+            RefreshLogEntry(id = 1L, type = RefreshLogType.MISSED,
+                timestamp = now, message = "missed",
+                missReason = "电池优化已开启")
+        ))
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("电池优化已开启"))
+    }
+
+    @Test
+    fun `export handles currency symbols for log lines`() {
+        val now = System.currentTimeMillis()
+        RefreshLogStore.addEntries(context, listOf(
+            RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO,
+                totalBalance = "200.00", currency = "EUR", timestamp = now,
+                message = "eur balance"),
+            RefreshLogEntry(id = 2L, type = RefreshLogType.AUTO,
+                totalBalance = "50.00", currency = "USD", timestamp = now,
+                message = "usd balance")
+        ))
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("€") || content.contains("EUR"))
+        assertTrue(content.contains("$") || content.contains("USD"))
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // export — arrival rate calculation
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `export includes arrival rate when alarms were set`() {
+        // Set up scheduler state to trigger arrival rate calculation
+        // Note: recordSchedule increments totalAlarmsSet
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(context, 30, now + 30_000, "exact")
+        RefreshScheduler.recordSchedule(context, 30, now + 60_000, "exact")
+        RefreshScheduler.markFired(context) // increments totalAlarmsFired to 1
+
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        // Arrival rate: 1/2 = 50%
+        assertTrue(content.contains("50%"))
+    }
+
+    @Test
+    fun `export includes effective rate when cancellations exist`() {
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(context, 30, now + 30_000, "exact")
+        RefreshScheduler.recordSchedule(context, 30, now + 60_000, "exact")
+        RefreshScheduler.markFired(context)
+        RefreshScheduler.markCancelled(context) // 1 cancelled
+
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        // netSet = 2-1 = 1, effectiveRate = 1*100/1 = 100%
+        assertTrue(content.contains("系统投递率") || content.contains("effective"))
+    }
+
+    @Test
+    fun `export includes delay when expectedNextRefresh is past`() {
+        val pastTime = System.currentTimeMillis() - 120_000 // 2 min ago
+        RefreshScheduler.recordSchedule(context, 30, pastTime, "exact")
+
+        val path = LogExporter.export(context)
+        val content = File(path!!).readText()
+        assertTrue(content.contains("延迟") || content.contains("delay"))
+    }
 }
