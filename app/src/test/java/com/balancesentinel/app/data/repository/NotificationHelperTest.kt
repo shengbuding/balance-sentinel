@@ -228,4 +228,65 @@ class NotificationHelperTest {
         val shadow = Shadows.shadowOf(nm)
         assertTrue(shadow.allNotifications.isNotEmpty())
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // buildBalanceNotification — more branch coverage
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `buildBalanceNotification with multiple wallets and total in middle`() {
+        val wallets = listOf(
+            AccountBalance("a1", "Acc1", "50.00", "CNY", true, "0", "50.00", 1000L),
+            AccountBalance("a2", "Acc2", "75.00", "USD", true, "0", "75.00", 2000L)
+        )
+        // total inserted at position 1 (between two wallets)
+        val notification = helper.buildBalanceNotification(
+            totalBalance = "125.00", totalCurrency = "CNY",
+            status = "正常", extraWallets = wallets,
+            showTotal = true, totalPosition = 1
+        )
+        assertNotNull(notification)
+    }
+
+    @Test
+    fun `buildBalanceNotification with single entry and status as body`() {
+        val wallets = listOf(
+            AccountBalance("a1", "Main", "100.00", "CNY", true, "0", "100.00", 1000L)
+        )
+        // With showTotal=false and single wallet, entries.size == 1 → uses status as contentText
+        val notification = helper.buildBalanceNotification(
+            totalBalance = "100.00", totalCurrency = "CNY",
+            status = "一切正常", extraWallets = wallets,
+            showTotal = false
+        )
+        assertNotNull(notification)
+    }
+
+    @Test
+    fun `buildBalanceNotification with dual currencies but zero second`() {
+        val wallets = listOf(
+            AccountBalance("a1", "Main", "100.00", "CNY", true, "0", "100.00", 1000L)
+        )
+        // totalBalance2 is "0" → (totalBalance2.toDoubleOrNull() ?: 0.0) > 0 → false → second currency not appended
+        val notification = helper.buildBalanceNotification(
+            totalBalance = "100.00", totalCurrency = "CNY",
+            status = "正常", extraWallets = wallets,
+            totalBalance2 = "0", totalCurrency2 = "USD"
+        )
+        assertNotNull(notification)
+    }
+
+    @Test
+    fun `buildBalanceNotification with many wallets triggers overflow truncated`() {
+        // Create enough wallets that the body text exceeds maxChars ~25-55, triggering truncation
+        val wallets = (1..10).map { i ->
+            AccountBalance("acc$i", "Wallet$i", "${i * 50}.00", "CNY", true, "0", "${i * 50}.00", 1000L)
+        }
+        val notification = helper.buildBalanceNotification(
+            totalBalance = "2750.00", totalCurrency = "CNY",
+            status = "多项余额", extraWallets = wallets,
+            showTotal = true, totalPosition = 0
+        )
+        assertNotNull(notification)
+    }
 }

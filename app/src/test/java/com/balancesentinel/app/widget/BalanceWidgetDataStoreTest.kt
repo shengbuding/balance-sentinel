@@ -232,4 +232,65 @@ class BalanceWidgetDataStoreTest {
         assertEquals("0.00", agg.grantedBalance)   // N/A → 0.0
         assertEquals("0.00", agg.toppedUpBalance)  // N/A → 0.0
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // removeAccountBalance
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `removeAccountBalance removes matching account`() {
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "acc1", "A", "100.00", "CNY", true, "0", "0"
+        )
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "acc2", "B", "200.00", "USD", true, "0", "0"
+        )
+        BalanceWidgetDataStore.removeAccountBalance(context, "acc1")
+
+        val balances = BalanceWidgetDataStore.getAllBalances(context)
+        assertEquals(1, balances.size)
+        assertEquals("acc2", balances[0].accountId)
+    }
+
+    @Test
+    fun `removeAccountBalance of non-existent account is no-op`() {
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "acc1", "A", "100.00", "CNY", true, "0", "0"
+        )
+        BalanceWidgetDataStore.removeAccountBalance(context, "nonexistent")
+
+        val balances = BalanceWidgetDataStore.getAllBalances(context)
+        assertEquals(1, balances.size)
+    }
+
+    @Test
+    fun `removeAccountBalance handles empty store`() {
+        // Should not throw on empty store
+        BalanceWidgetDataStore.removeAccountBalance(context, "acc1")
+        val balances = BalanceWidgetDataStore.getAllBalances(context)
+        assertTrue(balances.isEmpty())
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // getAggregatedBalance — empty store
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `getAggregatedBalance returns null when store is empty`() {
+        val agg = BalanceWidgetDataStore.getAggregatedBalance(context)
+        assertNull(agg)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // getAllBalances — corrupted JSON recovery
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `getAllBalances returns empty for corrupted JSON`() {
+        val prefs = context.getSharedPreferences("widget_balance_cache", Context.MODE_PRIVATE)
+        prefs.edit().putString("account_balances", "this-is-not-json").apply()
+
+        val balances = BalanceWidgetDataStore.getAllBalances(context)
+        assertTrue(balances.isEmpty())
+    }
 }
