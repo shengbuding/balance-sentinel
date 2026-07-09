@@ -3,6 +3,7 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RefreshLogStore
@@ -156,5 +157,69 @@ class LogViewModelTest {
         val state = viewModel.uiState.value
         assertTrue(state.refreshLogs.isEmpty())
         assertEquals(0, state.missedCount)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Crash log integration
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `loadCrashLogs populates state from CrashLogger`() {
+        CrashLogger.install(application)
+        CrashLogger.logNonFatal("TestTag", RuntimeException("test-error-for-log-vm"))
+        viewModel.loadCrashLogs()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.crashLogs.isNotEmpty())
+        assertTrue(state.crashLogs.any { it.fullStack.contains("test-error-for-log-vm") })
+    }
+
+    @Test
+    fun `clearCrashes empties crash logs in state`() {
+        CrashLogger.install(application)
+        CrashLogger.logNonFatal("TestTag", RuntimeException("to-be-cleared"))
+        viewModel.loadCrashLogs()
+        assertTrue(viewModel.uiState.value.crashLogs.isNotEmpty())
+
+        viewModel.clearCrashes()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.crashLogs.isEmpty())
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Export
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `exportLogs writes result to state`() {
+        RefreshLogStore.addEntry(context, RefreshLogEntry(
+            id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "test"
+        ))
+        viewModel.loadLogs()
+        viewModel.exportLogs()
+
+        val state = viewModel.uiState.value
+        // exportResult is set (path or error string), should not be null after export call
+        assertNotNull(state.exportResult)
+    }
+
+    @Test
+    fun `exportLogs handles empty store gracefully`() {
+        RefreshLogStore.clear(context)
+        viewModel.loadLogs()
+        viewModel.exportLogs()
+
+        val state = viewModel.uiState.value
+        // Either succeeds with null path or fails gracefully
+        assertNotNull(state.exportResult)
+    }
+
+    @Test
+    fun `init sets logMaxEntries from WidgetPrefs`() {
+        val prefs = WidgetPrefs(context)
+        prefs.logMaxEntries = 200
+        val vm = LogViewModel(application)
+        assertEquals(200, vm.uiState.value.logMaxEntries)
     }
 }
