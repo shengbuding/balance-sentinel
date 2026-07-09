@@ -21,6 +21,27 @@ object RefreshLogStore {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * 批量写入刷新日志。一次读、一次写，避免逐条 O(n²) 序列化。
+     * 用于数据导入等大量写入场景。
+     */
+    fun addEntries(context: Context, entries: List<RefreshLogEntry>) {
+        if (entries.isEmpty()) return
+        try {
+            val maxEntries = getMaxEntries(context)
+            val existing = getEntries(context).toMutableList()
+            val existingIds = existing.map { it.id }.toSet()
+            val toAdd = entries.filter { it.id !in existingIds }
+            if (toAdd.isEmpty()) return
+            existing.addAll(0, toAdd)
+            if (existing.size > maxEntries) {
+                existing.subList(maxEntries, existing.size).clear()
+            }
+            val serialized = json.encodeToString(ListSerializer(RefreshLogEntry.serializer()), existing)
+            getPrefs(context).edit().putString(KEY_ENTRIES, serialized).apply()
+        } catch (_: Exception) { }
+    }
+
     /** 写入一条刷新日志。新记录插入头部，超过上限时裁剪尾部。 */
     fun addEntry(context: Context, entry: RefreshLogEntry) {
         try {

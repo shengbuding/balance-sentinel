@@ -25,6 +25,31 @@ object UsageDataStore {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     /**
+     * 批量保存用量快照。一次读、一次写，避免逐条 O(n²) 序列化。
+     * 用于数据导入等大量写入场景。
+     */
+    fun saveSnapshots(context: Context, snapshots: List<UsageSnapshot>) {
+        if (snapshots.isEmpty()) return
+        try {
+            val existing = getAllSnapshots(context).toMutableList()
+            val existingDates = existing.map {
+                dateFormat.format(Date(it.timestamp)) to it.accountId
+            }.toSet()
+            val toAdd = snapshots.filter {
+                (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
+            }
+            if (toAdd.isEmpty()) return
+            existing.addAll(toAdd)
+            existing.sortBy { it.timestamp }
+            if (existing.size > MAX_SNAPSHOTS) {
+                existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
+            }
+            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), existing)
+            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
+        } catch (e: Exception) { Logger.w(TAG, "saveSnapshots failed", e) }
+    }
+
+    /**
      * 保存一条用量快照（同一天+同账户覆盖旧数据）。
      */
     fun saveSnapshot(context: Context, snapshot: UsageSnapshot) {

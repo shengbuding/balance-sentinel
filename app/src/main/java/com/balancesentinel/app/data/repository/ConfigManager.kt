@@ -68,15 +68,17 @@ object ConfigManager {
 
     /**
      * 将当前配置序列化为 JSON 字符串。
-     * API Key 自动脱敏，防止通过分享/备份泄露。
+     * @param includeTokens true 时保留完整 API Key（有泄露风险），false 时自动脱敏。
      */
     fun buildConfig(
         context: Context,
         apiKeyManager: ApiKeyManager,
-        widgetPrefs: WidgetPrefs
+        widgetPrefs: WidgetPrefs,
+        includeTokens: Boolean = false
     ): String {
         val accounts = apiKeyManager.getAccounts().map { account ->
-            account.copy(apiKey = redactApiKey(account.apiKey))
+            if (includeTokens) account
+            else account.copy(apiKey = redactApiKey(account.apiKey))
         }
         val settings = ConfigSettings(
             refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
@@ -115,10 +117,11 @@ object ConfigManager {
         context: Context,
         uri: Uri,
         apiKeyManager: ApiKeyManager,
-        widgetPrefs: WidgetPrefs
+        widgetPrefs: WidgetPrefs,
+        includeTokens: Boolean = false
     ): Boolean {
         return try {
-            val content = buildConfig(context, apiKeyManager, widgetPrefs)
+            val content = buildConfig(context, apiKeyManager, widgetPrefs, includeTokens)
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 out.write(content.toByteArray(Charsets.UTF_8))
             }

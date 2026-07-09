@@ -28,6 +28,23 @@ object RawRecordStore {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     /**
+     * 批量追加原始记录。一次读、一次写，避免逐条 O(n²) 序列化。
+     * 用于数据导入等大量写入场景。
+     */
+    fun addRecords(context: Context, records: List<RawRecord>) {
+        if (records.isEmpty()) return
+        try {
+            val existing = getRecordsInternal(context).toMutableList()
+            existing.addAll(records)
+            if (existing.size > MAX_RECORDS) {
+                existing.subList(0, existing.size - MAX_RECORDS).clear()
+            }
+            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
+            getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+        } catch (_: Exception) { }
+    }
+
+    /**
      * 追加一条原始记录。
      * 跨天不再自动清空，旧数据由 CleanupScheduler 批量删除。
      */

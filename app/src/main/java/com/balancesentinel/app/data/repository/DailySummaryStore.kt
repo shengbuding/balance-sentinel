@@ -24,6 +24,26 @@ object DailySummaryStore {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     /**
+     * 批量添加日摘要。一次读、一次写，避免逐条 O(n²) 序列化。
+     * 用于数据导入等大量写入场景。
+     */
+    fun addSummaries(context: Context, summaries: List<DailySummary>) {
+        if (summaries.isEmpty()) return
+        try {
+            val existing = getSummaries(context).toMutableList()
+            val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
+            val toAdd = summaries.filter {
+                Triple(it.date, it.currency, it.accountId) !in existingKeys
+            }
+            if (toAdd.isEmpty()) return
+            existing.addAll(toAdd)
+            existing.sortBy { it.date }
+            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), existing)
+            getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+        } catch (e: Exception) { Logger.w(TAG, "addSummaries failed", e) }
+    }
+
+    /**
      * 添加一条日摘要（只插不覆盖）。
      *
      * 日摘要一旦写入即不可变。若 (date, currency, accountId) 已有摘要则静默跳过。

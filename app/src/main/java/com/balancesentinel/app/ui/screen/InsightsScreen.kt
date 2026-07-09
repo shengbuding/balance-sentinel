@@ -1588,10 +1588,8 @@ private fun LabeledLine(
 
 private fun formatChartValue(value: Float): String {
     return when {
-        value >= 10000 -> "%.1f万".format(value / 10000f)
-        value >= 1000 -> "%.1fk".format(value / 1000f)
-        value >= 10 -> "%.0f".format(value)
-        value >= 1 -> "%.1f".format(value)
+        value >= 10000 -> "%.2f万".format(value / 10000f)
+        value >= 1000 -> "%.2fk".format(value / 1000f)
         value >= 0.01f -> "%.2f".format(value)
         else -> "%.4f".format(value)
     }

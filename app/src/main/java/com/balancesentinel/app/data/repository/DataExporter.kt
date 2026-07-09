@@ -82,6 +82,20 @@ object DataExporter {
     // ── 导入 ──
 
     /**
+     * 导入结果详情，用于向用户展示各数据类型的解析和合并情况。
+     */
+    data class ImportResult(
+        val summariesInFile: Int,
+        val summariesImported: Int,
+        val recordsInFile: Int,
+        val recordsImported: Int,
+        val snapshotsInFile: Int,
+        val snapshotsImported: Int,
+        val logsInFile: Int,
+        val logsImported: Int
+    )
+
+    /**
      * 从 SAF URI 读取并解析历史数据导出文件。
      * @return 解析后的 [DataExport]，失败返回 null。
      */
@@ -98,34 +112,35 @@ object DataExporter {
 
     /**
      * 将导入的历史数据合并到当前存储。
-     *
-     * 合并策略（非覆盖）：
-     * - 日摘要：按 (date + currency + accountId) 去重，
-     *   已存在的保留本地版本，不存在的追加
-     * - 原始记录：按 (accountId + timestamp) 去重，
-     *   已存在的跳过，不存在的追加
-     *
-     * @return Pair(summariesImported, recordsImported) 实际新增数量
      */
-    fun applyImport(context: Context, data: DataExport): Pair<Int, Int> {
+    fun applyImport(context: Context, data: DataExport): ImportResult {
         val summariesImported = mergeSummaries(context, data.dailySummaries)
         val recordsImported = mergeRecords(context, data.rawRecords)
-        mergeUsageSnapshots(context, data.usageSnapshots)
-        mergeRefreshLogs(context, data.refreshLogs)
-        return Pair(summariesImported, recordsImported)
+        val snapshotsImported = mergeUsageSnapshots(context, data.usageSnapshots)
+        val logsImported = mergeRefreshLogs(context, data.refreshLogs)
+        return ImportResult(
+            summariesInFile = data.dailySummaries.size,
+            summariesImported = summariesImported,
+            recordsInFile = data.rawRecords.size,
+            recordsImported = recordsImported,
+            snapshotsInFile = data.usageSnapshots.size,
+            snapshotsImported = snapshotsImported,
+            logsInFile = data.refreshLogs.size,
+            logsImported = logsImported
+        )
     }
 
     /**
      * 便捷方法：直接从 URI 导入并合并。
-     * @return Pair(summariesImported, recordsImported)，失败返回 null。
+     * @return [ImportResult]，失败返回 null。
      */
-    fun importAndApply(context: Context, uri: Uri): Pair<Int, Int>? {
+    fun importAndApply(context: Context, uri: Uri): ImportResult? {
         val data = importFromUri(context, uri) ?: return null
         return applyImport(context, data)
     }
 
     /**
-     * 合并日摘要：按 (date + currency + accountId) 去重。
+     * 合并日摘要：按 (date + currency + accountId) 去重，批量写入。
      * 已存在的不覆盖（本地可能有更新的快照数据）。
      */
     private fun mergeSummaries(context: Context, imported: List<DailySummary>): Int {
@@ -135,14 +150,14 @@ object DataExporter {
         val newSummaries = imported.filter {
             Triple(it.date, it.currency, it.accountId) !in existingKeys
         }
-        for (summary in newSummaries) {
-            DailySummaryStore.addSummary(context, summary)
+        if (newSummaries.isNotEmpty()) {
+            DailySummaryStore.addSummaries(context, newSummaries)
         }
         return newSummaries.size
     }
 
     /**
-     * 合并原始记录：按 (accountId + timestamp) 去重。
+     * 合并原始记录：按 (accountId + timestamp) 去重，批量写入。
      * 已存在的时间戳跳过（同一时刻同账户只可能有一条记录）。
      */
     private fun mergeRecords(context: Context, imported: List<RawRecord>): Int {
@@ -152,39 +167,41 @@ object DataExporter {
         val newRecords = imported.filter {
             (it.accountId to it.timestamp) !in existingKeys
         }
-        for (record in newRecords) {
-            RawRecordStore.addRecord(context, record)
+        if (newRecords.isNotEmpty()) {
+            RawRecordStore.addRecords(context, newRecords)
         }
         return newRecords.size
     }
 
     /**
-     * 合并用量快照：按 (accountId + timestamp) 去重。
+     * 合并用量快照：按 (accountId + timestamp) 去重，批量写入。
      * 已存在的跳过，不存在的追加。
      */
-    private fun mergeUsageSnapshots(context: Context, imported: List<com.balancesentinel.app.data.model.UsageSnapshot>) {
-        if (imported.isEmpty()) return
+    private fun mergeUsageSnapshots(context: Context, imported: List<com.balancesentinel.app.data.model.UsageSnapshot>): Int {
+        if (imported.isEmpty()) return 0
         val existing = UsageDataStore.getAllSnapshots(context)
         val existingKeys = existing.map { it.accountId to it.timestamp }.toSet()
         val newSnapshots = imported.filter {
             (it.accountId to it.timestamp) !in existingKeys
         }
-        for (snapshot in newSnapshots) {
-            UsageDataStore.saveSnapshot(context, snapshot)
+        if (newSnapshots.isNotEmpty()) {
+            UsageDataStore.saveSnapshots(context, newSnapshots)
         }
+        return newSnapshots.size
     }
 
     /**
-     * 合并刷新日志：按 id 去重。
+     * 合并刷新日志：按 id 去重，批量写入。
      * 已存在的跳过，不存在的追加。
      */
-    private fun mergeRefreshLogs(context: Context, imported: List<com.balancesentinel.app.data.model.RefreshLogEntry>) {
-        if (imported.isEmpty()) return
+    private fun mergeRefreshLogs(context: Context, imported: List<com.balancesentinel.app.data.model.RefreshLogEntry>): Int {
+        if (imported.isEmpty()) return 0
         val existing = RefreshLogStore.getEntries(context)
         val existingIds = existing.map { it.id }.toSet()
         val newLogs = imported.filter { it.id !in existingIds }
-        for (log in newLogs) {
-            RefreshLogStore.addEntry(context, log)
+        if (newLogs.isNotEmpty()) {
+            RefreshLogStore.addEntries(context, newLogs)
         }
+        return newLogs.size
     }
 }

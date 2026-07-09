@@ -27,6 +27,9 @@ import com.balancesentinel.app.data.repository.LogExporter
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 备份与迁移子页面 — 历史数据 + 配置的导入导出 + 调试报告。
@@ -39,6 +42,13 @@ fun BackupRestoreScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isImporting by remember { mutableStateOf(false) }
+
+    // 配置导出选项
+    var showConfigExportDialog by remember { mutableStateOf(false) }
+    var showTokenWarningDialog by remember { mutableStateOf(false) }
+    var includeTokensInExport by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
@@ -65,17 +75,25 @@ fun BackupRestoreScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val result = DataExporter.importAndApply(context, uri)
-            if (result != null) {
-                val (summaries, records) = result
-                if (summaries > 0 || records > 0) {
-                    Toast.makeText(context, context.getString(R.string.data_import_history_success, summaries, records), Toast.LENGTH_SHORT).show()
+            isImporting = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    DataExporter.importAndApply(context, uri)
+                }
+                isImporting = false
+                if (result != null) {
+                    val detail = context.getString(
+                        R.string.data_import_history_detail,
+                        result.summariesInFile, result.summariesImported,
+                        result.recordsInFile, result.recordsImported,
+                        result.snapshotsInFile, result.snapshotsImported,
+                        result.logsInFile, result.logsImported
+                    )
+                    Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
                     viewModel.loadStats()
                 } else {
-                    Toast.makeText(context, context.getString(R.string.data_import_history_empty), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.data_import_history_fail), Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(context, context.getString(R.string.data_import_history_fail), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -87,10 +105,14 @@ fun BackupRestoreScreen(
         if (uri != null) {
             val prefs = WidgetPrefs(context)
             val keyMgr = ApiKeyManager(context)
-            val ok = ConfigManager.exportToUri(context, uri, keyMgr, prefs)
+            val ok = ConfigManager.exportToUri(context, uri, keyMgr, prefs, includeTokensInExport)
             if (ok) {
                 Toast.makeText(context, context.getString(R.string.data_config_export_success), Toast.LENGTH_SHORT).show()
-                Toast.makeText(context, context.getString(R.string.data_config_export_warning), Toast.LENGTH_LONG).show()
+                if (includeTokensInExport) {
+                    Toast.makeText(context, context.getString(R.string.data_config_export_token_warning), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, context.getString(R.string.data_config_export_warning), Toast.LENGTH_SHORT).show()
+                }
             } else {
                 Toast.makeText(context, context.getString(R.string.data_config_export_fail), Toast.LENGTH_SHORT).show()
             }
@@ -172,8 +194,9 @@ fun BackupRestoreScreen(
                 icon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
                 title = stringResource(R.string.data_import_history_title),
                 description = stringResource(R.string.data_import_history_desc),
-                buttonText = stringResource(R.string.data_import_history_btn),
-                onAction = { importDataLauncher.launch(arrayOf("application/json", "*/*")) }
+                buttonText = if (isImporting) stringResource(R.string.data_importing) else stringResource(R.string.data_import_history_btn),
+                onAction = { importDataLauncher.launch(arrayOf("application/json", "*/*")) },
+                loading = isImporting
             )
 
             // ── 配置 ──
@@ -184,7 +207,7 @@ fun BackupRestoreScreen(
                 title = stringResource(R.string.data_export_config_title),
                 description = stringResource(R.string.data_export_config_desc),
                 buttonText = stringResource(R.string.data_export_config_btn),
-                onAction = { exportConfigLauncher.launch("wallet_sentinel_config.json") }
+                onAction = { showConfigExportDialog = true }
             )
 
             BackupActionCard(
@@ -208,6 +231,66 @@ fun BackupRestoreScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
         }
+
+        // ── 配置导出选项对话框 ──
+        if (showConfigExportDialog) {
+            AlertDialog(
+                onDismissRequest = { showConfigExportDialog = false },
+                title = { Text(stringResource(R.string.data_config_export_dialog_title)) },
+                text = { Text(stringResource(R.string.data_config_export_dialog_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showConfigExportDialog = false
+                        includeTokensInExport = false
+                        exportConfigLauncher.launch("wallet_sentinel_config.json")
+                    }) {
+                        Text(stringResource(R.string.data_config_export_no_tokens))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showConfigExportDialog = false
+                        showTokenWarningDialog = true
+                    }) {
+                        Text(
+                            stringResource(R.string.data_config_export_with_tokens),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            )
+        }
+
+        // ── Token 风险警告对话框 ──
+        if (showTokenWarningDialog) {
+            AlertDialog(
+                onDismissRequest = { showTokenWarningDialog = false },
+                title = {
+                    Text(
+                        stringResource(R.string.data_config_export_token_risk_title),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                text = { Text(stringResource(R.string.data_config_export_token_risk_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showTokenWarningDialog = false
+                        includeTokensInExport = true
+                        exportConfigLauncher.launch("wallet_sentinel_config.json")
+                    }) {
+                        Text(
+                            stringResource(R.string.data_config_export_token_confirm),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTokenWarningDialog = false }) {
+                        Text(stringResource(R.string.data_cancel))
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -228,7 +311,8 @@ private fun BackupActionCard(
     title: String,
     description: String,
     buttonText: String,
-    onAction: () -> Unit
+    onAction: () -> Unit,
+    loading: Boolean = false
 ) {
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -250,8 +334,17 @@ private fun BackupActionCard(
             Button(
                 onClick = onAction,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(8.dp),
+                enabled = !loading
             ) {
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(buttonText)
             }
         }

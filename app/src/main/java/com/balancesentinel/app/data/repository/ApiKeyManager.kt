@@ -8,7 +8,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.UUID
+import java.security.MessageDigest
 
 /**
  * 使用 EncryptedSharedPreferences 安全存储多组 API Key。
@@ -35,14 +35,29 @@ class ApiKeyManager(private val appContext: Context) {
 
     fun addAccount(label: String, apiKey: String): AccountInfo {
         val account = AccountInfo(
-            id = UUID.randomUUID().toString().take(8),
+            id = computeId(apiKey),
             label = label.trim(),
             apiKey = apiKey.trim()
         )
         val accounts = getAccounts().toMutableList()
-        accounts.add(account)
+        // 同一 API Key 重复添加时，更新 label 而不是创建重复账户
+        val existingIdx = accounts.indexOfFirst { it.id == account.id }
+        if (existingIdx >= 0) {
+            accounts[existingIdx] = accounts[existingIdx].copy(label = account.label)
+        } else {
+            accounts.add(account)
+        }
         saveAccounts(accounts)
         return account
+    }
+
+    /**
+     * 根据 API Key 计算确定性账户 ID（SHA-256 前 4 字节 → 8 位 hex）。
+     * 删除后重新添加同一 Key 可恢复关联所有历史数据。
+     */
+    fun computeId(apiKey: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(apiKey.trim().toByteArray())
+        return digest.take(4).joinToString("") { "%02x".format(it) }
     }
 
     fun removeAccount(id: String) {

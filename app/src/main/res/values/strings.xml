@@ -291,14 +291,24 @@
     <string name="data_config_import_skipped">%1$d 个账户因 API Key 已脱敏被跳过，请手动重新添加</string>
     <string name="data_config_import_fail">导入失败：无法解析配置文件</string>
     <string name="data_config_export_warning">导出的配置文件包含脱敏后的 API Key（仅保留首尾各 4 位），导入后需手动补全完整 Key</string>
+    <string name="data_config_export_dialog_title">导出配置</string>
+    <string name="data_config_export_dialog_message">是否包含 API Token？\n\n不含 Token 时，Key 将被脱敏处理（仅保留首尾各 4 位），导入后需手动补全。</string>
+    <string name="data_config_export_no_tokens">不含 Token（推荐）</string>
+    <string name="data_config_export_with_tokens">包含 Token</string>
+    <string name="data_config_export_token_risk_title">⚠ 安全风险警告</string>
+    <string name="data_config_export_token_risk_message">导出的配置文件将包含完整的 API Token。\n\n任何人获取此文件后可直接使用你的 API 额度，请确保文件存放在安全位置，使用后及时删除。\n\n确认继续导出吗？</string>
+    <string name="data_config_export_token_confirm">我已知晓风险，继续</string>
+    <string name="data_config_export_token_warning">配置文件包含完整 API Token，请妥善保管，使用后及时删除</string>
     <string name="data_debug_report_success">调试报告已导出到 Downloads: %1$s</string>
     <string name="data_export_exception">导出异常: %1$s</string>
     <string name="data_import_history_title">导入历史数据</string>
     <string name="data_import_history_desc">从 JSON 文件导入日摘要和原始记录（将合并到现有数据，已存在的条目不会覆盖）</string>
     <string name="data_import_history_btn">导入数据</string>
+    <string name="data_importing">导入中…</string>
     <string name="data_import_history_success">已导入 %1$d 条日摘要和 %2$d 条原始记录</string>
     <string name="data_import_history_fail">导入失败：无法解析数据文件</string>
     <string name="data_import_history_empty">文件中没有可导入的数据</string>
+    <string name="data_import_history_detail">日摘要: 文件%1$d条, 导入%2$d条 | 记录: 文件%3$d条, 导入%4$d条 | 快照: 文件%5$d条, 导入%6$d条 | 日志: 文件%7$d条, 导入%8$d条</string>
 
     <!-- ===== New Sub-pages ===== -->
     <string name="data_clear_title">清除数据</string>
