@@ -20,8 +20,16 @@ fun gitVersionName(): String {
         val process = ProcessBuilder("git", "describe", "--tags", "--always", "--dirty")
             .directory(rootProject.projectDir)
             .start()
-        process.inputStream.bufferedReader().readText().trim()
-    } catch (_: Exception) { "1.0.0" }
+        val result = process.inputStream.bufferedReader().readText().trim()
+        // --always falls back to bare commit hash when no tags exist (e.g. shallow clone).
+        // A bare hash is all-hex, 7+ chars, optionally with -dirty suffix.
+        // That hash won't parse as semver, breaking UpdateChecker tests on CI.
+        if (result.matches(Regex("^[0-9a-f]{7,}(-dirty)?$"))) {
+            "0.0.0"
+        } else {
+            result
+        }
+    } catch (_: Exception) { "0.0.0" }
 }
 
 plugins {
