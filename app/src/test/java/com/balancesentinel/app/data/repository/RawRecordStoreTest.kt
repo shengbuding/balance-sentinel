@@ -240,6 +240,26 @@ class RawRecordStoreTest {
         assertEquals(1, records.size)
     }
 
+    // ── addRecords (batch) ──
+
+    @Test
+    fun `addRecords batch inserts multiple records at once`() {
+        val records = listOf(
+            RawRecord("acc1", now, "CNY", 100f, 0f, 100f),
+            RawRecord("acc1", now + 1000L, "CNY", 90f, 0f, 90f),
+            RawRecord("acc2", now, "USD", 50f, 0f, 50f)
+        )
+        RawRecordStore.addRecords(context, records)
+        val all = RawRecordStore.getAllRecords(context)
+        assertEquals(3, all.size)
+    }
+
+    @Test
+    fun `addRecords with empty list is no-op`() {
+        RawRecordStore.addRecords(context, emptyList())
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+    }
+
     // ── no auto-clear on date change ──
 
     @Test

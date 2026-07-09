@@ -189,4 +189,43 @@ class UsageDataStoreTest {
         UsageDataStore.clear(context)
         assertEquals(0, UsageDataStore.getAllSnapshots(context).size)
     }
+
+    // ── saveSnapshots (batch) ──
+
+    @Test
+    fun `saveSnapshots batch inserts multiple snapshots`() {
+        val dayMs = 86_400_000L
+        val now = System.currentTimeMillis()
+        val batch = listOf(
+            createSnapshot(accountId = "acc1", timestamp = now, totalTokens = 100),
+            createSnapshot(accountId = "acc2", timestamp = now, totalTokens = 200),
+            createSnapshot(accountId = "acc1", timestamp = now + dayMs, totalTokens = 150)
+        )
+        UsageDataStore.saveSnapshots(context, batch)
+        val all = UsageDataStore.getAllSnapshots(context)
+        assertEquals(3, all.size)
+    }
+
+    @Test
+    fun `saveSnapshots deduplicates by date and account`() {
+        val now = System.currentTimeMillis()
+        // First save one
+        UsageDataStore.saveSnapshot(context, createSnapshot(accountId = "acc1", timestamp = now, totalTokens = 100))
+        // Then batch with duplicate
+        UsageDataStore.saveSnapshots(context, listOf(
+            createSnapshot(accountId = "acc1", timestamp = now, totalTokens = 999), // duplicate
+            createSnapshot(accountId = "acc2", timestamp = now, totalTokens = 200)  // new
+        ))
+        val all = UsageDataStore.getAllSnapshots(context)
+        assertEquals(2, all.size)
+        // acc1's snapshot should retain original value (100, not 999)
+        val acc1Snap = all.find { it.accountId == "acc1" }!!
+        assertEquals(100, acc1Snap.records[0].total_tokens)
+    }
+
+    @Test
+    fun `saveSnapshots with empty list is no-op`() {
+        UsageDataStore.saveSnapshots(context, emptyList())
+        assertTrue(UsageDataStore.getAllSnapshots(context).isEmpty())
+    }
 }
