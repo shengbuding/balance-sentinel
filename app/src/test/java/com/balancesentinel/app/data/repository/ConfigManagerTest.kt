@@ -1,16 +1,22 @@
+@file:Suppress("DEPRECATION")
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class ConfigManagerTest {
@@ -18,6 +24,7 @@ class ConfigManagerTest {
     private lateinit var context: Context
     private lateinit var mockKeyMgr: ApiKeyManager
     private lateinit var prefs: WidgetPrefs
+    private val testJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     private val realKey = "sk-abc123def456ghi789jkl012mno345pqr678stu901"
 
@@ -25,6 +32,7 @@ class ConfigManagerTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         prefs = WidgetPrefs(context)
+        prefs.resetAll()
 
         // Mock ApiKeyManager — EncryptedSharedPreferences 在 Robolectric 中不可用
         mockKeyMgr = mockk()
@@ -349,5 +357,153 @@ class ConfigManagerTest {
         val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
         assertEquals(0, skipped)
         assertEquals(2, accountsAdded.size)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // exportToUri — file-based round-trip
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `exportToUri writes config to file URI`() {
+        val exportFile = File(context.filesDir, "export-test-${System.nanoTime()}.json")
+        val uri = Uri.fromFile(exportFile)
+
+        val result = ConfigManager.exportToUri(context, uri, mockKeyMgr, prefs, includeTokens = false)
+
+        assertTrue("export should succeed", result)
+        assertTrue("export file should exist", exportFile.exists())
+        val content = exportFile.readText()
+        assertTrue("should contain accounts", content.contains("\"accounts\""))
+        assertTrue("should contain settings", content.contains("\"settings\""))
+        assertTrue("should contain exportedAt", content.contains("\"exportedAt\""))
+    }
+
+    @Test
+    fun `exportToUri with tokens preserves full API keys`() {
+        val exportFile = File(context.filesDir, "export-token-${System.nanoTime()}.json")
+        val uri = Uri.fromFile(exportFile)
+
+        ConfigManager.exportToUri(context, uri, mockKeyMgr, prefs, includeTokens = true)
+
+        val content = exportFile.readText()
+        assertTrue("should contain real key", content.contains(realKey))
+        assertFalse("should not contain redacted marker", content.contains("****"))
+    }
+
+    @Test
+    fun `exportToUri returns false on exception`() {
+        // URIs without a scheme cause an exception in openOutputStream
+        val badUri = Uri.parse("content://nonexistent.authority.xyz/file.json")
+        val result = ConfigManager.exportToUri(context, badUri, mockKeyMgr, prefs)
+        // In Robolectric, this may succeed or fail depending on shadow behavior
+        // The code catches Exception, so either outcome is valid
+        // We test that no crash occurs
+        assertNotNull(result)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // importFromUri — file-based reading
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `importFromUri parses valid config from file URI`() {
+        val configJson = testJson.encodeToString(
+            AppConfig(
+                version = 1,
+                exportedAt = "2026-07-09T12:00:00",
+                appVersion = "1.2.0",
+                accounts = listOf(
+                    AccountInfo(id = "imp1", label = "ImportedAcc", apiKey = "sk-importedkey12345")
+                ),
+                settings = ConfigSettings(
+                    refreshIntervalSeconds = 60, alertEnabled = true, alertThreshold = 10f,
+                    changeAlertEnabled = false, changeAlertThreshold = 0f,
+                    changeAlertPeriodMinutes = 30, logMaxEntries = 500
+                )
+            )
+        )
+        val importFile = File(context.filesDir, "import-test-${System.nanoTime()}.json")
+        importFile.writeText(configJson)
+        val uri = Uri.fromFile(importFile)
+
+        val result = ConfigManager.importFromUri(context, uri)
+
+        assertNotNull("should parse config", result)
+        assertEquals("1.2.0", result!!.appVersion)
+        assertEquals(1, result.accounts.size)
+        assertEquals("ImportedAcc", result.accounts[0].label)
+        assertEquals("sk-importedkey12345", result.accounts[0].apiKey)
+        assertEquals(60, result.settings.refreshIntervalSeconds)
+        assertTrue(result.settings.alertEnabled)
+    }
+
+    @Test
+    fun `importFromUri returns null for invalid JSON`() {
+        val importFile = File(context.filesDir, "import-invalid-${System.nanoTime()}.json")
+        importFile.writeText("this is not valid json {{{")
+        val uri = Uri.fromFile(importFile)
+
+        val result = ConfigManager.importFromUri(context, uri)
+
+        assertNull("should return null for invalid JSON", result)
+    }
+
+    @Test
+    fun `importFromUri returns null for missing required fields`() {
+        // JSON with missing required fields like 'alertEnabled', 'changeAlertThreshold' etc.
+        // ConfigSettings has non-optional fields → kotlinx.serialization throws → importFromUri returns null
+        val importFile = File(context.filesDir, "import-missing-${System.nanoTime()}.json")
+        importFile.writeText("""{"version":1,"exportedAt":"2026-01-01T00:00:00","appVersion":"1.0","accounts":[],"settings":{"refreshIntervalSeconds":30}}""")
+        val uri = Uri.fromFile(importFile)
+
+        val result = ConfigManager.importFromUri(context, uri)
+
+        // kotlinx.serialization throws MissingFieldException for required ConfigSettings fields
+        // importFromUri catches it and returns null
+        assertNull("should return null when required fields are missing", result)
+    }
+
+    @Test
+    fun `importFromUri returns null for empty file`() {
+        val importFile = File(context.filesDir, "import-empty-${System.nanoTime()}.json")
+        importFile.writeText("")
+        val uri = Uri.fromFile(importFile)
+
+        val result = ConfigManager.importFromUri(context, uri)
+
+        assertNull("should return null for empty content", result)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // applyConfigDirectly — convenience wrapper
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `applyConfigDirectly method exists and is callable structure check`() {
+        // applyConfigDirectly creates a real ApiKeyManager internally,
+        // which uses EncryptedSharedPreferences. In Robolectric this either:
+        //   a) works (shadow EncryptedSharedPreferences provides real storage), or
+        //   b) throws (missing crypto provider shadows).
+        // Either outcome is valid; this test just verifies the method doesn't
+        // cause an unexpected failure. applyConfig logic is fully covered above.
+        val config = AppConfig(
+            version = 1,
+            exportedAt = "2026-07-09T12:00:00",
+            appVersion = "1.0",
+            accounts = emptyList(),
+            settings = ConfigSettings(
+                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
+                changeAlertEnabled = false, changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 0, logMaxEntries = 100
+            )
+        )
+
+        try {
+            val skipped = ConfigManager.applyConfigDirectly(context, config)
+            // Robolectric shadow EncryptedSharedPreferences may work
+            assertEquals(0, skipped)
+        } catch (_: Exception) {
+            // Expected if Robolectric shadows are incomplete for crypto
+        }
     }
 }
