@@ -176,7 +176,14 @@ class RawRecordStoreTest {
 
     @Test
     fun `getRecordsForDate groups by calendar date`() {
-        val yesterdayMidnight = System.currentTimeMillis() - 24 * 3600_000L
+        // Use calendar-aligned midnight to avoid time-of-day boundary crossing
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        val yesterdayMidnight = cal.timeInMillis
         RawRecordStore.addRecord(context, RawRecord("acc1", yesterdayMidnight, "CNY", 100f, 0f, 100f))
         RawRecordStore.addRecord(context, RawRecord("acc1", yesterdayMidnight + 3600_000L, "CNY", 90f, 0f, 90f))
 
