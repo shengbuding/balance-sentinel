@@ -96,25 +96,55 @@ jobs:
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk balance-sentinel-${{ steps.version.outputs.tag }}.apk
 
+      - name: Create Release
+        id: create_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          REPO="${{ github.repository }}"
+
+          # Check if release already exists
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Release already exists for $TAG"
+            RELEASE_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/$TAG" | grep -o '"id": [0-9]*' | head -1 | grep -o '[0-9]*')
+          else
+            echo "Creating release for $TAG..."
+            RESP=$(curl -s -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"Release $TAG\",\"draft\":false,\"prerelease\":false,\"make_latest\":\"true\"}")
+            echo "Create response: $RESP"
+            RELEASE_ID=$(echo "$RESP" | grep -o '"id": [0-9]*' | head -1 | grep -o '[0-9]*')
+          fi
+
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "Release ID: $RELEASE_ID"
+
       - name: Upload APK to Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -x
           TAG="${{ steps.version.outputs.tag }}"
-          # Create release if not exists, then upload APK
-          gh release view "$TAG" --repo "${{ github.repository }}" 2>&1 || true
-          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-                --title "$TAG" \
-                --notes "Release $TAG" \
-                --repo "${{ github.repository }}" \
-                --generate-notes
-          fi
-          gh release upload "$TAG" \
-            balance-sentinel-"$TAG".apk \
-            --repo "${{ github.repository }}" \
-            --clobber
+          REPO="${{ github.repository }}"
+          RELEASE_ID="${{ steps.create_release.outputs.release_id }}"
+          APK="balance-sentinel-$TAG.apk"
+
+          echo "Uploading $APK to release $RELEASE_ID..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$APK" \
+            --data-binary "@$APK"
+          echo "Upload done."
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
