@@ -1,8 +1,10 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.*
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.*
@@ -10,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class DataExporterTest {
@@ -340,6 +343,159 @@ class DataExporterTest {
         val result = DataExporter.applyImport(context, importedData)
         assertEquals(2, result.snapshotsInFile)
         assertEquals(1, result.snapshotsImported)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // exportToUri — SAF URI export
+    // ═══════════════════════════════════════════════════════════
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `exportToUri writes data to file URI`() {
+        DailySummaryStore.addSummaries(context, listOf(
+            DailySummary(accountId = "a1", date = "2026-07-08", currency = "CNY",
+                open = 10f, close = 10f, consumed = 0f, toppedUp = 0f, avgBalance = 10f, sampleCount = 1)
+        ))
+        val exportFile = File(context.filesDir, "data-export-${System.nanoTime()}.json")
+        val uri = Uri.fromFile(exportFile)
+
+        val result = DataExporter.exportToUri(context, uri)
+        assertTrue("export should succeed", result)
+        assertTrue("export file should exist", exportFile.exists())
+        val content = exportFile.readText()
+        assertTrue("should contain dailySummaries", content.contains("\"dailySummaries\""))
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `exportToUri produces valid JSON at file URI`() {
+        RawRecordStore.addRecords(context, listOf(
+            RawRecord(accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
+                totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)
+        ))
+        val exportFile = File(context.filesDir, "data-export2-${System.nanoTime()}.json")
+        val uri = Uri.fromFile(exportFile)
+
+        DataExporter.exportToUri(context, uri)
+        val content = exportFile.readText()
+        val parsed = json.decodeFromString<DataExport>(content)
+        assertEquals(1, parsed.version)
+        assertEquals(1, parsed.rawRecords.size)
+        assertEquals("a1", parsed.rawRecords[0].accountId)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // importFromUri — SAF URI import
+    // ═══════════════════════════════════════════════════════════
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `importFromUri parses valid data from file URI`() {
+        val data = DataExport(
+            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.2.0",
+            dailySummaries = listOf(DailySummary(accountId = "imp1", date = "2026-07-08",
+                currency = "CNY", open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
+                avgBalance = 10f, sampleCount = 1, toppedUpBalanceClose = 10f)),
+            rawRecords = emptyList(), usageSnapshots = emptyList(), refreshLogs = emptyList()
+        )
+        val importFile = File(context.filesDir, "import-data-${System.nanoTime()}.json")
+        importFile.writeText(json.encodeToString(data))
+        val uri = Uri.fromFile(importFile)
+
+        val result = DataExporter.importFromUri(context, uri)
+        assertNotNull("should parse data", result)
+        assertEquals(1, result!!.dailySummaries.size)
+        assertEquals("imp1", result.dailySummaries[0].accountId)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `importFromUri returns null for invalid JSON`() {
+        val file = File(context.filesDir, "bad-import-${System.nanoTime()}.json")
+        file.writeText("not-valid-json-at-all")
+        val uri = Uri.fromFile(file)
+
+        val result = DataExporter.importFromUri(context, uri)
+        assertNull("should return null for invalid JSON", result)
+    }
+
+    @Test
+    fun `importFromUri returns null for bad URI`() {
+        val badUri = Uri.parse("content://nonexistent.authority/path")
+        val result = DataExporter.importFromUri(context, badUri)
+        assertNull("should return null for bad URI", result)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // importAndApply — convenience wrapper
+    // ═══════════════════════════════════════════════════════════
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `importAndApply imports and merges data from file URI`() {
+        val data = DataExport(
+            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.2.0",
+            dailySummaries = listOf(DailySummary(accountId = "iaa1", date = "2026-07-08",
+                currency = "CNY", open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
+                avgBalance = 10f, sampleCount = 1, toppedUpBalanceClose = 10f)),
+            rawRecords = listOf(RawRecord(accountId = "iaa1", timestamp = 1752009600000L,
+                currency = "CNY", totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)),
+            usageSnapshots = emptyList(), refreshLogs = emptyList()
+        )
+        val file = File(context.filesDir, "import-apply-${System.nanoTime()}.json")
+        file.writeText(json.encodeToString(data))
+        val uri = Uri.fromFile(file)
+
+        val result = DataExporter.importAndApply(context, uri)
+        assertNotNull("should return ImportResult", result)
+        assertEquals(1, result!!.summariesImported)
+        assertEquals(1, result.recordsImported)
+    }
+
+    @Test
+    fun `importAndApply returns null when importFromUri fails`() {
+        val badUri = Uri.parse("content://nonexistent.authority/path")
+        val result = DataExporter.importAndApply(context, badUri)
+        assertNull("should return null when import fails", result)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `applyImport merge all-new items with zero dedup`() {
+        val importedData = DataExport(
+            version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
+            dailySummaries = listOf(DailySummary(accountId = "new1", date = "2026-07-08",
+                currency = "CNY", open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
+                avgBalance = 10f, sampleCount = 1, toppedUpBalanceClose = 10f)),
+            rawRecords = listOf(RawRecord(accountId = "new1", timestamp = 1752009600000L,
+                currency = "CNY", totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)),
+            usageSnapshots = listOf(UsageSnapshot(accountId = "new1", timestamp = 1752009600000L)),
+            refreshLogs = listOf(RefreshLogEntry(id = 999L, type = RefreshLogType.AUTO, timestamp = 1752009600000L))
+        )
+
+        val result = DataExporter.applyImport(context, importedData)
+        assertEquals(1, result.summariesImported)
+        assertEquals(1, result.recordsImported)
+        assertEquals(1, result.snapshotsImported)
+        assertEquals(1, result.logsImported)
+    }
+
+    @Test
+    fun `applyImport merge all-duplicate items imports zero`() {
+        val existing = DailySummary(accountId = "dup1", date = "2026-07-08",
+            currency = "CNY", open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
+            avgBalance = 10f, sampleCount = 1, toppedUpBalanceClose = 10f)
+        DailySummaryStore.addSummaries(context, listOf(existing))
+
+        val importedData = DataExport(
+            version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
+            dailySummaries = listOf(existing),
+            rawRecords = emptyList(), usageSnapshots = emptyList(), refreshLogs = emptyList()
+        )
+
+        val result = DataExporter.applyImport(context, importedData)
+        assertEquals(1, result.summariesInFile)
+        assertEquals(0, result.summariesImported)
     }
 
     @Test

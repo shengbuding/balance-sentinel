@@ -173,4 +173,87 @@ class CrashLoggerTest {
         // Most recent should be first
         assertTrue(crashes[0].header.contains("error 12"))
     }
+
+    // ── buildCrashEntry breadcrumbs > 10 ──
+
+    @Test
+    fun `crash entry shows truncated breadcrumbs when more than 10`() {
+        CrashLogger.install(app)
+        // Add 15 breadcrumbs
+        for (i in 1..15) {
+            CrashLogger.breadcrumb("CrumbTest", "breadcrumb $i")
+        }
+        CrashLogger.logNonFatal("Tag", RuntimeException("overflow test"))
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertTrue(crashes.isNotEmpty())
+        val entry = crashes[0].fullStack
+        // Should have the "... + N more" indicator
+        assertTrue(entry.contains("more"))
+    }
+
+    @Test
+    fun `crash entry includes breadcrumbs when present`() {
+        CrashLogger.install(app)
+        CrashLogger.breadcrumb("Context", "before crash")
+        CrashLogger.logNonFatal("Tag", RuntimeException("with context"))
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertTrue(crashes.isNotEmpty())
+        val entry = crashes[0].fullStack
+        assertTrue(entry.contains("── 面包屑 ──"))
+        assertTrue(entry.contains("before crash"))
+    }
+
+    // ── getCrashes file-not-found ──
+
+    @Test
+    fun `getCrashes with blank entries from separator split`() {
+        val crashFile = File(app.filesDir, "crash.log")
+        // Just separators with nothing meaningful
+        crashFile.writeText("\n══════════════════════════════════\n\n══════════════════════════════════\n")
+        val crashes = CrashLogger.getCrashes(app)
+        // All blank entries filtered out
+        assertTrue(crashes.isEmpty())
+    }
+
+    // ── sanitize / redaction ──
+
+    @Test
+    fun `crash entry redacts API keys in logNonFatal`() {
+        CrashLogger.install(app)
+        CrashLogger.logNonFatal("Tag", RuntimeException("Error with token sk-abcdefghij12345 in message"))
+
+        val crashes = CrashLogger.getCrashes(app)
+        assertTrue(crashes.isNotEmpty())
+        val entry = crashes[0].fullStack
+        // API key should be redacted
+        assertFalse(entry.contains("sk-abcdefghij12345"))
+        assertTrue(entry.contains("sk-***"))
+    }
+
+    // ── logNonFatal multiple entries cap at 10 ──
+
+    @Test
+    fun `logNonFatal caps entries at 10 oldest evicted`() {
+        CrashLogger.install(app)
+        // Write exactly 10 entries first, then an 11th
+        for (i in 1..10) {
+            CrashLogger.logNonFatal("Tag", RuntimeException("batch $i"))
+        }
+        // The first entry should be "batch 10" (most recent)
+        val firstBatch = CrashLogger.getCrashes(app)
+        assertEquals(10, firstBatch.size)
+        assertTrue(firstBatch[0].header.contains("batch 10"))
+        assertTrue(firstBatch[9].header.contains("batch 1"))
+
+        // Add one more — batch 1 should be evicted
+        CrashLogger.logNonFatal("Tag", RuntimeException("batch 11"))
+        val secondBatch = CrashLogger.getCrashes(app)
+        assertEquals(10, secondBatch.size)
+        assertTrue(secondBatch[0].header.contains("batch 11"))
+        // batch 1 should be gone
+        val hasBatch1 = secondBatch.any { it.header.contains("batch 1") && !it.header.contains("batch 10") && !it.header.contains("batch 11") }
+        assertFalse("batch 1 should be evicted", hasBatch1)
+    }
 }
