@@ -118,4 +118,118 @@ class BalanceWidgetDataStoreTest {
         assertEquals("0.00", agg!!.totalBalance)
         assertEquals("CNY", agg.currency)
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // aggregateTopTwo — edge cases
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `aggregateTopTwo empty list returns null`() {
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(emptyList())
+        assertNull(agg)
+    }
+
+    @Test
+    fun `aggregateTopTwo single non-zero currency no secondary`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "30.00", "20.00", 1000L),
+            AccountBalance("a2", "B", "50.00", "CNY", true, "10.00", "5.00", 2000L)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertEquals("150.00", agg!!.totalBalance)
+        assertEquals("CNY", agg.currency)
+        assertEquals("", agg.totalBalance2)   // no secondary currency
+        assertEquals("", agg.currency2)
+        assertEquals("40.00", agg.grantedBalance)
+        assertEquals("25.00", agg.toppedUpBalance)
+    }
+
+    @Test
+    fun `aggregateTopTwo includes granted and toppedUp for primary currency`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "USD", true, "30.00", "20.00", 1000L),
+            AccountBalance("a2", "B", "200.00", "CNY", true, "50.00", "10.00", 2000L)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        // Primary should be CNY (200 > 100)
+        assertEquals("200.00", agg!!.totalBalance)
+        assertEquals("CNY", agg.currency)
+        assertEquals("50.00", agg.grantedBalance)
+        assertEquals("10.00", agg.toppedUpBalance)
+    }
+
+    @Test
+    fun `aggregateTopTwo accountCount counts distinct accounts`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "0", "0", 0),
+            AccountBalance("a1", "A", "50.00", "USD", true, "0", "0", 0),  // same account, diff currency
+            AccountBalance("a2", "B", "200.00", "EUR", true, "0", "0", 0),
+            AccountBalance("a3", "C", "75.00", "CNY", true, "0", "0", 0)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertEquals(3, agg!!.accountCount)  // a1, a2, a3 = 3 distinct accounts
+    }
+
+    @Test
+    fun `aggregateTopTwo lastUpdated is max of all entries`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "0", "0", 1000L),
+            AccountBalance("a2", "B", "200.00", "USD", true, "0", "0", 5000L),
+            AccountBalance("a3", "C", "50.00", "CNY", true, "0", "0", 3000L)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertEquals(5000L, agg!!.lastUpdated)
+    }
+
+    @Test
+    fun `aggregateTopTwo handles invalid balance strings gracefully`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "not-a-number", "CNY", true, "0", "0", 0),
+            AccountBalance("a2", "B", "200.00", "USD", true, "0", "0", 0)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        // "not-a-number" → 0.0, so CNY is filtered (0.0); USD (200) is primary
+        assertEquals("200.00", agg!!.totalBalance)
+        assertEquals("USD", agg.currency)
+    }
+
+    @Test
+    fun `aggregateTopTwo isAvailable false when any balance unavailable`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "0", "0", 0),
+            AccountBalance("a2", "B", "200.00", "USD", false, "0", "0", 0)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertFalse(agg!!.isAvailable)
+    }
+
+    @Test
+    fun `aggregateTopTwo isAvailable true when all balances available`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "0", "0", 0),
+            AccountBalance("a2", "B", "200.00", "USD", true, "0", "0", 0)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertTrue(agg!!.isAvailable)
+    }
+
+    @Test
+    fun `aggregateTopTwo handles granted and toppedUp as non-numeric strings`() {
+        val balances = listOf(
+            AccountBalance("a1", "A", "100.00", "CNY", true, "N/A", "N/A", 0),
+            AccountBalance("a2", "B", "50.00", "CNY", true, "N/A", "N/A", 0)
+        )
+        val agg = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(agg)
+        assertEquals("150.00", agg!!.totalBalance)
+        assertEquals("0.00", agg.grantedBalance)   // N/A → 0.0
+        assertEquals("0.00", agg.toppedUpBalance)  // N/A → 0.0
+    }
 }
