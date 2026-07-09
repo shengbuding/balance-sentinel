@@ -64,6 +64,28 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
+      - name: Extract test failures
+        if: always()
+        run: |
+          mkdir -p app/build/test-failures
+          for f in app/build/test-results/testDebugUnitTest/TEST-*.xml; do
+            if grep -q 'failures="[1-9]"\|errors="[1-9]"' "$f" 2>/dev/null; then
+              cp "$f" app/build/test-failures/
+            fi
+          done
+          if [ -f app/build/reports/tests/testDebugUnitTest/index.html ]; then
+            cp app/build/reports/tests/testDebugUnitTest/index.html app/build/test-failures/
+          fi
+          echo "Failures extracted: $(ls app/build/test-failures/ 2>/dev/null | wc -l) files"
+
+      - name: Upload test failure details
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failures-release
+          path: app/build/test-failures/
+          retention-days: 7
+
       - name: Run lint
         run: ./gradlew lintDebug --no-daemon
 
