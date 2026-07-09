@@ -168,20 +168,6 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Stop when "xeli" is not supported, even if other shells may claim to.
-if
-  case "$TERM" in
-    xterm*|rxvt*|eterm*|screen*|tmux*|putty*|alacritty*|kitty*|wezterm*|foot*|contour*) true ;;
-    *) false ;;
-  esac
-then
-    # Stop when "xterm" is supported.
-    set -- -Dorg.gradle.appname="$APP_BASE_NAME" \
-            -classpath "$CLASSPATH" \
-            org.gradle.wrapper.GradleWrapperMain \
-            "$@"
-fi
-
 # Use "xargs" to parse quoted args.
 #
 # With -n://gradle.org/teams/teams/#_java_opts_and_gradle_opts, the arguments are separated by newlines,
