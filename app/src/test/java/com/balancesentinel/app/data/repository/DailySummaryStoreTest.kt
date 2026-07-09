@@ -418,6 +418,121 @@ class DailySummaryStoreTest {
         assertFalse(DailySummaryStore.hasSummaryForDate(context, "2026-07-05", "CNY", "acc1"))
     }
 
+    // ── getSummariesForCurrencyAndAccount ──
+
+    @Test
+    fun `getSummariesForCurrencyAndAccount filters by both`() {
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc1", date = "2026-07-04", currency = "CNY",
+                open = 100f, close = 100f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 100f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc2", date = "2026-07-04", currency = "CNY",
+                open = 200f, close = 200f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 200f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc1", date = "2026-07-04", currency = "USD",
+                open = 50f, close = 50f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 50f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        val result = DailySummaryStore.getSummariesForCurrencyAndAccount(context, "CNY", "acc1")
+        assertEquals(1, result.size)
+        assertEquals("acc1", result[0].accountId)
+        assertEquals("CNY", result[0].currency)
+    }
+
+    // ── getAllAccountIds ──
+
+    @Test
+    fun `getAllAccountIds returns distinct account IDs`() {
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc1", date = "2026-07-04", currency = "CNY",
+                open = 100f, close = 100f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 100f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc2", date = "2026-07-04", currency = "CNY",
+                open = 200f, close = 200f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 200f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        val ids = DailySummaryStore.getAllAccountIds(context)
+        assertEquals(2, ids.size)
+        assertTrue(ids.contains("acc1"))
+        assertTrue(ids.contains("acc2"))
+    }
+
+    // ── addSummaries (batch) ──
+
+    @Test
+    fun `addSummaries batch inserts deduplicates`() {
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc1", date = "2026-07-01", currency = "CNY",
+                open = 100f, close = 100f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 100f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        val batch = listOf(
+            DailySummary(accountId = "acc1", date = "2026-07-01", currency = "CNY",
+                open = 999f, close = 999f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 999f, sampleCount = 99,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f),
+            DailySummary(accountId = "acc1", date = "2026-07-02", currency = "CNY",
+                open = 90f, close = 85f, consumed = 5f, toppedUp = 0f,
+                granted = 0f, avgBalance = 87f, sampleCount = 3,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        DailySummaryStore.addSummaries(context, batch)
+
+        val all = DailySummaryStore.getSummaries(context)
+        assertEquals(2, all.size) // 7/1 not duplicated, 7/2 new
+        assertEquals(100f, all.find { it.date == "2026-07-01" }!!.close) // original preserved
+        assertEquals(85f, all.find { it.date == "2026-07-02" }!!.close) // new added
+    }
+
+    @Test
+    fun `addSummaries with empty list is no-op`() {
+        DailySummaryStore.addSummaries(context, emptyList())
+        assertTrue(DailySummaryStore.getSummaries(context).isEmpty())
+    }
+
+    @Test
+    fun `addSummaries all duplicates is no-op`() {
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(accountId = "acc1", date = "2026-07-01", currency = "CNY",
+                open = 100f, close = 100f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 100f, sampleCount = 1,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        val batch = listOf(
+            DailySummary(accountId = "acc1", date = "2026-07-01", currency = "CNY",
+                open = 999f, close = 999f, consumed = 0f, toppedUp = 0f,
+                granted = 0f, avgBalance = 999f, sampleCount = 99,
+                toppedUpBalanceClose = 0f, grantedBalanceClose = 0f)
+        )
+
+        DailySummaryStore.addSummaries(context, batch)
+        assertEquals(1, DailySummaryStore.getSummaries(context).size)
+    }
+
     // ── ensureContinuity ──
 
     @Test
