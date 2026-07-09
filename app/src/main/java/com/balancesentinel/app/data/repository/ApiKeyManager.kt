@@ -14,19 +14,25 @@ import java.security.MessageDigest
  * 使用 EncryptedSharedPreferences 安全存储多组 API Key。
  * 存储 JSON 序列化的 List<AccountInfo>，每组包含 id/label/apiKey。
  */
-class ApiKeyManager(private val appContext: Context) {
+class ApiKeyManager(
+    private val appContext: Context,
+    // test-only: inject SharedPreferences to bypass EncryptedSharedPreferences (unavailable in Robolectric)
+    private val injectedPrefs: SharedPreferences? = null
+) {
 
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(appContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            "deepseek_secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        injectedPrefs ?: run {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                "deepseek_secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
     }
 
     private val json = Json { ignoreUnknownKeys = true }

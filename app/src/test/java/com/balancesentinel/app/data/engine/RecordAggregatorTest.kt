@@ -208,4 +208,64 @@ class RecordAggregatorTest {
         val consumed = RecordAggregator.computeConsumed(sorted)
         assertEquals(10f, consumed)
     }
+
+    // ── 边界测试 ──
+
+    @Test
+    fun `toppedUp ignores jumps smaller than 1 point 0`() {
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
+            RawRecord("acc1", 2000L, "CNY", 100.5f, 0f, 50.8f) // diff=0.8, < 1.0 → ignored
+        )
+        assertEquals(0f, RecordAggregator.computeToppedUp(sorted))
+    }
+
+    @Test
+    fun `toppedUp ignores non-integer jumps`() {
+        // diff=8.83 is >= 1 but NOT near-integer → should be ignored
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 10f, 0f, 2.34f),
+            RawRecord("acc1", 2000L, "CNY", 11.5f, 0f, 11.17f) // toppedUpDiff=8.83, not near-integer
+        )
+        assertEquals(0f, RecordAggregator.computeToppedUp(sorted))
+    }
+
+    @Test
+    fun `toppedUp captures near-integer jump above point 99`() {
+        // diff=10.005, frac=0.005 < 0.01 → near-integer → counted
+        val sorted = listOf(
+            RawRecord("acc1", 1000L, "CNY", 100f, 0f, 10f),
+            RawRecord("acc1", 2000L, "CNY", 100f, 0f, 20.005f) // diff=10.005, near-integer
+        )
+        // float precision: 20.005f - 10f ≈ 10.005 ± epsilon
+        assertEquals(10.005f, RecordAggregator.computeToppedUp(sorted), 0.01f)
+    }
+
+    @Test
+    fun `aggregate includes grantedBalanceClose and toppedUpBalanceClose`() {
+        val record = RawRecord("acc1", 1000L, "CNY", 100f, 5.5f, 94.5f)
+        val result = RecordAggregator.aggregate(listOf(record), "2026-07-08")
+        assertEquals(1, result.size)
+        assertEquals(94.5f, result[0].toppedUpBalanceClose)
+        assertEquals(5.5f, result[0].grantedBalanceClose)
+    }
+
+    @Test
+    fun `aggregate handles multiple accounts with same currency`() {
+        val now = 100000L
+        val records = listOf(
+            RawRecord("acc1", now, "CNY", 50f, 0f, 50f),
+            RawRecord("acc1", now + 1, "CNY", 40f, 0f, 50f),
+            RawRecord("acc2", now, "CNY", 200f, 10f, 190f),
+            RawRecord("acc2", now + 1, "CNY", 180f, 10f, 190f)
+        )
+        val result = RecordAggregator.aggregate(records, "2026-07-08")
+        assertEquals(2, result.size)
+        val acc1 = result.find { it.accountId == "acc1" }!!
+        val acc2 = result.find { it.accountId == "acc2" }!!
+        assertEquals(10f, acc1.consumed)
+        assertEquals(20f, acc2.consumed)
+        assertEquals(0f, acc1.toppedUp) // toppedUpBalance unchanged
+        assertEquals(0f, acc2.toppedUp)
+    }
 }

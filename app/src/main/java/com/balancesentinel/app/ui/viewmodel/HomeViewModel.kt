@@ -61,10 +61,13 @@ data class HomeUiState(
     val snoozeDurationMinutes: Int = 60
 )
 
-class HomeViewModel(application: Application) : AndroidViewModel(application) {
-
+class HomeViewModel(
+    application: Application,
+    // test-only: inject mocks for unit testing
+    private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val repository: BalanceRepository = BalanceRepository()
-    private val apiKeyManager: ApiKeyManager = ApiKeyManager(application)
+) : AndroidViewModel(application) {
+
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)
 
     private val _uiState = MutableStateFlow(HomeUiState())
