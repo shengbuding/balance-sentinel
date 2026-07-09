@@ -3,6 +3,8 @@ package com.balancesentinel.app.data.repository
 import com.balancesentinel.app.data.api.DeepSeekApiService
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
+import com.balancesentinel.app.data.model.UsageResponse
+import com.balancesentinel.app.data.model.UsageRecord
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -68,5 +70,44 @@ class BalanceRepositoryTest {
         val result = repository.fetchBalance("empty-key")
         assertTrue(result.isSuccess)
         assertTrue(result.getOrNull()?.balanceInfos?.isEmpty() == true)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // fetchUsage
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `fetchUsage returns success with valid response`() = runTest {
+        val response = UsageResponse(
+            data = listOf(UsageRecord(model_name = "deepseek-chat", total_tokens = 1500))
+        )
+        coEvery { mockApi.getUsage("valid-key", any(), any()) } returns response
+
+        val result = repository.fetchUsage("valid-key")
+        assertTrue(result.isSuccess)
+        assertEquals("deepseek-chat", result.getOrNull()!!.data[0].model_name)
+        assertEquals(1500L, result.getOrNull()!!.data[0].total_tokens)
+    }
+
+    @Test
+    fun `fetchUsage returns failure on IOException`() = runTest {
+        coEvery { mockApi.getUsage("bad-key", any(), any()) } throws IOException("Network error")
+
+        val result = repository.fetchUsage("bad-key")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertEquals("Network error", result.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun `fetchUsage wraps generic exception to IOException`() = runTest {
+        coEvery { mockApi.getUsage("any", any(), any()) } throws RuntimeException("Unexpected crash")
+
+        val result = repository.fetchUsage("any")
+        assertTrue(result.isFailure)
+        val ex = result.exceptionOrNull()
+        assertTrue(ex is IOException)
+        assertTrue(ex?.message?.contains("用量查询失败") == true)
+        assertTrue(ex?.message?.contains("Unexpected crash") == true)
     }
 }
