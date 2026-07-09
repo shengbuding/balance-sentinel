@@ -35,6 +35,7 @@ class LogViewModelTest {
     @After
     fun tearDown() {
         RefreshLogStore.clear(context)
+        CrashLogger.clear(application)
     }
 
     @Test
