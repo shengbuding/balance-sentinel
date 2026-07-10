@@ -53,7 +53,7 @@ jobs:
       - name: Decode keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-        run: echo "$KEYSTORE_B64" | base64 -d > deepseek-balance.jks
+        run: echo "$KEYSTORE_B64" | base64 -d > app/deepseek-balance.jks
 
       - name: Write keystore.properties
         run: |
