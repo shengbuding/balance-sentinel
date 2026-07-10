@@ -295,7 +295,7 @@ object RefreshScheduler {
 
         val lastHb = getPrefs(context).getLong(KEY_LAST_HEARTBEAT, 0)
         if (lastHb <= 0) return true // 从未有心跳且不在启动宽限期内
-        return System.currentTimeMillis() - lastHb > timeoutMs
+        return System.currentTimeMillis() - lastHb >= timeoutMs
     }
 
     /** 记录 Service 重启次数（诊断用） */
