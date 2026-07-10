@@ -50,6 +50,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > deepseek-balance.jks
+
+      - name: Write keystore.properties
+        run: |
+          cat > keystore.properties << 'EOF'
+          storeFile=deepseek-balance.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=deepseek
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
       - name: Determine version
         id: version
         run: |
@@ -87,14 +101,14 @@ jobs:
           retention-days: 7
 
       - name: Run lint
-        run: ./gradlew lintDebug --no-daemon
+        run: ./gradlew lintRelease --no-daemon
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk balance-sentinel-${{ steps.version.outputs.tag }}.apk
+          cp app/build/outputs/apk/release/app-release.apk balance-sentinel-${{ steps.version.outputs.tag }}.apk
 
       - name: Create Release
         id: create_release
