@@ -224,4 +224,34 @@ object DailySummaryStore {
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
+
+    /**
+     * 迁移账户ID
+     * @param migrationMap 旧ID -> 新ID 的映射表
+     */
+    fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
+        if (migrationMap.isEmpty()) return
+
+        try {
+            val summaries = getSummaries(context).toMutableList()
+            var migrated = false
+
+            for (i in summaries.indices) {
+                val summary = summaries[i]
+                val newId = migrationMap[summary.accountId]
+                if (newId != null) {
+                    summaries[i] = summary.copy(accountId = newId)
+                    migrated = true
+                }
+            }
+
+            if (migrated) {
+                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
+                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in DailySummaryStore")
+            }
+        } catch (e: Exception) {
+            Logger.e(TAG, "Failed to migrate account IDs", e)
+        }
+    }
 }

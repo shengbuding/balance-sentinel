@@ -17,7 +17,7 @@
     <string name="home_save">保存</string>
     <string name="home_add">添加</string>
     <string name="home_empty_title">还没有添加账户</string>
-    <string name="home_empty_subtitle">点击右下角 + 按钮添加 DeepSeek API Key</string>
+    <string name="home_empty_subtitle">点击右下角 + 按钮添加 API Key</string>
     <string name="home_no_data">暂无余额数据</string>
     <string name="home_query_failed">查询失败</string>
     <string name="home_status_available">可用</string>
@@ -92,7 +92,7 @@
     <string name="depletion_date_unknown">—</string>
 
     <!-- 隐私政策全文（长文本） -->
-    <string name="privacy_policy_full_text">钱包哨兵 — 隐私政策\n\n最后更新日期：2026 年 7 月 8 日\n\n概述\n钱包哨兵是一款 DeepSeek API 余额监控工具。我们高度重视您的隐私和数据安全。\n\n我们收集的信息\n• DeepSeek API Key：仅存储在本设备的加密存储中，用于查询余额\n• 不收集：个人身份信息、设备标识符、位置信息、联系人等\n\n数据使用\nAPI Key 仅用于向 api.deepseek.com 发起余额查询。所有数据传输通过 HTTPS 加密。查询到的余额数据仅存储在设备本地。\n\n数据共享\n我们不会将您的任何数据分享、出售或传输给任何第三方。\n\n数据安全\n• API Key 使用 Android EncryptedSharedPreferences（AES-256）存储\n• 所有网络请求通过 HTTPS 加密\n• 应用备份已禁用\n• 日志输出自动脱敏 API Key\n\n数据删除\n您可以在「数据管理」页面随时删除所有数据。卸载 App 会自动清除所有本地数据。\n\n权限说明\n• INTERNET — 查询 API 余额\n• FOREGROUND_SERVICE — 后台定时刷新\n• POST_NOTIFICATIONS — 余额告警通知\n• RECEIVE_BOOT_COMPLETED — 开机自启\n• SCHEDULE_EXACT_ALARM — 精确定时\n• WAKE_LOCK — 防 CPU 休眠\n\n第三方服务\n仅连接 DeepSeek 官方 API，无第三方分析/广告/追踪 SDK。\n\n如有隐私相关问题，请通过 GitHub Issues 联系我们。\n\n本政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。\n</string>
+    <string name="privacy_policy_full_text">钱包哨兵 — 隐私政策\n\n最后更新日期：2026 年 7 月 20 日\n\n概述\n钱包哨兵是一款多 AI 供应商余额监控工具，支持 DeepSeek、OpenAI、Anthropic 等 13 个供应商。我们高度重视您的隐私和数据安全。\n\n我们收集的信息\n• API Key：仅存储在本设备的加密存储中，用于查询余额\n• 不收集：个人身份信息、设备标识符、位置信息、联系人等\n\n数据使用\nAPI Key 仅用于向各 AI 供应商官方 API 发起余额查询。所有数据传输通过 HTTPS 加密。查询到的余额数据仅存储在设备本地。\n\n数据共享\n我们不会将您的任何数据分享、出售或传输给任何第三方。\n\n数据安全\n• API Key 使用 Android EncryptedSharedPreferences（AES-256）存储\n• 所有网络请求通过 HTTPS 加密\n• 应用备份已禁用\n• 日志输出自动脱敏 API Key\n\n数据删除\n您可以在「数据管理」页面随时删除所有数据。卸载 App 会自动清除所有本地数据。\n\n权限说明\n• INTERNET — 查询 API 余额\n• FOREGROUND_SERVICE — 后台定时刷新\n• POST_NOTIFICATIONS — 余额告警通知\n• RECEIVE_BOOT_COMPLETED — 开机自启\n• SCHEDULE_EXACT_ALARM — 精确定时\n• WAKE_LOCK — 防 CPU 休眠\n\n第三方服务\n连接各 AI 供应商官方 API，无第三方分析/广告/追踪 SDK。\n\n如有隐私相关问题，请通过 GitHub Issues 联系我们。\n\n本政策适用于钱包哨兵 Android 应用（包名：com.balancesentinel.app）。\n</string>
     <string name="insights_chart_balance">余额</string>
     <string name="insights_chart_consumption">消耗</string>
     <string name="insights_history_title">历史日汇总</string>
@@ -140,7 +140,7 @@
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_version">钱包哨兵 v%1$s</string>
-    <string name="settings_about_desc">在桌面查看 DeepSeek API 账户余额，支持自动刷新和小组件。</string>
+    <string name="settings_about_desc">在桌面查看多个AI供应商API账户余额，支持自动刷新和小组件。</string>
     <string name="settings_auto_refresh">自动刷新</string>
     <string name="settings_refresh_desc">配置余额查询间隔和刷新策略</string>
     <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
@@ -497,14 +497,14 @@
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">欢迎使用钱包哨兵</string>
-    <string name="onboarding_welcome_desc">实时监控 DeepSeek API 账户余额，\n在桌面小组件上一目了然</string>
+    <string name="onboarding_welcome_desc">实时监控多个AI供应商API账户余额，\n在桌面小组件上一目了然</string>
     <string name="onboarding_features_title">核心功能</string>
     <string name="onboarding_features_desc">三大能力，守护你的 API 余额</string>
     <string name="onboarding_feat_refresh">后台自动刷新，无需手动查询</string>
     <string name="onboarding_feat_alert">余额不足预警 + 异动提醒</string>
     <string name="onboarding_feat_widget">桌面小组件，余额一目了然</string>
     <string name="onboarding_start_title">开始使用</string>
-    <string name="onboarding_start_desc">添加你的 DeepSeek API Key，\n即可开始监控余额</string>
+    <string name="onboarding_start_desc">添加你的 API Key，\n即可开始监控余额</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_skip">跳过</string>
     <string name="onboarding_get_started">开始使用</string>

@@ -137,6 +137,35 @@ object BalanceWidgetDataStore {
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
+
+    /**
+     * 迁移账户ID
+     * @param migrationMap 旧ID -> 新ID 的映射表
+     */
+    fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
+        if (migrationMap.isEmpty()) return
+
+        try {
+            val balances = getAllBalances(context).toMutableList()
+            var migrated = false
+
+            for (i in balances.indices) {
+                val balance = balances[i]
+                val newId = migrationMap[balance.accountId]
+                if (newId != null) {
+                    balances[i] = balance.copy(accountId = newId)
+                    migrated = true
+                }
+            }
+
+            if (migrated) {
+                val serialized = json.encodeToString(balances)
+                getPrefs(context).edit().putString(KEY_BALANCES, serialized).apply()
+            }
+        } catch (e: Exception) {
+            // Widget数据迁移失败不影响主功能
+        }
+    }
 }
 
 @Serializable

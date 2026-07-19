@@ -146,9 +146,9 @@ fun InsightsScreen(
                 onRangeDaysChange = { viewModel.setRangeDays(it) }
             )
 
-            // ── Card 3: 历史日汇总 ──
+            // ── Card 3: 历史日汇总（全量数据，不受趋势天数选择影响）──
             DailyHistoryCard(
-                points = uiState.dailyOutput?.dailyPoints ?: emptyList(),
+                points = uiState.dailyHistoryPoints,
                 currency = uiState.selectedCurrency,
                 visibleCount = uiState.historyVisibleCount,
                 expandedDate = uiState.expandedDate,
@@ -204,7 +204,9 @@ private fun AccountFilterRow(
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
     ) {
         FilterChip(
             selected = selectedAccountId == null,

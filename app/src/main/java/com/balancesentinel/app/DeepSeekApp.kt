@@ -6,7 +6,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.LocaleList
+import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 class DeepSeekApp : Application() {
     override fun onCreate() {
@@ -27,6 +31,9 @@ class DeepSeekApp : Application() {
             // Non-critical — don't block app startup
         }
 
+        // 执行数据迁移
+        migrateDataIfNeeded()
+
         createNotificationChannel()
 
         // 恢复用户语言偏好（未设置则跟随系统）
@@ -38,6 +45,35 @@ class DeepSeekApp : Application() {
         }
 
         CrashLogger.breadcrumb("App", "onCreate complete")
+    }
+
+    /**
+     * 执行数据迁移
+     * 1. 迁移旧版单Key
+     * 2. 迁移账户ID（4字节 -> 8字节）
+     */
+    private fun migrateDataIfNeeded() {
+        try {
+            val apiKeyManager = ApiKeyManager(this)
+
+            // 1. 迁移旧版单Key
+            apiKeyManager.migrateLegacyKeyIfNeeded()
+
+            // 2. 迁移账户ID
+            val migrationMap = apiKeyManager.migrateAccountIds()
+            if (migrationMap.isNotEmpty()) {
+                CrashLogger.breadcrumb("App", "Migrating ${migrationMap.size} account IDs")
+
+                // 迁移关联数据
+                RawRecordStore.migrateAccountIds(this, migrationMap)
+                DailySummaryStore.migrateAccountIds(this, migrationMap)
+                BalanceWidgetDataStore.migrateAccountIds(this, migrationMap)
+
+                CrashLogger.breadcrumb("App", "Account ID migration complete")
+            }
+        } catch (e: Exception) {
+            CrashLogger.logNonFatal("App", e)
+        }
     }
 
     private fun createNotificationChannel() {

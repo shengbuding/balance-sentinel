@@ -34,9 +34,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.ui.components.AccountBalanceCard
+import com.balancesentinel.app.ui.components.AddAccountDialog
+import com.balancesentinel.app.ui.components.EditAccountDialog
 import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import androidx.compose.ui.semantics.contentDescription
@@ -71,8 +75,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     if (showAddDialog) {
         AddAccountDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { label, key ->
-                viewModel.addAccount(label, key)
+            onAdd = { label, key, providerType ->
+                viewModel.addAccount(label, key, providerType)
                 showAddDialog = false
             }
         )
@@ -92,6 +96,19 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.home_cancel)) }
+            }
+        )
+    }
+
+    // 编辑账户对话框
+    var editTarget by remember { mutableStateOf<AccountInfo?>(null) }
+    editTarget?.let { account ->
+        EditAccountDialog(
+            account = account,
+            onDismiss = { editTarget = null },
+            onConfirm = { newLabel, newApiKey ->
+                viewModel.editAccount(account.id, newLabel, newApiKey)
+                editTarget = null
             }
         )
     }
@@ -159,13 +176,27 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                                 containerColor = MaterialTheme.colorScheme.errorContainer),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Icon(CustomIcons.ErrorOutline, contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error)
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    CustomIcons.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text(msg, color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    msg,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = { viewModel.refreshBalance() }
+                                ) {
+                                    Text("重试")
+                                }
                             }
                         }
                     }
@@ -181,11 +212,14 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                         AccountBalanceCard(
                             accountLabel = account.label,
                             accountId = account.id,
+                            providerType = account.providerType,
                             balance = balance,
                             isLoading = uiState.isLoading,
                             lastRefreshTime = uiState.lastRefreshTime,
                             now = now,
-                            onLongPress = { deleteTarget = Pair(account.id, account.label) }
+                            onLongPress = { deleteTarget = Pair(account.id, account.label) },
+                            onEdit = { editTarget = account },
+                            onDelete = { deleteTarget = Pair(account.id, account.label) }
                         )
                     }
                 }
@@ -229,87 +263,6 @@ private fun EmptyAccountsHint() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-}
-
-// ═══════════════════════════════════════════════════════════
-// 添加账户对话框
-// ═══════════════════════════════════════════════════════════
-
-@Composable
-private fun AddAccountDialog(
-    onDismiss: () -> Unit,
-    onAdd: (String, String) -> Unit
-) {
-    var label by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    var showKey by remember { mutableStateOf(false) }
-    val clipboardManager = LocalClipboardManager.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.add_account_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    label = { Text(stringResource(R.string.add_account_label)) },
-                    placeholder = { Text(stringResource(R.string.add_account_label_placeholder)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text(stringResource(R.string.add_account_key_label)) },
-                    placeholder = { Text(stringResource(R.string.add_account_key_hint)) },
-                    visualTransformation = if (showKey) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    leadingIcon = {
-                        Box(modifier = Modifier
-                            .clickable {
-                                val clipText = clipboardManager.getText()?.text ?: ""
-                                if (clipText.isNotBlank()) apiKey = clipText.trim()
-                            }
-                            .padding(horizontal = 8.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.add_account_paste_key),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                imageVector = if (showKey) CustomIcons.VisibilityOff else CustomIcons.Visibility,
-                                contentDescription = if (showKey) stringResource(R.string.add_account_hide_key)
-                                    else stringResource(R.string.add_account_show_key)
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onAdd(label, apiKey) },
-                enabled = label.isNotBlank() && apiKey.isNotBlank(),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(stringResource(R.string.home_add))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.home_cancel)) }
-        }
-    )
 }
 
 // ═══════════════════════════════════════════════════════════

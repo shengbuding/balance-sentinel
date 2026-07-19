@@ -8,7 +8,7 @@
 
 | 权限 | 类型 | 用途 |
 |---|---|---|
-| `INTERNET` | 普通 | 调用 DeepSeek API 查询余额 |
+| `INTERNET` | 普通 | 调用 AI 供应商 API 查询余额 |
 | `FOREGROUND_SERVICE` | 敏感 | 后台持续刷新余额 |
 | `FOREGROUND_SERVICE_DATA_SYNC` | 敏感 | 前台服务类型：网络数据同步 |
 | `WAKE_LOCK` | 普通 | 确保后台刷新不被 CPU 休眠打断 |
@@ -36,7 +36,7 @@
 
 ```
 The app needs a persistent foreground service to periodically
-fetch DeepSeek API balance data at user-configured intervals
+fetch AI provider API balance data at user-configured intervals
 (1-60 minutes). This data powers balance alerts, desktop
 widgets, and consumption insights. Without a foreground
 service, Android would kill the background process, causing
@@ -50,7 +50,7 @@ status so users always know the service is active.
 
 ```
 应用需要前台服务以按用户设定的间隔（1-60 分钟）定期获取
-DeepSeek API 余额数据。该数据驱动余额预警、桌面小组件和
+AI 供应商 API 余额数据。该数据驱动余额预警、桌面小组件和
 消耗洞察。没有前台服务，Android 会杀死后台进程，导致刷新
 周期丢失和余额预警延迟。
 
@@ -133,14 +133,14 @@ API 余额并在额度耗尽前预警。延迟或丢失刷新将使实时
 
 | 数据类型 | 用途 | 是否加密 | 用户可否删除 |
 |---|---|---|---|
-| API Key（用户 DeepSeek API 密钥） | 查询余额 | 是（Android Keystore 加密存储） | 是（应用内删除账户） |
+| API Key（用户 AI 供应商 API 密钥） | 查询余额 | 是（Android Keystore 加密存储） | 是（应用内删除账户） |
 | 用户配置的账户标签 | 账户标识 | 否 | 是（应用内删除账户） |
 | 余额历史记录 | 消耗分析与趋势图表 | 否 | 是（数据管理页清除） |
 | 刷新日志 | 故障排查 | 否 | 是（数据管理页清除） |
 
 ### 数据传输
 
-- 用户 API Key 仅通过 HTTPS（证书固定）发送到 `api.deepseek.com`
+- 用户 API Key 仅通过 HTTPS 发送到各 AI 供应商官方 API
 - 无第三方数据共享
 - 无广告 SDK
 
@@ -172,4 +172,6 @@ API 余额并在额度耗尽前预警。延迟或丢失刷新将使实时
 
 | 日期 | 变更 | 原因 |
 |---|---|---|
+| 2026-07-20 | 多供应商支持 | v1.3.0 新增13个AI供应商支持 |
+| 2026-07-18 | 更新文档 | v1.2.1 文档全面审查更新 |
 | 2026-07-05 | 初始编写 | v1.0.0 上线前 Play Console 权限申报 |

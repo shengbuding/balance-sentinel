@@ -1,22 +1,22 @@
 # 钱包哨兵 — 隐私政策 / Wallet Sentinel — Privacy Policy
 
-**最后更新日期 / Last Updated：2026 年 7 月 8 日 / July 8, 2026**
+**最后更新日期 / Last Updated：2026 年 7 月 20 日 / July 20, 2026**
 
 ---
 
 ## 概述 / Overview
 
-钱包哨兵（Balance Sentinel）是一款 DeepSeek API 余额监控工具。我们高度重视您的隐私和数据安全。
+钱包哨兵（Balance Sentinel）是一款多 AI 供应商余额监控工具，支持 DeepSeek、OpenAI、Anthropic、Gemini 等 13 个供应商。我们高度重视您的隐私和数据安全。
 
-Wallet Sentinel (Balance Sentinel) is a DeepSeek API balance monitoring tool. We take your privacy and data security seriously.
+Wallet Sentinel (Balance Sentinel) is a multi-AI-provider balance monitoring tool supporting 13 providers including DeepSeek, OpenAI, Anthropic, Gemini and more. We take your privacy and data security seriously.
 
 ---
 
 ## 我们收集的信息 / Information We Collect
 
 ### 您在设备上输入的数据 / Data You Enter on Your Device
-- **DeepSeek API Key**：用于查询您的 DeepSeek 账户余额和使用量。API Key 仅存储在本设备的加密存储（Android EncryptedSharedPreferences）中，不会上传到任何第三方服务器。
-- **DeepSeek API Key**: Used to query your DeepSeek account balance and usage. The API Key is stored only in encrypted storage on this device (Android EncryptedSharedPreferences) and is never uploaded to any third-party server.
+- **API Key**：用于查询您的 AI 供应商账户余额和使用量。API Key 仅存储在本设备的加密存储（Android EncryptedSharedPreferences）中，不会上传到任何第三方服务器。
+- **API Key**: Used to query your AI provider account balance and usage. The API Key is stored only in encrypted storage on this device (Android EncryptedSharedPreferences) and is never uploaded to any third-party server.
 
 ### 自动采集的数据 / Automatically Collected Data
 钱包哨兵**不会**自动采集以下任何信息 / Wallet Sentinel does **NOT** automatically collect any of the following:
@@ -31,9 +31,9 @@ Wallet Sentinel (Balance Sentinel) is a DeepSeek API balance monitoring tool. We
 
 ## 数据使用方式 / How We Use Data
 
-您的 API Key 仅用于向 DeepSeek 官方 API（api.deepseek.com）发起余额查询请求。所有数据传输通过 HTTPS 加密。
+您的 API Key 仅用于向各 AI 供应商官方 API 发起余额查询请求。所有数据传输通过 HTTPS 加密。
 
-Your API Key is used exclusively to query the official DeepSeek API (api.deepseek.com) for balance information. All data transmission is encrypted via HTTPS.
+Your API Key is used exclusively to query official AI provider APIs for balance information. All data transmission is encrypted via HTTPS.
 
 查询到的余额数据仅存储在设备本地，用于 / Retrieved balance data is stored only locally on your device for:
 - 在 App 首页展示余额 / Displaying balance on the app home screen
@@ -74,7 +74,7 @@ You can delete all stored data (including API Key, balance records, and logs) at
 
 | 权限 / Permission | 用途 / Purpose |
 |------|------|
-| INTERNET | 查询 DeepSeek API 余额 / Query DeepSeek API balance |
+| INTERNET | 查询 AI 供应商 API 余额 / Query AI provider API balance |
 | FOREGROUND_SERVICE | 后台定时刷新，保持小组件数据更新 / Background scheduled refresh, keep widget data updated |
 | POST_NOTIFICATIONS | 余额告警通知 / Balance alert notifications |
 | RECEIVE_BOOT_COMPLETED | 开机后自动恢复后台刷新 / Auto-restart background refresh after boot |
@@ -86,7 +86,12 @@ You can delete all stored data (including API Key, balance records, and logs) at
 ## 第三方服务 / Third-Party Services
 
 本应用连接以下服务 / This app connects to the following services:
-- DeepSeek 官方 API（api.deepseek.com）— 余额查询和用量统计 / Balance query and usage statistics
+- 各 AI 供应商官方 API — 余额查询和用量统计 / Balance query and usage statistics
+  - DeepSeek (api.deepseek.com)
+  - OpenAI (api.openai.com)
+  - Anthropic (api.anthropic.com)
+  - Gemini (generativelanguage.googleapis.com)
+  - 通义千问、文心一言、智谱GLM、Moonshot、豆包、百川等
 - GitHub API（api.github.com）— 检查应用更新 / Check for app updates
 
 不集成任何第三方分析、广告或追踪 SDK。 / No third-party analytics, advertising, or tracking SDKs are integrated.

@@ -17,7 +17,7 @@
     <string name="home_save">Save</string>
     <string name="home_add">Add</string>
     <string name="home_empty_title">No accounts yet</string>
-    <string name="home_empty_subtitle">Tap the + button to add a DeepSeek API Key</string>
+    <string name="home_empty_subtitle">Tap the + button to add an API Key</string>
     <string name="home_no_data">No balance data</string>
     <string name="home_query_failed">Query failed</string>
     <string name="home_status_available">Available</string>
@@ -92,7 +92,7 @@
     <string name="depletion_date_unknown">—</string>
 
     <!-- Privacy policy (full text) -->
-    <string name="privacy_policy_full_text">Wallet Sentinel — Privacy Policy\n\nLast Updated: July 8, 2026\n\nOverview\nWallet Sentinel is a DeepSeek API balance monitoring tool. We take your privacy and data security seriously.\n\nInformation We Collect\n• DeepSeek API Key: Stored only in encrypted storage on this device, used solely for balance queries\n• We do NOT collect: personal identity information, device identifiers, location data, contacts, etc.\n\nData Usage\nYour API Key is used exclusively to query api.deepseek.com for balance information. All data transmission is encrypted via HTTPS. Retrieved balance data is stored only locally on your device.\n\nData Sharing\nWe do not share, sell, or transmit any of your data to any third party.\n\nData Security\n• API Key stored using Android EncryptedSharedPreferences (AES-256)\n• All network requests encrypted via HTTPS\n• App backup disabled\n• API Key auto-redacted in log output\n\nData Deletion\nYou can delete all data any time in the Data Management page. Uninstalling the app will automatically clear all local data.\n\nPermissions\n• INTERNET — Query API balance\n• FOREGROUND_SERVICE — Background scheduled refresh\n• POST_NOTIFICATIONS — Balance alert notifications\n• RECEIVE_BOOT_COMPLETED — Start on boot\n• SCHEDULE_EXACT_ALARM — Precise scheduling\n• WAKE_LOCK — Prevent CPU sleep\n\nThird-Party Services\nOnly connects to the official DeepSeek API. No third-party analytics, advertising, or tracking SDKs.\n\nFor privacy-related inquiries, please contact us via GitHub Issues.\n\nThis policy applies to the Wallet Sentinel Android app (package: com.balancesentinel.app).\n</string>
+    <string name="privacy_policy_full_text">Wallet Sentinel — Privacy Policy\n\nLast Updated: July 20, 2026\n\nOverview\nWallet Sentinel is a multi-AI-provider balance monitoring tool supporting 13 providers including DeepSeek, OpenAI, Anthropic and more. We take your privacy and data security seriously.\n\nInformation We Collect\n• API Key: Stored only in encrypted storage on this device, used solely for balance queries\n• We do NOT collect: personal identity information, device identifiers, location data, contacts, etc.\n\nData Usage\nYour API Key is used exclusively to query official AI provider APIs for balance information. All data transmission is encrypted via HTTPS. Retrieved balance data is stored only locally on your device.\n\nData Sharing\nWe do not share, sell, or transmit any of your data to any third party.\n\nData Security\n• API Key stored using Android EncryptedSharedPreferences (AES-256)\n• All network requests encrypted via HTTPS\n• App backup disabled\n• API Key auto-redacted in log output\n\nData Deletion\nYou can delete all data any time in the Data Management page. Uninstalling the app will automatically clear all local data.\n\nPermissions\n• INTERNET — Query API balance\n• FOREGROUND_SERVICE — Background scheduled refresh\n• POST_NOTIFICATIONS — Balance alert notifications\n• RECEIVE_BOOT_COMPLETED — Start on boot\n• SCHEDULE_EXACT_ALARM — Precise scheduling\n• WAKE_LOCK — Prevent CPU sleep\n\nThird-Party Services\nConnects to official AI provider APIs. No third-party analytics, advertising, or tracking SDKs.\n\nFor privacy-related inquiries, please contact us via GitHub Issues.\n\nThis policy applies to the Wallet Sentinel Android app (package: com.balancesentinel.app).\n</string>
     <string name="insights_chart_balance">Balance</string>
     <string name="insights_chart_consumption">Consumed</string>
     <string name="insights_history_title">Daily History</string>
@@ -140,7 +140,7 @@
     <string name="settings_language_system">Follow System</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Wallet Sentinel v%1$s</string>
-    <string name="settings_about_desc">View DeepSeek API account balances on your home screen with auto-refresh and widgets.</string>
+    <string name="settings_about_desc">View multiple AI provider API account balances on your home screen with auto-refresh and widgets.</string>
     <string name="settings_auto_refresh">Auto Refresh</string>
     <string name="settings_refresh_desc">Configure balance query interval and refresh strategy</string>
     <string name="settings_refresh_interval_label">Refresh Interval: %1$s</string>
@@ -497,14 +497,14 @@
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">Welcome to Wallet Sentinel</string>
-    <string name="onboarding_welcome_desc">Monitor your DeepSeek API account balance\nat a glance on your home screen widget</string>
+    <string name="onboarding_welcome_desc">Monitor your multiple AI provider API account balances\nat a glance on your home screen widget</string>
     <string name="onboarding_features_title">Key Features</string>
     <string name="onboarding_features_desc">Three core capabilities to protect your API balance</string>
     <string name="onboarding_feat_refresh">Auto-refresh in background, no manual checks</string>
     <string name="onboarding_feat_alert">Low balance alerts + anomaly notifications</string>
     <string name="onboarding_feat_widget">Home screen widget for at-a-glance balance</string>
     <string name="onboarding_start_title">Get Started</string>
-    <string name="onboarding_start_desc">Add your DeepSeek API Key\nto start monitoring your balance</string>
+    <string name="onboarding_start_desc">Add your API Key\nto start monitoring your balance</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_skip">Skip</string>
     <string name="onboarding_get_started">Get Started</string>

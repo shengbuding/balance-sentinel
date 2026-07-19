@@ -59,9 +59,9 @@ class ApiKeyManagerTest {
     }
 
     @Test
-    fun `computeId returns 8-char hex string`() {
+    fun `computeId returns 16-char hex string`() {
         val id = manager.computeId("sk-anything")
-        assertEquals(8, id.length)
+        assertEquals(16, id.length)
         assertTrue(id.all { it in "0123456789abcdef" })
     }
 

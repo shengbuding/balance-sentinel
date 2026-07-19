@@ -21,6 +21,9 @@ import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.DeepSeekApiService
+import com.balancesentinel.app.data.api.ProviderFactory
+import com.balancesentinel.app.data.api.ProviderResult
+import com.balancesentinel.app.data.api.cache.ProviderCache
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.RawRecord
@@ -179,23 +182,25 @@ class BalanceRefreshService : Service() {
             Logger.e(TAG, "startForeground failed", e)
         }
 
-        // WakeLock 防止 CPU 在刷新期间休眠
+        // WakeLock 防止 CPU 在刷新期间休眠（动态超时）
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:refresh")
         wl.setReferenceCounted(false)
+        val accounts = apiKeyManager.getAccounts()
+        val wakeLockTimeout = (accounts.size * 10_000L + 30_000L)  // 动态计算
         try {
-            wl.acquire(30_000L) // 30 秒超时兜底
+            wl.acquire(wakeLockTimeout)
         } catch (_: Exception) {}
 
         Thread {
             try {
                 try {
-                    val accounts = apiKeyManager.getAccounts()
                     if (accounts.isEmpty()) {
                         notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_add_key))
                         return@Thread
                     }
 
+                    val cache = ProviderCache.getInstance(this)
                     val now = System.currentTimeMillis()
                     val currencyTotals = mutableMapOf<String, Double>()
                     var allAvailable = true
@@ -205,49 +210,88 @@ class BalanceRefreshService : Service() {
 
                     for (account in accounts) {
                         try {
-                            val response = apiService.getBalance(account.apiKey)
-                            for (info in response.balanceInfos) {
-                                // Widget 缓存（按账户）
-                                BalanceWidgetDataStore.saveAccountBalance(
-                                    this, account.id, account.label,
-                                    info.totalBalance, info.currency,
-                                    response.isAvailable, info.grantedBalance, info.toppedUpBalance
-                                )
+                            // 检查缓存
+                            val cached = cache.get(account.providerType, account.id)
+                            if (cached != null && !cached.isEstimated) {
+                                // 使用缓存数据
+                                for (balance in cached.balances) {
+                                    // Widget 缓存（按账户）
+                                    BalanceWidgetDataStore.saveAccountBalance(
+                                        this, account.id, account.label,
+                                        balance.totalBalance.toString(), balance.currency,
+                                        cached.isAvailable,
+                                        balance.grantedBalance?.toString() ?: "",
+                                        balance.toppedUpBalance?.toString() ?: ""
+                                    )
 
-                                // RawRecord
-                                try {
-                                    RawRecordStore.addRecord(this, RawRecord(
-                                        accountId = account.id,
-                                        timestamp = now,
-                                        currency = info.currency,
-                                        totalBalance = info.totalBalance.toFloatOrNull() ?: 0f,
-                                        grantedBalance = info.grantedBalance.toFloatOrNull() ?: 0f,
-                                        toppedUpBalance = info.toppedUpBalance.toFloatOrNull() ?: 0f
-                                    ))
-                                } catch (_: Exception) {}
+                                    // 按币种汇总
+                                    currencyTotals[balance.currency] = (currencyTotals[balance.currency] ?: 0.0) + balance.totalBalance
 
-                                // AUTO 日志
-                                RefreshLogStore.addEntry(this, RefreshLogEntry(
-                                    id = now, type = RefreshLogType.AUTO,
-                                    totalBalance = info.totalBalance, currency = info.currency,
-                                    isAvailable = response.isAvailable,
-                                    grantedBalance = info.grantedBalance,
-                                    toppedUpBalance = info.toppedUpBalance,
-                                    timestamp = now, message = account.label
-                                ))
+                                    if (!cached.isAvailable) allAvailable = false
+                                    hasData = true
+                                }
+                            } else {
+                                // 使用ProviderFactory获取余额
+                                val provider = ProviderFactory.get(account.providerType)
+                                val config = account.toConfig()
+                                val result = kotlinx.coroutines.runBlocking { provider.getBalance(config) }
 
-                                // 按币种汇总（所有币种都计入）
-                                val amount = info.totalBalance.toDoubleOrNull() ?: 0.0
-                                currencyTotals[info.currency] = (currencyTotals[info.currency] ?: 0.0) + amount
+                                when (result) {
+                                    is ProviderResult.Success -> {
+                                        val balance = result.data
+                                        // 缓存结果
+                                        cache.put(account.providerType, account.id, balance)
 
-                                if (!response.isAvailable) allAvailable = false
-                                hasData = true
+                                        for (entry in balance.balances) {
+                                            // Widget 缓存（按账户）
+                                            BalanceWidgetDataStore.saveAccountBalance(
+                                                this, account.id, account.label,
+                                                entry.totalBalance.toString(), entry.currency,
+                                                balance.isAvailable,
+                                                entry.grantedBalance?.toString() ?: "",
+                                                entry.toppedUpBalance?.toString() ?: ""
+                                            )
 
-                                // 每账户预警（捕获返回值用于分组摘要）
-                                if (AlertChecker.check(this, account.id, info.totalBalance, info.currency, account.label))
-                                    alertCount++
-                                if (AlertChecker.checkChange(this, account.id, info.totalBalance, info.currency, account.label))
-                                    changeCount++
+                                            // RawRecord
+                                            try {
+                                                RawRecordStore.addRecord(this, RawRecord(
+                                                    accountId = account.id,
+                                                    timestamp = now,
+                                                    currency = entry.currency,
+                                                    totalBalance = entry.totalBalance.toFloat(),
+                                                    grantedBalance = entry.grantedBalance?.toFloat() ?: 0f,
+                                                    toppedUpBalance = entry.toppedUpBalance?.toFloat() ?: 0f
+                                                ))
+                                            } catch (_: Exception) {}
+
+                                            // AUTO 日志
+                                            RefreshLogStore.addEntry(this, RefreshLogEntry(
+                                                id = now, type = RefreshLogType.AUTO,
+                                                totalBalance = entry.totalBalance.toString(),
+                                                currency = entry.currency,
+                                                isAvailable = balance.isAvailable,
+                                                grantedBalance = entry.grantedBalance?.toString() ?: "",
+                                                toppedUpBalance = entry.toppedUpBalance?.toString() ?: "",
+                                                timestamp = now, message = account.label
+                                            ))
+
+                                            // 按币种汇总
+                                            currencyTotals[entry.currency] = (currencyTotals[entry.currency] ?: 0.0) + entry.totalBalance
+
+                                            if (!balance.isAvailable) allAvailable = false
+                                            hasData = true
+
+                                            // 每账户预警
+                                            if (AlertChecker.check(this, account.id, entry.totalBalance.toString(), entry.currency, account.label))
+                                                alertCount++
+                                            if (AlertChecker.checkChange(this, account.id, entry.totalBalance.toString(), entry.currency, account.label))
+                                                changeCount++
+                                        }
+                                    }
+                                    is ProviderResult.Failure -> {
+                                        Logger.e(TAG, "Auto refresh failed for ${account.label}: ${result.error.message}")
+                                    }
+                                }
                             }
                         } catch (e: Exception) {
                             Logger.e(TAG, "Auto refresh failed for ${account.label}", e)
@@ -257,18 +301,6 @@ class BalanceRefreshService : Service() {
                     // 分组摘要通知（多账户时汇总）
                     if (alertCount + changeCount > 1) {
                         notificationHelper.sendGroupSummary(alertCount, changeCount)
-                    }
-
-                    // 拉取用量统计（异步，失败不影响余额刷新）
-                    for (account in accounts) {
-                        try {
-                            val usage = apiService.getUsage(account.apiKey)
-                            UsageDataStore.saveSnapshot(this, UsageSnapshot(
-                                accountId = account.id,
-                                timestamp = now,
-                                records = usage.data
-                            ))
-                        } catch (_: Exception) {}
                     }
 
                     // 通知栏显示：总余额可选，额外钱包按用户排序横向附加

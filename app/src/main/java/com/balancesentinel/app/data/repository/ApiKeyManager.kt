@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -39,11 +40,12 @@ class ApiKeyManager(
 
     // ── 多账户操作 ──
 
-    fun addAccount(label: String, apiKey: String): AccountInfo {
+    fun addAccount(label: String, apiKey: String, providerType: ProviderType = ProviderType.DEEPSEEK): AccountInfo {
         val account = AccountInfo(
             id = computeId(apiKey),
             label = label.trim(),
-            apiKey = apiKey.trim()
+            apiKey = apiKey.trim(),
+            providerType = providerType
         )
         val accounts = getAccounts().toMutableList()
         // 同一 API Key 重复添加时，更新 label 而不是创建重复账户
@@ -58,10 +60,19 @@ class ApiKeyManager(
     }
 
     /**
-     * 根据 API Key 计算确定性账户 ID（SHA-256 前 4 字节 → 8 位 hex）。
+     * 根据 API Key 计算确定性账户 ID（SHA-256 前 8 字节 → 16 位 hex）。
      * 删除后重新添加同一 Key 可恢复关联所有历史数据。
      */
     fun computeId(apiKey: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(apiKey.trim().toByteArray())
+        return digest.take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * 计算旧版ID（SHA-256 前 4 字节 → 8 位 hex）
+     * 用于数据迁移
+     */
+    fun computeLegacyId(apiKey: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(apiKey.trim().toByteArray())
         return digest.take(4).joinToString("") { "%02x".format(it) }
     }
@@ -117,8 +128,39 @@ class ApiKeyManager(
         }
     }
 
+    /**
+     * 迁移旧版ID（4字节）到新版ID（8字节）
+     * 返回迁移映射表：oldId -> newId
+     */
+    fun migrateAccountIds(): Map<String, String> {
+        val accounts = getAccounts()
+        val migrationMap = mutableMapOf<String, String>()
+        var needsMigration = false
+
+        val migratedAccounts = accounts.map { account ->
+            val newId = computeId(account.apiKey)
+            val legacyId = computeLegacyId(account.apiKey)
+
+            // 检查是否需要迁移（ID长度不是16位）
+            if (account.id.length != 16) {
+                needsMigration = true
+                migrationMap[account.id] = newId
+                account.copy(id = newId)
+            } else {
+                account
+            }
+        }
+
+        if (needsMigration) {
+            saveAccounts(migratedAccounts)
+        }
+
+        return migrationMap
+    }
+
     companion object {
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_LEGACY_API_KEY = "deepseek_api_key"
+        private const val KEY_ID_MIGRATION_DONE = "id_migration_v2_done"
     }
 }

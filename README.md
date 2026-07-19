@@ -2,9 +2,9 @@
 
 [English](#english) | [中文](#中文)
 
-DeepSeek API 余额监控 Android 应用 — 多账户后台自动刷新、桌面小组件、余额预警、趋势分析、中英双语界面。**数据 100% 本地存储，零追踪。**
+多AI供应商余额监控 Android 应用 — 支持13个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、中英双语界面。**数据 100% 本地存储，零追踪。**
 
-A DeepSeek API balance monitoring Android app — multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
+Multi-AI-provider balance monitoring Android app — supports 13 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
 
 ---
 
@@ -12,7 +12,8 @@ A DeepSeek API balance monitoring Android app — multi-account background auto-
 
 ### 功能
 
-- **多账户管理** — 支持多个 DeepSeek API Key，每个账户独立配置
+- **多供应商支持** — 支持13个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、自定义
+- **多账户管理** — 支持多个API Key，每个账户独立配置
 - **后台自动刷新** — 前台服务保活，Handler 定时轮询，支持 1/5/10/15/30/60 分钟间隔
 - **5 种桌面小组件** — RemoteViews 驱动，2×1 / 2×2 / 3×1 / 4×2 / 5×1 尺寸，可配单账户或总余额
 - **余额预警** — 分账户分币种低余额预警，阈值可调，支持暂停 (snooze)
@@ -21,8 +22,10 @@ A DeepSeek API balance monitoring Android app — multi-account background auto-
 - **通知栏钱包** — 自定义排序，总余额双币种显示
 - **数据管理** — 本地导出/导入配置，历史数据导出
 - **刷新健康监控** — 成功率仪表盘，连续失败自动降频保护
+- **缓存层** — 智能缓存策略，减少API调用
+- **本地用量追踪** — 为无余额API的供应商提供估算
 - **中英双语** — 设置页面一键切换简体中文 / English，自动记忆语言偏好
-- **隐私优先** — EncryptedSharedPreferences (AES-256)，无 Firebase/分析/广告 SDK，仅请求 api.deepseek.com
+- **隐私优先** — EncryptedSharedPreferences (AES-256)，无 Firebase/分析/广告 SDK
 
 ### 截图
 
@@ -49,7 +52,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (260 unit tests)
+# 运行测试 (700+ unit tests, 47 files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -75,7 +78,7 @@ keyPassword=<密码>
 
 | 权限 | 用途 |
 |------|------|
-| INTERNET | 调用 DeepSeek API |
+| INTERNET | 调用 AI 供应商 API |
 | FOREGROUND_SERVICE | 后台定时刷新 |
 | POST_NOTIFICATIONS | 余额预警通知 |
 | RECEIVE_BOOT_COMPLETED | 开机自启 |
@@ -87,7 +90,7 @@ keyPassword=<密码>
 - API Key 使用 Android EncryptedSharedPreferences (AES-256) 加密存储
 - 所有余额数据仅存本地，不上传任何远程服务
 - 零第三方追踪 / 分析 / 广告 SDK
-- 唯一外部请求：api.deepseek.com (HTTPS) + api.github.com (检查更新)
+- 外部请求：各AI供应商API (HTTPS) + api.github.com (检查更新)
 - 详见[隐私政策](PRIVACY_POLICY.md)和[数据安全审计](docs/audit/data-safety-audit.md)
 
 ### 技术栈
@@ -106,7 +109,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.2.0** (2026-07-08)
+当前：**v1.3.0** (2026-07-20)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -121,7 +124,8 @@ keyPassword=<密码>
 
 ### Features
 
-- **Multi-Account Management** — Support multiple DeepSeek API Keys with independent per-account configuration
+- **Multi-Provider Support** — Supports 13 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Custom
+- **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
 - **Background Auto-Refresh** — Foreground service with Handler-based polling at 1/5/10/15/30/60 minute intervals
 - **5 Desktop Widget Sizes** — RemoteViews-driven, 2×1 / 2×2 / 3×1 / 4×2 / 5×1, configurable per-account or total balance
 - **Balance Alerts** — Per-account per-currency low-balance alerts with adjustable thresholds and snooze support
@@ -130,8 +134,10 @@ keyPassword=<密码>
 - **Notification Bar Wallet** — Custom sorting, dual-currency total balance display
 - **Data Management** — Local config export/import, historical data export
 - **Refresh Health Monitoring** — Success rate dashboard with automatic rate-limit protection on consecutive failures
+- **Caching Layer** — Smart caching strategy to reduce API calls
+- **Local Usage Tracking** — Provides estimates for providers without balance API
 - **Bilingual UI** — One-tap switch between Simplified Chinese / English in Settings, language preference persists across restarts
-- **Privacy First** — EncryptedSharedPreferences (AES-256), no Firebase/analytics/ad SDKs, only requests api.deepseek.com
+- **Privacy First** — EncryptedSharedPreferences (AES-256), no Firebase/analytics/ad SDKs
 
 ### Screenshots
 
@@ -158,7 +164,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (260 unit tests)
+# Run tests (700+ unit tests, 47 files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -184,7 +190,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 | Permission | Purpose |
 |------|------|
-| INTERNET | Query DeepSeek API |
+| INTERNET | Query AI provider APIs |
 | FOREGROUND_SERVICE | Background scheduled refresh |
 | POST_NOTIFICATIONS | Balance alert notifications |
 | RECEIVE_BOOT_COMPLETED | Start on boot |
@@ -196,7 +202,7 @@ See [SIGNING.md](SIGNING.md) for details.
 - API Key stored with Android EncryptedSharedPreferences (AES-256)
 - All balance data stored locally — never uploaded to any remote service
 - Zero third-party tracking / analytics / advertising SDKs
-- Only external requests: api.deepseek.com (HTTPS) + api.github.com (update check)
+- External requests: AI provider APIs (HTTPS) + api.github.com (update check)
 - See [Privacy Policy](PRIVACY_POLICY.md) and [Data Security Audit](docs/audit/data-safety-audit.md)
 
 ### Tech Stack
@@ -215,7 +221,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.2.0** (2026-07-08)
+Current: **v1.3.0** (2026-07-20)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -230,7 +236,16 @@ Current: **v1.2.0** (2026-07-08)
 
 ```
 UI Layer   Screen / ViewModel              ← Compose, 10 screens + Onboarding
-Data Layer IntradayEngine                  ← 24h sliding window, per-pair top-up/grant/consumption
+           AddAccountDialog                ← Multi-provider account creation
+           AccountBalanceCard              ← Provider icons + edit/delete menu
+Data Layer AiProvider (interface)           ← Provider abstraction
+           ProviderFactory                 ← Factory pattern for provider creation
+           DeepSeekProvider                ← DeepSeek implementation (real balance API)
+           OpenAiCompatibleProvider        ← Generic OpenAI-compatible implementation
+           ProviderCache                   ← Caching layer (memory + SharedPreferences)
+           ProviderHealthChecker           ← API health monitoring
+           LocalUsageTracker               ← Local usage tracking for providers without balance API
+           IntradayEngine                  ← 24h sliding window, per-pair top-up/grant/consumption
            DailyEngine                     ← Calendar day, RecordAggregator + per-pair detection
            ServiceHealthTracker            ← Refresh health: ≥3 consecutive failures alert, ≥10 protection mode (60-min interval)
            CleanupScheduler                ← Midnight + boot (aggregate → gap-fill → delete)
@@ -240,12 +255,12 @@ Storage    RawRecordStore                  ← ≥24h raw records, precise delet
            RefreshLogStore                 ← Refresh logs
            RefreshStatsStore               ← Local refresh success-rate ring buffer (last 100)
            WidgetPrefs                     ← Global settings + alert toggles + notification bar wallet + language preference
-           ApiKeyManager                   ← Encrypted API Key storage
+           ApiKeyManager                   ← Encrypted API Key storage (supports multiple providers)
            ConfigManager                   ← Config export / import
            BalanceWidgetDataStore          ← Widget balance cache + aggregation
            WidgetConfigStore               ← Per-widget instance configuration
            DataExporter                    ← Historical data export
-System     BalanceRefreshService           ← Foreground service + health tracking + protection mode
+System     BalanceRefreshService           ← Foreground service + health tracking + protection mode + multi-provider refresh
            NotificationHelper              ← Alert / change / foreground / summary notifications
            BootReceiver                    ← Auto-start + keep-alive
            5 Widget providers              ← RemoteViews (2×1 / 2×2 / 3×1 / 4×2 / 5×1)
@@ -279,7 +294,23 @@ DeepSeekBalance/
 │       │   │   ├── MainActivity.kt
 │       │   │   ├── CrashLogger.kt
 │       │   │   ├── data/
-│       │   │   │   ├── api/DeepSeekApiService.kt
+│       │   │   │   ├── api/
+│       │   │   │   │   ├── AiProvider.kt                    # Provider interface
+│       │   │   │   │   ├── ProviderType.kt                  # Provider type enum
+│       │   │   │   │   ├── ProviderResult.kt                # Unified error handling
+│       │   │   │   │   ├── UnifiedModels.kt                 # Unified data models
+│       │   │   │   │   ├── ProviderFactory.kt               # Factory pattern
+│       │   │   │   │   ├── DeepSeekApiService.kt            # Legacy DeepSeek service
+│       │   │   │   │   ├── providers/
+│       │   │   │   │   │   ├── DeepSeekProvider.kt          # DeepSeek implementation
+│       │   │   │   │   │   ├── OpenAiCompatibleProvider.kt  # Generic implementation
+│       │   │   │   │   │   └── ProviderConfigs.kt           # Provider configurations
+│       │   │   │   │   ├── cache/
+│       │   │   │   │   │   └── ProviderCache.kt             # Caching layer
+│       │   │   │   │   ├── health/
+│       │   │   │   │   │   └── ProviderHealthChecker.kt     # Health monitoring
+│       │   │   │   │   └── tracking/
+│       │   │   │   │       └── LocalUsageTracker.kt         # Local usage tracking
 │       │   │   │   ├── engine/{Daily,Intraday}Engine.kt + ServiceHealthTracker.kt
 │       │   │   │   ├── model/{BalanceResponse,DailySummary,RefreshLogEntry,...}.kt
 │       │   │   │   ├── repository/{RawRecordStore,DailySummaryStore,UsageDataStore,...}.kt
@@ -290,6 +321,11 @@ DeepSeekBalance/
 │       │   │   ├── ui/
 │       │   │   │   ├── screen/{Home,Insights,Settings,AlertSettings,Log,DataManagement,UpdateDialog}.kt
 │       │   │   │   ├── viewmodel/{Home,Insights,Log,DataManagement}ViewModel.kt
+│       │   │   │   ├── components/
+│       │   │   │   │   ├── AddAccountDialog.kt              # Multi-provider account creation
+│       │   │   │   │   └── AccountBalanceCard.kt            # Provider-aware balance card
+│       │   │   │   ├── icons/
+│       │   │   │   │   └── ProviderIcons.kt                 # Provider icons
 │       │   │   │   └── theme/Theme.kt
 │       │   │   ├── util/{BatteryOptimizationHelper,FormatUtils,OnboardingHelper}.kt
 │       │   │   └── widget/{StaticWidgetProvider,WidgetConfigStore,BalanceWidgetDataStore,...}.kt
@@ -297,7 +333,7 @@ DeepSeekBalance/
 │       │       ├── values/{strings,themes}.xml
 │       │       ├── values-en/strings.xml
 │       │       └── xml/widget_*.xml
-│       └── test/     ← 22 test files, 260 unit tests
+│       └── test/     ← 50+ test files, 700+ unit tests
 ├── docs/
 │   ├── superpowers/specs/    ← Design & plan documents
 │   ├── adr/                  ← Architecture Decision Records

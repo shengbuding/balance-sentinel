@@ -1,22 +1,22 @@
 # Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated / 生成日期: 2026-07-08
+Generated / 生成日期: 2026-07-18
 
 ---
 
 ## 1. Overview / 概述
 
-**DeepSeek Balance Sentinel** (钱包哨兵) — an Android app that monitors DeepSeek API credit balance via desktop widgets and in-app screens. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, bilingual Chinese/English UI, and a service health tracker with protection mode.
+**Wallet Sentinel** (钱包哨兵) — an Android app that monitors AI provider API balance via desktop widgets and in-app screens. Supports 13 AI providers including DeepSeek, OpenAI, Anthropic and more. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, bilingual Chinese/English UI, and a service health tracker with protection mode.
 
-**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控 DeepSeek API 余额的 Android 应用。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构 (v2.0)：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、多账户余额预警、中英双语界面和服务健康追踪保护模式。
+**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控多个 AI 供应商 API 余额的 Android 应用，支持 DeepSeek、OpenAI、Anthropic 等 13 个供应商。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构 (v2.0)：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、多账户余额预警、中英双语界面和服务健康追踪保护模式。
 
 - **Package / 包名**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 260 unit tests (22 files), all passing / 全部通过
-- **Release / 版本**: v1.2.0
+- **Test count / 测试数**: 700+ unit tests (47 files), 34 instrumented tests (6 files), all passing / 全部通过
+- **Release / 版本**: v1.2.1
 
 ---
 
@@ -102,7 +102,7 @@ C:\Users\Administrator\
 
 | File | Purpose |
 |---|---|
-| `BalanceResponse.kt` | DeepSeek API response model (`is_available`, `balance_infos`, `total_balance`, `topped_up_balance`) |
+| `BalanceResponse.kt` | DeepSeek API response model (legacy, for backward compatibility) |
 | `AccountInfo.kt` | Per-currency account info |
 | `DailySummary.kt` | Daily aggregated summary row |
 | `UsageRecord.kt` | Raw usage record (stored per-refresh) |
@@ -210,7 +210,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (22 unit + 4 instrumented, 260 tests)
+## 4. Test Map (47 unit + 6 instrumented, 700+ tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -263,6 +263,8 @@ C:\Users\Administrator\
 | `OnboardingScreenTest.kt` | First-run API key setup flow |
 | `SettingsScreenTest.kt` | Settings screen interactions |
 | `InsightsScreenTest.kt` | Insights screen rendering |
+| `ServiceTest.kt` | Service lifecycle + restart |
+| `MainActivityTest.kt` | Activity lifecycle + navigation |
 
 ### Update Tests
 | File | What it covers |

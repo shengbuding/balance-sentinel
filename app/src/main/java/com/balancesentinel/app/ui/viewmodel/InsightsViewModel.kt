@@ -44,8 +44,10 @@ data class InsightsUiState(
 
     /** IntradayEngine 输出 — 24h 滑动窗口 */
     val intradayOutput: IntradayOutput? = null,
-    /** DailyEngine 输出 — 长期日历天视图 */
+    /** DailyEngine 输出 — 长期日历天视图（受 rangeDays 控制） */
     val dailyOutput: DailyOutput? = null,
+    /** 全量历史日汇总数据 — 不受 rangeDays 影响，独立于趋势图 */
+    val dailyHistoryPoints: List<DailyPoint> = emptyList(),
 
     val chartMode: String = "balance",
     val historyVisibleCount: Int = 7,
@@ -79,7 +81,6 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(Dispatchers.Default) {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
-                historyVisibleCount = 7,
                 expandedDate = null
             )
 
@@ -111,6 +112,9 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                 val todayRaw = RawRecordStore.getTodayRecords(getApplication())
                 val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
+                // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──
+                val fullHistoryOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, 365)
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     accounts = accounts,
@@ -118,7 +122,8 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                     availableCurrencies = currencies,
                     selectedCurrency = currency,
                     intradayOutput = intradayOutput,
-                    dailyOutput = dailyOutput
+                    dailyOutput = dailyOutput,
+                    dailyHistoryPoints = fullHistoryOutput.dailyPoints
                 )
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false)
@@ -187,7 +192,7 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
 
     fun loadMoreHistory() {
         val current = _uiState.value
-        val maxDays = current.dailyOutput?.dailyPoints?.size ?: 0
+        val maxDays = current.dailyHistoryPoints.size
         val next = (current.historyVisibleCount + 10).coerceAtMost(maxDays)
         _uiState.value = current.copy(historyVisibleCount = next)
     }

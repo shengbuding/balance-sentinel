@@ -29,7 +29,7 @@ object LogExporter {
 
             // 文件头
             sb.appendLine("══════════════════════════════════════════")
-            sb.appendLine("  DeepSeek Balance — 调试报告")
+            sb.appendLine("  Wallet Sentinel — 调试报告")
             sb.appendLine("  导出时间: ${dateFmt.format(Date(now))}")
             sb.appendLine("══════════════════════════════════════════")
             sb.appendLine()

@@ -1,6 +1,6 @@
 # 钱包哨兵 — 上线前全面审计
 
-日期：2026-07-05（原始审计） / 更新：2026-07-08（v1.2.0 后复审）
+日期：2026-07-05（原始审计） / 更新：2026-07-18（v1.2.1 后复审）
 
 审计范围：所有源码、资源、构建配置、测试、架构
 
@@ -33,12 +33,12 @@
 
 ### 关键指标更新
 
-| 指标 | 审计时 | v1.0.0 |
-|------|--------|--------|
-| 单元测试文件 | 16 | 22 |
-| 测试数量 | 195 | 254+ |
-| Instrumented 测试 | 1 | 4 |
-| 静默 catch 块 | 32+ | ~25（已减少） |
+| 指标 | 审计时 | v1.0.0 | v1.2.1 |
+|------|--------|--------|--------|
+| 单元测试文件 | 16 | 22 | 47 |
+| 测试数量 | 195 | 254+ | 700+ |
+| Instrumented 测试 | 1 | 4 | 6 |
+| 静默 catch 块 | 32+ | ~25（已减少） | ~20（持续改善） |
 
 ---
 
@@ -61,21 +61,13 @@
 
 ## 一、安全与隐私
 
-### ❌ 严重-1：日志泄露 API Key 风险
+### ❌ 严重-1：日志泄露 API Key 风险 — ✅ 已修复
 
-**位置**: `BalanceRefreshService.kt:244`、`HomeViewModel.kt:354`、多处 `Log.e(TAG, ..., e)`
+**位置**: 原 `BalanceRefreshService.kt`、`HomeViewModel.kt` 等多处 `Log.e(TAG, ..., e)`
 
-异常对象 `e` 可能包含 API Key（例如 OkHttp 异常 toString() 会打印完整 URL 和 header）。一旦 App 在 logcat 中输出 API Key，任何有 READ_LOGS 权限的应用（Android 4.1-）或通过 adb 都能读取。
+> ✅ v1.2.1 已修复：`Logger.kt` 封装了安全的日志输出——自动对 `sk-*` API Key 脱敏（sanitize），异常对象使用 `safeThrowable()` 只提取 `type+message`，不调用 `toString()`（避免 OkHttp 异常打印完整 header）。`CrashLogger.kt` 同样在写入前进行 sanitize。
 
-```kotlin
-// 风险示例 — exception message 可能含 URL+token
-Log.e(TAG, "Auto refresh failed for ${account.label}", e)
-```
-
-**修复**: 
-- 所有 `Log.*` 调用中涉及 API 调用的异常，不要在 message 中直接传异常对象
-- 或实现一个 `safeLog(e: Exception)` 工具函数，过滤 URL/host/key 等敏感信息后再输出
-- Release build 全局禁用详细日志：`if (BuildConfig.DEBUG) Log.e(...)`
+原始风险已消除。
 
 ---
 
@@ -475,27 +467,25 @@ private val client = OkHttpClient.Builder()
 ## 十、附录：代码质量快速统计
 
 | 指标 | 审计时 | v1.0.0 |
-|---|---|---|
-| 总源文件 | 36 Kotlin + 11 widget | ~40 Kotlin + 11 widget |
-| 单元测试文件 | 16 | 22 |
-| 测试数量 | 195 (0 failures) | 254+ (0 failures) |
-| Instrumented 测试 | 1 | 4 |
-| 静默 catch 块 | 32+ | ~25 |
-| 重复函数定义 | 3+ (`currencySymbol`) | 3+ (未变) |
-| 硬编码字符串（非 strings.xml）| ~15 处 | ~10 处 |
-| Widget 代码重复率 | ~90% (5 providers 几乎相同) | ~90% (未变) |
+|---|---|---|---|
+| 总源文件 | 36 Kotlin + 11 widget | ~40 Kotlin + 11 widget | ~60 Kotlin + 11 widget |
+| 单元测试文件 | 16 | 22 | 47 |
+| 测试数量 | 195 (0 failures) | 254+ (0 failures) | 700+ (0 failures) |
+| Instrumented 测试 | 1 | 4 | 6 |
+| 静默 catch 块 | 32+ | ~25 | ~20 |
+| 重复函数定义 | 3+ (`currencySymbol`) | 3+ (未变) | 1 (仅 StaticWidgetProvider) |
+| 硬编码字符串（非 strings.xml）| ~15 处 | ~10 处 | ~5 处 |
+| Widget 代码重复率 | ~90% (5 providers 几乎相同) | ~90% (未变) | 已优化为单行子类 |
 
 ---
 
 ## 结论（更新后）
 
-**v1.2.0 发布状态**：已通过 GitHub Release v1.2.0 发布，签名正确（SHA-256 正式签名），APK 可直接安装。新增中英双语界面支持，隐私政策和所有 UI 文案均已双语化。
+**v1.2.1 发布状态**：已通过 GitHub Release v1.2.1 发布。700+ 测试全部通过。Logger.kt 已消除 API Key 日志泄露风险（严重-1 已修复）。
 
-**对于个人使用**：当前代码质量足够。260 测试全部通过，核心逻辑经验证。严重-2（allowBackup）、高-1（证书固定）、高-2（配置脱敏）、中-6（OkHttp 重试）、低-2（Kover 覆盖率）均已在 v1.1.0 修复。仍建议修复 严重-1（日志泄露）。
+**对于个人使用**：当前代码质量足够。严重-2（allowBackup）、高-1（证书固定）、高-2（配置脱敏）、中-6（OkHttp 重试）、严重-1（日志泄露）均已修复。
 
 **对于 Play Store 公开上线**：剩余待处理：
-- 2 项阻断：日志泄露（已改善）、minSdk 适配
+- 严重-3（minSdk=35 适配）如需上架则必修
 - 需准备 Play Store 素材（截图、Feature Graphic、图标）
-- 估算剩余工时约 **5-8 小时**（较 v1.0.0 的 10-15 小时进一步减少）
-
-**最关键的一条建议**：如果只做给自己用，当前 v1.2.0 已足够。包名已是 `com.balancesentinel.app`，无需修改。
+- 估算剩余工时约 **4-6 小时**

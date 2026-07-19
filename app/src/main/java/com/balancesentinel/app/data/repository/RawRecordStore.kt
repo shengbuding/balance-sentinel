@@ -213,4 +213,34 @@ object RawRecordStore {
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
+
+    /**
+     * 迁移账户ID
+     * @param migrationMap 旧ID -> 新ID 的映射表
+     */
+    fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
+        if (migrationMap.isEmpty()) return
+
+        try {
+            val records = getRecordsInternal(context).toMutableList()
+            var migrated = false
+
+            for (i in records.indices) {
+                val record = records[i]
+                val newId = migrationMap[record.accountId]
+                if (newId != null) {
+                    records[i] = record.copy(accountId = newId)
+                    migrated = true
+                }
+            }
+
+            if (migrated) {
+                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), records)
+                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in RawRecordStore")
+            }
+        } catch (e: Exception) {
+            Logger.e(TAG, "Failed to migrate account IDs", e)
+        }
+    }
 }

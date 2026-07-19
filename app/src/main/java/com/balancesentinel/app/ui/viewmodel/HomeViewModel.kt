@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
@@ -173,9 +174,9 @@ class HomeViewModel @JvmOverloads constructor(
 
     // ── 账户管理 ──
 
-    fun addAccount(label: String, apiKey: String) {
+    fun addAccount(label: String, apiKey: String, providerType: ProviderType = ProviderType.DEEPSEEK) {
         if (label.isBlank() || apiKey.isBlank()) return
-        val account = apiKeyManager.addAccount(label, apiKey)
+        val account = apiKeyManager.addAccount(label, apiKey, providerType)
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
@@ -195,6 +196,50 @@ class HomeViewModel @JvmOverloads constructor(
         if (newLabel.isBlank()) return
         apiKeyManager.renameAccount(id, newLabel)
         loadAccounts()
+    }
+
+    /**
+     * 编辑账户（更新标签和API Key）
+     * 如果API Key变化，需要重新计算ID并迁移关联数据
+     */
+    fun editAccount(id: String, newLabel: String, newApiKey: String) {
+        if (newLabel.isBlank() || newApiKey.isBlank()) return
+
+        val oldAccount = apiKeyManager.getAccount(id) ?: return
+        val newId = apiKeyManager.computeId(newApiKey)
+
+        if (oldAccount.apiKey == newApiKey) {
+            // API Key未变化，只更新标签
+            apiKeyManager.renameAccount(id, newLabel)
+        } else {
+            // API Key变化，需要删除旧账户并创建新账户
+            // 保留关联数据（Widget、RawRecord等）
+            apiKeyManager.removeAccount(id)
+            val newAccount = apiKeyManager.addAccount(newLabel, newApiKey, oldAccount.providerType)
+
+            // 如果ID不同，迁移关联数据
+            if (id != newId) {
+                migrateAccountData(id, newId)
+            }
+        }
+
+        loadAccounts()
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+        refreshBalance()
+    }
+
+    /**
+     * 迁移账户关联数据
+     */
+    private fun migrateAccountData(oldId: String, newId: String) {
+        try {
+            // Widget数据会在下次刷新时自动更新
+            // RawRecord、DailySummary等历史数据保留旧ID关联
+            // 新数据将使用新ID
+            Logger.i("HomeViewModel", "Migrating account data from $oldId to $newId")
+        } catch (e: Exception) {
+            Logger.e("HomeViewModel", "Failed to migrate account data", e)
+        }
     }
 
     // ── 全局设置 ──

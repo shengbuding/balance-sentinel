@@ -45,7 +45,7 @@ class LogExporterTest {
     fun `export file contains debug report header`() {
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
-        assertTrue(content.contains("DeepSeek Balance"))
+        assertTrue(content.contains("Wallet Sentinel"))
         assertTrue(content.contains("调试报告"))
         assertTrue(content.contains("导出时间"))
     }

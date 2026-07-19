@@ -9,9 +9,9 @@
 
 | 字段 | 值 |
 |---|---|
-| **应用名称** (30 字符) | 钱包哨兵 — DeepSeek 余额监控 |
-| **简短说明** (80 字符) | 实时监控 DeepSeek API 余额，低余额预警，桌面小组件，消耗趋势分析，中英双语 |
-| **简短说明 (EN)** | Real-time DeepSeek API balance monitor with alerts, widgets, insights & bilingual UI |
+| **应用名称** (30 字符) | 钱包哨兵 — AI 余额监控 |
+| **简短说明** (80 字符) | 支持13个AI供应商，实时监控API余额，低余额预警，桌面小组件，消耗趋势分析 |
+| **简短说明 (EN)** | Support 13 AI providers, real-time API balance monitor with alerts, widgets, insights & bilingual UI |
 | **应用类别** | 财务 |
 | **应用类别 (次要)** | 工具 |
 | **网站** | https://github.com/shengbuding/balance-sentinel |
@@ -24,15 +24,15 @@
 
 ### 标题
 
-**钱包哨兵：DeepSeek API 余额监控与智能预警**
+**钱包哨兵：多AI供应商余额监控与智能预警**
 
 ### 正文
 
-钱包哨兵帮助你实时追踪 DeepSeek API 的每一分钱。自动刷新余额数据，在额度即将耗尽前推送通知，让你永远不错过任何预警。
+钱包哨兵帮助你实时追踪多个AI供应商的API余额。自动刷新余额数据，在额度即将耗尽前推送通知，让你永远不错过任何预警。
 
 **核心功能：**
 
-• 多账户管理 — 同时监控多个 DeepSeek API Key，每个账户独立显示余额
+• 多账户管理 — 同时监控多个API Key，每个账户独立显示余额
 • 手动/自动刷新 — 点击刷新按钮即时查询，或设置 1–60 分钟自动刷新间隔
 • 低余额预警 — 自定义余额阈值，低于设定值时推送高优先级通知
 • 异动提醒 — 余额剧烈变化时（如大额消耗或充值）实时推送通知
@@ -46,11 +46,11 @@
 
 **隐私优先：**
 
-钱包哨兵不向任何第三方传输数据。你的 API Key 仅用于查询 api.deepseek.com，且通过 Android Keystore 加密存储。余额数据保存在设备本地，可随时清除。详见隐私政策。
+钱包哨兵不向任何第三方传输数据。你的 API Key 仅用于查询各AI供应商API，且通过 Android Keystore 加密存储。余额数据保存在设备本地，可随时清除。详见隐私政策。
 
 **适用人群：**
 
-所有使用 DeepSeek API 的开发者，希望：
+所有使用AI API的开发者，希望：
 • 避免因余额耗尽导致 API 调用中断
 • 追踪消耗趋势，了解每日/每周 API 费用
 • 管理多个团队成员的 API 账户
@@ -61,15 +61,15 @@
 
 ### Title
 
-**Wallet Sentinel: DeepSeek API Balance Monitor & Smart Alerts**
+**Wallet Sentinel: Multi-AI Provider Balance Monitor & Smart Alerts**
 
 ### Description
 
-Wallet Sentinel tracks every cent of your DeepSeek API balance in real time. Automatic refresh, low-balance alerts, desktop widgets, and consumption insights — all in one app.
+Wallet Sentinel tracks your API balance across multiple AI providers in real time. Automatic refresh, low-balance alerts, desktop widgets, and consumption insights — all in one app.
 
 **Core Features:**
 
-• **Multi-Account Management** — Monitor multiple DeepSeek API keys simultaneously, each with independent balance tracking
+• **Multi-Account Management** — Monitor multiple API keys simultaneously, each with independent balance tracking
 • **Manual & Auto Refresh** — Tap to refresh instantly, or set 1–60 minute automatic refresh intervals
 • **Low Balance Alerts** — Customizable thresholds with high-priority push notifications when balances drop
 • **Sudden Change Alerts** — Real-time notifications for unusual balance changes (large consumption spikes or top-ups)
@@ -83,11 +83,11 @@ Wallet Sentinel tracks every cent of your DeepSeek API balance in real time. Aut
 
 **Privacy First:**
 
-Wallet Sentinel sends no data to third parties. Your API key is used solely to query api.deepseek.com and is encrypted at rest via Android Keystore. All balance data is stored locally on your device and can be cleared at any time. See our privacy policy for details.
+Wallet Sentinel sends no data to third parties. Your API keys are used solely to query AI provider APIs and is encrypted at rest via Android Keystore. All balance data is stored locally on your device and can be cleared at any time. See our privacy policy for details.
 
 **Who is it for:**
 
-Developers using the DeepSeek API who want to:
+Developers using AI APIs who want to:
 • Avoid API call disruptions due to depleted balances
 • Track consumption trends and daily/weekly API costs
 • Manage API keys for multiple team members
@@ -194,13 +194,13 @@ cp apk_contents/res/mipmap-xxxhdpi-v4/ic_launcher.png icon_512.png
 ### 搜索关键词（中文）
 
 ```
-DeepSeek API 余额 监控 预警 小组件 消耗 统计 趋势 图表 通知
+AI API 余额 监控 预警 小组件 消耗 统计 趋势 图表 通知 DeepSeek OpenAI
 ```
 
 ### 搜索关键词（英文）
 
 ```
-DeepSeek, API, balance, monitor, alert, widget, consumption, tracker, usage, billing
+AI, API, balance, monitor, alert, widget, consumption, tracker, usage, billing, DeepSeek, OpenAI
 ```
 
 ### 建议 Play Store 标签
@@ -249,5 +249,6 @@ DeepSeek, API, balance, monitor, alert, widget, consumption, tracker, usage, bil
 
 | 日期 / Date | 版本 / Version | 变更 / Changes |
 |---|---|---|
+| 2026-07-18 | v1.2.1 | 修复历史日汇总受趋势天数选择影响的问题，文档全面更新 |
 | 2026-07-08 | v1.2.0 | 中英双语界面、隐私政策双语化、消耗预估标签/日期本地化 |
 | 2026-07-05 | v1.0.0 | 初始版本准备上架 / Initial listing draft |
