@@ -4,6 +4,8 @@
 
 **测试环境**：Windows Server 2025
 
+**GitHub 仓库**：https://github.com/shengbuding/balance-sentinel
+
 ---
 
 ## 📊 测试结果总览
@@ -14,6 +16,7 @@
 | **Lint 检查** | 20 个警告，0 个错误 | ✅ 通过 |
 | **Debug 构建** | 成功 | ✅ 通过 |
 | **Release 构建** | 成功 | ✅ 通过 |
+| **GitHub 推送** | 成功 | ✅ 通过 |
 
 ---
 
