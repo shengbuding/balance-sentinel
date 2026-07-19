@@ -1,6 +1,6 @@
 # 钱包哨兵 — 上线前全面审计
 
-日期：2026-07-05（原始审计） / 更新：2026-07-18（v1.2.1 后复审）
+日期：2026-07-05（原始审计） / 更新：2026-07-20（v1.3.0 后复审）
 
 审计范围：所有源码、资源、构建配置、测试、架构
 
@@ -33,7 +33,7 @@
 
 ### 关键指标更新
 
-| 指标 | 审计时 | v1.0.0 | v1.2.1 |
+| 指标 | 审计时 | v1.0.0 | v1.3.0 |
 |------|--------|--------|--------|
 | 单元测试文件 | 16 | 22 | 47 |
 | 测试数量 | 195 | 254+ | 700+ |
@@ -65,7 +65,7 @@
 
 **位置**: 原 `BalanceRefreshService.kt`、`HomeViewModel.kt` 等多处 `Log.e(TAG, ..., e)`
 
-> ✅ v1.2.1 已修复：`Logger.kt` 封装了安全的日志输出——自动对 `sk-*` API Key 脱敏（sanitize），异常对象使用 `safeThrowable()` 只提取 `type+message`，不调用 `toString()`（避免 OkHttp 异常打印完整 header）。`CrashLogger.kt` 同样在写入前进行 sanitize。
+> ✅ v1.3.0 已修复：`Logger.kt` 封装了安全的日志输出——自动对 `sk-*` API Key 脱敏（sanitize），异常对象使用 `safeThrowable()` 只提取 `type+message`，不调用 `toString()`（避免 OkHttp 异常打印完整 header）。`CrashLogger.kt` 同样在写入前进行 sanitize。
 
 原始风险已消除。
 
@@ -481,7 +481,7 @@ private val client = OkHttpClient.Builder()
 
 ## 结论（更新后）
 
-**v1.2.1 发布状态**：已通过 GitHub Release v1.2.1 发布。700+ 测试全部通过。Logger.kt 已消除 API Key 日志泄露风险（严重-1 已修复）。
+**v1.3.0 发布状态**：已通过 GitHub Release v1.3.0 发布。747+ 测试全部通过。多供应商支持（13个AI供应商）、缓存层、健康检查、本地用量追踪等功能已实现。
 
 **对于个人使用**：当前代码质量足够。严重-2（allowBackup）、高-1（证书固定）、高-2（配置脱敏）、中-6（OkHttp 重试）、严重-1（日志泄露）均已修复。
 
