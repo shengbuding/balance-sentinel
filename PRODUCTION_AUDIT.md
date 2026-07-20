@@ -33,7 +33,7 @@
 
 ### 关键指标更新
 
-| 指标 | 审计时 | v1.0.0 | v1.3.0 |
+| 指标 | 审计时 | v1.0.0 | v1.3.1 |
 |------|--------|--------|--------|
 | 单元测试文件 | 16 | 22 | 47 |
 | 测试数量 | 195 | 254+ | 700+ |
@@ -65,7 +65,7 @@
 
 **位置**: 原 `BalanceRefreshService.kt`、`HomeViewModel.kt` 等多处 `Log.e(TAG, ..., e)`
 
-> ✅ v1.3.0 已修复：`Logger.kt` 封装了安全的日志输出——自动对 `sk-*` API Key 脱敏（sanitize），异常对象使用 `safeThrowable()` 只提取 `type+message`，不调用 `toString()`（避免 OkHttp 异常打印完整 header）。`CrashLogger.kt` 同样在写入前进行 sanitize。
+> ✅ v1.3.1 已修复：`Logger.kt` 封装了安全的日志输出——自动对 `sk-*` API Key 脱敏（sanitize），异常对象使用 `safeThrowable()` 只提取 `type+message`，不调用 `toString()`（避免 OkHttp 异常打印完整 header）。`CrashLogger.kt` 同样在写入前进行 sanitize。
 
 原始风险已消除。
 
