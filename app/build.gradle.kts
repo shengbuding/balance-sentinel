@@ -2,7 +2,7 @@ import java.util.Properties
 
 // 自动版本号：CI 环境变量 BUILD_NUMBER 优先，否则用 git commit 数 + 偏移
 // 需要覆盖安装时提高 VERSION_OFFSET 即可，不影响 CI
-private val VERSION_OFFSET = 17
+private val VERSION_OFFSET = 18
 
 fun gitCommitCount(): Int {
     val ciBuild = System.getenv("BUILD_NUMBER")
