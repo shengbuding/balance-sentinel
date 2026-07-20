@@ -133,9 +133,9 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
             NotificationHintCard(
                 showTotal = showTotal,
                 totalOrderPos = remember(orderVersion) {
-                    prefs.getNotificationWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
+                    prefs.getSelectedWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
                 },
-                totalCount = remember(orderVersion) { prefs.getNotificationWalletCount() },
+                totalCount = remember(orderVersion) { prefs.getSelectedWalletCount() },
                 onShowTotalChange = { checked ->
                     showTotal = checked
                     prefs.showTotalBalanceInNotification = checked
@@ -409,10 +409,10 @@ private fun AccountAlertCard(
                         mutableStateOf(prefs.isNotificationWalletSelected(account.id, currency))
                     }
                     val pos = remember(orderVersion) {
-                        prefs.getNotificationWalletPosition(account.id, currency)
+                        prefs.getSelectedWalletPosition(account.id, currency)
                     }
                     val totalCount = remember(orderVersion) {
-                        prefs.getNotificationWalletCount()
+                        prefs.getSelectedWalletCount()
                     }
                     CurrencyAlertRow(
                         currency = currency,

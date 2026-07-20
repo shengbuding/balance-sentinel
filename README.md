@@ -109,7 +109,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.3.0** (2026-07-20)
+当前：**v1.3.1** (2026-07-20)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -221,7 +221,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.3.0** (2026-07-20)
+Current: **v1.3.1** (2026-07-20)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 

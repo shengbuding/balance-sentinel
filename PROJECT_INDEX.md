@@ -16,7 +16,7 @@ Generated / 生成日期: 2026-07-18
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
 - **Test count / 测试数**: 700+ unit tests (47 files), 34 instrumented tests (6 files), all passing / 全部通过
-- **Release / 版本**: v1.3.0
+- **Release / 版本**: v1.3.1
 
 ---
 

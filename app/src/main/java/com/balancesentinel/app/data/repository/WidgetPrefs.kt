@@ -316,8 +316,84 @@ class WidgetPrefs(context: Context) {
             order.remove(key)
         }
         setNotificationWalletOrder(order)
-        // 同步旧版布尔 key 保持兼容
+        // 同步旧版布尔 key
         prefs.edit().putBoolean("${KEY_NOTIFICATION_SELECTED}_${accountId}_$currency", selected).apply()
+    }
+
+    /** 重置排序列表，只保留布尔标记为 true 的条目 */
+    fun resetNotificationWalletOrder() {
+        val newOrder = mutableListOf<String>()
+
+        // 检查所有布尔标记
+        for (key in prefs.all.keys) {
+            if (key.startsWith("${KEY_NOTIFICATION_SELECTED}_")) {
+                val suffix = key.removePrefix("${KEY_NOTIFICATION_SELECTED}_")
+                if (prefs.getBoolean(key, false)) {
+                    // 只保留16位ID的条目（新版格式）
+                    val parts = suffix.split("_", limit = 2)
+                    if (parts.size == 2 && parts[0].length == 16) {
+                        newOrder.add(suffix)
+                    }
+                }
+            }
+        }
+
+        setNotificationWalletOrder(newOrder)
+    }
+
+    /** 清理排序列表中的无效条目（保留16位ID的条目） */
+    fun cleanupInvalidEntries() {
+        val order = getRawNotificationWalletOrder().toMutableList()
+        val cleaned = order.filter { key ->
+            if (key == KEY_NOTIFICATION_TOTAL) {
+                true
+            } else {
+                val parts = key.split("_", limit = 2)
+                parts.size == 2 && parts[0].length == 16
+            }
+        }
+        if (cleaned.size != order.size) {
+            Logger.w(TAG, "Cleaned ${order.size - cleaned.size} invalid entries from notification order")
+            setNotificationWalletOrder(cleaned)
+        }
+    }
+
+    /** 清理所有旧版8位ID的数据 */
+    fun cleanupLegacyIdData() {
+        val editor = prefs.edit()
+        var cleanedCount = 0
+
+        // 需要清理的key前缀
+        val prefixes = listOf(
+            KEY_ALERT_ENABLED,
+            KEY_CHANGE_ALERT_ENABLED,
+            KEY_LAST_ALERTED_BALANCE,
+            KEY_PREVIOUS_BALANCE,
+            KEY_PREVIOUS_BALANCE_TIME,
+            KEY_LAST_CHANGE_ALERTED_BALANCE,
+            KEY_LAST_CHANGE_ALERTED_TIME,
+            KEY_SNOOZE_UNTIL,
+            KEY_NOTIFICATION_SELECTED
+        )
+
+        for (key in prefs.all.keys) {
+            for (prefix in prefixes) {
+                if (key.startsWith("${prefix}_")) {
+                    val suffix = key.removePrefix("${prefix}_")
+                    val parts = suffix.split("_", limit = 2)
+                    // 检查是否是旧版8位ID
+                    if (parts.size >= 1 && parts[0].length == 8 && parts[0] != KEY_NOTIFICATION_TOTAL) {
+                        editor.remove(key)
+                        cleanedCount++
+                    }
+                }
+            }
+        }
+
+        if (cleanedCount > 0) {
+            editor.apply()
+            Logger.w(TAG, "Cleaned $cleanedCount legacy 8-bit ID entries")
+        }
     }
 
     /** 将指定条目在排序中上移一位（accountId=TOTAL_KEY 表示总余额）。 */
@@ -356,6 +432,17 @@ class WidgetPrefs(context: Context) {
     fun getNotificationWalletPosition(accountId: String, currency: String): Int {
         val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
         return getNotificationWalletOrder().indexOf(key)
+    }
+
+    /** 获取指定条目在选中钱包列表中的位置（0-based），未选中返回 -1。 */
+    fun getSelectedWalletPosition(accountId: String, currency: String): Int {
+        val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
+        return getNotificationWalletOrder().indexOf(key)
+    }
+
+    /** 获取选中钱包的总数（含总余额条目）。 */
+    fun getSelectedWalletCount(): Int {
+        return getNotificationWalletOrder().size
     }
 
     /** 获取通知栏排序列表的总长度（含总余额条目）。 */

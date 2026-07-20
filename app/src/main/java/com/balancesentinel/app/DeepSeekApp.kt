@@ -51,6 +51,7 @@ class DeepSeekApp : Application() {
      * 执行数据迁移
      * 1. 迁移旧版单Key
      * 2. 迁移账户ID（4字节 -> 8字节）
+     * 3. 清理旧版数据
      */
     private fun migrateDataIfNeeded() {
         try {
@@ -71,6 +72,11 @@ class DeepSeekApp : Application() {
 
                 CrashLogger.breadcrumb("App", "Account ID migration complete")
             }
+
+            // 3. 清理旧版数据
+            val widgetPrefs = WidgetPrefs(this)
+            widgetPrefs.cleanupInvalidEntries()
+            widgetPrefs.cleanupLegacyIdData()
         } catch (e: Exception) {
             CrashLogger.logNonFatal("App", e)
         }
