@@ -2,9 +2,9 @@
 
 [English](#english) | [中文](#中文)
 
-多AI供应商余额监控 Android 应用 — 支持13个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、中英双语界面。**数据 100% 本地存储，零追踪。**
+多AI供应商余额监控 Android 应用 — 支持13个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**数据 100% 本地存储，零追踪。**
 
-Multi-AI-provider balance monitoring Android app — supports 13 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
+Multi-AI-provider balance monitoring Android app — supports 13 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
 
 ---
 
@@ -14,6 +14,7 @@ Multi-AI-provider balance monitoring Android app — supports 13 AI providers, m
 
 - **多供应商支持** — 支持13个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、自定义
 - **多账户管理** — 支持多个API Key，每个账户独立配置
+- **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
 - **后台自动刷新** — 前台服务保活，Handler 定时轮询，支持 1/5/10/15/30/60 分钟间隔
 - **5 种桌面小组件** — RemoteViews 驱动，2×1 / 2×2 / 3×1 / 4×2 / 5×1 尺寸，可配单账户或总余额
 - **余额预警** — 分账户分币种低余额预警，阈值可调，支持暂停 (snooze)
@@ -52,7 +53,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (700+ unit tests, 47 files)
+# 运行测试 (750+ unit tests, 50+ files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -109,7 +110,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.3.1** (2026-07-20)
+当前：**v1.4.0** (2026-07-25)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -126,6 +127,7 @@ keyPassword=<密码>
 
 - **Multi-Provider Support** — Supports 13 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Custom
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
+- **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
 - **Background Auto-Refresh** — Foreground service with Handler-based polling at 1/5/10/15/30/60 minute intervals
 - **5 Desktop Widget Sizes** — RemoteViews-driven, 2×1 / 2×2 / 3×1 / 4×2 / 5×1, configurable per-account or total balance
 - **Balance Alerts** — Per-account per-currency low-balance alerts with adjustable thresholds and snooze support
@@ -164,7 +166,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (700+ unit tests, 47 files)
+# Run tests (750+ unit tests, 50+ files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -221,7 +223,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.3.1** (2026-07-20)
+Current: **v1.4.0** (2026-07-25)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -235,13 +237,18 @@ Current: **v1.3.1** (2026-07-20)
 ## Architecture
 
 ```
-UI Layer   Screen / ViewModel              ← Compose, 10 screens + Onboarding
+UI Layer   Screen / ViewModel              ← Compose, 12 screens + Onboarding
+           ConsoleScreen                   ← Unified console (login + dashboard)
+           ConsoleSelectScreen             ← Platform selector
            AddAccountDialog                ← Multi-provider account creation
            AccountBalanceCard              ← Provider icons + edit/delete menu
 Data Layer AiProvider (interface)           ← Provider abstraction
            ProviderFactory                 ← Factory pattern for provider creation
            DeepSeekProvider                ← DeepSeek implementation (real balance API)
            OpenAiCompatibleProvider        ← Generic OpenAI-compatible implementation
+           ConsoleAuthProvider             ← Console auth interface
+           AbstractConsoleAuth             ← Base console auth
+           ConsoleSessionStore             ← Encrypted session storage
            ProviderCache                   ← Caching layer (memory + SharedPreferences)
            ProviderHealthChecker           ← API health monitoring
            LocalUsageTracker               ← Local usage tracking for providers without balance API
@@ -269,13 +276,14 @@ System     BalanceRefreshService           ← Foreground service + health track
 ## Navigation
 
 ```
-ONBOARDING → HOME → INSIGHTS → SETTINGS → ALERT_SETTINGS → LOG → DATA_MANAGEMENT
+ONBOARDING → HOME → INSIGHTS → CONSOLE → SETTINGS → ALERT_SETTINGS → LOG → DATA_MANAGEMENT
 ```
 
 | Screen | Purpose |
 |------|------|
 | HOME | Multi-account balance cards + manual refresh |
 | INSIGHTS | Intraday / calendar day trends + sparkline + top-up / consumption analysis |
+| CONSOLE | Platform console selector → DeepSeek / MiMo WebView + API debug panel |
 | SETTINGS | Refresh interval + alert entry + notification bar + data management + refresh stats + language switch + feedback |
 | ALERT_SETTINGS | Per-account per-currency alert toggles + thresholds + snooze duration |
 | LOG | Refresh logs + crash logs |
@@ -311,6 +319,16 @@ DeepSeekBalance/
 │       │   │   │   │   │   └── ProviderHealthChecker.kt     # Health monitoring
 │       │   │   │   │   └── tracking/
 │       │   │   │   │       └── LocalUsageTracker.kt         # Local usage tracking
+│       │   │   │   ├── console/
+│       │   │   │   │   ├── auth/
+│       │   │   │   │   │   ├── AuthModels.kt                # Session data model
+│       │   │   │   │   │   ├── ConsoleAuthProvider.kt       # Auth interface
+│       │   │   │   │   │   ├── AbstractConsoleAuth.kt       # Base auth implementation
+│       │   │   │   │   │   ├── DeepSeekConsoleAuth.kt       # DeepSeek auth
+│       │   │   │   │   │   └── MimoConsoleAuth.kt           # MiMo auth
+│       │   │   │   │   ├── store/
+│       │   │   │   │   │   └── ConsoleSessionStore.kt       # Encrypted session storage
+│       │   │   │   │   └── DebugLogger.kt                   # Debug-only logging
 │       │   │   │   ├── engine/{Daily,Intraday}Engine.kt + ServiceHealthTracker.kt
 │       │   │   │   ├── model/{BalanceResponse,DailySummary,RefreshLogEntry,...}.kt
 │       │   │   │   ├── repository/{RawRecordStore,DailySummaryStore,UsageDataStore,...}.kt
@@ -320,7 +338,11 @@ DeepSeekBalance/
 │       │   │   ├── service/BalanceRefreshService.kt
 │       │   │   ├── ui/
 │       │   │   │   ├── screen/{Home,Insights,Settings,AlertSettings,Log,DataManagement,UpdateDialog}.kt
-│       │   │   │   ├── viewmodel/{Home,Insights,Log,DataManagement}ViewModel.kt
+│       │   │   │   ├── viewmodel/{Home,Insights,Log,DataManagement,Console,DeepSeekConsole,Mimo}ViewModel.kt
+│       │   │   │   ├── console/
+│       │   │   │   │   ├── ConsoleComponents.kt             # Shared components (TopBar, WebView, DebugPanel)
+│       │   │   │   │   ├── ConsoleScreen.kt                 # Unified console screen (login + dashboard)
+│       │   │   │   │   └── ConsoleSelectScreen.kt           # Platform selector
 │       │   │   │   ├── components/
 │       │   │   │   │   ├── AddAccountDialog.kt              # Multi-provider account creation
 │       │   │   │   │   └── AccountBalanceCard.kt            # Provider-aware balance card
@@ -333,7 +355,7 @@ DeepSeekBalance/
 │       │       ├── values/{strings,themes}.xml
 │       │       ├── values-en/strings.xml
 │       │       └── xml/widget_*.xml
-│       └── test/     ← 50+ test files, 700+ unit tests
+│       └── test/     ← 50+ test files, 750+ unit tests
 ├── docs/
 │   ├── superpowers/specs/    ← Design & plan documents
 │   ├── adr/                  ← Architecture Decision Records

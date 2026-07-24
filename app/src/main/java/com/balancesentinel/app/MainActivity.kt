@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,13 +47,18 @@ import com.balancesentinel.app.ui.screen.OnboardingScreen
 import com.balancesentinel.app.ui.screen.SettingsScreen
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
+import com.balancesentinel.app.ui.viewmodel.DeepSeekConsoleViewModel
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
+import com.balancesentinel.app.ui.viewmodel.MimoViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
 import com.balancesentinel.app.util.OnboardingHelper
 
-enum class Screen { ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT, ALERT_SETTINGS }
+enum class Screen {
+    ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT, ALERT_SETTINGS,
+    CONSOLE_SELECT, CONSOLE
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -84,7 +90,10 @@ class MainActivity : ComponentActivity() {
                 val insightsViewModel: InsightsViewModel = viewModel()
                 val logViewModel: LogViewModel = viewModel()
                 val dataManagementViewModel: DataManagementViewModel = viewModel()
+                val deepSeekConsoleViewModel: DeepSeekConsoleViewModel = viewModel()
+                val mimoViewModel: MimoViewModel = viewModel()
                 val context = LocalContext.current
+                var selectedPlatform by remember { mutableStateOf<com.balancesentinel.app.ui.console.ConsolePlatform?>(null) }
                 var currentScreen by remember {
                     mutableStateOf(
                         when {
@@ -211,6 +220,13 @@ class MainActivity : ComponentActivity() {
                                 label = { Text(stringResource(R.string.insights_title)) }
                             )
                             NavigationBarItem(
+                                selected = currentScreen == Screen.CONSOLE_SELECT ||
+                                        currentScreen == Screen.CONSOLE,
+                                onClick = { currentScreen = Screen.CONSOLE_SELECT },
+                                icon = { Icon(CustomIcons.Analytics, contentDescription = "控制台") },
+                                label = { Text("控制台") }
+                            )
+                            NavigationBarItem(
                                 selected = currentScreen == Screen.SETTINGS,
                                 onClick = { currentScreen = Screen.SETTINGS },
                                 icon = { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings_title)) },
@@ -246,6 +262,53 @@ class MainActivity : ComponentActivity() {
                             Screen.ALERT_SETTINGS -> AlertSettingsScreen(
                                 onBack = { currentScreen = Screen.SETTINGS }
                             )
+                            Screen.CONSOLE_SELECT -> com.balancesentinel.app.ui.console.ConsoleSelectScreen(
+                                onSelectDeepSeek = {
+                                    selectedPlatform = com.balancesentinel.app.ui.console.ConsolePlatforms.DEEPSEEK
+                                    currentScreen = Screen.CONSOLE
+                                },
+                                onSelectMimo = {
+                                    selectedPlatform = com.balancesentinel.app.ui.console.ConsolePlatforms.MIMO
+                                    currentScreen = Screen.CONSOLE
+                                }
+                            )
+                            Screen.CONSOLE -> {
+                                val platform = selectedPlatform ?: com.balancesentinel.app.ui.console.ConsolePlatforms.DEEPSEEK
+                                val isDeepSeek = platform.id == "deepseek"
+
+                                val isLoggedIn = if (isDeepSeek) {
+                                    deepSeekConsoleViewModel.uiState.collectAsStateWithLifecycle().value.isLoggedIn
+                                } else {
+                                    mimoViewModel.uiState.collectAsStateWithLifecycle().value.isLoggedIn
+                                }
+                                val userEmail = if (isDeepSeek) {
+                                    deepSeekConsoleViewModel.uiState.collectAsStateWithLifecycle().value.userEmail
+                                } else {
+                                    mimoViewModel.uiState.collectAsStateWithLifecycle().value.userEmail
+                                }
+
+                                com.balancesentinel.app.ui.console.ConsoleScreen(
+                                    platform = platform,
+                                    isLoggedIn = isLoggedIn,
+                                    userEmail = userEmail,
+                                    onLoginSuccess = { cookies, email ->
+                                        if (isDeepSeek) {
+                                            deepSeekConsoleViewModel.onLoginSuccess(cookies, email)
+                                        } else {
+                                            mimoViewModel.onLoginSuccess(cookies, email)
+                                        }
+                                    },
+                                    onLogout = {
+                                        if (isDeepSeek) {
+                                            deepSeekConsoleViewModel.logout()
+                                        } else {
+                                            mimoViewModel.logout()
+                                        }
+                                        currentScreen = Screen.CONSOLE_SELECT
+                                    },
+                                    onBack = { currentScreen = Screen.CONSOLE_SELECT }
+                                )
+                            }
                             else -> {}
                         }
                     }

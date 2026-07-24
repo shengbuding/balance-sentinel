@@ -29,6 +29,10 @@ object CustomIcons {
         get() = _visibilityOff ?: createVisibilityOff().also { _visibilityOff = it }
     private var _visibilityOff: ImageVector? = null
 
+    val Analytics: ImageVector
+        get() = _analytics ?: createAnalytics().also { _analytics = it }
+    private var _analytics: ImageVector? = null
+
     val Save: ImageVector
         get() = _save ?: createSave().also { _save = it }
     private var _save: ImageVector? = null
@@ -423,6 +427,43 @@ object CustomIcons {
             horizontalLineToRelative(-2f)
             verticalLineToRelative(2f)
             horizontalLineToRelative(2f)
+            close()
+        }
+    }.build()
+
+    /** 分析图标 - 用于底部导航栏"MiMo"tab */
+    private fun createAnalytics(): ImageVector = ImageVector.Builder(
+        name = "Analytics", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(19f, 3f)
+            lineTo(5f, 3f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+            verticalLineToRelative(14f)
+            curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+            horizontalLineToRelative(14f)
+            curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+            lineTo(21f, 5f)
+            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+            close()
+            moveTo(9f, 17f)
+            lineTo(7f, 17f)
+            verticalLineToRelative(-7f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(7f)
+            close()
+            moveTo(13f, 17f)
+            horizontalLineToRelative(-2f)
+            lineTo(11f, 7f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(10f)
+            close()
+            moveTo(17f, 17f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(-4f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(4f)
             close()
         }
     }.build()
