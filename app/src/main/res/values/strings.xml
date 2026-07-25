@@ -312,6 +312,10 @@
 
     <!-- ===== New Sub-pages ===== -->
     <string name="data_clear_title">清除数据</string>
+    <string name="data_clear_console_title">控制台数据</string>
+    <string name="data_clear_console_desc">清除所有控制台实例和登录状态</string>
+    <string name="data_clear_console_btn">清除控制台数据</string>
+    <string name="data_confirm_clear_console">确定要清除所有控制台数据吗？这将删除所有控制台实例和登录状态。</string>
     <string name="data_backup_title">备份与迁移</string>
     <string name="data_nav_clear_title">清除数据</string>
     <string name="data_nav_clear_desc">清空原始记录、日摘要、用量快照、刷新日志等</string>

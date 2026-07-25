@@ -27,11 +27,12 @@ import com.balancesentinel.app.ui.CustomIcons
 @Composable
 fun AddAccountDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, String, ProviderType) -> Unit
+    onAdd: (String, String, ProviderType, Map<String, String>) -> Unit
 ) {
     var selectedProvider by remember { mutableStateOf(ProviderType.DEEPSEEK) }
     var label by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
+    var baseUrl by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
@@ -50,7 +51,8 @@ fun AddAccountDialog(
             ProviderType.ANTHROPIC,
             ProviderType.GEMINI,
             ProviderType.MISTRAL,
-            ProviderType.COHERE
+            ProviderType.COHERE,
+            ProviderType.CUSTOM
         )
     }
 
@@ -148,13 +150,43 @@ fun AddAccountDialog(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+
+                // 自定义供应商的 Base URL
+                if (selectedProvider == ProviderType.CUSTOM) {
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("API Base URL") },
+                        placeholder = { Text("https://api.example.com/v1") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        isError = baseUrl.isNotBlank() && !baseUrl.startsWith("http")
+                    )
+                    if (baseUrl.isNotBlank() && !baseUrl.startsWith("http")) {
+                        Text(
+                            text = "URL需要以 http:// 或 https:// 开头",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
+            val isCustomValid = selectedProvider != ProviderType.CUSTOM || (baseUrl.isNotBlank() && baseUrl.startsWith("http"))
             Button(
-                onClick = { onAdd(label, apiKey, selectedProvider) },
+                onClick = {
+                    val extraSettings = if (selectedProvider == ProviderType.CUSTOM) {
+                        mapOf("baseUrl" to baseUrl)
+                    } else {
+                        emptyMap()
+                    }
+                    onAdd(label, apiKey, selectedProvider, extraSettings)
+                },
                 enabled = label.isNotBlank() && apiKey.isNotBlank() &&
-                          ProviderConfigs.validateApiKey(selectedProvider, apiKey),
+                          ProviderConfigs.validateApiKey(selectedProvider, apiKey) &&
+                          isCustomValid,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(stringResource(R.string.home_add))

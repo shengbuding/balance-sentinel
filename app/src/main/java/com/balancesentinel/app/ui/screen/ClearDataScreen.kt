@@ -59,6 +59,7 @@ fun ClearDataScreen(
                         PendingAction.ClearUsageSnapshots -> stringResource(R.string.data_confirm_clear_usage)
                         PendingAction.ClearRefreshLogs -> stringResource(R.string.data_confirm_clear_logs)
                         PendingAction.ClearWidgetErrors -> stringResource(R.string.data_confirm_clear_widget_errors)
+                        PendingAction.ClearConsoleData -> stringResource(R.string.data_confirm_clear_console)
                         else -> ""
                     }
                 )
@@ -102,6 +103,15 @@ fun ClearDataScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // 控制台数据
+            ClearActionCard(
+                title = stringResource(R.string.data_clear_console_title),
+                description = stringResource(R.string.data_clear_console_desc),
+                buttonText = stringResource(R.string.data_clear_console_btn),
+                onAction = { viewModel.requestAction(PendingAction.ClearConsoleData) }
+            )
+
+            // 历史数据
             ClearActionCard(
                 title = stringResource(R.string.data_clear_raw_records_title),
                 description = stringResource(R.string.data_clear_raw_records_desc),

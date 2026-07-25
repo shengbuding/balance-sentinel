@@ -111,8 +111,8 @@ class ConsoleSessionStoreTest {
             token = "test_token",
             email = "test@example.com",
             loginTime = System.currentTimeMillis(),
-            expireTime = if (expired) System.currentTimeMillis() - 1000
-            else System.currentTimeMillis() + 7 * 24 * 3600 * 1000L,
+            isPermanent = !expired,
+            expireTime = if (expired) System.currentTimeMillis() - 1000 else null,
             lastRefreshTime = System.currentTimeMillis()
         )
     }

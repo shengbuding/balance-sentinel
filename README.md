@@ -15,6 +15,7 @@ Multi-AI-provider balance monitoring Android app — supports 13 AI providers, m
 - **多供应商支持** — 支持13个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、自定义
 - **多账户管理** — 支持多个API Key，每个账户独立配置
 - **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
+- **自定义平台控制台** — 支持添加任意 AI 平台控制台，通过 WebView 登录官方控制台查看数据，登录状态永久保持
 - **后台自动刷新** — 前台服务保活，Handler 定时轮询，支持 1/5/10/15/30/60 分钟间隔
 - **5 种桌面小组件** — RemoteViews 驱动，2×1 / 2×2 / 3×1 / 4×2 / 5×1 尺寸，可配单账户或总余额
 - **余额预警** — 分账户分币种低余额预警，阈值可调，支持暂停 (snooze)
@@ -110,7 +111,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.4.0** (2026-07-25)
+当前：**v1.4.1** (2026-07-25)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -128,6 +129,7 @@ keyPassword=<密码>
 - **Multi-Provider Support** — Supports 13 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Custom
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
 - **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
+- **Custom Platform Console** — Add any AI platform console, login via WebView to view data, session persists permanently
 - **Background Auto-Refresh** — Foreground service with Handler-based polling at 1/5/10/15/30/60 minute intervals
 - **5 Desktop Widget Sizes** — RemoteViews-driven, 2×1 / 2×2 / 3×1 / 4×2 / 5×1, configurable per-account or total balance
 - **Balance Alerts** — Per-account per-currency low-balance alerts with adjustable thresholds and snooze support
@@ -223,7 +225,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.4.0** (2026-07-25)
+Current: **v1.4.1** (2026-07-25)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -240,6 +242,7 @@ Current: **v1.4.0** (2026-07-25)
 UI Layer   Screen / ViewModel              ← Compose, 12 screens + Onboarding
            ConsoleScreen                   ← Unified console (login + dashboard)
            ConsoleSelectScreen             ← Platform selector
+           AddCustomPlatformScreen         ← Custom platform configuration
            AddAccountDialog                ← Multi-provider account creation
            AccountBalanceCard              ← Provider icons + edit/delete menu
 Data Layer AiProvider (interface)           ← Provider abstraction
@@ -248,7 +251,10 @@ Data Layer AiProvider (interface)           ← Provider abstraction
            OpenAiCompatibleProvider        ← Generic OpenAI-compatible implementation
            ConsoleAuthProvider             ← Console auth interface
            AbstractConsoleAuth             ← Base console auth
+           CustomConsoleAuth               ← Custom platform auth
            ConsoleSessionStore             ← Encrypted session storage
+           CustomPlatformStore             ← Custom platform configuration storage
+           SessionValidator                ← Session validation via network
            ProviderCache                   ← Caching layer (memory + SharedPreferences)
            ProviderHealthChecker           ← API health monitoring
            LocalUsageTracker               ← Local usage tracking for providers without balance API
@@ -276,14 +282,16 @@ System     BalanceRefreshService           ← Foreground service + health track
 ## Navigation
 
 ```
-ONBOARDING → HOME → INSIGHTS → CONSOLE → SETTINGS → ALERT_SETTINGS → LOG → DATA_MANAGEMENT
+ONBOARDING → HOME → INSIGHTS → CONSOLE_SELECT → CONSOLE → ADD_CUSTOM_PLATFORM → SETTINGS → ALERT_SETTINGS → LOG → DATA_MANAGEMENT
 ```
 
 | Screen | Purpose |
 |------|------|
 | HOME | Multi-account balance cards + manual refresh |
 | INSIGHTS | Intraday / calendar day trends + sparkline + top-up / consumption analysis |
-| CONSOLE | Platform console selector → DeepSeek / MiMo WebView + API debug panel |
+| CONSOLE_SELECT | Platform console selector → DeepSeek / MiMo / Custom platforms |
+| CONSOLE | WebView console (login + dashboard) with session validation |
+| ADD_CUSTOM_PLATFORM | Configure custom AI platform console |
 | SETTINGS | Refresh interval + alert entry + notification bar + data management + refresh stats + language switch + feedback |
 | ALERT_SETTINGS | Per-account per-currency alert toggles + thresholds + snooze duration |
 | LOG | Refresh logs + crash logs |
@@ -321,13 +329,16 @@ DeepSeekBalance/
 │       │   │   │   │       └── LocalUsageTracker.kt         # Local usage tracking
 │       │   │   │   ├── console/
 │       │   │   │   │   ├── auth/
-│       │   │   │   │   │   ├── AuthModels.kt                # Session data model
+│       │   │   │   │   │   ├── AuthModels.kt                # Session data model (supports permanent sessions)
 │       │   │   │   │   │   ├── ConsoleAuthProvider.kt       # Auth interface
 │       │   │   │   │   │   ├── AbstractConsoleAuth.kt       # Base auth implementation
 │       │   │   │   │   │   ├── DeepSeekConsoleAuth.kt       # DeepSeek auth
-│       │   │   │   │   │   └── MimoConsoleAuth.kt           # MiMo auth
+│       │   │   │   │   │   ├── MimoConsoleAuth.kt           # MiMo auth
+│       │   │   │   │   │   ├── CustomConsoleAuth.kt         # Custom platform auth
+│       │   │   │   │   │   └── SessionValidator.kt          # Session validation via network
 │       │   │   │   │   ├── store/
-│       │   │   │   │   │   └── ConsoleSessionStore.kt       # Encrypted session storage
+│       │   │   │   │   │   ├── ConsoleSessionStore.kt       # Encrypted session storage
+│       │   │   │   │   │   └── CustomPlatformStore.kt       # Custom platform configuration storage
 │       │   │   │   │   └── DebugLogger.kt                   # Debug-only logging
 │       │   │   │   ├── engine/{Daily,Intraday}Engine.kt + ServiceHealthTracker.kt
 │       │   │   │   ├── model/{BalanceResponse,DailySummary,RefreshLogEntry,...}.kt
@@ -338,11 +349,12 @@ DeepSeekBalance/
 │       │   │   ├── service/BalanceRefreshService.kt
 │       │   │   ├── ui/
 │       │   │   │   ├── screen/{Home,Insights,Settings,AlertSettings,Log,DataManagement,UpdateDialog}.kt
-│       │   │   │   ├── viewmodel/{Home,Insights,Log,DataManagement,Console,DeepSeekConsole,Mimo}ViewModel.kt
+│       │   │   │   ├── viewmodel/{Home,Insights,Log,DataManagement,Console,DeepSeekConsole,Mimo,CustomConsole}ViewModel.kt
 │       │   │   │   ├── console/
 │       │   │   │   │   ├── ConsoleComponents.kt             # Shared components (TopBar, WebView, DebugPanel)
 │       │   │   │   │   ├── ConsoleScreen.kt                 # Unified console screen (login + dashboard)
-│       │   │   │   │   └── ConsoleSelectScreen.kt           # Platform selector
+│       │   │   │   │   ├── ConsoleSelectScreen.kt           # Platform selector
+│       │   │   │   │   └── AddCustomPlatformScreen.kt       # Custom platform configuration
 │       │   │   │   ├── components/
 │       │   │   │   │   ├── AddAccountDialog.kt              # Multi-provider account creation
 │       │   │   │   │   └── AccountBalanceCard.kt            # Provider-aware balance card

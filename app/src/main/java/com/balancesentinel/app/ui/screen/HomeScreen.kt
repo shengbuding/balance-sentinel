@@ -75,8 +75,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     if (showAddDialog) {
         AddAccountDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { label, key, providerType ->
-                viewModel.addAccount(label, key, providerType)
+            onAdd = { label, key, providerType, extraSettings ->
+                viewModel.addAccount(label, key, providerType, extraSettings)
                 showAddDialog = false
             }
         )

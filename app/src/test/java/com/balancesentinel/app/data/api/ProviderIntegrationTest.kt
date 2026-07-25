@@ -75,9 +75,9 @@ class ProviderIntegrationTest {
             }
         }
 
-        ProviderFactory.register(ProviderType.CUSTOM, customProvider)
+        ProviderFactory.register(ProviderType.CUSTOM, customProvider, "https://custom.api.com")
 
-        val provider = ProviderFactory.get(ProviderType.CUSTOM)
+        val provider = ProviderFactory.get(ProviderType.CUSTOM, "https://custom.api.com")
         assertNotNull("Custom provider should be registered", provider)
         assertEquals("Custom provider type should match", ProviderType.CUSTOM, provider.providerType)
     }

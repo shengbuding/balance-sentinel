@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import com.balancesentinel.app.data.console.DebugLogger
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -47,17 +48,15 @@ import com.balancesentinel.app.ui.screen.OnboardingScreen
 import com.balancesentinel.app.ui.screen.SettingsScreen
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
-import com.balancesentinel.app.ui.viewmodel.DeepSeekConsoleViewModel
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
-import com.balancesentinel.app.ui.viewmodel.MimoViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
 import com.balancesentinel.app.util.OnboardingHelper
 
 enum class Screen {
     ONBOARDING, HOME, INSIGHTS, SETTINGS, LOG, DATA_MANAGEMENT, ALERT_SETTINGS,
-    CONSOLE_SELECT, CONSOLE
+    CONSOLE_SELECT, CONSOLE, ADD_PLATFORM
 }
 
 class MainActivity : ComponentActivity() {
@@ -66,6 +65,42 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         startRefreshService()
+    }
+
+    // WebView Activity 启动器
+    private val webViewLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val data = result.data
+            val cookiesJson = data?.getStringExtra("cookies") ?: "{}"
+            val localStorageJson = data?.getStringExtra("local_storage") ?: "{}"
+            val instanceId = data?.getStringExtra("instanceId") ?: ""
+
+            // 解析 cookies 和 localStorage
+            val cookies = try {
+                kotlinx.serialization.json.Json.decodeFromString<Map<String, String>>(cookiesJson)
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val localStorage = try {
+                kotlinx.serialization.json.Json.decodeFromString<Map<String, String>>(localStorageJson)
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            // 保存 session
+            if (instanceId.isNotBlank()) {
+                val store = com.balancesentinel.app.data.console.store.ConsoleStore(this)
+                val session = com.balancesentinel.app.data.console.store.ConsoleSession(
+                    cookies = cookies,
+                    localStorage = localStorage
+                )
+                store.saveSession(instanceId, session)
+                DebugLogger.log("[MainActivity] Saved session for instance: $instanceId, cookies: ${cookies.size}, localStorage: ${localStorage.size}")
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,8 +125,6 @@ class MainActivity : ComponentActivity() {
                 val insightsViewModel: InsightsViewModel = viewModel()
                 val logViewModel: LogViewModel = viewModel()
                 val dataManagementViewModel: DataManagementViewModel = viewModel()
-                val deepSeekConsoleViewModel: DeepSeekConsoleViewModel = viewModel()
-                val mimoViewModel: MimoViewModel = viewModel()
                 val context = LocalContext.current
                 var selectedPlatform by remember { mutableStateOf<com.balancesentinel.app.ui.console.ConsolePlatform?>(null) }
                 var currentScreen by remember {
@@ -263,51 +296,67 @@ class MainActivity : ComponentActivity() {
                                 onBack = { currentScreen = Screen.SETTINGS }
                             )
                             Screen.CONSOLE_SELECT -> com.balancesentinel.app.ui.console.ConsoleSelectScreen(
-                                onSelectDeepSeek = {
-                                    selectedPlatform = com.balancesentinel.app.ui.console.ConsolePlatforms.DEEPSEEK
+                                onSelectPlatform = { platform ->
+                                    selectedPlatform = platform
                                     currentScreen = Screen.CONSOLE
                                 },
-                                onSelectMimo = {
-                                    selectedPlatform = com.balancesentinel.app.ui.console.ConsolePlatforms.MIMO
-                                    currentScreen = Screen.CONSOLE
+                                onAddPlatform = {
+                                    currentScreen = Screen.ADD_PLATFORM
                                 }
                             )
-                            Screen.CONSOLE -> {
-                                val platform = selectedPlatform ?: com.balancesentinel.app.ui.console.ConsolePlatforms.DEEPSEEK
-                                val isDeepSeek = platform.id == "deepseek"
-
-                                val isLoggedIn = if (isDeepSeek) {
-                                    deepSeekConsoleViewModel.uiState.collectAsStateWithLifecycle().value.isLoggedIn
-                                } else {
-                                    mimoViewModel.uiState.collectAsStateWithLifecycle().value.isLoggedIn
-                                }
-                                val userEmail = if (isDeepSeek) {
-                                    deepSeekConsoleViewModel.uiState.collectAsStateWithLifecycle().value.userEmail
-                                } else {
-                                    mimoViewModel.uiState.collectAsStateWithLifecycle().value.userEmail
-                                }
-
-                                com.balancesentinel.app.ui.console.ConsoleScreen(
-                                    platform = platform,
-                                    isLoggedIn = isLoggedIn,
-                                    userEmail = userEmail,
-                                    onLoginSuccess = { cookies, email ->
-                                        if (isDeepSeek) {
-                                            deepSeekConsoleViewModel.onLoginSuccess(cookies, email)
-                                        } else {
-                                            mimoViewModel.onLoginSuccess(cookies, email)
-                                        }
+                            Screen.ADD_PLATFORM -> {
+                                val store = com.balancesentinel.app.data.console.store.ConsoleStore(this@MainActivity)
+                                val addedPlatformIds = store.getPlatforms().map { it.id }
+                                com.balancesentinel.app.ui.console.AddPlatformScreen(
+                                    addedPlatformIds = addedPlatformIds,
+                                    onAddPreset = { platform ->
+                                        store.addPlatform(platform)
+                                        selectedPlatform = platform
+                                        currentScreen = Screen.CONSOLE
                                     },
-                                    onLogout = {
-                                        if (isDeepSeek) {
-                                            deepSeekConsoleViewModel.logout()
-                                        } else {
-                                            mimoViewModel.logout()
-                                        }
+                                    onAddCustom = { platform ->
+                                        store.addPlatform(platform)
+                                        selectedPlatform = platform
+                                        currentScreen = Screen.CONSOLE
+                                    },
+                                    onBack = {
                                         currentScreen = Screen.CONSOLE_SELECT
-                                    },
-                                    onBack = { currentScreen = Screen.CONSOLE_SELECT }
+                                    }
                                 )
+                            }
+                            Screen.CONSOLE -> {
+                                val platform = selectedPlatform
+
+                                if (platform != null) {
+                                    // 使用统一的 ViewModel
+                                    val consoleViewModel = androidx.lifecycle.viewmodel.compose.viewModel<com.balancesentinel.app.ui.viewmodel.ConsoleViewModel>(
+                                        key = "console_${platform.id}",
+                                        factory = com.balancesentinel.app.ui.viewmodel.ConsoleViewModel.Factory(
+                                            application = application,
+                                            platform = platform
+                                        )
+                                    )
+
+                                    val uiState = consoleViewModel.uiState.collectAsStateWithLifecycle().value
+
+                                    com.balancesentinel.app.ui.console.ConsoleScreen(
+                                        platform = platform,
+                                        uiState = uiState,
+                                        onLoginSuccess = { cookies, localStorage, email ->
+                                            consoleViewModel.onLoginSuccess(cookies, localStorage, email)
+                                        },
+                                        onLogout = {
+                                            consoleViewModel.logout()
+                                            currentScreen = Screen.CONSOLE_SELECT
+                                        },
+                                        onBack = {
+                                            currentScreen = Screen.CONSOLE_SELECT
+                                        }
+                                    )
+                                } else {
+                                    // 如果没有选中的平台，返回选择页面
+                                    currentScreen = Screen.CONSOLE_SELECT
+                                }
                             }
                             else -> {}
                         }

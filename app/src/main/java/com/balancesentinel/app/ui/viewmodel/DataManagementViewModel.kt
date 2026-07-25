@@ -58,6 +58,7 @@ sealed class PendingAction {
     data object ClearUsageSnapshots : PendingAction()
     data object ClearRefreshLogs : PendingAction()
     data object ClearWidgetErrors : PendingAction()
+    data object ClearConsoleData : PendingAction()
     data object ResetAlarmCounters : PendingAction()
     data object ResetSettings : PendingAction()
     data object ResetEntireApp : PendingAction()
@@ -123,6 +124,37 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
 
     // ── 执行 ──
 
+    /**
+     * 清除 WebView 数据
+     */
+    private fun clearWebViewData(ctx: android.content.Context) {
+        try {
+            // 清除 cookies
+            val cookieManager = android.webkit.CookieManager.getInstance()
+            cookieManager.removeAllCookies(null)
+            cookieManager.flush()
+
+            // 清除 WebView 缓存
+            android.webkit.WebStorage.getInstance().deleteAllData()
+
+            // 清除本地存储目录
+            val webViewDir = java.io.File(ctx.cacheDir, "WebView")
+            if (webViewDir.exists()) {
+                webViewDir.deleteRecursively()
+            }
+
+            // 清除应用缓存中的 WebView 数据
+            val cacheDir = ctx.cacheDir
+            cacheDir.listFiles()?.forEach { file ->
+                if (file.name.contains("WebView") || file.name.contains("webview")) {
+                    file.deleteRecursively()
+                }
+            }
+        } catch (e: Exception) {
+            // 忽略错误
+        }
+    }
+
     fun executeAction(action: PendingAction) {
         val ctx = getApplication<Application>()
         // 在 IO 线程执行存储操作
@@ -149,6 +181,11 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
                     WidgetErrorLogger.clear(ctx)
                     res.getString(R.string.data_cleared_toast)
                 }
+                PendingAction.ClearConsoleData -> {
+                    // 只清除控制台存储数据
+                    com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
+                    res.getString(R.string.data_cleared_toast)
+                }
                 PendingAction.ResetAlarmCounters -> {
                     RefreshScheduler.resetAlarmCounters(ctx)
                     res.getString(R.string.data_reset_toast)
@@ -170,6 +207,15 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
                     WidgetPrefs(ctx).resetAll()
                     RefreshScheduler.resetAlarmCounters(ctx)
                     ApiKeyManager(ctx).clearAll()
+                    // 清除控制台数据
+                    com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
+                    try {
+                        val cookieManager = android.webkit.CookieManager.getInstance()
+                        cookieManager.removeAllCookies(null)
+                        cookieManager.flush()
+                    } catch (e: Exception) {
+                        // 忽略错误
+                    }
                     res.getString(R.string.data_reset_app_toast)
                 }
             }

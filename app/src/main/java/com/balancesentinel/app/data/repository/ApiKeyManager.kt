@@ -40,12 +40,18 @@ class ApiKeyManager(
 
     // ── 多账户操作 ──
 
-    fun addAccount(label: String, apiKey: String, providerType: ProviderType = ProviderType.DEEPSEEK): AccountInfo {
+    fun addAccount(
+        label: String,
+        apiKey: String,
+        providerType: ProviderType = ProviderType.DEEPSEEK,
+        extraSettings: Map<String, String> = emptyMap()
+    ): AccountInfo {
         val account = AccountInfo(
             id = computeId(apiKey),
             label = label.trim(),
             apiKey = apiKey.trim(),
-            providerType = providerType
+            providerType = providerType,
+            extraSettings = extraSettings
         )
         val accounts = getAccounts().toMutableList()
         // 同一 API Key 重复添加时，更新 label 而不是创建重复账户
