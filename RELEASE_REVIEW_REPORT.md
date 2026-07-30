@@ -94,7 +94,7 @@
 
 | 问题 | 状态 |
 |------|------|
-| Rhino sandbox 加固 (ClassShutter + sealObject) | ✅ 已修复 |
+| Rhino sandbox 加固 (全局对象删除 + 指令限制) | ✅ 已修复 |
 | 模板变量 JS 转义 | ✅ 已修复 |
 | WebView URL scheme 过滤 | ✅ 已修复 |
 | POST body 安全透传 | ✅ 已修复 |
@@ -114,7 +114,7 @@
 | 日志脱敏 | ✅ |
 | 备份禁用 | ✅ |
 | 旧版数据清理 | ✅ |
-| Rhino sandbox 隔离 (ClassShutter + sealObject) | ✅ |
+| Rhino sandbox 隔离 (全局对象删除 + 指令限制) | ✅ |
 | 模板变量 JS 转义 | ✅ |
 | WebView URL scheme 过滤 | ✅ |
 | POST body 安全透传 | ✅ |
@@ -152,7 +152,7 @@
 
 ### 代码审查修复
 
-- Rhino sandbox 加固：ClassShutter + sealObject 隔离 JS 执行环境
+- Rhino sandbox 加固：删除危险全局对象 + 指令限制隔离 JS 执行环境
 - 模板变量 JS 转义：防止 XSS 注入
 - WebView URL scheme 过滤：仅允许 http/https 协议
 - POST body 安全透传：安全的请求体传递机制

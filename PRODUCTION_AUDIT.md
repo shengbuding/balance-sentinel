@@ -85,11 +85,15 @@ v1.4.2 代码审查共发现 90 项问题，覆盖 7 个架构层。经过两轮
 ### 修复清单（两轮共 44 项）
 
 **安全加固（12 项）**
-- Rhino 引擎沙箱逃逸修复：禁止 `Java.type()`、`Packages.*`、`getClass()` 调用
-- 模板注入防护：自定义脚本执行前进行语法验证
-- WebView URL 白名单过滤：仅允许 `deepseek.com` 和 `platform.deepseek.com`
-- POST 请求体安全处理：避免 API Key 泄露到日志
-- 敏感信息脱敏：所有日志输出自动过滤 `sk-` 前缀
+- Rhino 引擎沙箱：删除危险全局对象（Packages/java/android/JavaAdapter 等）+ 指令限制（100,000）
+- 模板注入防护：所有模板变量通过 `escapeJsString()` 转义
+- responseData 安全注入：通过 `JSON.parse(escapeJsString(responseData))` 防止 API 响应注入代码
+- WebView URL 协议过滤：仅允许 http/https，阻止 intent://、file://、tel:// 等
+- POST 请求体保护：非 GET 请求不拦截，直接让 WebView 处理
+- WebView 生命周期管理：DisposableEffect 销毁 WebView 防止内存泄漏
+- localStorage 注入转义：key 和 value 都转义换行符等特殊字符
+- ConsoleSession 30 天 TTL：会话不再永久有效
+- Rhino ProGuard 规则：添加 `-keep class org.mozilla.javascript.**` 防止 R8 混淆移除 JS 引擎类
 
 **数据完整性（8 项）**
 - Room 数据库事务原子性：使用 `@Transaction` 注解
@@ -544,14 +548,15 @@ private val client = OkHttpClient.Builder()
 
 ## 结论（更新后）
 
-**v1.4.2 发布状态**：已通过 GitHub Release v1.4.2 发布。1,528 项测试全部通过。全面代码审查完成，90 项发现中 44 项已修复，所有严重和高优先级问题均已解决。
+**v1.4.2 发布状态**：已通过 GitHub Release v1.4.2 发布（CI + Release 全部通过）。1,528 项测试全部通过。全面代码审查完成，90 项发现中 44 项已修复，所有严重和高优先级问题均已解决。
 
 **安全加固成果**：
-- Rhino 引擎沙箱逃逸漏洞已修复
-- WebView URL 白名单过滤已实现
-- 模板注入防护已添加
-- 数据库事务原子性已保证
-- 线程安全问题已全面修复
+- Rhino 引擎沙箱：删除 JavaAdapter 等危险全局对象 + 指令限制
+- WebView URL 协议过滤：仅允许 http/https
+- 模板变量 JS 转义 + responseData JSON.parse 安全注入
+- POST 请求体保护 + WebView 生命周期管理
+- 存储层 writeLock 竞态保护
+- 线程安全：ConcurrentHashMap + DateTimeFormatter
 
 **对于个人使用**：当前代码质量优秀。所有严重和高优先级安全问题均已修复。
 

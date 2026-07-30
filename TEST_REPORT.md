@@ -159,7 +159,7 @@
 
 | 安全项 | 状态 | 说明 |
 |--------|------|------|
-| Rhino sandbox (ClassShutter + sealObject) | ✅ | JS 执行沙箱隔离 |
+| Rhino sandbox (全局对象删除 + 指令限制) | ✅ | JS 执行沙箱隔离 |
 | 模板变量 JS 转义 | ✅ | 防止 XSS 注入 |
 | WebView URL scheme 过滤 | ✅ | 仅允许 http/https |
 | POST body 透传 | ✅ | 安全的请求体传递 |
@@ -178,7 +178,7 @@
 | 证书固定 | ✅ | DeepSeek API |
 | 日志脱敏 | ✅ | API Key 自动脱敏 |
 | 备份禁用 | ✅ | allowBackup=false |
-| Rhino sandbox 隔离 | ✅ | ClassShutter + sealObject |
+| Rhino sandbox 隔离 | ✅ | 全局对象删除 + 指令限制 |
 | 模板变量 JS 转义 | ✅ | 防止 XSS 注入 |
 | WebView URL scheme 过滤 | ✅ | 仅允许 http/https |
 | POST body 安全透传 | ✅ | 请求体安全传递 |
