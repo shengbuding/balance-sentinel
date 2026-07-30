@@ -35,7 +35,7 @@ object AlertChecker {
         val lastAlerted = prefs.getLastAlertedBalance(accountId)
 
         if (balance < threshold) {
-            if (balance != lastAlerted) {
+            if (kotlin.math.abs(balance - lastAlerted) > 0.001f) {
                 val helper = NotificationHelper(context)
                 helper.sendLowBalanceAlert(accountId, balance, threshold, currency, label)
                 prefs.setLastAlertedBalance(accountId, balance)
@@ -91,7 +91,7 @@ object AlertChecker {
             // 去重：时间窗口内相同余额不重复提醒
             val lastTriggered = prefs.getLastChangeAlertedBalance(accountId)
             val lastTriggeredTime = prefs.getLastChangeAlertedTime(accountId)
-            if (current == lastTriggered && (now - lastTriggeredTime) < periodMs) return false
+            if (kotlin.math.abs(current - lastTriggered) <= 0.001f && (now - lastTriggeredTime) < periodMs) return false
 
             val helper = NotificationHelper(context)
             helper.sendChangeAlert(accountId, current, anchor, diff, periodMinutes, currency, label)

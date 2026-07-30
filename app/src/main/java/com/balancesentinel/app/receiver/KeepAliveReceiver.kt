@@ -59,9 +59,9 @@ class KeepAliveReceiver : BroadcastReceiver() {
                 val interval = if (isOem) KEEPALIVE_INTERVAL_OEM else KEEPALIVE_INTERVAL_DEFAULT
                 val triggerTime = System.currentTimeMillis() + interval
                 try {
-                    alarm.setExactAndAllowWhileIdle(AlarmManager.RTC, triggerTime, pending)
+                    alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pending)
                 } catch (_: SecurityException) {
-                    alarm.set(AlarmManager.RTC, triggerTime, pending)
+                    alarm.set(AlarmManager.RTC_WAKEUP, triggerTime, pending)
                 }
             } catch (_: Exception) {
                 // keepalive 失败不应影响主流程

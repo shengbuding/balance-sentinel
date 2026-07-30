@@ -24,6 +24,9 @@ object RawRecordStore {
     /** 当日最大记录数（90000 条兜底） */
     const val MAX_RECORDS = 90_000
 
+    /** H9 修复：读-改-写操作的共享锁 */
+    private val writeLock = Any()
+
     private val json = Json { ignoreUnknownKeys = true }
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
@@ -33,15 +36,17 @@ object RawRecordStore {
      */
     fun addRecords(context: Context, records: List<RawRecord>) {
         if (records.isEmpty()) return
-        try {
-            val existing = getRecordsInternal(context).toMutableList()
-            existing.addAll(records)
-            if (existing.size > MAX_RECORDS) {
-                existing.subList(0, existing.size - MAX_RECORDS).clear()
-            }
-            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
-            getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-        } catch (_: Exception) { }
+        synchronized(writeLock) {
+            try {
+                val existing = getRecordsInternal(context).toMutableList()
+                existing.addAll(records)
+                if (existing.size > MAX_RECORDS) {
+                    existing.subList(0, existing.size - MAX_RECORDS).clear()
+                }
+                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
+                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+            } catch (_: Exception) { }
+        }
     }
 
     /**
@@ -49,19 +54,21 @@ object RawRecordStore {
      * 跨天不再自动清空，旧数据由 CleanupScheduler 批量删除。
      */
     fun addRecord(context: Context, record: RawRecord) {
-        try {
-            val records = getRecordsInternal(context).toMutableList()
-            records.add(record)
+        synchronized(writeLock) {
+            try {
+                val records = getRecordsInternal(context).toMutableList()
+                records.add(record)
 
-            // 上限兜底：保留最新 MAX_RECORDS 条
-            if (records.size > MAX_RECORDS) {
-                records.subList(0, records.size - MAX_RECORDS).clear()
+                // 上限兜底：保留最新 MAX_RECORDS 条
+                if (records.size > MAX_RECORDS) {
+                    records.subList(0, records.size - MAX_RECORDS).clear()
+                }
+
+                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), records)
+                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+            } catch (_: Exception) {
+                // 记录写入失败不应影响刷新主流程
             }
-
-            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), records)
-            getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-        } catch (_: Exception) {
-            // 记录写入失败不应影响刷新主流程
         }
     }
 
@@ -133,16 +140,33 @@ object RawRecordStore {
      * 不会影响未匹配的记录。用于午夜聚合后只删除已归档的旧数据。
      */
     fun removeRecords(context: Context, recordsToRemove: List<RawRecord>) {
-        try {
-            val toRemove = recordsToRemove.map { it.accountId to it.timestamp }.toSet()
-            val remaining = getRecordsInternal(context).filter {
-                (it.accountId to it.timestamp) !in toRemove
-            }
-            if (remaining.size < getRecordsInternal(context).size) {
+        synchronized(writeLock) {
+            try {
+                val toRemove = recordsToRemove.map { it.accountId to it.timestamp }.toSet()
+                val allRecords = getRecordsInternal(context)
+                val remaining = allRecords.filter {
+                    (it.accountId to it.timestamp) !in toRemove
+                }
+                if (remaining.size < allRecords.size) {
+                    val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
+                    getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+                }
+            } catch (e: Exception) { Logger.w(TAG, "removeRecords failed", e) }
+        }
+    }
+
+    /**
+     * 删除指定账户的所有记录（按 accountId 匹配）。
+     * 用于删除账户时清理关联数据。
+     */
+    fun removeByAccountId(context: Context, accountId: String) {
+        synchronized(writeLock) {
+            try {
+                val remaining = getRecordsInternal(context).filter { it.accountId != accountId }
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
                 getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-            }
-        } catch (e: Exception) { Logger.w(TAG, "removeRecords failed", e) }
+            } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+        }
     }
 
     /** 内部读取，不做日期过滤 */
@@ -196,18 +220,20 @@ object RawRecordStore {
      * 只删除旧记录，保留 < minAgeMs 的记录以维持 24h 滑动窗口完整性。
      */
     fun removeByDate(context: Context, date: String, minAgeMs: Long = 24 * 3600_000L) {
-        try {
-            val now = System.currentTimeMillis()
-            val remaining = getRecordsInternal(context).filter {
-                dateFormat.format(Date(it.timestamp)) != date ||
-                    (now - it.timestamp) < minAgeMs
-            }
-            val originalSize = getRecordsInternal(context).size
-            if (remaining.size < originalSize) {
-                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
-                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-            }
-        } catch (e: Exception) { Logger.w(TAG, "removeByDate failed", e) }
+        synchronized(writeLock) {
+            try {
+                val now = System.currentTimeMillis()
+                val allRecords = getRecordsInternal(context)
+                val remaining = allRecords.filter {
+                    dateFormat.format(Date(it.timestamp)) != date ||
+                        (now - it.timestamp) < minAgeMs
+                }
+                if (remaining.size < allRecords.size) {
+                    val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
+                    getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+                }
+            } catch (e: Exception) { Logger.w(TAG, "removeByDate failed", e) }
+        }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

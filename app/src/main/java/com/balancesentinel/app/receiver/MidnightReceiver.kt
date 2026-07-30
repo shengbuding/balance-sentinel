@@ -10,7 +10,6 @@ import com.balancesentinel.app.data.repository.MidnightScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * 午夜日汇总接收器。
@@ -29,17 +28,18 @@ class MidnightReceiver : BroadcastReceiver() {
         wl.setReferenceCounted(false)
         try { wl.acquire(60_000L) } catch (_: Exception) {}
 
-        try {
-            // runBlocking 确保聚合完成后才返回，避免进程被系统提前杀死
-            runBlocking {
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
                 CleanupScheduler.runCleanup(context)
+                Logger.i("MidnightReceiver", "Cleanup completed")
+            } catch (e: Exception) {
+                Logger.e("MidnightReceiver", "Aggregation failed", e)
+            } finally {
+                MidnightScheduler.schedule(context)
+                try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
+                pendingResult.finish()
             }
-            Logger.i("MidnightReceiver", "Cleanup completed")
-        } catch (e: Exception) {
-            Logger.e("MidnightReceiver", "Aggregation failed", e)
-        } finally {
-            MidnightScheduler.schedule(context)
-            try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
         }
     }
 }

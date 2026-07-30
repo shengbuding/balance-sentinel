@@ -21,7 +21,7 @@
     <string name="home_no_data">No balance data</string>
     <string name="home_query_failed">Query failed</string>
     <string name="home_status_available">Available</string>
-    <string name="home_status_insufficient">Low</string>
+    <string name="home_status_insufficient">Unavailable</string>
     <string name="home_service_starting">Starting…</string>
     <string name="home_just_now">Just now</string>
     <string name="home_minutes_ago">%1$d min ago</string>

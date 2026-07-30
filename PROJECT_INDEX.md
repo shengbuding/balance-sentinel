@@ -1,6 +1,6 @@
 # Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated / 生成日期: 2026-07-18
+Generated / 生成日期: 2026-07-30
 
 ---
 
@@ -15,8 +15,8 @@ Generated / 生成日期: 2026-07-18
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 750+ unit tests (50+ files), 34 instrumented tests (6 files), all passing / 全部通过
-- **Release / 版本**: v1.4.1
+- **Test count / 测试数**: 1,528 unit tests (53 files), 6 instrumented tests, all passing / 全部通过
+- **Release / 版本**: v1.4.2
 
 ---
 
@@ -60,7 +60,7 @@ C:\Users\Administrator\
 │           │   ├── AndroidManifest.xml
 │           │   ├── java/com/balancesentinel/app/
 │           │   └── res/               # Layouts, drawables, mipmaps, values, xml
-│           ├── test/                  # Unit tests (22 classes, 254+ total)
+│           ├── test/                  # Unit tests (53 files, 1,528 tests)
 │           └── androidTest/           # Instrumented tests (4 classes, 27 UI cases)
 │
 ├── .claude/                           # Claude Code config + session data
@@ -210,7 +210,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (47 unit + 6 instrumented, 700+ tests)
+## 4. Test Map (53 unit test files, 1,528 tests + 6 instrumented tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -298,7 +298,7 @@ C:\Users\Administrator\
 
 3. **Widget Architecture**: RemoteViews AppWidget with 5 size variants (2×1 through 5×1), light/dark/compact variants. Data flows via `WidgetConfigStore` + `BalanceWidgetDataStore` + `BalanceRefreshService` foreground refresh.
 
-4. **Security**: AES-256 EncryptedSharedPreferences for API key storage, OkHttp with Bearer token auth.
+4. **Security**: AES-256 EncryptedSharedPreferences for API key storage, OkHttp with Bearer token auth. Rhino JS sandbox with ClassShutter (class-level access control) + sealObject (runtime immutability) for isolated custom script execution.
 
 5. **Background Work**: Handler + foreground service for periodic refresh with keep-alive. BootReceiver + MidnightReceiver for lifecycle rescheduling. No WorkManager dependency.
 

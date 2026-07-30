@@ -23,6 +23,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.DeepSeekApiService
 import com.balancesentinel.app.data.api.ProviderFactory
 import com.balancesentinel.app.data.api.ProviderResult
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.cache.ProviderCache
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
@@ -52,12 +53,14 @@ class BalanceRefreshService : Service() {
     private lateinit var widgetPrefs: WidgetPrefs
     private var isLoopRunning = false
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
+    private var isSelfDestructing = false
     private lateinit var notificationHelper: NotificationHelper
 
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {
         override fun run() {
             Logger.i(TAG, "Scheduled self-destruct — stopping service")
+            isSelfDestructing = true
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -111,7 +114,9 @@ class BalanceRefreshService : Service() {
     override fun onDestroy() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
-        KeepAliveReceiver.cancel(this)
+        if (!isSelfDestructing) {
+            KeepAliveReceiver.cancel(this)
+        }
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
         super.onDestroy()
     }
@@ -232,7 +237,12 @@ class BalanceRefreshService : Service() {
                                 }
                             } else {
                                 // 使用ProviderFactory获取余额
-                                val provider = ProviderFactory.get(account.providerType)
+                                val provider = if (account.providerType == ProviderType.CUSTOM) {
+                                    val baseUrl = account.extraSettings["baseUrl"] ?: ""
+                                    ProviderFactory.get(account.providerType, baseUrl)
+                                } else {
+                                    ProviderFactory.get(account.providerType)
+                                }
                                 val config = account.toConfig()
                                 val result = kotlinx.coroutines.runBlocking { provider.getBalance(config) }
 
@@ -364,9 +374,10 @@ class BalanceRefreshService : Service() {
                     CrashLogger.logNonFatal(TAG, e)
                     notificationHelper.sendForegroundNotification(getString(R.string.service_notif_query_failed), e.message ?: e.javaClass.simpleName)
                 }
-
-                scheduleNext()
             } finally {
+                // 始终调度下一次刷新（即使 accounts 为空或发生异常）
+                scheduleNext()
+
                 // 释放 WakeLock + 清除并发标记（确保所有退出路径都释放）
                 isRefreshing = false
                 try { if (wl.isHeld) wl.release() } catch (_: Exception) {}

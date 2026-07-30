@@ -14,7 +14,7 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -158,7 +158,7 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
     fun executeAction(action: PendingAction) {
         val ctx = getApplication<Application>()
         // 在 IO 线程执行存储操作
-        CoroutineScope(Dispatchers.IO).launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val res = ctx.resources
             val message: String = when (action) {
                 PendingAction.ClearRawRecords -> {

@@ -12,6 +12,7 @@ import kotlinx.serialization.Serializable
  * @param providerType 供应商类型（默认DeepSeek，兼容旧数据）
  * @param extraCredentials 额外凭证（如secretKey、orgId等）
  * @param extraSettings 额外设置（如baseUrl覆盖等）
+ * @param usageScript 自定义余额查询脚本（仅自定义供应商有效）
  */
 @Serializable
 data class AccountInfo(
@@ -20,18 +21,24 @@ data class AccountInfo(
     val apiKey: String,
     val providerType: ProviderType = ProviderType.DEEPSEEK,
     val extraCredentials: Map<String, String> = emptyMap(),
-    val extraSettings: Map<String, String> = emptyMap()
+    val extraSettings: Map<String, String> = emptyMap(),
+    val usageScript: String? = null
 ) {
     /**
      * 转换为ProviderConfig
      */
     fun toConfig(): ProviderConfig {
-        val credentials = mutableMapOf("apiKey" to apiKey)
+        val credentials = mutableMapOf("apiKey" to apiKey, "accountId" to id)
         credentials.putAll(extraCredentials)
+        val settings = extraSettings.toMutableMap()
+        // 添加自定义脚本到settings中
+        if (usageScript != null) {
+            settings["usageScript"] = usageScript
+        }
         return ProviderConfig(
             providerType = providerType,
             credentials = credentials,
-            settings = extraSettings
+            settings = settings
         )
     }
 }

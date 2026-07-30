@@ -69,6 +69,18 @@ class ConsoleStore(private val context: Context) {
     }
 
     /**
+     * 更新平台配置
+     */
+    fun updatePlatform(platform: ConsolePlatform) {
+        val platforms = getPlatforms().toMutableList()
+        val index = platforms.indexOfFirst { it.id == platform.id }
+        if (index != -1) {
+            platforms[index] = platform
+            prefs.edit().putString(KEY_PLATFORMS, json.encodeToString(platforms)).apply()
+        }
+    }
+
+    /**
      * 检查平台是否已添加
      */
     fun hasPlatform(platformId: String): Boolean {
@@ -131,6 +143,7 @@ class ConsoleStore(private val context: Context) {
 
 /**
  * 会话数据
+ * C6 修复：添加 30 天 TTL，不再永久有效
  */
 @Serializable
 data class ConsoleSession(
@@ -141,10 +154,16 @@ data class ConsoleSession(
     val loginTime: Long = System.currentTimeMillis(),
     val lastActiveTime: Long = System.currentTimeMillis()
 ) {
+    companion object {
+        private const val SESSION_TTL_MS = 30L * 24 * 60 * 60 * 1000 // 30 天
+    }
+
     /**
-     * 会话是否有效（永久有效，除非被删除）
+     * 会话是否有效（30 天内活跃则有效）
      */
-    fun isValid(): Boolean = true
+    fun isValid(): Boolean {
+        return System.currentTimeMillis() - lastActiveTime < SESSION_TTL_MS
+    }
 
     /**
      * 更新最后活跃时间

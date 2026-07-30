@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 /**
  * 控制台登录态加密存储
  */
+@Deprecated("Use ConsoleStore instead. This store is unused by the UI layer.", ReplaceWith("ConsoleStore"))
 class ConsoleSessionStore(
     private val context: Context,
     private val injectedPrefs: SharedPreferences? = null

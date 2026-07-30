@@ -93,6 +93,15 @@ object RefreshScheduler {
         }.apply()
     }
 
+    /** 清除预定状态（不递增计数器），用于 checkMissedRefresh 避免重复报告 */
+    fun clearExpectedState(context: Context) {
+        val p = getPrefs(context)
+        p.edit().apply {
+            putLong(KEY_ALARM_FIRED_AT, System.currentTimeMillis())
+            putLong(KEY_EXPECTED_NEXT, 0)
+        }.apply()
+    }
+
     /** 旧闹钟被新闹钟覆盖（主动取消） */
     fun markCancelled(context: Context) {
         val p = getPrefs(context)
@@ -198,8 +207,8 @@ object RefreshScheduler {
             missReason = reason
         )
 
-        // 清除预定状态，避免重复报告同一次遗漏
-        markFired(context)
+        // 清除预定状态，避免重复报告同一次遗漏（不递增 fired 计数器）
+        clearExpectedState(context)
 
         return listOf(entry)
     }

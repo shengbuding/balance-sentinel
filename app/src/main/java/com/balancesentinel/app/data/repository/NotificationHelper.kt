@@ -25,13 +25,13 @@ class NotificationHelper(private val context: Context) {
 
     // ── 通知 ID 计算 ──
 
-    /** 每账户 alert 通知 ID：1002 + hash，范围 1002-66537 */
+    /** 每账户 alert 通知 ID：10000 + hash，范围 [10000, 75535] */
     fun alertNotificationId(accountId: String): Int =
-        1002 + (accountId.hashCode() and 0xFFFF)
+        10000 + (accountId.hashCode() and 0xFFFF)
 
-    /** 每账户 change 通知 ID：2002 + hash，范围 2002-67537 */
+    /** 每账户 change 通知 ID：20000 + hash，范围 [20000, 85535] */
     fun changeNotificationId(accountId: String): Int =
-        2002 + (accountId.hashCode() and 0xFFFF)
+        20000 + (accountId.hashCode() and 0xFFFF)
 
     // ── PendingIntent 工厂 ──
 

@@ -118,6 +118,42 @@ object UsageDataStore {
         } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
     }
 
+    /**
+     * 删除指定账户的所有用量快照（按 accountId 匹配）。
+     * 用于删除账户时清理关联数据。
+     */
+    fun removeByAccountId(context: Context, accountId: String) {
+        try {
+            val snapshots = getAllSnapshots(context)
+            val remaining = snapshots.filter { it.accountId != accountId }
+            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), remaining)
+            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
+        } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+    }
+
+    /**
+     * 迁移账户ID（用于编辑 API Key 后的数据迁移）
+     */
+    fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
+        if (migrationMap.isEmpty()) return
+        try {
+            val snapshots = getAllSnapshots(context).toMutableList()
+            var migrated = false
+            for (i in snapshots.indices) {
+                val newId = migrationMap[snapshots[i].accountId]
+                if (newId != null) {
+                    snapshots[i] = snapshots[i].copy(accountId = newId)
+                    migrated = true
+                }
+            }
+            if (migrated) {
+                val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
+                getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
+                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
+            }
+        } catch (e: Exception) { Logger.w(TAG, "migrateAccountIds failed", e) }
+    }
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }

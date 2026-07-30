@@ -11,9 +11,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.console.store.ConsoleStore
+import com.balancesentinel.app.ui.CustomIcons
 
 /**
  * 控制台选择页面 - 显示所有已添加的平台
@@ -30,11 +36,18 @@ import com.balancesentinel.app.data.console.store.ConsoleStore
 @Composable
 fun ConsoleSelectScreen(
     onSelectPlatform: (ConsolePlatform) -> Unit,
-    onAddPlatform: () -> Unit
+    onAddPlatform: () -> Unit,
+    refreshTrigger: Int = 0 // 用于触发刷新
 ) {
     val context = LocalContext.current
     val store = remember { ConsoleStore(context) }
+    // 每次进入页面时都重新读取平台列表和登录状态
     var platforms by remember { mutableStateOf(store.getPlatforms()) }
+
+    // 当refreshTrigger变化时刷新数据
+    LaunchedEffect(refreshTrigger) {
+        platforms = store.getPlatforms()
+    }
 
     // 删除确认对话框
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -118,11 +131,27 @@ fun ConsoleSelectScreen(
                 platforms.forEach { platform ->
                     PlatformCard(
                         platform = platform,
+                        isLoggedIn = store.hasValidSession(platform.id),
                         onClick = { onSelectPlatform(platform) },
                         onDelete = {
                             platformToDelete = platform
                             showDeleteDialog = true
-                        }
+                        },
+                        onFixConfig = if (!platform.isPreset) {
+                            // 检查是否能匹配到预设配置
+                            val matchedPreset = findMatchingPreset(platform)
+                            if (matchedPreset != null) {
+                                {
+                                    // 修复配置：使用预设的 successUrlPatterns
+                                    val fixedPlatform = platform.copy(
+                                        successUrlPatterns = matchedPreset.successUrlPatterns,
+                                        loginPagePatterns = matchedPreset.loginPagePatterns
+                                    )
+                                    store.updatePlatform(fixedPlatform)
+                                    platforms = store.getPlatforms()
+                                }
+                            } else null
+                        } else null
                     )
                 }
             }
@@ -153,19 +182,29 @@ private fun EmptyStateCard(onAddPlatform: () -> Unit) {
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
             )
             Text(
                 text = "暂无控制台",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
             Text(
-                text = "点击下方按钮添加控制台",
+                text = "添加控制台后可以查看账户余额、用量统计等信息",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onAddPlatform,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, "添加")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("添加控制台")
+            }
         }
     }
 }
@@ -173,8 +212,10 @@ private fun EmptyStateCard(onAddPlatform: () -> Unit) {
 @Composable
 private fun PlatformCard(
     platform: ConsolePlatform,
+    isLoggedIn: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onFixConfig: (() -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -193,6 +234,21 @@ private fun PlatformCard(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 平台图标
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .padding(end = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = getPlatformIcon(platform.id),
+                        contentDescription = platform.name,
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
                 // 平台信息（可点击）
                 Column(
                     modifier = Modifier
@@ -200,11 +256,29 @@ private fun PlatformCard(
                         .padding(end = 8.dp)
                         .noRippleClickable { onClick() }
                 ) {
-                    Text(
-                        text = platform.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = platform.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (isLoggedIn) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            ) {
+                                Text(
+                                    text = "已登录",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = platform.description ?: "控制台",
@@ -262,6 +336,28 @@ private fun PlatformCard(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
 
+                    // 修复配置按钮（仅对自定义平台且能匹配到预设配置时显示）
+                    if (onFixConfig != null) {
+                        TextButton(
+                            onClick = {
+                                isExpanded = false
+                                onFixConfig()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                "修复",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "修复配置",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+
                     // 删除按钮
                     TextButton(
                         onClick = {
@@ -290,15 +386,44 @@ private fun PlatformCard(
     }
 }
 
+private fun getPlatformIcon(platformId: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (platformId) {
+        "deepseek" -> Icons.Default.Star
+        "mimo" -> Icons.Default.Face
+        "model_ark" -> Icons.Default.AccountCircle
+        else -> Icons.Default.Info
+    }
+}
+
+/**
+ * 查找匹配的预设平台配置
+ * 根据自定义平台的 loginUrl 或 dashboardUrl 匹配预设平台
+ */
+private fun findMatchingPreset(platform: ConsolePlatform): ConsolePlatform? {
+    val url = (platform.loginUrl + platform.dashboardUrl).lowercase()
+    return PresetPlatforms.ALL.find { preset ->
+        val presetUrl = (preset.loginUrl + preset.dashboardUrl).lowercase()
+        // 检查域名是否匹配
+        val presetDomain = try {
+            java.net.URL(preset.loginUrl).host
+        } catch (e: Exception) {
+            ""
+        }
+        val platformDomain = try {
+            java.net.URL(platform.loginUrl).host
+        } catch (e: Exception) {
+            ""
+        }
+        presetDomain.isNotBlank() && presetDomain == platformDomain
+    }
+}
+
 @Composable
 private fun AddPlatformButton(onClick: () -> Unit) {
-    Button(
+    OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary
-        )
+        shape = RoundedCornerShape(12.dp)
     ) {
         Icon(Icons.Default.Add, "添加")
         Spacer(modifier = Modifier.width(8.dp))

@@ -1,7 +1,6 @@
 package com.balancesentinel.app.data.api
 
 import com.balancesentinel.app.data.api.providers.DeepSeekProvider
-import com.balancesentinel.app.data.api.providers.ModelArkProvider
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
 
 /**
@@ -9,7 +8,7 @@ import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
  * 根据ProviderType创建对应的AiProvider实例
  */
 object ProviderFactory {
-    private val providers = mutableMapOf<String, AiProvider>()
+    private val providers = java.util.concurrent.ConcurrentHashMap<String, AiProvider>()
 
     /**
      * 获取供应商实例
@@ -24,7 +23,6 @@ object ProviderFactory {
                 if (baseUrl.isNullOrBlank()) {
                     throw IllegalArgumentException("自定义供应商需要指定baseUrl")
                 }
-                // 为自定义供应商创建独立实例，使用baseUrl作为key
                 val key = "custom_$baseUrl"
                 providers.getOrPut(key) { OpenAiCompatibleProvider(type, baseUrl) }
             }
@@ -49,6 +47,7 @@ object ProviderFactory {
             ProviderType.GEMINI -> OpenAiCompatibleProvider(type, "https://generativelanguage.googleapis.com/v1beta")
             ProviderType.MISTRAL -> OpenAiCompatibleProvider(type, "https://api.mistral.ai/v1")
             ProviderType.COHERE -> OpenAiCompatibleProvider(type, "https://api.cohere.ai/v1")
+            ProviderType.MODEL_ARK -> OpenAiCompatibleProvider(type, "https://ai.gitee.com")
             ProviderType.CUSTOM -> throw IllegalArgumentException("自定义供应商需要指定baseUrl")
         }
     }

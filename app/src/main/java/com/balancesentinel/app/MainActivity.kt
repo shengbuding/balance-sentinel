@@ -137,6 +137,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // 控制台刷新触发器
+                var consoleRefreshTrigger by remember { mutableStateOf(0) }
+
                 // 首次启动电池优化引导
                 var showBatteryGuide by remember { mutableStateOf(false) }
 
@@ -302,7 +305,8 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onAddPlatform = {
                                     currentScreen = Screen.ADD_PLATFORM
-                                }
+                                },
+                                refreshTrigger = consoleRefreshTrigger
                             )
                             Screen.ADD_PLATFORM -> {
                                 val store = com.balancesentinel.app.data.console.store.ConsoleStore(this@MainActivity)
@@ -347,7 +351,11 @@ class MainActivity : ComponentActivity() {
                                         },
                                         onLogout = {
                                             consoleViewModel.logout()
-                                            currentScreen = Screen.CONSOLE_SELECT
+                                            // 延迟导航，等待logout完成
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                consoleRefreshTrigger++
+                                                currentScreen = Screen.CONSOLE_SELECT
+                                            }, 500)
                                         },
                                         onBack = {
                                             currentScreen = Screen.CONSOLE_SELECT

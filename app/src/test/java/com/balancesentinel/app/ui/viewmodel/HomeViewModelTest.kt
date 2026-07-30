@@ -207,7 +207,7 @@ class HomeViewModelTest {
             isAvailable = true,
             balanceInfos = listOf(BalanceInfo("CNY", "100.50", "10.00", "90.50"))
         )
-        coEvery { mockRepository.fetchBalance("sk-key-a") } returns Result.success(mockResponse)
+        coEvery { mockRepository.fetchBalance("sk-key-a", any()) } returns Result.success(mockResponse)
 
         val vm = createViewModel()
         vm.refreshBalance()
@@ -220,7 +220,7 @@ class HomeViewModelTest {
     @Test
     fun `refreshBalance failure updates error message`() {
         apiKeyManager.addAccount("主账户", "sk-bad-key")
-        coEvery { mockRepository.fetchBalance("sk-bad-key") } returns Result.failure(
+        coEvery { mockRepository.fetchBalance("sk-bad-key", any()) } returns Result.failure(
             java.io.IOException("网络超时")
         )
 
@@ -405,7 +405,7 @@ class HomeViewModelTest {
             isAvailable = true,
             balanceInfos = listOf(BalanceInfo("CNY", "88.88", "0", "0"))
         )
-        coEvery { mockRepository.fetchBalance("sk-key-acc") } returns Result.success(mockResponse)
+        coEvery { mockRepository.fetchBalance("sk-key-acc", any()) } returns Result.success(mockResponse)
 
         val vm = createViewModel()
         val accId = vm.uiState.value.accounts[0].id
@@ -456,7 +456,7 @@ class HomeViewModelTest {
             isAvailable = true,
             balanceInfos = listOf(BalanceInfo("CNY", "100.00", "0", "0"))
         )
-        coEvery { mockRepository.fetchBalance("sk-remove-bal") } returns Result.success(mockResponse)
+        coEvery { mockRepository.fetchBalance("sk-remove-bal", any()) } returns Result.success(mockResponse)
 
         val vm = createViewModel()
         val accId = vm.uiState.value.accounts[0].id

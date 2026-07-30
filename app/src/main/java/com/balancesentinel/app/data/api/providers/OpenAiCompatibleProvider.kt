@@ -1,6 +1,11 @@
 package com.balancesentinel.app.data.api.providers
 
 import com.balancesentinel.app.data.api.*
+import com.balancesentinel.app.data.api.balance.BalanceQueryService
+import com.balancesentinel.app.data.api.balance.PresetScripts
+import com.balancesentinel.app.data.api.balance.UsageScript
+import com.balancesentinel.app.data.api.balance.UsageScriptExecutor
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -26,24 +31,131 @@ class OpenAiCompatibleProvider(
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * 获取带有调试拦截器的OkHttpClient
+     */
+    private fun getClientWithDebug(accountId: String?): OkHttpClient {
+        return if (accountId != null) {
+            client.newBuilder()
+                .addInterceptor(DebugInterceptor(accountId))
+                .build()
+        } else {
+            client
+        }
+    }
+
     override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> {
-        // 大多数OpenAI兼容供应商没有余额API
-        // 返回估算余额，由LocalUsageTracker提供数据
-        return ProviderResult.Success(
-            UnifiedBalance(
-                provider = providerType,
-                accountId = config.credentials["accountId"] ?: "",
-                isAvailable = true,
-                balances = listOf(
-                    BalanceEntry(
-                        currency = "CNY",
-                        totalBalance = 0.0,
-                        unit = "元"
+        val apiKey = config.apiKey
+        val baseUrl = config.baseUrl ?: defaultBaseUrl
+        val accountId = config.credentials["accountId"]
+        val accountLabel = config.credentials["accountLabel"]
+        val customScript = config.settings["usageScript"]
+
+        Logger.i("OpenAiCompatibleProvider", "getBalance called: baseUrl=$baseUrl, hasCustomScript=${!customScript.isNullOrBlank()}")
+
+        // 优先使用用户配置的自定义脚本
+        if (!customScript.isNullOrBlank()) {
+            Logger.i("OpenAiCompatibleProvider", "Using custom script: ${customScript.take(50)}...")
+            try {
+                val script = UsageScript(code = customScript)
+                val result = UsageScriptExecutor.execute(
+                    script = script,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    accountId = accountId,
+                    accountLabel = accountLabel,
+                    providerType = providerType.displayName
+                )
+                if (result.success && result.data != null && result.data.isNotEmpty()) {
+                    Logger.i("OpenAiCompatibleProvider", "Custom script succeeded")
+                    val balanceData = result.data.first()
+                    return ProviderResult.Success(
+                        UnifiedBalance(
+                            provider = providerType,
+                            accountId = accountId ?: "",
+                            isAvailable = balanceData.isValid ?: true,
+                            balances = listOf(
+                                BalanceEntry(
+                                    currency = balanceData.unit ?: "CNY",
+                                    totalBalance = balanceData.remaining ?: 0.0,
+                                    unit = balanceData.unit ?: "元"
+                                )
+                            ),
+                            isEstimated = false
+                        )
                     )
-                ),
-                isEstimated = true
+                } else {
+                    Logger.w("OpenAiCompatibleProvider", "Custom script returned no data: ${result.error}")
+                }
+            } catch (e: Exception) {
+                Logger.e("OpenAiCompatibleProvider", "Custom script failed", e)
+            }
+        }
+
+        // 其次尝试使用预置脚本
+        val presetScript = PresetScripts.getPresetScript(baseUrl)
+        if (presetScript != null) {
+            Logger.i("OpenAiCompatibleProvider", "Found preset script for $baseUrl")
+            try {
+                val result = UsageScriptExecutor.execute(presetScript, apiKey, baseUrl, accountId)
+                if (result.success && result.data != null && result.data.isNotEmpty()) {
+                    Logger.i("OpenAiCompatibleProvider", "Preset script succeeded")
+                    val balanceData = result.data.first()
+                    return ProviderResult.Success(
+                        UnifiedBalance(
+                            provider = providerType,
+                            accountId = accountId ?: "",
+                            isAvailable = balanceData.isValid ?: true,
+                            balances = listOf(
+                                BalanceEntry(
+                                    currency = balanceData.unit ?: "CNY",
+                                    totalBalance = balanceData.remaining ?: 0.0,
+                                    unit = balanceData.unit ?: "元"
+                                )
+                            ),
+                            isEstimated = false
+                        )
+                    )
+                } else {
+                    Logger.w("OpenAiCompatibleProvider", "Preset script returned no data: ${result.error}")
+                }
+            } catch (e: Exception) {
+                Logger.e("OpenAiCompatibleProvider", "Preset script failed", e)
+            }
+        } else {
+            Logger.i("OpenAiCompatibleProvider", "No preset script found for $baseUrl")
+        }
+
+        // 如果预置脚本失败或没有预置脚本，使用通用查询
+        Logger.i("OpenAiCompatibleProvider", "Falling back to generic query")
+        val result = BalanceQueryService.queryBalance(baseUrl, apiKey, accountId)
+
+        return if (result.success && result.data != null && result.data.isNotEmpty()) {
+            val balanceData = result.data.first()
+            ProviderResult.Success(
+                UnifiedBalance(
+                    provider = providerType,
+                    accountId = accountId ?: "",
+                    isAvailable = balanceData.isValid ?: true,
+                    balances = listOf(
+                        BalanceEntry(
+                            currency = balanceData.unit ?: "CNY",
+                            totalBalance = balanceData.remaining ?: 0.0,
+                            unit = balanceData.unit ?: "元"
+                        )
+                    ),
+                    isEstimated = false
+                )
             )
-        )
+        } else {
+            // H3 修复：全部查询策略失败时返回 Failure 而非 Success(0.0)
+            ProviderResult.Failure(
+                ProviderError.ApiUnavailableError(
+                    providerType,
+                    result.error ?: "所有余额查询策略均失败"
+                )
+            )
+        }
     }
 
     override suspend fun getUsage(
@@ -51,7 +163,7 @@ class OpenAiCompatibleProvider(
         startDate: String?,
         endDate: String?
     ): ProviderResult<UnifiedUsage> {
-        // 大多数供应商不支持用量API
+        // 大多数OpenAI兼容供应商不支持用量API
         return ProviderResult.Failure(
             ProviderError.ApiUnavailableError(providerType, "该供应商不支持用量查询")
         )

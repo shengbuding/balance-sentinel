@@ -52,6 +52,7 @@ fun AddAccountDialog(
             ProviderType.GEMINI,
             ProviderType.MISTRAL,
             ProviderType.COHERE,
+            ProviderType.MODEL_ARK,
             ProviderType.CUSTOM
         )
     }

@@ -23,24 +23,29 @@ object DailySummaryStore {
     private val json = Json { ignoreUnknownKeys = true }
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
+    /** H9 修复：读-改-写操作的共享锁 */
+    private val writeLock = Any()
+
     /**
      * 批量添加日摘要。一次读、一次写，避免逐条 O(n²) 序列化。
      * 用于数据导入等大量写入场景。
      */
     fun addSummaries(context: Context, summaries: List<DailySummary>) {
         if (summaries.isEmpty()) return
-        try {
-            val existing = getSummaries(context).toMutableList()
-            val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
-            val toAdd = summaries.filter {
-                Triple(it.date, it.currency, it.accountId) !in existingKeys
-            }
-            if (toAdd.isEmpty()) return
-            existing.addAll(toAdd)
-            existing.sortBy { it.date }
-            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), existing)
-            getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "addSummaries failed", e) }
+        synchronized(writeLock) {
+            try {
+                val existing = getSummaries(context).toMutableList()
+                val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
+                val toAdd = summaries.filter {
+                    Triple(it.date, it.currency, it.accountId) !in existingKeys
+                }
+                if (toAdd.isEmpty()) return
+                existing.addAll(toAdd)
+                existing.sortBy { it.date }
+                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), existing)
+                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+            } catch (e: Exception) { Logger.w(TAG, "addSummaries failed", e) }
+        }
     }
 
     /**
@@ -49,17 +54,19 @@ object DailySummaryStore {
      * 日摘要一旦写入即不可变。若 (date, currency, accountId) 已有摘要则静默跳过。
      */
     fun addSummary(context: Context, summary: DailySummary) {
-        try {
-            val summaries = getSummaries(context).toMutableList()
-            val alreadyExists = summaries.any {
-                it.date == summary.date && it.currency == summary.currency && it.accountId == summary.accountId
-            }
-            if (alreadyExists) return  // 不可覆盖
-            summaries.add(summary)
-            summaries.sortBy { it.date }
-            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-            getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "saveSummary failed", e) }
+        synchronized(writeLock) {
+            try {
+                val summaries = getSummaries(context).toMutableList()
+                val alreadyExists = summaries.any {
+                    it.date == summary.date && it.currency == summary.currency && it.accountId == summary.accountId
+                }
+                if (alreadyExists) return  // 不可覆盖
+                summaries.add(summary)
+                summaries.sortBy { it.date }
+                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
+                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+            } catch (e: Exception) { Logger.w(TAG, "saveSummary failed", e) }
+        }
     }
 
     /**
@@ -146,69 +153,71 @@ object DailySummaryStore {
      *   sampleCount = 0（标记为无数据日）
      */
     fun ensureContinuity(context: Context, fromDate: String, toDate: String) {
-        try {
-            val summaries = getSummaries(context).toMutableList()
-            val today = dateFormat.format(Date())
+        synchronized(writeLock) {
+            try {
+                val summaries = getSummaries(context).toMutableList()
+                val today = dateFormat.format(Date())
 
-            // 按 (accountId, currency) 分组
-            val groups = summaries.groupBy { it.accountId to it.currency }
+                // 按 (accountId, currency) 分组
+                val groups = summaries.groupBy { it.accountId to it.currency }
 
-            for ((_, groupSummaries) in groups) {
-                // 找到该组在 fromDate 范围内的最早日期
-                val groupEarliest = groupSummaries
-                    .filter { it.date >= fromDate }
-                    .minByOrNull { it.date } ?: continue
+                for ((_, groupSummaries) in groups) {
+                    // 找到该组在 fromDate 范围内的最早日期
+                    val groupEarliest = groupSummaries
+                        .filter { it.date >= fromDate }
+                        .minByOrNull { it.date } ?: continue
 
-                var carryBalance = groupEarliest.close
-                val accountId = groupEarliest.accountId
-                val currency = groupEarliest.currency
+                    var carryBalance = groupEarliest.close
+                    val accountId = groupEarliest.accountId
+                    val currency = groupEarliest.currency
 
-                // 该组已有日期的快速查找集合
-                val existingDates = groupSummaries.map { it.date }.toSet()
+                    // 该组已有日期的快速查找集合
+                    val existingDates = groupSummaries.map { it.date }.toSet()
 
-                val cal = java.util.Calendar.getInstance()
-                dateFormat.parse(groupEarliest.date)?.let { cal.time = it }
-                cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
-
-                val toCal = java.util.Calendar.getInstance()
-                dateFormat.parse(toDate)?.let { toCal.time = it }
-
-                while (!cal.after(toCal)) {
-                    val date = dateFormat.format(cal.time)
-                    if (date >= today) break
-
-                    if (date !in existingDates) {
-                        summaries.add(
-                            DailySummary(
-                                accountId = accountId,
-                                date = date,
-                                currency = currency,
-                                open = carryBalance,
-                                close = carryBalance,
-                                consumed = 0f,
-                                toppedUp = 0f,
-                                granted = 0f,
-                                avgBalance = carryBalance,
-                                sampleCount = 0,
-                                toppedUpBalanceClose = 0f,
-                                grantedBalanceClose = 0f,
-                                generatedAt = System.currentTimeMillis()
-                            )
-                        )
-                    } else {
-                        // 该日存在时，用该组的 close 推进 carryBalance
-                        groupSummaries.find { it.date == date }?.let { carryBalance = it.close }
-                    }
+                    val cal = java.util.Calendar.getInstance()
+                    dateFormat.parse(groupEarliest.date)?.let { cal.time = it }
                     cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
-                }
-            }
 
-            summaries.sortBy { it.date }
-            val serialized =
-                json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-            getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to ensure continuity: ${e.message}")
+                    val toCal = java.util.Calendar.getInstance()
+                    dateFormat.parse(toDate)?.let { toCal.time = it }
+
+                    while (!cal.after(toCal)) {
+                        val date = dateFormat.format(cal.time)
+                        if (date >= today) break
+
+                        if (date !in existingDates) {
+                            summaries.add(
+                                DailySummary(
+                                    accountId = accountId,
+                                    date = date,
+                                    currency = currency,
+                                    open = carryBalance,
+                                    close = carryBalance,
+                                    consumed = 0f,
+                                    toppedUp = 0f,
+                                    granted = 0f,
+                                    avgBalance = carryBalance,
+                                    sampleCount = 0,
+                                    toppedUpBalanceClose = 0f,
+                                    grantedBalanceClose = 0f,
+                                    generatedAt = System.currentTimeMillis()
+                                )
+                            )
+                        } else {
+                            // 该日存在时，用该组的 close 推进 carryBalance
+                            groupSummaries.find { it.date == date }?.let { carryBalance = it.close }
+                        }
+                        cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+                    }
+                }
+
+                summaries.sortBy { it.date }
+                val serialized =
+                    json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
+                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+            } catch (e: Exception) {
+                Logger.w(TAG, "Failed to ensure continuity: ${e.message}")
+            }
         }
     }
 
@@ -219,6 +228,20 @@ object DailySummaryStore {
         try {
             getPrefs(context).edit().remove(KEY_SUMMARIES).apply()
         } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
+    }
+
+    /**
+     * 删除指定账户的所有日摘要（按 accountId 匹配）。
+     * 用于删除账户时清理关联数据。
+     */
+    fun removeByAccountId(context: Context, accountId: String) {
+        synchronized(writeLock) {
+            try {
+                val remaining = getSummaries(context).filter { it.accountId != accountId }
+                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), remaining)
+                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+            } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+        }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {

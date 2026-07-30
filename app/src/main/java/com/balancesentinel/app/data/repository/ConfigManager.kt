@@ -160,11 +160,9 @@ object ConfigManager {
         val validAccounts = config.accounts.filter { !isRedactedApiKey(it.apiKey) }
         val skipped = config.accounts.size - validAccounts.size
 
-        // 清空现有账户，写入导入账户
-        apiKeyManager.clearAll()
-        for (account in validAccounts) {
-            apiKeyManager.addAccount(account.label, account.apiKey)
-        }
+        // C5+H10 修复：先构建完整列表，再一次性原子写入
+        // 保留所有字段（providerType, extraSettings, usageScript, extraCredentials）
+        apiKeyManager.replaceAll(validAccounts)
 
         // 应用全局设置
         val s = config.settings

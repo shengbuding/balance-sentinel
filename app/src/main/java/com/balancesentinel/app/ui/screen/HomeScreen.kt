@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
@@ -84,18 +85,58 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 
     // 删除确认对话框
     var deleteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var deleteAssociatedData by remember { mutableStateOf(false) }
     deleteTarget?.let { (id, label) ->
         AlertDialog(
-            onDismissRequest = { deleteTarget = null },
+            onDismissRequest = { deleteTarget = null; deleteAssociatedData = false },
             title = { Text(stringResource(R.string.home_delete_account_title)) },
-            text = { Text(stringResource(R.string.home_delete_account_confirm, label)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.home_delete_account_confirm, label))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { deleteAssociatedData = !deleteAssociatedData }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = deleteAssociatedData,
+                            onCheckedChange = { deleteAssociatedData = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "同时删除关联数据",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "包括：刷新日志、用量记录、原始数据",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { viewModel.removeAccount(id); deleteTarget = null }) {
+                TextButton(onClick = {
+                    if (deleteAssociatedData) {
+                        viewModel.removeAccountWithData(id)
+                    } else {
+                        viewModel.removeAccount(id)
+                    }
+                    deleteTarget = null
+                    deleteAssociatedData = false
+                }) {
                     Text(stringResource(R.string.home_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.home_cancel)) }
+                TextButton(onClick = { deleteTarget = null; deleteAssociatedData = false }) {
+                    Text(stringResource(R.string.home_cancel))
+                }
             }
         )
     }
@@ -106,8 +147,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
         EditAccountDialog(
             account = account,
             onDismiss = { editTarget = null },
-            onConfirm = { newLabel, newApiKey ->
-                viewModel.editAccount(account.id, newLabel, newApiKey)
+            onConfirm = { newLabel, newApiKey, extraSettings, usageScript ->
+                viewModel.editAccount(account.id, newLabel, newApiKey, extraSettings, usageScript)
                 editTarget = null
             }
         )
@@ -116,18 +157,49 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.home_title)) },
+                title = {
+                    Column {
+                        Text(
+                            stringResource(R.string.home_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (uiState.accounts.isNotEmpty()) {
+                            Text(
+                                "${uiState.accounts.size} 个账户",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                },
                 actions = {
+                    // 刷新按钮
                     IconButton(
                         onClick = { viewModel.refreshBalance() },
                         enabled = !uiState.isLoading && uiState.accounts.isNotEmpty()
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.home_refresh),
-                            tint = MaterialTheme.colorScheme.onPrimary)
+                        if (uiState.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.home_refresh),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
+                    // 设置按钮
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.home_settings),
-                            tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.home_settings),
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -137,13 +209,14 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.home_add_account),
-                    tint = MaterialTheme.colorScheme.onPrimary)
-            }
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text(stringResource(R.string.home_add_account)) },
+                shape = RoundedCornerShape(16.dp)
+            )
         }
     ) { padding ->
         val pullRefreshState = rememberPullRefreshState(
@@ -161,8 +234,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 错误消息
                 AnimatedVisibility(
@@ -171,34 +244,10 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                     exit = fadeOut()
                 ) {
                     uiState.errorMessage?.let { msg ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    CustomIcons.ErrorOutline,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    msg,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                TextButton(
-                                    onClick = { viewModel.refreshBalance() }
-                                ) {
-                                    Text("重试")
-                                }
-                            }
-                        }
+                        ErrorMessageCard(
+                            message = msg,
+                            onRetry = { viewModel.refreshBalance() }
+                        )
                     }
                 }
 
@@ -219,15 +268,18 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                             now = now,
                             onLongPress = { deleteTarget = Pair(account.id, account.label) },
                             onEdit = { editTarget = account },
-                            onDelete = { deleteTarget = Pair(account.id, account.label) }
+                            onDelete = { deleteTarget = Pair(account.id, account.label) },
+                            onRefresh = { viewModel.refreshSingleAccount(account.id) },
+                            accountUsageScript = account.usageScript
                         )
                     }
-                }
 
-                // 状态栏
-                if (uiState.accounts.isNotEmpty()) {
+                    // 状态栏
                     SimpleStatusBar(uiState)
                 }
+
+                // 底部间距（避免FAB遮挡）
+                Spacer(modifier = Modifier.height(80.dp))
             }
 
             PullRefreshIndicator(
@@ -240,178 +292,120 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// 错误消息卡片
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun ErrorMessageCard(message: String, onRetry: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                CustomIcons.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                message,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = onRetry,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    "重试",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // 空状态提示
 // ═══════════════════════════════════════════════════════════
 
 @Composable
 private fun EmptyAccountsHint() {
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(32.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
-            Text(stringResource(R.string.home_empty_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(stringResource(R.string.home_empty_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
-// 账户余额卡片
-// ═══════════════════════════════════════════════════════════
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AccountBalanceCard(
-    accountLabel: String,
-    accountId: String,
-    balance: BalanceResponse?,
-    isLoading: Boolean,
-    lastRefreshTime: Long,
-    now: Long,
-    onLongPress: () -> Unit
-) {
-    val context = LocalContext.current
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        modifier = Modifier
-            .semantics(mergeDescendants = true) {
-                contentDescription = accountLabel + "，长按可删除"
-            }
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onLongPress
-            )
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            // 标题行
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 图标容器
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                modifier = Modifier.size(96.dp)
             ) {
-                Text(accountLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
-                if (isLoading && balance == null) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                }
+                Icon(
+                    Icons.Filled.Home,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                stringResource(R.string.home_empty_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (balance != null) {
-                // 状态 + 刷新时间
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatusChip(available = balance.isAvailable)
-                    if (lastRefreshTime > 0) {
-                        Text(formatRefreshTime(lastRefreshTime, now, context),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 币种余额
-                if (balance.balanceInfos.isEmpty()) {
-                    Text(stringResource(R.string.home_no_data), style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    balance.balanceInfos
-                        .sortedByDescending { it.totalBalance.toDoubleOrNull() ?: 0.0 }
-                        .forEach { info ->
-                        BalanceInfoCard(info)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-            } else if (isLoading) {
-                Text(stringResource(R.string.loading), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Text(stringResource(R.string.home_query_failed), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error)
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusChip(available: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (available) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (available) Icons.Filled.CheckCircle else Icons.Filled.Close,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = if (available) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = if (available) stringResource(R.string.home_status_available)
-                    else stringResource(R.string.home_status_insufficient),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = if (available) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
+                stringResource(R.string.home_empty_subtitle),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
             )
-        }
-    }
-}
 
-@Composable
-private fun BalanceInfoCard(info: BalanceInfo) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // 引导按钮
+            FilledTonalButton(
+                onClick = { /* 由FAB处理 */ },
+                enabled = false,
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Text(stringResource(R.string.balance_total, FormatUtils.currencySymbol(info.currency)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(FormatUtils.formatAmount(info.totalBalance),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface)
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.balance_granted, FormatUtils.formatAmount(info.grantedBalance)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(stringResource(R.string.balance_topped_up, FormatUtils.formatAmount(info.toppedUpBalance)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("添加第一个账户")
             }
         }
     }
@@ -427,42 +421,63 @@ private fun SimpleStatusBar(uiState: com.balancesentinel.app.ui.viewmodel.HomeUi
 
     Card(
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 服务状态
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 val (svcColor, svcText) = when {
                     summary.serviceStarting -> Pair(WalletColors.warning, stringResource(R.string.home_service_starting))
                     summary.serviceAlive    -> Pair(WalletColors.success, stringResource(R.string.settings_service_running))
                     else                    -> Pair(MaterialTheme.colorScheme.error, stringResource(R.string.settings_service_stopped))
                 }
+                // 状态指示器（带动画效果）
                 Surface(
-                    modifier = Modifier.size(8.dp),
-                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.size(10.dp),
+                    shape = RoundedCornerShape(5.dp),
                     color = svcColor
                 ) {}
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(svcText, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    svcText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 电池状态
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 val batColor = if (!summary.batteryOptimizing) WalletColors.success else WalletColors.warning
+                val batText = if (!summary.batteryOptimizing) {
+                    stringResource(R.string.settings_battery_ok)
+                } else {
+                    stringResource(R.string.settings_battery_restricted)
+                }
                 Surface(
-                    modifier = Modifier.size(8.dp),
-                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.size(10.dp),
+                    shape = RoundedCornerShape(5.dp),
                     color = batColor
                 ) {}
-                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    if (!summary.batteryOptimizing) stringResource(R.string.settings_battery_ok)
-                    else stringResource(R.string.settings_battery_restricted),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    batText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

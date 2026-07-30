@@ -74,16 +74,11 @@ object RecordAggregator {
         return sum
     }
 
-    private fun isNearInteger(value: Float): Boolean {
-        val frac = value - value.toLong().toFloat()
-        return frac < 0.01f || frac > 0.99f
-    }
-
     /**
      * 消耗 = 逐对累加 totalBalance 纯下降量。
      *
-     * 跳过 toppedUpBalance 或 grantedBalance 发生变化的区间（该区间由充值/赠送解释），
-     * 只计入余额自然下降的幅度。不依赖充值和赠送值做会计公式反推。
+     * 与 IntradayEngine 一致的会计公式：consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)。
+     * 即使区间有充值/赠送，也能正确计算该区间的消费量。
      */
     fun computeConsumed(sorted: List<RawRecord>): Float {
         var consumed = 0f
@@ -92,13 +87,25 @@ object RecordAggregator {
             val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
             val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
 
-            // 充值/赠送区间跳过，剩余余额下降视为纯消费
-            if (topDelta >= 1f && isNearInteger(topDelta)) continue
-            if (grantDelta > 0f) continue
-            if (balanceDelta < 0f) consumed += -balanceDelta
+            val isTopUp = topDelta >= 1f && isNearInteger(topDelta)
+            val topUpAmount = if (isTopUp) topDelta else 0f
+            val isGrant = grantDelta > 0f
+            val grantAmount = if (isGrant) grantDelta else 0f
+            val consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)
+            consumed += consumption
         }
         return consumed
     }
+}
+
+/**
+ * 判断浮点数是否接近整数（API 浮点漂移容差 0.01）。
+ *
+ * RecordAggregator、DailyEngine、IntradayEngine 共用。
+ */
+internal fun isNearInteger(value: Float): Boolean {
+    val frac = value - value.toLong().toFloat()
+    return frac < 0.01f || frac > 0.99f
 }
 
 /** 聚合分组键：(currency, accountId) */

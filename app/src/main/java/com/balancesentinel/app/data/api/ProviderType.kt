@@ -22,6 +22,7 @@ enum class ProviderType(val id: String, val displayName: String) {
     MOONSHOT("moonshot", "Moonshot"),
     DOUBAO("doubao", "豆包"),
     BAICHUAN("baichuan", "百川"),
+    MODEL_ARK("model_ark", "模力方舟"),
 
     // 自定义
     CUSTOM("custom", "自定义");

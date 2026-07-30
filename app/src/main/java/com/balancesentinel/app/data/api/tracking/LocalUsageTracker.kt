@@ -104,11 +104,13 @@ class LocalUsageTracker(private val context: Context) {
         initialBalance: Double
     ) {
         val key = "${providerType.id}_$accountId"
+        // M8 修复：保留已有的 usedBalance，不重置为 0
+        val existing = balanceCache[key]
         val balance = ProviderBalance(
             providerType = providerType,
             accountId = accountId,
             totalBalance = initialBalance,
-            usedBalance = 0.0,
+            usedBalance = existing?.usedBalance ?: 0.0,
             lastUpdated = System.currentTimeMillis()
         )
         balanceCache[key] = balance
@@ -117,31 +119,29 @@ class LocalUsageTracker(private val context: Context) {
 
     /**
      * 计算费用
-     * 基于供应商定价模型
+     * M7 修复：区分 input/output token 费率
      */
     private fun calculateCost(
         providerType: ProviderType,
         inputTokens: Long,
         outputTokens: Long
     ): Double {
-        // 价格表（元/千token）
-        val pricePerThousandTokens = when (providerType) {
-            ProviderType.MOONSHOT -> 0.012
-            ProviderType.DOUBAO -> 0.008
-            ProviderType.BAICHUAN -> 0.01
-            ProviderType.QWEN -> 0.008
-            ProviderType.ZHIPU -> 0.005
-            ProviderType.WENXIN -> 0.012
-            ProviderType.OPENAI -> 0.06  // GPT-4
-            ProviderType.ANTHROPIC -> 0.075  // Claude
-            ProviderType.GEMINI -> 0.005
-            ProviderType.MISTRAL -> 0.02
-            ProviderType.COHERE -> 0.015
-            else -> 0.01
+        // 价格表：(input元/千token, output元/千token)
+        val (inputPrice, outputPrice) = when (providerType) {
+            ProviderType.MOONSHOT -> 0.012 to 0.012
+            ProviderType.DOUBAO -> 0.008 to 0.008
+            ProviderType.BAICHUAN -> 0.01 to 0.01
+            ProviderType.QWEN -> 0.008 to 0.008
+            ProviderType.ZHIPU -> 0.005 to 0.005
+            ProviderType.WENXIN -> 0.012 to 0.012
+            ProviderType.OPENAI -> 0.03 to 0.06   // GPT-4: input $0.03, output $0.06
+            ProviderType.ANTHROPIC -> 0.015 to 0.075  // Claude: input $0.015, output $0.075
+            ProviderType.GEMINI -> 0.005 to 0.005
+            ProviderType.MISTRAL -> 0.02 to 0.02
+            ProviderType.COHERE -> 0.015 to 0.015
+            else -> 0.01 to 0.01
         }
-
-        val totalTokens = inputTokens + outputTokens
-        return (totalTokens / 1000.0) * pricePerThousandTokens
+        return (inputTokens / 1000.0) * inputPrice + (outputTokens / 1000.0) * outputPrice
     }
 
     /**
@@ -166,6 +166,7 @@ class LocalUsageTracker(private val context: Context) {
 
     /**
      * 更新余额缓存
+     * C4 修复：使用 ConcurrentHashMap.compute() 保证原子性
      */
     private fun updateBalanceCache(
         providerType: ProviderType,
@@ -173,35 +174,40 @@ class LocalUsageTracker(private val context: Context) {
         cost: Double
     ) {
         val key = "${providerType.id}_$accountId"
-        val current = balanceCache[key] ?: return
-        val updated = current.copy(
-            usedBalance = current.usedBalance + cost,
-            lastUpdated = System.currentTimeMillis()
-        )
-        balanceCache[key] = updated
-        saveBalanceToPrefs(key, updated)
+        balanceCache.compute(key) { _, existing ->
+            if (existing == null) return@compute null
+            val updated = existing.copy(
+                usedBalance = existing.usedBalance + cost,
+                lastUpdated = System.currentTimeMillis()
+            )
+            saveBalanceToPrefs(key, updated)
+            updated
+        }
     }
 
     /**
      * 保存用量记录
+     * C4 修复：使用 synchronized 保护读-改-写序列
      */
     private fun saveUsageRecord(record: UsageRecord) {
         val key = "usage_${record.providerType.id}_${record.accountId}"
-        val existing = prefs.getString(key, null)
-        val records = if (existing != null) {
-            json.decodeFromString<List<UsageRecord>>(existing)
-        } else {
-            emptyList()
-        }.toMutableList()
+        synchronized(this) {
+            val existing = prefs.getString(key, null)
+            val records = if (existing != null) {
+                json.decodeFromString<List<UsageRecord>>(existing)
+            } else {
+                emptyList()
+            }.toMutableList()
 
-        records.add(record)
+            records.add(record)
 
-        // 只保留最近1000条记录
-        if (records.size > 1000) {
-            records.removeAt(0)
+            // 只保留最近1000条记录
+            if (records.size > 1000) {
+                records.removeAt(0)
+            }
+
+            prefs.edit().putString(key, json.encodeToString(records)).apply()
         }
-
-        prefs.edit().putString(key, json.encodeToString(records)).apply()
     }
 
     /**

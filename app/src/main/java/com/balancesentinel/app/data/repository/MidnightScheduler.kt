@@ -43,9 +43,9 @@ object MidnightScheduler {
             val triggerTime = calendar.timeInMillis
 
             try {
-                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC, triggerTime, pending)
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pending)
             } catch (_: SecurityException) {
-                alarm.set(AlarmManager.RTC, triggerTime, pending)
+                alarm.set(AlarmManager.RTC_WAKEUP, triggerTime, pending)
             }
         } catch (_: Exception) {
             // 闹钟调度失败不应影响主流程

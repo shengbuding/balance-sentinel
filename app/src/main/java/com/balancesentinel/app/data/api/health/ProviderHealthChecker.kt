@@ -33,7 +33,7 @@ class ProviderHealthChecker(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
     // 内存缓存
-    private val healthCache = mutableMapOf<ProviderType, HealthStatus>()
+    private val healthCache = java.util.concurrent.ConcurrentHashMap<ProviderType, HealthStatus>()
 
     /**
      * 检查供应商健康状态

@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.api
 
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.util.Logger
@@ -19,7 +20,8 @@ import javax.net.ssl.SSLException
  * DeepSeek API 服务 — 通过 OkHttp 调用 /user/balance 和 /v1/usage
  */
 class DeepSeekApiService(
-    private val baseUrl: String = "https://api.deepseek.com"
+    private val baseUrl: String = "https://api.deepseek.com",
+    private val accountId: String? = null
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -83,6 +85,12 @@ class DeepSeekApiService(
         .readTimeout(10, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .addInterceptor(RetryInterceptor())
+        .apply {
+            // 如果有accountId，添加调试拦截器
+            if (accountId != null) {
+                addInterceptor(DebugInterceptor(accountId))
+            }
+        }
         .build()
 
     /**

@@ -21,7 +21,7 @@
     <string name="home_no_data">暂无余额数据</string>
     <string name="home_query_failed">查询失败</string>
     <string name="home_status_available">可用</string>
-    <string name="home_status_insufficient">不足</string>
+    <string name="home_status_insufficient">余额不足</string>
     <string name="home_service_starting">启动中…</string>
     <string name="home_just_now">刚刚刷新</string>
     <string name="home_minutes_ago">%1$d 分钟前</string>

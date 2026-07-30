@@ -4,9 +4,8 @@ import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 /**
  * 清理调度器：聚合旧原始记录 → 日摘要 → 补零 → 删除。
@@ -14,7 +13,7 @@ import java.util.Locale
  */
 object CleanupScheduler {
 
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     /**
      * 执行一轮完整清理：
@@ -24,7 +23,7 @@ object CleanupScheduler {
      */
     suspend fun runCleanup(context: Context) = withContext(Dispatchers.IO) {
         try {
-            val today = dateFormat.format(Date())
+            val today = LocalDate.now().format(dateFormat)
             val now = System.currentTimeMillis()
 
             // 缓存已有摘要，避免循环内重复反序列化
@@ -59,7 +58,7 @@ object CleanupScheduler {
             val allSummaries = DailySummaryStore.getSummaries(context).sortedBy { it.date }
             if (allSummaries.isNotEmpty()) {
                 val earliestDate = allSummaries.first().date
-                val yesterday = dateFormat.format(Date(now - 24 * 3600_000L))
+                val yesterday = LocalDate.now().minusDays(1).format(dateFormat)
 
                 DailySummaryStore.ensureContinuity(context, earliestDate, yesterday)
             }

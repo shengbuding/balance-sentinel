@@ -2,15 +2,14 @@ package com.balancesentinel.app.data.engine
 
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
-import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 
 object DailyEngine {
 
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     fun compute(input: DailyInput): DailyOutput {
         val filtered = input.summaries
@@ -23,7 +22,7 @@ object DailyEngine {
 
         // Build today's point from raw records BEFORE checking window emptiness.
         // This ensures Day 1 (no summaries yet) still shows today's live data.
-        val today = dateFormat.format(Date())
+        val today = LocalDate.now().format(dateFormatter)
         val todayFiltered = input.todayRawRecords
             .filter { it.currency == input.filterCurrency }
             .filter { input.filterAccountId == null || it.accountId == input.filterAccountId }
@@ -236,8 +235,8 @@ object DailyEngine {
     }
 
     /**
-     * 逐对消费计算 — 只累加余额纯下降区间（跳过充值/赠送区间），
-     * 与 [RecordAggregator.computeConsumed] 逻辑一致。
+     * 逐对消费计算 — 与 IntradayEngine / RecordAggregator 一致的会计公式：
+     * consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)。
      */
     private fun computeConsumedFromPairs(sorted: List<RawRecord>): Float {
         var consumed = 0f
@@ -246,15 +245,13 @@ object DailyEngine {
             val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
             val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
 
-            if (topDelta >= 1f && isNearInteger(topDelta)) continue
-            if (grantDelta > 0f) continue
-            if (balanceDelta < 0f) consumed += -balanceDelta
+            val isTopUp = topDelta >= 1f && isNearInteger(topDelta)
+            val topUpAmount = if (isTopUp) topDelta else 0f
+            val isGrant = grantDelta > 0f
+            val grantAmount = if (isGrant) grantDelta else 0f
+            val consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)
+            consumed += consumption
         }
         return consumed
-    }
-
-    private fun isNearInteger(value: Float): Boolean {
-        val frac = value - value.toLong().toFloat()
-        return frac < 0.01f || frac > 0.99f
     }
 }

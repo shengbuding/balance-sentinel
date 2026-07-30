@@ -161,6 +161,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
 
+    // JavaScript Engine (for custom usage scripts)
+    implementation("org.mozilla:rhino:1.7.14")
+
     // Security
     implementation(libs.security.crypto)
 

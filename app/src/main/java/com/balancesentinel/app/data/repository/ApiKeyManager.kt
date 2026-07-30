@@ -36,7 +36,11 @@ class ApiKeyManager(
         }
     }
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true  // 确保默认值被序列化
+        explicitNulls = true   // 确保null值被序列化
+    }
 
     // ── 多账户操作 ──
 
@@ -44,25 +48,43 @@ class ApiKeyManager(
         label: String,
         apiKey: String,
         providerType: ProviderType = ProviderType.DEEPSEEK,
-        extraSettings: Map<String, String> = emptyMap()
+        extraSettings: Map<String, String> = emptyMap(),
+        extraCredentials: Map<String, String> = emptyMap(),
+        usageScript: String? = null
     ): AccountInfo {
         val account = AccountInfo(
             id = computeId(apiKey),
             label = label.trim(),
             apiKey = apiKey.trim(),
             providerType = providerType,
-            extraSettings = extraSettings
+            extraCredentials = extraCredentials,
+            extraSettings = extraSettings,
+            usageScript = usageScript
         )
         val accounts = getAccounts().toMutableList()
-        // 同一 API Key 重复添加时，更新 label 而不是创建重复账户
+        // 同一 API Key 重复添加时，更新所有字段（不仅仅是 label）
         val existingIdx = accounts.indexOfFirst { it.id == account.id }
         if (existingIdx >= 0) {
-            accounts[existingIdx] = accounts[existingIdx].copy(label = account.label)
+            accounts[existingIdx] = accounts[existingIdx].copy(
+                label = account.label,
+                providerType = account.providerType,
+                extraCredentials = account.extraCredentials,
+                extraSettings = account.extraSettings,
+                usageScript = account.usageScript
+            )
         } else {
             accounts.add(account)
         }
         saveAccounts(accounts)
-        return account
+        return accounts.first { it.id == account.id }
+    }
+
+    /**
+     * 原子替换所有账户（用于配置导入）
+     * C5+H10 修复：一次性写入，避免 clearAll + 逐个 add 的崩溃风险
+     */
+    fun replaceAll(newAccounts: List<AccountInfo>) {
+        saveAccounts(newAccounts)
     }
 
     /**
@@ -91,6 +113,20 @@ class ApiKeyManager(
     fun renameAccount(id: String, newLabel: String) {
         val accounts = getAccounts().map {
             if (it.id == id) it.copy(label = newLabel.trim()) else it
+        }
+        saveAccounts(accounts)
+    }
+
+    fun updateExtraSettings(id: String, extraSettings: Map<String, String>) {
+        val accounts = getAccounts().map {
+            if (it.id == id) it.copy(extraSettings = extraSettings) else it
+        }
+        saveAccounts(accounts)
+    }
+
+    fun updateUsageScript(id: String, usageScript: String?) {
+        val accounts = getAccounts().map {
+            if (it.id == id) it.copy(usageScript = usageScript) else it
         }
         saveAccounts(accounts)
     }

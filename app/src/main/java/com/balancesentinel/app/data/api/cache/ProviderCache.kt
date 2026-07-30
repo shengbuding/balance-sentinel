@@ -161,6 +161,7 @@ class ProviderCache(private val context: Context) {
             ProviderType.GEMINI -> 120_000L
             ProviderType.MISTRAL -> 120_000L
             ProviderType.COHERE -> 120_000L
+            ProviderType.MODEL_ARK -> 60_000L  // 1分钟
             ProviderType.CUSTOM -> 120_000L
         }
     }

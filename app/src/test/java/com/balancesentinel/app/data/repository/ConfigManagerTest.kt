@@ -196,12 +196,10 @@ class ConfigManagerTest {
     @Test
     fun `applyConfig imports accounts and settings`() {
         prefs.resetAll()
-        val appliedAccounts = mutableListOf<AccountInfo>()
+        var replacedAccounts: List<AccountInfo>? = null
         val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        every { mockMgr.addAccount(any(), any()) } answers {
-            val info = AccountInfo(id = "", label = firstArg<String>(), apiKey = secondArg<String>())
-            appliedAccounts.add(info)
-            info
+        every { mockMgr.replaceAll(any()) } answers {
+            replacedAccounts = firstArg()
         }
 
         val config = AppConfig(
@@ -222,8 +220,8 @@ class ConfigManagerTest {
         val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
 
         assertEquals(0, skipped)
-        assertEquals(1, appliedAccounts.size)
-        assertEquals("Imported1", appliedAccounts[0].label)
+        assertEquals(1, replacedAccounts!!.size)
+        assertEquals("Imported1", replacedAccounts!![0].label)
         assertEquals(90, prefs.refreshIntervalSeconds)
         assertTrue(prefs.alertEnabled)
         assertEquals(200, prefs.logMaxEntries)
@@ -233,11 +231,10 @@ class ConfigManagerTest {
     @Test
     fun `applyConfig skips redacted accounts`() {
         prefs.resetAll()
-        val appliedAccounts = mutableListOf<String>()
+        var replacedAccounts: List<AccountInfo>? = null
         val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        every { mockMgr.addAccount(any(), any()) } answers {
-            appliedAccounts.add(firstArg<String>())
-            AccountInfo(id = "", label = firstArg(), apiKey = secondArg())
+        every { mockMgr.replaceAll(any()) } answers {
+            replacedAccounts = firstArg()
         }
 
         val config = AppConfig(
@@ -256,12 +253,12 @@ class ConfigManagerTest {
 
         val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
         assertEquals(2, skipped)
-        assertEquals(1, appliedAccounts.size)
-        assertEquals("Valid", appliedAccounts[0])
+        assertEquals(1, replacedAccounts!!.size)
+        assertEquals("Valid", replacedAccounts!![0].label)
     }
 
     @Test
-    fun `applyConfig calls clearAll before importing`() {
+    fun `applyConfig uses replaceAll for atomic import`() {
         prefs.resetAll()
         val mockMgr = mockk<ApiKeyManager>(relaxed = true)
         val config = AppConfig(
@@ -275,7 +272,8 @@ class ConfigManagerTest {
         )
 
         ConfigManager.applyConfig(config, mockMgr, prefs)
-        verify(exactly = 1) { mockMgr.clearAll() }
+        verify(exactly = 1) { mockMgr.replaceAll(any()) }
+        verify(exactly = 0) { mockMgr.clearAll() }
     }
 
     @Test
@@ -334,11 +332,9 @@ class ConfigManagerTest {
     fun `applyConfig returns zero skipped when all accounts valid`() {
         prefs.resetAll()
         val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        val mockReturn = AccountInfo(id = "mock-id", label = "mock", apiKey = "sk-mock")
-        val accountsAdded = mutableListOf<String>()
-        every { mockMgr.addAccount(any(), any()) } answers {
-            accountsAdded.add(firstArg<String>())
-            mockReturn
+        var replacedAccounts: List<AccountInfo>? = null
+        every { mockMgr.replaceAll(any()) } answers {
+            replacedAccounts = firstArg()
         }
 
         val config = AppConfig(
@@ -356,7 +352,7 @@ class ConfigManagerTest {
 
         val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
         assertEquals(0, skipped)
-        assertEquals(2, accountsAdded.size)
+        assertEquals(2, replacedAccounts!!.size)
     }
 
     // ═══════════════════════════════════════════════════════════

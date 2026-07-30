@@ -14,6 +14,7 @@ Multi-AI-provider balance monitoring Android app — supports 13 AI providers, m
 
 - **多供应商支持** — 支持13个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、自定义
 - **多账户管理** — 支持多个API Key，每个账户独立配置
+- **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本，兼容cc-switch格式，支持ES6语法自动转换
 - **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
 - **自定义平台控制台** — 支持添加任意 AI 平台控制台，通过 WebView 登录官方控制台查看数据，登录状态永久保持
 - **后台自动刷新** — 前台服务保活，Handler 定时轮询，支持 1/5/10/15/30/60 分钟间隔
@@ -22,12 +23,14 @@ Multi-AI-provider balance monitoring Android app — supports 13 AI providers, m
 - **异动通知** — 检测余额变化（充值/消耗），实时推送
 - **日内 + 日历天趋势** — 24h 滑动窗口 + 每日摘要，sparkline 图表 + 充值/消耗分析
 - **通知栏钱包** — 自定义排序，总余额双币种显示
+- **账户调试** — 显示完整API请求和响应信息，支持自定义脚本执行错误诊断
 - **数据管理** — 本地导出/导入配置，历史数据导出
 - **刷新健康监控** — 成功率仪表盘，连续失败自动降频保护
 - **缓存层** — 智能缓存策略，减少API调用
 - **本地用量追踪** — 为无余额API的供应商提供估算
 - **中英双语** — 设置页面一键切换简体中文 / English，自动记忆语言偏好
 - **隐私优先** — EncryptedSharedPreferences (AES-256)，无 Firebase/分析/广告 SDK
+- **安全加固** — Rhino JS 沙箱（ClassShutter + sealObject）隔离自定义脚本执行环境
 
 ### 截图
 
@@ -54,7 +57,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (750+ unit tests, 50+ files)
+# 运行测试 (1,528 unit tests, 53 files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -111,7 +114,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.4.1** (2026-07-25)
+当前：**v1.4.2** (2026-07-30)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -128,6 +131,7 @@ keyPassword=<密码>
 
 - **Multi-Provider Support** — Supports 13 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Custom
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
+- **Custom Balance Query Script** — Custom providers support JavaScript query scripts, compatible with cc-switch format, automatic ES6 to ES5 conversion
 - **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
 - **Custom Platform Console** — Add any AI platform console, login via WebView to view data, session persists permanently
 - **Background Auto-Refresh** — Foreground service with Handler-based polling at 1/5/10/15/30/60 minute intervals
@@ -136,12 +140,14 @@ keyPassword=<密码>
 - **Change Notifications** — Real-time push notifications for balance changes (top-up/consumption)
 - **Intraday + Calendar Day Trends** — 24h sliding window + daily summaries with sparkline charts and consumption analysis
 - **Notification Bar Wallet** — Custom sorting, dual-currency total balance display
+- **Account Debugging** — View complete API request and response details, support custom script execution error diagnosis
 - **Data Management** — Local config export/import, historical data export
 - **Refresh Health Monitoring** — Success rate dashboard with automatic rate-limit protection on consecutive failures
 - **Caching Layer** — Smart caching strategy to reduce API calls
 - **Local Usage Tracking** — Provides estimates for providers without balance API
 - **Bilingual UI** — One-tap switch between Simplified Chinese / English in Settings, language preference persists across restarts
 - **Privacy First** — EncryptedSharedPreferences (AES-256), no Firebase/analytics/ad SDKs
+- **Security Hardening** — Rhino JS sandbox (ClassShutter + sealObject) for isolated custom script execution
 
 ### Screenshots
 
@@ -168,7 +174,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (750+ unit tests, 50+ files)
+# Run tests (1,528 unit tests, 53 files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -225,7 +231,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.4.1** (2026-07-25)
+Current: **v1.4.2** (2026-07-30)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -367,7 +373,7 @@ DeepSeekBalance/
 │       │       ├── values/{strings,themes}.xml
 │       │       ├── values-en/strings.xml
 │       │       └── xml/widget_*.xml
-│       └── test/     ← 50+ test files, 750+ unit tests
+│       └── test/     ← 53 test files, 1,528 unit tests
 ├── docs/
 │   ├── superpowers/specs/    ← Design & plan documents
 │   ├── adr/                  ← Architecture Decision Records

@@ -15,11 +15,19 @@ class BalanceRepository(
 ) {
     /**
      * 查询余额 — 在 IO 线程执行网络请求。
+     * @param apiKey API Key
+     * @param accountId 账户ID（用于调试日志）
      */
-    suspend fun fetchBalance(apiKey: String): Result<BalanceResponse> {
+    suspend fun fetchBalance(apiKey: String, accountId: String? = null): Result<BalanceResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getBalance(apiKey)
+                // 如果有accountId，创建带有调试拦截器的apiService
+                val service = if (accountId != null) {
+                    DeepSeekApiService(accountId = accountId)
+                } else {
+                    apiService
+                }
+                val response = service.getBalance(apiKey)
                 Result.success(response)
             } catch (e: IOException) {
                 Result.failure(e)
@@ -33,11 +41,19 @@ class BalanceRepository(
 
     /**
      * 查询用量统计 — 在 IO 线程执行。
+     * @param apiKey API Key
+     * @param accountId 账户ID（用于调试日志）
      */
-    suspend fun fetchUsage(apiKey: String): Result<UsageResponse> {
+    suspend fun fetchUsage(apiKey: String, accountId: String? = null): Result<UsageResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getUsage(apiKey)
+                // 如果有accountId，创建带有调试拦截器的apiService
+                val service = if (accountId != null) {
+                    DeepSeekApiService(accountId = accountId)
+                } else {
+                    apiService
+                }
+                val response = service.getUsage(apiKey)
                 Result.success(response)
             } catch (e: IOException) {
                 Result.failure(e)

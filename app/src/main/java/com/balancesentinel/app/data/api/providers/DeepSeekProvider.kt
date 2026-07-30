@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.api.providers
 
 import com.balancesentinel.app.data.api.*
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.util.Logger
@@ -30,10 +31,26 @@ class DeepSeekProvider : AiProvider {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * 获取带有调试拦截器的OkHttpClient
+     */
+    private fun getClientWithDebug(accountId: String?): OkHttpClient {
+        return if (accountId != null) {
+            client.newBuilder()
+                .addInterceptor(DebugInterceptor(accountId))
+                .build()
+        } else {
+            client
+        }
+    }
+
     override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> {
         return try {
             val apiKey = config.apiKey
             val baseUrl = config.baseUrl ?: "https://api.deepseek.com"
+            val accountId = config.credentials["accountId"]
+
+            val debugClient = getClientWithDebug(accountId)
 
             val request = Request.Builder()
                 .url("$baseUrl/user/balance")
@@ -42,7 +59,7 @@ class DeepSeekProvider : AiProvider {
                 .get()
                 .build()
 
-            client.newCall(request).execute().use { response ->
+            debugClient.newCall(request).execute().use { response ->
                 val body = response.body?.string()
                     ?: throw IOException("Empty response body")
 
@@ -95,6 +112,9 @@ class DeepSeekProvider : AiProvider {
         return try {
             val apiKey = config.apiKey
             val baseUrl = config.baseUrl ?: "https://api.deepseek.com"
+            val accountId = config.credentials["accountId"]
+
+            val debugClient = getClientWithDebug(accountId)
 
             val url = buildString {
                 append("$baseUrl/v1/usage")
@@ -113,7 +133,7 @@ class DeepSeekProvider : AiProvider {
                 .get()
                 .build()
 
-            client.newCall(request).execute().use { response ->
+            debugClient.newCall(request).execute().use { response ->
                 val body = response.body?.string()
                     ?: throw IOException("Empty response body")
 
@@ -132,12 +152,18 @@ class DeepSeekProvider : AiProvider {
                 }
 
                 val usageResponse = json.decodeFromString<UsageResponse>(body)
+                // C3 修复：映射 usageResponse 数据而非硬编码零
+                val totalTokens = usageResponse.data.sumOf { it.total_tokens }
+                val promptTokens = usageResponse.data.sumOf { it.prompt_tokens }
+                val completionTokens = usageResponse.data.sumOf { it.completion_tokens }
+                // DeepSeek API 不返回费用，使用费率估算（元/千token）
+                val estimatedCost = (promptTokens / 1000.0) * 0.002 + (completionTokens / 1000.0) * 0.01
                 ProviderResult.Success(
                     UnifiedUsage(
                         provider = providerType,
                         accountId = config.credentials["accountId"] ?: "",
-                        totalTokens = 0,
-                        totalCost = 0.0
+                        totalTokens = totalTokens,
+                        totalCost = estimatedCost
                     )
                 )
             }

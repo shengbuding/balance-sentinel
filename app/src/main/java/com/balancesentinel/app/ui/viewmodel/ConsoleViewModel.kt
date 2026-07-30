@@ -98,11 +98,22 @@ class ConsoleViewModel(
     fun logout() {
         viewModelScope.launch {
             try {
+                DebugLogger.log("[$TAG] Logout started for ${platform.name} (id=${platform.id})")
+
+                // 清除存储的session
                 store.removeSession(platform.id)
+                DebugLogger.log("[$TAG] Session removed from store")
+
+                // 重置UI状态
                 _uiState.value = ConsoleUiState()
-                DebugLogger.log("[$TAG] Logout for ${platform.name} (id=${platform.id})")
+                DebugLogger.log("[$TAG] UI state reset")
+
+                // 验证session是否被清除
+                val remainingSession = store.getSession(platform.id)
+                DebugLogger.log("[$TAG] Logout completed. Session remaining: ${remainingSession != null}")
             } catch (e: Exception) {
                 DebugLogger.log("[$TAG] Logout failed: ${e.message}")
+                e.printStackTrace()
             }
         }
     }

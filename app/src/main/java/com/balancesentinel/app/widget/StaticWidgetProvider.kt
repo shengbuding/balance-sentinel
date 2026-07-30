@@ -64,12 +64,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             if (intent.action == ACTION_REFRESH) {
                 if (!processingRefresh.compareAndSet(false, true)) return
                 val fromButton = intent.getBooleanExtra(EXTRA_FROM_BUTTON, false)
-                try {
-                    handleRefresh(context, fromButton)
-                } finally {
-                    android.os.Handler(android.os.Looper.getMainLooper())
-                        .postDelayed({ processingRefresh.set(false) }, 500L)
-                }
+                handleRefresh(context, fromButton)
             } else {
                 super.onReceive(context, intent)
             }
@@ -87,7 +82,10 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             StaticWidgetProvider_5x1::class.java
         )
         val allIds = allClasses.flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
-        if (allIds.isEmpty()) return
+        if (allIds.isEmpty()) {
+            processingRefresh.set(false)
+            return
+        }
         val widgetIds = allIds.toIntArray()
 
         // 显示刷新进度条
@@ -101,6 +99,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         // 用户手动点击刷新按钮 → 无论如何都执行
         // 闹钟自动触发 → 仅当 Service 死亡时才接管刷新，否则 Service 自己会刷新
         if (!fromButton && !svcDead) {
+            processingRefresh.set(false)
             return  // Service 健在，闹钟仅做备份，不重复刷新
         }
 
@@ -156,6 +155,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 Logger.e("StaticWidget", "Manual refresh failed", e)
             } finally {
                 pendingResult.finish()
+                processingRefresh.set(false)
                 if (svcDead) {
                     restartServiceNow(context)
                 }
@@ -384,11 +384,11 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             message = "看门狗闹钟已设定"
         } catch (_: SecurityException) {
             try {
-                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC, triggerTime, pending)
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pending)
                 method = "exact"
             } catch (_: SecurityException) {
                 try {
-                    alarm.set(AlarmManager.RTC, triggerTime, pending)
+                    alarm.set(AlarmManager.RTC_WAKEUP, triggerTime, pending)
                     method = "inexact"
                 } catch (e: Exception) {
                     method = "failed"

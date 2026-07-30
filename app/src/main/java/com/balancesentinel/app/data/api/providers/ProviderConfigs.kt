@@ -26,6 +26,7 @@ object ProviderConfigs {
             ProviderType.GEMINI -> "Google AI API Key"
             ProviderType.MISTRAL -> "Mistral API Key"
             ProviderType.COHERE -> "Cohere API Key"
+            ProviderType.MODEL_ARK -> "模力方舟 API Key"
             ProviderType.CUSTOM -> "自定义API Key"
         }
     }
@@ -47,6 +48,7 @@ object ProviderConfigs {
             ProviderType.GEMINI -> apiKey.isNotBlank() && apiKey.length > 10
             ProviderType.MISTRAL -> apiKey.isNotBlank() && apiKey.length > 10
             ProviderType.COHERE -> apiKey.isNotBlank() && apiKey.length > 10
+            ProviderType.MODEL_ARK -> apiKey.isNotBlank() && apiKey.length > 10
             ProviderType.CUSTOM -> apiKey.isNotBlank()
         }
     }
@@ -123,6 +125,7 @@ object ProviderConfigs {
             ProviderType.GEMINI -> 100.0
             ProviderType.MISTRAL -> 100.0
             ProviderType.COHERE -> 100.0
+            ProviderType.MODEL_ARK -> 0.0  // 使用真实API
             ProviderType.CUSTOM -> 100.0
         }
     }

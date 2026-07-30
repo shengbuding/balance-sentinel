@@ -67,6 +67,7 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
     fun clearLogs() {
         try {
             RefreshLogStore.clear(getApplication())
+            allLogs = emptyList()
             _uiState.value = _uiState.value.copy(refreshLogs = emptyList(), missedCount = 0)
         } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }
     }

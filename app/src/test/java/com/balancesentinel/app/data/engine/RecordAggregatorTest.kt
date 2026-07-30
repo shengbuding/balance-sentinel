@@ -158,23 +158,25 @@ class RecordAggregatorTest {
     }
 
     @Test
-    fun `consumed skips pair where toppedUpBalance changed`() {
-        // 充值区间：余额 50→100，toppedUpBalance 50→150 → 跳过，不计算消耗
+    fun `consumed captures consumption during top-up interval`() {
+        // 充值区间：余额 50→100 (+50)，toppedUpBalance 50→150 (+100 top-up)
+        // 新公式：consumption = (topUpAmount + grantAmount - balanceDelta) = 100 - 50 = 50
         val sorted = listOf(
             RawRecord("acc1", 1000L, "CNY", 50f, 0f, 50f),
             RawRecord("acc1", 2000L, "CNY", 100f, 0f, 150f)
         )
-        assertEquals(0f, RecordAggregator.computeConsumed(sorted))
+        assertEquals(50f, RecordAggregator.computeConsumed(sorted))
     }
 
     @Test
-    fun `consumed skips pair where grantedBalance changed`() {
-        // 赠送区间：grantedBalance 从 0→30 → 跳过
+    fun `consumed captures consumption during grant interval`() {
+        // 赠送区间：grantedBalance 从 0→30，余额不变
+        // 新公式：consumption = (0 + 30 - 0) = 30
         val sorted = listOf(
             RawRecord("acc1", 1000L, "CNY", 100f, 0f, 50f),
             RawRecord("acc1", 2000L, "CNY", 100f, 30f, 50f)
         )
-        assertEquals(0f, RecordAggregator.computeConsumed(sorted))
+        assertEquals(30f, RecordAggregator.computeConsumed(sorted))
     }
 
     @Test

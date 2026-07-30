@@ -74,8 +74,4 @@ object IntradayEngine {
         )
     }
 
-    private fun isNearInteger(value: Float): Boolean {
-        val frac = value - value.toLong().toFloat()
-        return frac < 0.01f || frac > 0.99f
-    }
 }

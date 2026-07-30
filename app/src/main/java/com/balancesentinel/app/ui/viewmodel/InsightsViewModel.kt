@@ -22,6 +22,7 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,13 +73,15 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
     private val apiKeyManager = ApiKeyManager(application)
+    private var loadDataJob: Job? = null
 
     init {
         loadData()
     }
 
     fun loadData() {
-        viewModelScope.launch(Dispatchers.Default) {
+        loadDataJob?.cancel()
+        loadDataJob = viewModelScope.launch(Dispatchers.Default) {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
                 expandedDate = null
