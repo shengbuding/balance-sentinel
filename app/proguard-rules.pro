@@ -156,3 +156,8 @@
 -dontwarn java.lang.invoke.**
 -dontwarn com.sun.**
 -dontwarn org.jetbrains.annotations.**
+
+# === Mozilla Rhino (JavaScript engine for custom balance query scripts) ===
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.javascript.**
+-keep class org.mozilla.javascript.tools.** { *; }
