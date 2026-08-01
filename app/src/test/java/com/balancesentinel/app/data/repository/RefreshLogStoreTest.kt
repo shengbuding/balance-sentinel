@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
@@ -128,5 +130,68 @@ class RefreshLogStoreTest {
 
         val entries = RefreshLogStore.getEntries(context)
         assertEquals(4, entries.size)
+    }
+
+    @Test
+    fun `addEntry does not throw when SharedPreferences commit fails`() {
+        val entry = RefreshLogEntry(
+            id = 1, type = RefreshLogType.MANUAL, timestamp = 1000,
+            totalBalance = "100", currency = "CNY", isAvailable = true
+        )
+        val failingContext = FailingPrefsContext(context, "refresh_log_store")
+
+        // Legacy callers should not receive a persistence exception
+        RefreshLogStore.addEntry(failingContext, entry)
+    }
+
+    @Test
+    fun `clear does not throw when SharedPreferences commit fails`() {
+        RefreshLogStore.addEntry(context, RefreshLogEntry(
+            id = 1, type = RefreshLogType.MANUAL, timestamp = 1000,
+            totalBalance = "100", currency = "CNY", isAvailable = true
+        ))
+        val failingContext = FailingPrefsContext(context, "refresh_log_store")
+
+        // Legacy callers should not receive a persistence exception
+        RefreshLogStore.clear(failingContext)
+    }
+
+    private class FailingPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun commit(): Boolean {
+                            editor.commit()
+                            return false
+                        }
+                    }
+                }
+            }
+        }
     }
 }

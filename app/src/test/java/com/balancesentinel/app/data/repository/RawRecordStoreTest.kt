@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.RawRecord
 import org.junit.After
@@ -280,5 +282,53 @@ class RawRecordStoreTest {
         // Both yesterday's and today's records persist
         val all = RawRecordStore.getAllRecords(context)
         assertEquals(2, all.size)
+    }
+
+    @Test
+    fun `addRecords does not throw when SharedPreferences commit fails`() {
+        val records = listOf(RawRecord("acc1", now, "CNY", 100f, 10f, 90f))
+        val failingContext = FailingPrefsContext(context, "raw_records")
+
+        // Legacy callers should not receive a persistence exception
+        RawRecordStore.addRecords(failingContext, records)
+    }
+
+    private class FailingPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun commit(): Boolean {
+                            editor.commit()
+                            return false
+                        }
+                    }
+                }
+            }
+        }
     }
 }
