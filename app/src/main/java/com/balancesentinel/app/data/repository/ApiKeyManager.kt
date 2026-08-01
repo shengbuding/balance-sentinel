@@ -20,6 +20,7 @@ class ApiKeyManager(
     // test-only: inject SharedPreferences to bypass EncryptedSharedPreferences (unavailable in Robolectric)
     private val injectedPrefs: SharedPreferences? = null
 ) {
+    private val accountLock = ACCOUNT_LOCK
 
     private val prefs: SharedPreferences by lazy {
         injectedPrefs ?: run {
@@ -51,32 +52,21 @@ class ApiKeyManager(
         extraSettings: Map<String, String> = emptyMap(),
         extraCredentials: Map<String, String> = emptyMap(),
         usageScript: String? = null
-    ): AccountInfo {
+    ): AccountInfo = mutateAccounts { accounts ->
+        val id = computeId(apiKey)
+        val existingIndex = accounts.indexOfFirst { it.id == id }
         val account = AccountInfo(
-            id = computeId(apiKey),
+            id = id,
             label = label.trim(),
             apiKey = apiKey.trim(),
             providerType = providerType,
-            extraCredentials = extraCredentials,
-            extraSettings = extraSettings,
-            usageScript = usageScript
+            extraCredentials = extraCredentials.toMap(),
+            extraSettings = extraSettings.toMap(),
+            usageScript = usageScript,
+            revision = accounts.getOrNull(existingIndex)?.revision?.plus(1) ?: 0
         )
-        val accounts = getAccounts().toMutableList()
-        // 同一 API Key 重复添加时，更新所有字段（不仅仅是 label）
-        val existingIdx = accounts.indexOfFirst { it.id == account.id }
-        if (existingIdx >= 0) {
-            accounts[existingIdx] = accounts[existingIdx].copy(
-                label = account.label,
-                providerType = account.providerType,
-                extraCredentials = account.extraCredentials,
-                extraSettings = account.extraSettings,
-                usageScript = account.usageScript
-            )
-        } else {
-            accounts.add(account)
-        }
-        saveAccounts(accounts)
-        return accounts.first { it.id == account.id }
+        if (existingIndex >= 0) accounts[existingIndex] = account else accounts.add(account)
+        account
     }
 
     /**
@@ -84,7 +74,10 @@ class ApiKeyManager(
      * C5+H10 修复：一次性写入，避免 clearAll + 逐个 add 的崩溃风险
      */
     fun replaceAll(newAccounts: List<AccountInfo>) {
-        saveAccounts(newAccounts)
+        mutateAccounts { accounts ->
+            accounts.clear()
+            accounts.addAll(newAccounts)
+        }
     }
 
     /**
@@ -106,32 +99,48 @@ class ApiKeyManager(
     }
 
     fun removeAccount(id: String) {
-        val accounts = getAccounts().filter { it.id != id }
-        saveAccounts(accounts)
+        mutateAccounts { accounts -> accounts.removeAll { it.id == id } }
     }
 
     fun renameAccount(id: String, newLabel: String) {
-        val accounts = getAccounts().map {
-            if (it.id == id) it.copy(label = newLabel.trim()) else it
+        mutateAccounts { accounts ->
+            val index = accounts.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                accounts[index] = accounts[index].copy(
+                    label = newLabel.trim(),
+                    revision = accounts[index].revision + 1
+                )
+            }
         }
-        saveAccounts(accounts)
     }
 
     fun updateExtraSettings(id: String, extraSettings: Map<String, String>) {
-        val accounts = getAccounts().map {
-            if (it.id == id) it.copy(extraSettings = extraSettings) else it
+        mutateAccounts { accounts ->
+            val index = accounts.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                accounts[index] = accounts[index].copy(
+                    extraSettings = extraSettings.toMap(),
+                    revision = accounts[index].revision + 1
+                )
+            }
         }
-        saveAccounts(accounts)
     }
 
     fun updateUsageScript(id: String, usageScript: String?) {
-        val accounts = getAccounts().map {
-            if (it.id == id) it.copy(usageScript = usageScript) else it
+        mutateAccounts { accounts ->
+            val index = accounts.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                accounts[index] = accounts[index].copy(
+                    usageScript = usageScript,
+                    revision = accounts[index].revision + 1
+                )
+            }
         }
-        saveAccounts(accounts)
     }
 
-    fun getAccounts(): List<AccountInfo> {
+    fun getAccounts(): List<AccountInfo> = synchronized(accountLock) { readAccountsLocked() }
+
+    private fun readAccountsLocked(): List<AccountInfo> {
         val raw = prefs.getString(KEY_ACCOUNTS, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<AccountInfo>>(raw)
@@ -149,11 +158,9 @@ class ApiKeyManager(
     }
 
     fun clearAll() {
-        prefs.edit().remove(KEY_ACCOUNTS).apply()
-    }
-
-    private fun saveAccounts(accounts: List<AccountInfo>) {
-        prefs.edit().putString(KEY_ACCOUNTS, json.encodeToString(accounts)).apply()
+        synchronized(accountLock) {
+            check(prefs.edit().remove(KEY_ACCOUNTS).commit())
+        }
     }
 
     // ── 兼容旧版单 Key 迁移 ──
@@ -162,11 +169,22 @@ class ApiKeyManager(
      * 如果旧版单 Key 存在且没有账户数据，自动迁移为账户列表。
      */
     fun migrateLegacyKeyIfNeeded() {
-        if (getAccounts().isNotEmpty()) return
-        val legacyKey = prefs.getString(KEY_LEGACY_API_KEY, null)
-        if (!legacyKey.isNullOrBlank()) {
-            addAccount(appContext.getString(R.string.default_account_label), legacyKey)
-            prefs.edit().remove(KEY_LEGACY_API_KEY).apply()
+        synchronized(accountLock) {
+            if (readAccountsLocked().isNotEmpty()) return
+            val legacyKey = prefs.getString(KEY_LEGACY_API_KEY, null)
+            if (!legacyKey.isNullOrBlank()) {
+                val account = AccountInfo(
+                    id = computeId(legacyKey),
+                    label = appContext.getString(R.string.default_account_label),
+                    apiKey = legacyKey.trim()
+                )
+                check(
+                    prefs.edit()
+                        .putString(KEY_ACCOUNTS, json.encodeToString(listOf(account)))
+                        .remove(KEY_LEGACY_API_KEY)
+                        .commit()
+                )
+            }
         }
     }
 
@@ -174,33 +192,29 @@ class ApiKeyManager(
      * 迁移旧版ID（4字节）到新版ID（8字节）
      * 返回迁移映射表：oldId -> newId
      */
-    fun migrateAccountIds(): Map<String, String> {
-        val accounts = getAccounts()
+    fun migrateAccountIds(): Map<String, String> = mutateAccounts { accounts ->
         val migrationMap = mutableMapOf<String, String>()
-        var needsMigration = false
-
-        val migratedAccounts = accounts.map { account ->
+        for (index in accounts.indices) {
+            val account = accounts[index]
             val newId = computeId(account.apiKey)
-            val legacyId = computeLegacyId(account.apiKey)
-
-            // 检查是否需要迁移（ID长度不是16位）
             if (account.id.length != 16) {
-                needsMigration = true
                 migrationMap[account.id] = newId
-                account.copy(id = newId)
-            } else {
-                account
+                accounts[index] = account.copy(id = newId)
             }
         }
-
-        if (needsMigration) {
-            saveAccounts(migratedAccounts)
-        }
-
-        return migrationMap
+        migrationMap
     }
 
+    private inline fun <T> mutateAccounts(block: (MutableList<AccountInfo>) -> T): T =
+        synchronized(accountLock) {
+            val accounts = readAccountsLocked().toMutableList()
+            val result = block(accounts)
+            check(prefs.edit().putString(KEY_ACCOUNTS, json.encodeToString(accounts)).commit())
+            result
+        }
+
     companion object {
+        private val ACCOUNT_LOCK = Any()
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_LEGACY_API_KEY = "deepseek_api_key"
         private const val KEY_ID_MIGRATION_DONE = "id_migration_v2_done"

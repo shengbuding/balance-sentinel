@@ -22,7 +22,10 @@ data class AccountInfo(
     val providerType: ProviderType = ProviderType.DEEPSEEK,
     val extraCredentials: Map<String, String> = emptyMap(),
     val extraSettings: Map<String, String> = emptyMap(),
-    val usageScript: String? = null
+    val usageScript: String? = null,
+    val usageScriptEnabled: Boolean = true,
+    val authorizedScriptOrigins: Set<String> = emptySet(),
+    val revision: Long = 0
 ) {
     /**
      * 转换为ProviderConfig
