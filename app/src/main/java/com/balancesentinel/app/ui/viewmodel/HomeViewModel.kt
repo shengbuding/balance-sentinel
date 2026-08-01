@@ -33,7 +33,6 @@ import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
-import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.MidnightScheduler
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
@@ -266,31 +265,6 @@ class HomeViewModel @JvmOverloads constructor(
         _uiState.value = _uiState.value.copy(
             accountBalances = _uiState.value.accountBalances - id
         )
-        return
-
-        // 1. 删除账户本身
-        apiKeyManager.removeAccount(id)
-
-        // 2. 删除Widget缓存
-        BalanceWidgetDataStore.removeAccountBalance(getApplication(), id)
-
-        // 3. 删除预警状态
-        widgetPrefs.removeAccountAlertState(id)
-
-        // 4. 删除原始记录
-        RawRecordStore.removeByAccountId(getApplication(), id)
-
-        // 5. 删除日摘要
-        DailySummaryStore.removeByAccountId(getApplication(), id)
-
-        // 6. 删除用量快照
-        UsageDataStore.removeByAccountId(getApplication(), id)
-
-        // 7. 重新加载账户列表
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(
-            accountBalances = _uiState.value.accountBalances - id
-        )
     }
 
     fun renameAccount(id: String, newLabel: String) {
@@ -342,85 +316,6 @@ class HomeViewModel @JvmOverloads constructor(
                 authorizedScriptOrigins = currentAccount.authorizedScriptOrigins
             )
         )
-        return
-
-        val oldAccount = apiKeyManager.getAccount(id) ?: return
-        val result = apiKeyManager.saveAccount(
-            id,
-            AccountDraft(
-                label = newLabel,
-                apiKey = newApiKey,
-                providerType = oldAccount.providerType,
-                extraCredentials = oldAccount.extraCredentials,
-                extraSettings = extraSettings,
-                usageScript = usageScript,
-                usageScriptEnabled = oldAccount.usageScriptEnabled,
-                authorizedScriptOrigins = oldAccount.authorizedScriptOrigins
-            )
-        )
-        if (result is com.balancesentinel.app.data.model.AccountSaveResult.Replaced) {
-            migrateAccountData(result.before.id, result.account.id)
-        }
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-        refreshBalance()
-        return
-
-        val newId = apiKeyManager.computeId(newApiKey)
-
-        if (oldAccount.apiKey == newApiKey) {
-            // API Key未变化，更新标签、额外设置和脚本
-            apiKeyManager.renameAccount(id, newLabel)
-            // 更新额外设置（如URL）
-            apiKeyManager.updateExtraSettings(id, extraSettings)
-            // 更新自定义脚本
-            Logger.i("HomeViewModel", "Updating usage script: ${usageScript?.take(50)}")
-            apiKeyManager.updateUsageScript(id, usageScript)
-        } else {
-            // API Key变化，需要删除旧账户并创建新账户
-            // 保留关联数据（Widget、RawRecord等）
-            apiKeyManager.removeAccount(id)
-            val newAccount = apiKeyManager.addAccount(newLabel, newApiKey, oldAccount.providerType, extraSettings)
-            // 更新新账户的脚本
-            if (usageScript != null) {
-                apiKeyManager.updateUsageScript(newAccount.id, usageScript)
-            }
-
-            // 如果ID不同，迁移关联数据
-            if (id != newId) {
-                migrateAccountData(id, newId)
-            }
-        }
-
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-        refreshBalance()
-    }
-
-    /**
-     * 迁移账户关联数据
-     * H12 修复：实现实际的数据迁移
-     */
-    private fun migrateAccountData(oldId: String, newId: String) {
-        try {
-            val context = getApplication<Application>()
-            val migrationMap = mapOf(oldId to newId)
-            Logger.i("HomeViewModel", "Migrating account data from $oldId to $newId")
-
-            // 迁移原始记录
-            RawRecordStore.migrateAccountIds(context, migrationMap)
-
-            // 迁移日汇总
-            DailySummaryStore.migrateAccountIds(context, migrationMap)
-
-            // 迁移用量快照
-            UsageDataStore.migrateAccountIds(context, migrationMap)
-
-            // Widget 数据会在下次刷新时自动更新
-            Logger.i("HomeViewModel", "Account data migration completed")
-        } catch (e: Exception) {
-            Logger.e("HomeViewModel", "Failed to migrate account data", e)
-        }
     }
 
     // ── 全局设置 ──
