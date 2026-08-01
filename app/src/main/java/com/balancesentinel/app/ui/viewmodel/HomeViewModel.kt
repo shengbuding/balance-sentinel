@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.ProviderFactory
-import com.balancesentinel.app.data.api.ProviderConfig
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.BalanceEntry
@@ -465,21 +464,7 @@ class HomeViewModel @JvmOverloads constructor(
                         ProviderFactory.get(account.providerType)
                     }
 
-                    // 将usageScript添加到settings中
-                    val settings = account.extraSettings.toMutableMap()
-                    if (account.usageScript != null) {
-                        settings["usageScript"] = account.usageScript
-                    }
-
-                    val config = ProviderConfig(
-                        providerType = account.providerType,
-                        credentials = mapOf(
-                            "apiKey" to account.apiKey,
-                            "accountId" to account.id,
-                            "accountLabel" to account.label
-                        ),
-                        settings = settings
-                    )
+                    val config = account.toConfig()
 
                     provider.getBalance(config)
                 }
@@ -604,24 +589,7 @@ class HomeViewModel @JvmOverloads constructor(
                             ProviderFactory.get(account.providerType)
                         }
 
-                        // 将usageScript添加到settings中
-                        val settings = account.extraSettings.toMutableMap()
-                        val scriptToUse = account.usageScript
-                        Logger.i("HomeViewModel", "Refreshing configured custom-provider usage")
-                        if (scriptToUse != null) {
-                            settings["usageScript"] = scriptToUse
-                            Logger.i("HomeViewModel", "Added usageScript to settings")
-                        }
-
-                        val config = ProviderConfig(
-                            providerType = account.providerType,
-                            credentials = mapOf(
-                                "apiKey" to account.apiKey,
-                                "accountId" to account.id,
-                                "accountLabel" to account.label
-                            ),
-                            settings = settings
-                        )
+                        val config = account.toConfig()
 
                         provider.getBalance(config)
                     }
@@ -758,11 +726,7 @@ class HomeViewModel @JvmOverloads constructor(
                             ProviderFactory.get(account.providerType)
                         }
 
-                        val config = ProviderConfig(
-                            providerType = account.providerType,
-                            credentials = mapOf("apiKey" to account.apiKey, "accountId" to account.id),
-                            settings = account.extraSettings
-                        )
+                        val config = account.toConfig()
 
                         val result = provider.getUsage(config)
                         when (result) {
