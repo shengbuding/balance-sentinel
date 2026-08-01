@@ -1,147 +1,104 @@
 package com.balancesentinel.app.service
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
-import com.balancesentinel.app.data.api.BalanceEntry
-import com.balancesentinel.app.data.api.ProviderType
-import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
-import com.balancesentinel.app.data.repository.ApiKeyManager
-import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.widget.AccountBalance
 import kotlinx.coroutines.test.runTest
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
 /**
- * Tests that the BalanceRefreshService refresh path routes through the
- * shared [RefreshGateway] with [RefreshTrigger.SERVICE] and derives
- * notification totals only from committed Widget storage.
+ * Tests that [BalanceRefreshRunner] routes through the shared [RefreshGateway]
+ * with [RefreshTrigger.SERVICE] and reads committed Widget storage via
+ * an injected reader — not by calling the fake gateway or store directly.
+ *
+ * These tests instantiate the real production [BalanceRefreshRunner],
+ * not a fake. A test that calls the gateway/store directly is forbidden.
  */
-@RunWith(RobolectricTestRunner::class)
 class BalanceRefreshRunnerTest {
 
-    private lateinit var context: Context
-    private lateinit var prefsName: String
-    private lateinit var apiKeyManager: ApiKeyManager
-
-    @Before
-    fun setUp() {
-        context = ApplicationProvider.getApplicationContext()
-        prefsName = "test_svc_runner_${System.nanoTime()}"
-        apiKeyManager = ApiKeyManager(
-            context,
-            context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-        )
-        BalanceWidgetDataStore.clearAll(context)
-    }
-
-    @After
-    fun tearDown() {
-        BalanceWidgetDataStore.clearAll(context)
-        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
-    }
-
-    // Mutation caught: service refresh bypassing the shared gateway and calling
-    // DeepSeekApiService / ProviderFactory directly per account.
+    // Service runner must call refreshAll with SERVICE trigger.
     @Test
-    fun `service refresh routes all accounts through gateway with SERVICE trigger`() = runTest {
-        val account = apiKeyManager.addAccount(
-            label = "Service account",
-            apiKey = "svc-key-12345",
-            providerType = ProviderType.DEEPSEEK
-        )
-        val gateway = RecordingRefreshGateway(
-            committed(account.id, 10.0, "CNY")
-        )
+    fun `service runner routes through gateway with SERVICE trigger`() = runTest {
+        val gateway = DistinguishingRefreshGateway()
 
-        gateway.refreshAll(RefreshTrigger.SERVICE)
+        val runner = BalanceRefreshRunner(gateway) { emptyList() }
+        runner.refreshAndReadCommitted()
 
-        assertEquals(
-            listOf(account.id to RefreshTrigger.SERVICE),
-            gateway.calls
-        )
+        assertEquals("refreshAll must be called exactly once", 1, gateway.refreshAllCalls.size)
+        assertEquals(RefreshTrigger.SERVICE, gateway.refreshAllCalls[0])
+        assertTrue("refreshAccount must not be called directly", gateway.refreshAccountCalls.isEmpty())
     }
 
-    // Mutation caught: notification totals read from provider results rather
-    // than committed Widget storage.
+    // Service runner reads committed storage AFTER gateway completion.
     @Test
-    fun `service notification derives totals from committed widget storage`() = runTest {
-        val accountId = "svc-acc-1"
-        BalanceWidgetDataStore.saveAccountBalance(
-            context, accountId, "Test", "150.00", "CNY", true, "120.00", "30.00"
+    fun `service runner reads committed balances after gateway completion`() = runTest {
+        val expectedBalances = listOf(
+            AccountBalance("acc-1", "Test", "150.00", "CNY", true, "120.00", "30.00", 0L)
         )
+        val gateway = DistinguishingRefreshGateway()
 
-        val balances = BalanceWidgetDataStore.getAllBalances(context)
-        assertEquals(1, balances.size)
-        assertEquals("150.00", balances[0].totalBalance)
-        assertEquals("CNY", balances[0].currency)
-        assertTrue(balances[0].isAvailable)
+        val runner = BalanceRefreshRunner(gateway) { expectedBalances }
+        val result = runner.refreshAndReadCommitted()
+
+        assertEquals("Must return committed balances from reader", expectedBalances, result)
     }
 
-    // Mutation caught: service instantiating DeepSeekApiService when all
-    // accounts are empty.
+    // Service runner handles empty committed storage gracefully.
     @Test
-    fun `service refresh with no accounts does not call gateway`() = runTest {
-        val gateway = RecordingRefreshGateway()
+    fun `service runner returns empty list when no committed balances exist`() = runTest {
+        val gateway = DistinguishingRefreshGateway()
 
-        gateway.refreshAll(RefreshTrigger.SERVICE)
+        val runner = BalanceRefreshRunner(gateway) { emptyList() }
+        val result = runner.refreshAndReadCommitted()
 
-        assertTrue("No gateway calls expected for empty accounts", gateway.calls.isEmpty())
+        assertTrue("Must return empty list when no committed balances", result.isEmpty())
     }
 
-    private fun committed(accountId: String, amount: Double, currency: String) =
-        AccountRefreshResult.Committed(
-            accountId,
-            UnifiedBalance(
-                provider = ProviderType.DEEPSEEK,
-                accountId = accountId,
-                isAvailable = true,
-                balances = listOf(BalanceEntry(currency, amount))
-            )
+    // Service runner returns committed data even when gateway returns failures
+    // (failures don't clear committed storage — stale data remains).
+    @Test
+    fun `service runner returns committed data even when gateway returns failures`() = runTest {
+        val staleBalances = listOf(
+            AccountBalance("acc-1", "Stale", "100.00", "USD", true, "80.00", "20.00", 0L)
+        )
+        val gateway = DistinguishingRefreshGateway(
+            AccountRefreshResult.Failed("acc-1", RefreshFailure.NetworkFailure("timeout"))
         )
 
-    /**
-     * Records gateway calls and returns pre-configured results.
-     * Does NOT write to any store — tests verify routing, not persistence.
-     */
-    private class RecordingRefreshGateway(
+        val runner = BalanceRefreshRunner(gateway) { staleBalances }
+        val result = runner.refreshAndReadCommitted()
+
+        assertEquals("Must return committed data even after failure", staleBalances, result)
+    }
+
+    private class DistinguishingRefreshGateway(
         vararg private val results: AccountRefreshResult
     ) : RefreshGateway {
-        val calls = mutableListOf<Pair<String, RefreshTrigger>>()
+        val refreshAllCalls = mutableListOf<RefreshTrigger>()
+        val refreshAccountCalls = mutableListOf<Pair<String, RefreshTrigger>>()
         private val resultsList = results.toMutableList()
 
         override suspend fun refreshAccount(
             accountId: String,
             trigger: RefreshTrigger
         ): AccountRefreshResult {
-            calls += accountId to trigger
-            return if (resultsList.isNotEmpty()) {
-                resultsList.removeFirst()
-            } else {
-                AccountRefreshResult.Failed(
-                    accountId,
-                    RefreshFailure.NetworkFailure("No more results")
-                )
-            }
+            refreshAccountCalls += accountId to trigger
+            return if (resultsList.isNotEmpty()) resultsList.removeAt(0)
+            else AccountRefreshResult.Failed(
+                accountId,
+                RefreshFailure.NetworkFailure("No results")
+            )
         }
 
         override suspend fun refreshAll(
             trigger: RefreshTrigger
         ): List<AccountRefreshResult> {
-            val snapshot = resultsList.toList()
-            for (r in snapshot) {
-                calls += r.accountId to trigger
-            }
-            resultsList.clear()
-            return snapshot
+            refreshAllCalls += trigger
+            return resultsList.toList().also { resultsList.clear() }
         }
 
         override fun invalidate(accountId: String) {}
