@@ -1,200 +1,111 @@
 package com.balancesentinel.app.ui.components
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.balancesentinel.app.R
+import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
-import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.data.model.AccountDraft
 
-/**
- * 添加账户对话框（支持多供应商）
- */
 @Composable
 fun AddAccountDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, String, ProviderType, Map<String, String>) -> Unit
+    onAdd: (AccountDraft) -> Unit
 ) {
-    var selectedProvider by remember { mutableStateOf(ProviderType.DEEPSEEK) }
+    var provider by remember { mutableStateOf(ProviderType.DEEPSEEK) }
     var label by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    var baseUrl by remember { mutableStateOf("") }
-    var showKey by remember { mutableStateOf(false) }
+    var values by remember { mutableStateOf(emptyMap<String, String>()) }
     var expanded by remember { mutableStateOf(false) }
-    val clipboardManager = LocalClipboardManager.current
-
-    // 供应商列表（只显示可用的）
-    val availableProviders = remember {
-        listOf(
-            ProviderType.DEEPSEEK,
-            ProviderType.MOONSHOT,
-            ProviderType.DOUBAO,
-            ProviderType.BAICHUAN,
-            ProviderType.QWEN,
-            ProviderType.ZHIPU,
-            ProviderType.WENXIN,
-            ProviderType.OPENAI,
-            ProviderType.ANTHROPIC,
-            ProviderType.GEMINI,
-            ProviderType.MISTRAL,
-            ProviderType.COHERE,
-            ProviderType.MODEL_ARK,
-            ProviderType.CUSTOM
-        )
-    }
+    val fields = ProviderConfigs.getConfigFields(provider)
+    val allRequiredPresent = fields.filter { it.required }.all { values[it.key].orEmpty().isNotBlank() }
+    val apiKey = values["apiKey"].orEmpty()
+    val valid = label.isNotBlank() && allRequiredPresent && ProviderConfigs.validateApiKey(provider, apiKey)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.add_account_title)) },
+        title = { Text("Add account") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // 供应商选择
-                Box {
-                    OutlinedTextField(
-                        value = selectedProvider.displayName,
-                        onValueChange = {},
-                        label = { Text("供应商") },
-                        readOnly = true,
-                        trailingIcon = {
-                            IconButton(onClick = { expanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, "展开")
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        availableProviders.forEach { provider ->
-                            DropdownMenuItem(
-                                text = { Text(provider.displayName) },
-                                onClick = {
-                                    selectedProvider = provider
-                                    expanded = false
-                                }
-                            )
+                OutlinedTextField(
+                    value = provider.displayName,
+                    onValueChange = {},
+                    label = { Text("Provider") },
+                    readOnly = true,
+                    trailingIcon = {
+                        IconButton(onClick = { expanded = true }) {
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Provider")
                         }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    ProviderType.entries.forEach { type ->
+                        DropdownMenuItem(
+                            text = { Text(type.displayName) },
+                            onClick = {
+                                provider = type
+                                values = ProviderConfigs.getConfigFields(type)
+                                    .mapNotNull { field -> field.defaultValue?.let { field.key to it } }
+                                    .toMap()
+                                expanded = false
+                            }
+                        )
                     }
                 }
-
-                // 账户标签
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
-                    label = { Text(stringResource(R.string.add_account_label)) },
-                    placeholder = { Text(stringResource(R.string.add_account_label_placeholder)) },
+                    label = { Text("Label") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.fillMaxWidth()
                 )
-
-                // API Key
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text(stringResource(R.string.add_account_key_label)) },
-                    placeholder = { Text(ProviderConfigs.getApiKeyHint(selectedProvider)) },
-                    visualTransformation = if (showKey) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    leadingIcon = {
-                        Box(modifier = Modifier
-                            .clickable {
-                                val clipText = clipboardManager.getText()?.text ?: ""
-                                if (clipText.isNotBlank()) apiKey = clipText.trim()
-                            }
-                            .padding(horizontal = 8.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.add_account_paste_key),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                imageVector = if (showKey) CustomIcons.VisibilityOff else CustomIcons.Visibility,
-                                contentDescription = if (showKey) stringResource(R.string.add_account_hide_key)
-                                    else stringResource(R.string.add_account_show_key)
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    isError = apiKey.isNotBlank() && !ProviderConfigs.validateApiKey(selectedProvider, apiKey)
-                )
-
-                // 验证提示
-                if (apiKey.isNotBlank() && !ProviderConfigs.validateApiKey(selectedProvider, apiKey)) {
-                    Text(
-                        text = "API Key格式不正确",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                // 自定义供应商的 Base URL
-                if (selectedProvider == ProviderType.CUSTOM) {
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text("API Base URL") },
-                        placeholder = { Text("https://api.example.com/v1") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        isError = baseUrl.isNotBlank() && !baseUrl.startsWith("http")
-                    )
-                    if (baseUrl.isNotBlank() && !baseUrl.startsWith("http")) {
-                        Text(
-                            text = "URL需要以 http:// 或 https:// 开头",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                ProviderCredentialFields(fields, values) { key, value ->
+                    values = values + (key to value)
                 }
             }
         },
         confirmButton = {
-            val isCustomValid = selectedProvider != ProviderType.CUSTOM || (baseUrl.isNotBlank() && baseUrl.startsWith("http"))
             Button(
+                enabled = valid,
                 onClick = {
-                    val extraSettings = if (selectedProvider == ProviderType.CUSTOM) {
-                        mapOf("baseUrl" to baseUrl)
-                    } else {
-                        emptyMap()
-                    }
-                    onAdd(label, apiKey, selectedProvider, extraSettings)
-                },
-                enabled = label.isNotBlank() && apiKey.isNotBlank() &&
-                          ProviderConfigs.validateApiKey(selectedProvider, apiKey) &&
-                          isCustomValid,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(stringResource(R.string.home_add))
-            }
+                    onAdd(
+                        AccountDraft(
+                            label = label,
+                            apiKey = apiKey,
+                            providerType = provider,
+                            extraCredentials = fields
+                                .filter { it.storage == ConfigFieldStorage.EXTRA_CREDENTIAL }
+                                .associate { it.key to values[it.key].orEmpty() },
+                            extraSettings = fields
+                                .filter { it.storage == ConfigFieldStorage.SETTING }
+                                .associate { it.key to values[it.key].orEmpty() },
+                            usageScript = null,
+                            usageScriptEnabled = true,
+                            authorizedScriptOrigins = emptySet()
+                        )
+                    )
+                }
+            ) { Text("Add") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.home_cancel)) }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

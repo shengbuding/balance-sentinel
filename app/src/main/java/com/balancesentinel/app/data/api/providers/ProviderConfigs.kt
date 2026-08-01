@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.api.providers
 
 import com.balancesentinel.app.data.api.ConfigField
+import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.FieldType
 import com.balancesentinel.app.data.api.ProviderType
 
@@ -63,7 +64,8 @@ object ProviderConfigs {
                 displayName = "API Key",
                 type = FieldType.PASSWORD,
                 required = true,
-                hint = getApiKeyHint(type)
+                hint = getApiKeyHint(type),
+                storage = ConfigFieldStorage.PRIMARY_CREDENTIAL
             )
         )
 
@@ -76,7 +78,8 @@ object ProviderConfigs {
                         displayName = "Secret Key",
                         type = FieldType.PASSWORD,
                         required = true,
-                        hint = "用于生成JWT Token"
+                        hint = "用于生成JWT Token",
+                        storage = ConfigFieldStorage.EXTRA_CREDENTIAL
                     )
                 )
             }
@@ -87,7 +90,8 @@ object ProviderConfigs {
                         displayName = "Secret Key",
                         type = FieldType.PASSWORD,
                         required = true,
-                        hint = "百度云Secret Key"
+                        hint = "百度云Secret Key",
+                        storage = ConfigFieldStorage.EXTRA_CREDENTIAL
                     )
                 )
             }
@@ -98,7 +102,8 @@ object ProviderConfigs {
                         displayName = "API Base URL",
                         type = FieldType.URL,
                         required = true,
-                        hint = "https://api.example.com/v1"
+                        hint = "https://api.example.com/v1",
+                        storage = ConfigFieldStorage.SETTING
                     )
                 )
             }

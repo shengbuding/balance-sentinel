@@ -14,6 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ProviderCache(private val context: Context) {
 
+    private val writeLock = Any()
+
     private val prefs: SharedPreferences by lazy {
         context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE)
     }
@@ -83,6 +85,7 @@ class ProviderCache(private val context: Context) {
         balance: UnifiedBalance,
         ttl: Long = getDefaultTtl(providerType)
     ) {
+        synchronized(writeLock) {
         val key = "${providerType.id}_$accountId"
         val cached = CachedBalance(
             balance = balance,
@@ -94,30 +97,36 @@ class ProviderCache(private val context: Context) {
         memoryCache[key] = cached
 
         // 保存到SharedPreferences
-        prefs.edit().putString(key, json.encodeToString(cached)).apply()
+        check(prefs.edit().putString(key, json.encodeToString(cached)).commit())
+        }
     }
 
     /**
      * 清除指定供应商的缓存
      */
     fun clear(providerType: ProviderType, accountId: String) {
+        synchronized(writeLock) {
         val key = "${providerType.id}_$accountId"
         memoryCache.remove(key)
-        prefs.edit().remove(key).apply()
+        check(prefs.edit().remove(key).commit())
+        }
     }
 
     /**
      * 清除所有缓存
      */
     fun clearAll() {
+        synchronized(writeLock) {
         memoryCache.clear()
-        prefs.edit().clear().apply()
+        check(prefs.edit().clear().commit())
+        }
     }
 
     /**
      * 清除过期缓存
      */
     fun clearExpired() {
+        synchronized(writeLock) {
         val keysToRemove = mutableListOf<String>()
 
         // 检查内存缓存
@@ -136,11 +145,12 @@ class ProviderCache(private val context: Context) {
             try {
                 val cached = json.decodeFromString<CachedBalance>(data)
                 if (cached.isExpired) {
-                    prefs.edit().remove(key).apply()
+                    check(prefs.edit().remove(key).commit())
                 }
             } catch (e: Exception) {
-                prefs.edit().remove(key).apply()
+                check(prefs.edit().remove(key).commit())
             }
+        }
         }
     }
 

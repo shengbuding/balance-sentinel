@@ -51,4 +51,37 @@ class AccountInfoTest {
         val decoded = json.decodeFromString(AccountInfo.serializer(), oldJson)
         assertNull("usageScript should be null for old JSON", decoded.usageScript)
     }
+
+    @Test
+    fun `old account json defaults revision and script policy`() {
+        val old = """{"id":"a","label":"A","apiKey":"sk-12345678901"}"""
+
+        val account = Json { ignoreUnknownKeys = true }.decodeFromString<AccountInfo>(old)
+
+        assertEquals(0L, account.revision)
+        assertTrue(account.usageScriptEnabled)
+        assertTrue(account.authorizedScriptOrigins.isEmpty())
+    }
+
+    @Test
+    fun `toConfig carries account metadata credentials and script policy`() {
+        val account = AccountInfo(
+            id = "account-1",
+            label = "Account",
+            apiKey = "sk-key",
+            extraCredentials = mapOf("secretKey" to "secret"),
+            extraSettings = mapOf("baseUrl" to "https://api.example.com"),
+            usageScript = "script",
+            usageScriptEnabled = false,
+            authorizedScriptOrigins = setOf("https://b.example.com/", "https://a.example.com")
+        )
+
+        val config = account.toConfig()
+
+        assertEquals("Account", config.credentials["accountLabel"])
+        assertEquals("secret", config.credentials["secretKey"])
+        assertEquals("script", config.settings["usageScript"])
+        assertEquals("false", config.settings["usageScriptEnabled"])
+        assertEquals("https://a.example.com,https://b.example.com", config.settings["authorizedScriptOrigins"])
+    }
 }

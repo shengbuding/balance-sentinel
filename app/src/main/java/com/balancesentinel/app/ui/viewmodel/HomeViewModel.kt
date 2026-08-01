@@ -18,6 +18,7 @@ import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -25,6 +26,7 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.repository.AlertChecker
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
@@ -78,6 +80,7 @@ class HomeViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
 
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)
+    private val accountLifecycleManager = AccountLifecycleManager(application, apiKeyManager, widgetPrefs)
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -201,17 +204,28 @@ class HomeViewModel @JvmOverloads constructor(
         providerType: ProviderType = ProviderType.DEEPSEEK,
         extraSettings: Map<String, String> = emptyMap()
     ) {
-        if (label.isBlank() || apiKey.isBlank()) return
-        val account = apiKeyManager.addAccount(label, apiKey, providerType, extraSettings)
+        addAccount(AccountDraft(
+            label = label,
+            apiKey = apiKey,
+            providerType = providerType,
+            extraCredentials = emptyMap(),
+            extraSettings = extraSettings,
+            usageScript = null,
+            usageScriptEnabled = true,
+            authorizedScriptOrigins = emptySet()
+        ))
+    }
+
+    fun addAccount(draft: AccountDraft) {
+        if (draft.label.isBlank() || draft.apiKey.isBlank()) return
+        accountLifecycleManager.save(null, draft)
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
     }
 
     fun removeAccount(id: String) {
-        apiKeyManager.removeAccount(id)
-        BalanceWidgetDataStore.removeAccountBalance(getApplication(), id)
-        widgetPrefs.removeAccountAlertState(id)
+        accountLifecycleManager.delete(id)
         loadAccounts()
         _uiState.value = _uiState.value.copy(
             accountBalances = _uiState.value.accountBalances - id
@@ -223,29 +237,7 @@ class HomeViewModel @JvmOverloads constructor(
      * 关联数据包括：Widget缓存、预警状态、原始记录、日摘要、用量快照
      */
     fun removeAccountWithData(id: String) {
-        // 1. 删除账户本身
-        apiKeyManager.removeAccount(id)
-
-        // 2. 删除Widget缓存
-        BalanceWidgetDataStore.removeAccountBalance(getApplication(), id)
-
-        // 3. 删除预警状态
-        widgetPrefs.removeAccountAlertState(id)
-
-        // 4. 删除原始记录
-        RawRecordStore.removeByAccountId(getApplication(), id)
-
-        // 5. 删除日摘要
-        DailySummaryStore.removeByAccountId(getApplication(), id)
-
-        // 6. 删除用量快照
-        UsageDataStore.removeByAccountId(getApplication(), id)
-
-        // 7. 重新加载账户列表
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(
-            accountBalances = _uiState.value.accountBalances - id
-        )
+        removeAccount(id)
     }
 
     fun renameAccount(id: String, newLabel: String) {
@@ -266,36 +258,22 @@ class HomeViewModel @JvmOverloads constructor(
         usageScript: String? = null
     ) {
         if (newLabel.isBlank() || newApiKey.isBlank()) return
-
-        Logger.i("HomeViewModel", "editAccount: id=$id, usageScript=${usageScript?.take(50)}")
-
         val oldAccount = apiKeyManager.getAccount(id) ?: return
-        val newId = apiKeyManager.computeId(newApiKey)
+        editAccount(id, AccountDraft(
+            label = newLabel,
+            apiKey = newApiKey,
+            providerType = oldAccount.providerType,
+            extraCredentials = oldAccount.extraCredentials,
+            extraSettings = extraSettings,
+            usageScript = usageScript,
+            usageScriptEnabled = oldAccount.usageScriptEnabled,
+            authorizedScriptOrigins = oldAccount.authorizedScriptOrigins
+        ))
+    }
 
-        if (oldAccount.apiKey == newApiKey) {
-            // API Key未变化，更新标签、额外设置和脚本
-            apiKeyManager.renameAccount(id, newLabel)
-            // 更新额外设置（如URL）
-            apiKeyManager.updateExtraSettings(id, extraSettings)
-            // 更新自定义脚本
-            Logger.i("HomeViewModel", "Updating usage script: ${usageScript?.take(50)}")
-            apiKeyManager.updateUsageScript(id, usageScript)
-        } else {
-            // API Key变化，需要删除旧账户并创建新账户
-            // 保留关联数据（Widget、RawRecord等）
-            apiKeyManager.removeAccount(id)
-            val newAccount = apiKeyManager.addAccount(newLabel, newApiKey, oldAccount.providerType, extraSettings)
-            // 更新新账户的脚本
-            if (usageScript != null) {
-                apiKeyManager.updateUsageScript(newAccount.id, usageScript)
-            }
-
-            // 如果ID不同，迁移关联数据
-            if (id != newId) {
-                migrateAccountData(id, newId)
-            }
-        }
-
+    fun editAccount(id: String, draft: AccountDraft) {
+        if (draft.label.isBlank() || draft.apiKey.isBlank()) return
+        accountLifecycleManager.save(id, draft)
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
@@ -474,23 +452,7 @@ class HomeViewModel @JvmOverloads constructor(
                         ProviderFactory.get(account.providerType)
                     }
 
-                    // 将usageScript添加到settings中
-                    val settings = account.extraSettings.toMutableMap()
-                    if (account.usageScript != null) {
-                        settings["usageScript"] = account.usageScript
-                    }
-
-                    val config = ProviderConfig(
-                        providerType = account.providerType,
-                        credentials = mapOf(
-                            "apiKey" to account.apiKey,
-                            "accountId" to account.id,
-                            "accountLabel" to account.label
-                        ),
-                        settings = settings
-                    )
-
-                    provider.getBalance(config)
+                    provider.getBalance(account.toConfig())
                 }
 
                 when (result) {
@@ -613,26 +575,7 @@ class HomeViewModel @JvmOverloads constructor(
                             ProviderFactory.get(account.providerType)
                         }
 
-                        // 将usageScript添加到settings中
-                        val settings = account.extraSettings.toMutableMap()
-                        val scriptToUse = account.usageScript
-                        Logger.i("HomeViewModel", "Account ${account.label}: usageScript=${scriptToUse?.take(50) ?: "null"}")
-                        if (scriptToUse != null) {
-                            settings["usageScript"] = scriptToUse
-                            Logger.i("HomeViewModel", "Added usageScript to settings")
-                        }
-
-                        val config = ProviderConfig(
-                            providerType = account.providerType,
-                            credentials = mapOf(
-                                "apiKey" to account.apiKey,
-                                "accountId" to account.id,
-                                "accountLabel" to account.label
-                            ),
-                            settings = settings
-                        )
-
-                        provider.getBalance(config)
+                        provider.getBalance(account.toConfig())
                     }
 
                     when (result) {
@@ -767,13 +710,7 @@ class HomeViewModel @JvmOverloads constructor(
                             ProviderFactory.get(account.providerType)
                         }
 
-                        val config = ProviderConfig(
-                            providerType = account.providerType,
-                            credentials = mapOf("apiKey" to account.apiKey, "accountId" to account.id),
-                            settings = account.extraSettings
-                        )
-
-                        val result = provider.getUsage(config)
+                        val result = provider.getUsage(account.toConfig())
                         when (result) {
                             is ProviderResult.Success -> {
                                 UsageDataStore.saveSnapshot(getApplication(), UsageSnapshot(

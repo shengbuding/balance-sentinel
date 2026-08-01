@@ -80,8 +80,11 @@ data class ConfigField(
     val type: FieldType,
     val required: Boolean,
     val defaultValue: String? = null,
-    val hint: String? = null
+    val hint: String? = null,
+    val storage: ConfigFieldStorage = ConfigFieldStorage.PRIMARY_CREDENTIAL
 )
+
+enum class ConfigFieldStorage { PRIMARY_CREDENTIAL, EXTRA_CREDENTIAL, SETTING }
 
 /**
  * 字段类型

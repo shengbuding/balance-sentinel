@@ -20,6 +20,7 @@ object UsageDataStore {
     private const val PREFS_NAME = "usage_snapshots"
     private const val KEY_SNAPSHOTS = "snapshots"
     private const val MAX_SNAPSHOTS = 90
+    private val writeLock = Any()
 
     private val json = Json { ignoreUnknownKeys = true }
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -30,7 +31,7 @@ object UsageDataStore {
      */
     fun saveSnapshots(context: Context, snapshots: List<UsageSnapshot>) {
         if (snapshots.isEmpty()) return
-        try {
+        synchronized(writeLock) { try {
             val existing = getAllSnapshots(context).toMutableList()
             val existingDates = existing.map {
                 dateFormat.format(Date(it.timestamp)) to it.accountId
@@ -45,15 +46,15 @@ object UsageDataStore {
                 existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), existing)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "saveSnapshots failed", e) }
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        } catch (e: Exception) { Logger.w(TAG, "saveSnapshots failed", e) } }
     }
 
     /**
      * 保存一条用量快照（同一天+同账户覆盖旧数据）。
      */
     fun saveSnapshot(context: Context, snapshot: UsageSnapshot) {
-        try {
+        synchronized(writeLock) { try {
             val snapshots = getAllSnapshots(context).toMutableList()
             val today = dateFormat.format(Date(snapshot.timestamp))
             val existingIndex = snapshots.indexOfFirst {
@@ -70,8 +71,8 @@ object UsageDataStore {
                 snapshots.subList(0, snapshots.size - MAX_SNAPSHOTS).clear()
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "saveSnapshot failed", e) }
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        } catch (e: Exception) { Logger.w(TAG, "saveSnapshot failed", e) } }
     }
 
     /**
@@ -113,9 +114,9 @@ object UsageDataStore {
      * 清除所有用量快照。
      */
     fun clear(context: Context) {
-        try {
-            getPrefs(context).edit().remove(KEY_SNAPSHOTS).apply()
-        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
+        synchronized(writeLock) { try {
+            check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
+        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) } }
     }
 
     /**
@@ -123,12 +124,12 @@ object UsageDataStore {
      * 用于删除账户时清理关联数据。
      */
     fun removeByAccountId(context: Context, accountId: String) {
-        try {
+        synchronized(writeLock) { try {
             val snapshots = getAllSnapshots(context)
             val remaining = snapshots.filter { it.accountId != accountId }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), remaining)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) } }
     }
 
     /**
@@ -136,7 +137,7 @@ object UsageDataStore {
      */
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-        try {
+        synchronized(writeLock) { try {
             val snapshots = getAllSnapshots(context).toMutableList()
             var migrated = false
             for (i in snapshots.indices) {
@@ -148,10 +149,10 @@ object UsageDataStore {
             }
             if (migrated) {
                 val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
-                getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
                 Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
             }
-        } catch (e: Exception) { Logger.w(TAG, "migrateAccountIds failed", e) }
+        } catch (e: Exception) { Logger.w(TAG, "migrateAccountIds failed", e) } }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
