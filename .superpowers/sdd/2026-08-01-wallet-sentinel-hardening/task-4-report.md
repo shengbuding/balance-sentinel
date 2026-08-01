@@ -251,3 +251,299 @@ Exit code: 0. Clean compilation (only pre-existing deprecation warnings).
 
 GREEN commit: `ae8cb52 fix: preserve cached UI value for Stale results in refreshBalance`
 
+
+## Fix Round 2
+
+### Scope
+
+Coverage/contract audit found 5 blocking findings. This round repairs all 5
+with strict TDD restart where required.
+
+### Finding 1: Widget wrong gateway contract (Important)
+
+**Problem:** `WidgetRefreshRunner` enumerated `AccountInfo` credentials and
+serially called `gateway.refreshAccount` per-account. The brief requires one
+`refreshAll(WIDGET/WATCHDOG)` call with no credential read.
+
+#### RED
+
+**Test:** `widget refresh calls refreshAll once with WIDGET trigger` in
+`widget/BalanceRefreshRunnerTest.kt`.
+
+Added `DistinguishingRefreshGateway` that tracks `refreshAll` and
+`refreshAccount` calls separately. The test asserts `refreshAllCalls.size == 1`
+and `refreshAccountCalls.isEmpty()`.
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.widget.BalanceRefreshRunnerTest" --rerun-tasks
+```
+
+Exit code: 1. Failing assertion:
+```
+BalanceRefreshRunnerTest > widget refresh calls refreshAll once with WIDGET trigger FAILED
+    java.lang.AssertionError at BalanceRefreshRunnerTest.kt:110
+```
+
+RED commit: `344d745 test: add RED for widget refreshAll gateway contract`
+
+#### GREEN
+
+**Production fix** — `WidgetRefreshRunner.kt` simplified to:
+```kotlin
+class WidgetRefreshRunner(private val gateway: RefreshGateway) {
+    suspend fun refreshNow(watchdog: Boolean = false) {
+        val trigger = if (watchdog) RefreshTrigger.WATCHDOG else RefreshTrigger.WIDGET
+        gateway.refreshAll(trigger)
+    }
+}
+```
+
+Removed `Context` and `ApiKeyManager` dependencies. Updated `StaticWidgetProvider`
+call site. Replaced per-account tests with `DistinguishingRefreshGateway`-based
+tests. All 3 widget runner tests pass.
+
+GREEN commit: `cbd8058 fix: widget runner calls refreshAll once, remove credential read`
+
+### Finding 2 + 3: Service tests hollow + production-first repair (Critical/Important)
+
+**Problem:** `service/BalanceRefreshRunnerTest` called the fake gateway and
+Widget store directly — zero mutation coverage for the service migration. The
+service production and hollow test appeared together in `178da55`, not in RED.
+
+#### Contract shell (test support)
+
+Created `service/BalanceRefreshRunner.kt` — inert `refreshAndReadCommitted()`
+returning `emptyList()`.
+
+```
+.\gradlew.bat compileDebugKotlin --rerun-tasks
+```
+
+Exit code: 0. Clean compilation.
+
+Shell commit: `e8b38a9 refactor: add service BalanceRefreshRunner contract shell`
+
+#### RED
+
+**Tests:** 4 tests in `service/BalanceRefreshRunnerTest.kt` that instantiate
+the real production `BalanceRefreshRunner`:
+1. `service runner routes through gateway with SERVICE trigger`
+2. `service runner reads committed balances after gateway completion`
+3. `service runner returns empty list when no committed balances exist`
+4. `service runner returns committed data even when gateway returns failures`
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.service.BalanceRefreshRunnerTest" --rerun-tasks
+```
+
+Exit code: 1. 3 of 4 tests FAIL (AssertionError). The empty test passes
+coincidentally (shell returns empty == expected empty).
+
+RED commit: `53d4b3e test: add RED for service runner gateway routing and storage readback`
+
+#### GREEN
+
+**Production fix** — `BalanceRefreshRunner.refreshAndReadCommitted()`:
+```kotlin
+suspend fun refreshAndReadCommitted(): List<AccountBalance> {
+    gateway.refreshAll(RefreshTrigger.SERVICE)
+    return committedBalanceReader()
+}
+```
+
+All 4 service runner tests pass.
+
+GREEN commit: `26ddeba fix: implement service BalanceRefreshRunner with gateway routing`
+
+#### Wiring
+
+`BalanceRefreshService.doRefresh()` now uses `BalanceRefreshRunner`:
+```kotlin
+val runner = BalanceRefreshRunner(refreshGateway) {
+    BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
+}
+val committedBalances = runner.refreshAndReadCommitted()
+```
+
+Preserves `CoroutineScope(SupervisorJob() + Dispatchers.IO)`, scope cancellation,
+WakeLock/finally cleanup, scheduling/foreground duties, and typed-safe errors.
+Removed unused `RefreshTrigger` import.
+
+Wiring commit: `98ed8ab fix: wire BalanceRefreshRunner into BalanceRefreshService`
+
+### Finding 4: Lifecycle invalidation ordering (Important)
+
+**Problem:** Existing tests use null gateway (Robolectric). Moving
+`invalidate` after persistence would not fail any test.
+
+#### TDD restart — temporary removal
+
+Removed the two `gateway?.invalidate()` calls in `AccountLifecycleManager`
+while preserving the injection seam (`gateway` parameter).
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.AccountLifecycleManagerTest" --rerun-tasks
+```
+
+Exit code: 0. Existing tests unaffected (null gateway default).
+
+Removal commit: `8f7b7a5 refactor: temporarily remove invalidate calls for TDD restart`
+
+#### RED
+
+**Tests:** 2 new ordering tests in `AccountLifecycleManagerTest.kt`:
+1. `replacement invalidates old account while old data is still persisted`
+2. `delete invalidates account while old data is still persisted`
+
+Uses `RecordingLifecycleGateway` that records `accountId` and whether the old
+account was still persisted at the moment `invalidate` was called.
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.AccountLifecycleManagerTest" --rerun-tasks
+```
+
+Exit code: 1. Both tests FAIL (AssertionError) — `invalidations` is empty
+because invalidate calls were removed.
+
+RED commit: `09090ee test: add RED for lifecycle invalidation ordering`
+
+#### GREEN
+
+Restored both `gateway?.invalidate()` calls in their original positions
+(before migration/cleanup persistence). The ordering tests now pass because
+`invalidate` runs while the old account is still persisted.
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.AccountLifecycleManagerTest" --rerun-tasks
+```
+
+Exit code: 0. All 9 lifecycle tests pass.
+
+GREEN commit: `c8df360 fix: restore lifecycle invalidation in correct ordering position`
+
+### Finding 5: Widget goAsync/finish lifecycle (Important)
+
+**Problem:** Widget provider refresh tests are ignored; runner tests never
+execute the pending-result lifecycle.
+
+#### Contract shell (test support)
+
+Created `widget/WidgetRefreshDispatcher.kt` — inert `dispatch()` (empty body).
+
+```
+.\gradlew.bat compileDebugKotlin --rerun-tasks
+```
+
+Exit code: 0. Clean compilation.
+
+Shell commit: `2215386 refactor: add WidgetRefreshDispatcher contract shell for goAsync lifecycle`
+
+#### RED
+
+**Tests:** 2 tests in `WidgetProviderTest.kt`:
+1. `dispatcher invokes action and calls finish on success`
+2. `dispatcher calls finish even when action throws`
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.widget.WidgetProviderTest" --rerun-tasks
+```
+
+Exit code: 1. Both tests FAIL (AssertionError) — `dispatch()` is empty.
+
+RED commit: `a5659b9 test: add RED for widget pending-result completion lifecycle`
+
+#### GREEN
+
+**Production fix** — `WidgetRefreshDispatcher.dispatch()`:
+```kotlin
+fun dispatch() {
+    try { action() }
+    finally { finish() }
+}
+```
+
+Wired into `StaticWidgetProvider.handleRefresh`:
+```kotlin
+Thread {
+    WidgetRefreshDispatcher(
+        action = { /* refresh + UI update */ },
+        finish = { pendingResult.finish(); processingRefresh.set(false); ... }
+    ).dispatch()
+}.start()
+```
+
+GREEN commit: `09e14a8 fix: implement widget pending-result dispatch with finish guarantee`
+
+### Final Verification
+
+#### Command 1: Focused JVM GREEN
+```
+.\gradlew.bat testDebugUnitTest --tests com.balancesentinel.app.widget.WidgetProviderTest --tests com.balancesentinel.app.widget.BalanceRefreshRunnerTest --tests com.balancesentinel.app.service.BalanceRefreshRunnerTest --tests com.balancesentinel.app.data.repository.AccountLifecycleManagerTest --rerun-tasks
+```
+Exit code: 0. All tests pass.
+
+#### Command 2: Lifecycle/runtime
+```
+.\gradlew.bat testDebugUnitTest --tests com.balancesentinel.app.ui.viewmodel.HomeViewModelTest --tests com.balancesentinel.app.data.refresh.RefreshCoordinatorTest --rerun-tasks
+```
+Exit code: 0. All tests pass.
+
+#### Command 3: Compile check
+```
+.\gradlew.bat compileDebugKotlin --rerun-tasks
+```
+Exit code: 0. Clean compilation (only pre-existing deprecation warnings).
+
+### Call-Site Audit (Fix Round 2)
+
+1. **WidgetRefreshRunner.kt**: Calls `gateway.refreshAll(WIDGET/WATCHDOG)` once.
+   No `Context`, `ApiKeyManager`, or `refreshAccount` dependency.
+
+2. **StaticWidgetProvider.kt**: Creates `WidgetRefreshRunner(gateway)`. Uses
+   `WidgetRefreshDispatcher` for goAsync pending-result lifecycle. `finish()`
+   guaranteed in `finally`.
+
+3. **service/BalanceRefreshRunner.kt**: Calls `gateway.refreshAll(SERVICE)` then
+   reads committed Widget storage via injected reader. Returns data for
+   notification derivation.
+
+4. **BalanceRefreshService.kt**: `doRefresh()` uses `BalanceRefreshRunner`.
+   Preserves CoroutineScope, scope cancellation, WakeLock/finally cleanup,
+   scheduling/foreground duties.
+
+5. **AccountLifecycleManager.kt**: `gateway?.invalidate(oldId)` called before
+   edit/replacement persistence and before delete cleanup. Ordering tests prove
+   the old account is still persisted when `invalidate` runs.
+
+### Ordered Commits (Fix Round 2)
+
+| # | Hash | Description |
+|---|------|-------------|
+| 1 | `344d745` | test: add RED for widget refreshAll gateway contract |
+| 2 | `cbd8058` | fix: widget runner calls refreshAll once, remove credential read |
+| 3 | `e8b38a9` | refactor: add service BalanceRefreshRunner contract shell |
+| 4 | `53d4b3e` | test: add RED for service runner gateway routing and storage readback |
+| 5 | `26ddeba` | fix: implement service BalanceRefreshRunner with gateway routing |
+| 6 | `98ed8ab` | fix: wire BalanceRefreshRunner into BalanceRefreshService |
+| 7 | `8f7b7a5` | refactor: temporarily remove invalidate calls for TDD restart |
+| 8 | `09090ee` | test: add RED for lifecycle invalidation ordering |
+| 9 | `c8df360` | fix: restore lifecycle invalidation in correct ordering position |
+| 10 | `2215386` | refactor: add WidgetRefreshDispatcher contract shell for goAsync lifecycle |
+| 11 | `a5659b9` | test: add RED for widget pending-result completion lifecycle |
+| 12 | `09e14a8` | fix: implement widget pending-result dispatch with finish guarantee |
+
+### Test Summary
+
+| Test class | Tests | Pass | Fail | Skip |
+|------------|-------|------|------|------|
+| WidgetProviderTest | 6 | 2 | 0 | 3 (AndroidKeyStore) |
+| widget/BalanceRefreshRunnerTest | 3 | 3 | 0 | 0 |
+| service/BalanceRefreshRunnerTest | 4 | 4 | 0 | 0 |
+| AccountLifecycleManagerTest | 9 | 9 | 0 | 0 |
+| HomeViewModelTest | 42 | 42 | 0 | 0 |
+| RefreshCoordinatorTest | 8 | 8 | 0 | 0 |
+
+### Concerns
+
+None remaining from Fix Round 2 audit findings.
+
