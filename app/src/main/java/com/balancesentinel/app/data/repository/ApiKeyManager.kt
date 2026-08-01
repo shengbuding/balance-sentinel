@@ -71,7 +71,14 @@ class ApiKeyManager(
         account
     }
 
-    fun saveAccount(existingId: String?, draft: AccountDraft): AccountSaveResult = mutateAccounts { accounts ->
+    fun saveAccount(existingId: String?, draft: AccountDraft): AccountSaveResult =
+        saveAccount(existingId, draft) { }
+
+    internal fun saveAccount(
+        existingId: String?,
+        draft: AccountDraft,
+        beforePersist: (AccountSaveResult) -> Unit
+    ): AccountSaveResult = mutateAccounts { accounts ->
         val existingIndex = existingId?.let { id -> accounts.indexOfFirst { it.id == id } } ?: -1
         val before = accounts.getOrNull(existingIndex)
         val normalizedKey = draft.apiKey.trim()
@@ -89,28 +96,27 @@ class ApiKeyManager(
             revision = before?.revision?.plus(1) ?: 0
         )
         val destinationIndex = accounts.indexOfFirst { it.id == newId }
-        if (destinationIndex >= 0 && destinationIndex != existingIndex) {
-            return@mutateAccounts AccountSaveResult.Conflict(
+        val result = when {
+            destinationIndex >= 0 && destinationIndex != existingIndex -> AccountSaveResult.Conflict(
                 existing = accounts[destinationIndex],
                 requested = account
             )
+            before == null -> AccountSaveResult.Created(account)
+            before.id == newId -> AccountSaveResult.Updated(before, account)
+            else -> AccountSaveResult.Replaced(before, account)
         }
 
-        when {
-            before == null -> {
-                accounts.add(account)
-                AccountSaveResult.Created(account)
-            }
-            before.id == newId -> {
-                accounts[existingIndex] = account
-                AccountSaveResult.Updated(before, account)
-            }
-            else -> {
+        beforePersist(result)
+        when (result) {
+            is AccountSaveResult.Created -> accounts.add(result.account)
+            is AccountSaveResult.Updated -> accounts[existingIndex] = result.account
+            is AccountSaveResult.Replaced -> {
                 accounts.removeAt(existingIndex)
-                accounts.add(account)
-                AccountSaveResult.Replaced(before, account)
+                accounts.add(result.account)
             }
+            is AccountSaveResult.Conflict -> Unit
         }
+        result
     }
 
     /**
@@ -143,7 +149,17 @@ class ApiKeyManager(
     }
 
     fun removeAccount(id: String) {
-        mutateAccounts { accounts -> accounts.removeAll { it.id == id } }
+        removeAccount(id) { }
+    }
+
+    internal fun removeAccount(id: String, beforePersist: (AccountInfo) -> Unit) {
+        mutateAccounts { accounts ->
+            val index = accounts.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                beforePersist(accounts[index])
+                accounts.removeAt(index)
+            }
+        }
     }
 
     fun renameAccount(id: String, newLabel: String) {

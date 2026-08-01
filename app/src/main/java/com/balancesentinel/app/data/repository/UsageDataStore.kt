@@ -32,28 +32,24 @@ object UsageDataStore {
     fun saveSnapshots(context: Context, snapshots: List<UsageSnapshot>) {
         if (snapshots.isEmpty()) return
         synchronized(USAGE_LOCK) {
-            try {
-                val existing = getAllSnapshots(context).toMutableList()
-                val existingDates = existing.map {
-                    dateFormat.format(Date(it.timestamp)) to it.accountId
-                }.toSet()
-                val toAdd = snapshots.filter {
-                    (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
-                }
-                if (toAdd.isEmpty()) return
-                existing.addAll(toAdd)
-                existing.sortBy { it.timestamp }
-                if (existing.size > MAX_SNAPSHOTS) {
-                    existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
-                }
-                val serialized = json.encodeToString(
-                    ListSerializer(UsageSnapshot.serializer()),
-                    existing
-                )
-                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
-            } catch (e: Exception) {
-                Logger.w(TAG, "saveSnapshots failed", e)
+            val existing = getAllSnapshots(context).toMutableList()
+            val existingDates = existing.map {
+                dateFormat.format(Date(it.timestamp)) to it.accountId
+            }.toSet()
+            val toAdd = snapshots.filter {
+                (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
             }
+            if (toAdd.isEmpty()) return
+            existing.addAll(toAdd)
+            existing.sortBy { it.timestamp }
+            if (existing.size > MAX_SNAPSHOTS) {
+                existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
+            }
+            val serialized = json.encodeToString(
+                ListSerializer(UsageSnapshot.serializer()),
+                existing
+            )
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
         }
     }
 
@@ -62,7 +58,6 @@ object UsageDataStore {
      */
     fun saveSnapshot(context: Context, snapshot: UsageSnapshot) {
         synchronized(USAGE_LOCK) {
-        try {
             val snapshots = getAllSnapshots(context).toMutableList()
             val today = dateFormat.format(Date(snapshot.timestamp))
             val existingIndex = snapshots.indexOfFirst {
@@ -80,7 +75,6 @@ object UsageDataStore {
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
             check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
-        } catch (e: Exception) { Logger.w(TAG, "saveSnapshot failed", e) }
         }
     }
 
@@ -124,11 +118,7 @@ object UsageDataStore {
      */
     fun clear(context: Context) {
         synchronized(USAGE_LOCK) {
-            try {
-                check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
-            } catch (e: Exception) {
-                Logger.w(TAG, "clear failed", e)
-            }
+            check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
         }
     }
 
@@ -138,17 +128,13 @@ object UsageDataStore {
      */
     fun removeByAccountId(context: Context, accountId: String) {
         synchronized(USAGE_LOCK) {
-            try {
-                val snapshots = getAllSnapshots(context)
-                val remaining = snapshots.filter { it.accountId != accountId }
-                val serialized = json.encodeToString(
-                    ListSerializer(UsageSnapshot.serializer()),
-                    remaining
-                )
-                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
-            } catch (e: Exception) {
-                Logger.w(TAG, "removeByAccountId failed", e)
-            }
+            val snapshots = getAllSnapshots(context)
+            val remaining = snapshots.filter { it.accountId != accountId }
+            val serialized = json.encodeToString(
+                ListSerializer(UsageSnapshot.serializer()),
+                remaining
+            )
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
         }
     }
 
@@ -158,26 +144,22 @@ object UsageDataStore {
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
         synchronized(USAGE_LOCK) {
-            try {
-                val snapshots = getAllSnapshots(context).toMutableList()
-                var migrated = false
-                for (i in snapshots.indices) {
-                    val newId = migrationMap[snapshots[i].accountId]
-                    if (newId != null) {
-                        snapshots[i] = snapshots[i].copy(accountId = newId)
-                        migrated = true
-                    }
+            val snapshots = getAllSnapshots(context).toMutableList()
+            var migrated = false
+            for (i in snapshots.indices) {
+                val newId = migrationMap[snapshots[i].accountId]
+                if (newId != null) {
+                    snapshots[i] = snapshots[i].copy(accountId = newId)
+                    migrated = true
                 }
-                if (migrated) {
-                    val serialized = json.encodeToString(
-                        ListSerializer(UsageSnapshot.serializer()),
-                        snapshots
-                    )
-                    check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
-                    Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
-                }
-            } catch (e: Exception) {
-                Logger.w(TAG, "migrateAccountIds failed", e)
+            }
+            if (migrated) {
+                val serialized = json.encodeToString(
+                    ListSerializer(UsageSnapshot.serializer()),
+                    snapshots
+                )
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
             }
         }
     }

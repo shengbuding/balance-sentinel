@@ -225,9 +225,9 @@ object DailySummaryStore {
      * 清除全部日摘要。
      */
     fun clear(context: Context) {
-        try {
-            getPrefs(context).edit().remove(KEY_SUMMARIES).apply()
-        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
+        synchronized(writeLock) {
+            check(getPrefs(context).edit().remove(KEY_SUMMARIES).commit())
+        }
     }
 
     /**
@@ -236,11 +236,9 @@ object DailySummaryStore {
      */
     fun removeByAccountId(context: Context, accountId: String) {
         synchronized(writeLock) {
-            try {
-                val remaining = getSummaries(context).filter { it.accountId != accountId }
-                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), remaining)
-                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-            } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+            val remaining = getSummaries(context).filter { it.accountId != accountId }
+            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), remaining)
+            check(getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).commit())
         }
     }
 
@@ -255,7 +253,7 @@ object DailySummaryStore {
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
 
-        try {
+        synchronized(writeLock) {
             val summaries = getSummaries(context).toMutableList()
             var migrated = false
 
@@ -270,11 +268,9 @@ object DailySummaryStore {
 
             if (migrated) {
                 val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+                check(getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).commit())
                 Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in DailySummaryStore")
             }
-        } catch (e: Exception) {
-            Logger.e(TAG, "Failed to migrate account IDs", e)
         }
     }
 }
