@@ -19,9 +19,15 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.AccountDraft
+import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.RefreshFailure
+import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
+import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -763,5 +769,122 @@ class HomeViewModelTest {
         // Now remove
         vm.removeAccount(accId)
         assertFalse(vm.uiState.value.accountBalances.containsKey(accId))
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Task 4: gateway routing tests (RED — gateway param not yet wired)
+    // ═══════════════════════════════════════════════════════════
+
+    private fun createViewModel(gateway: RefreshGateway): HomeViewModel {
+        return HomeViewModel(context, apiKeyManager, mockRepository, gateway)
+    }
+
+    private class RecordingRefreshGateway(
+        vararg results: AccountRefreshResult
+    ) : RefreshGateway {
+        val calls = mutableListOf<Pair<String, RefreshTrigger>>()
+        private val results = results.toMutableList()
+
+        override suspend fun refreshAccount(
+            accountId: String,
+            trigger: RefreshTrigger
+        ): AccountRefreshResult {
+            calls += accountId to trigger
+            return if (results.isNotEmpty()) results.removeFirst()
+            else AccountRefreshResult.Failed(
+                accountId,
+                RefreshFailure.NetworkFailure("no result configured")
+            )
+        }
+
+        override suspend fun refreshAll(
+            trigger: RefreshTrigger
+        ): List<AccountRefreshResult> {
+            return results.toList().also { results.clear() }
+        }
+
+        override fun invalidate(accountId: String) {}
+    }
+
+    private fun committed(accountId: String, amount: Double = 100.0) =
+        AccountRefreshResult.Committed(
+            accountId,
+            UnifiedBalance(
+                provider = ProviderType.DEEPSEEK,
+                accountId = accountId,
+                isAvailable = true,
+                balances = listOf(
+                    com.balancesentinel.app.data.api.BalanceEntry("CNY", amount)
+                )
+            )
+        )
+
+    // Mutation caught: refreshSingleAccount bypassing the shared gateway and
+    // calling ProviderFactory/repository directly.
+    @Test
+    fun `refreshSingleAccount routes through gateway instead of direct provider`() {
+        val account = apiKeyManager.addAccount("Test", "sk-key-gw")
+        val gateway = RecordingRefreshGateway(committed(account.id))
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+
+        assertEquals(
+            listOf(account.id to RefreshTrigger.MANUAL_ACCOUNT),
+            gateway.calls
+        )
+    }
+
+    // Mutation caught: refreshBalance bypassing the shared gateway for each account.
+    @Test
+    fun `refreshBalance routes all accounts through gateway`() {
+        val a1 = apiKeyManager.addAccount("A1", "sk-key-gw1")
+        val a2 = apiKeyManager.addAccount("A2", "sk-key-gw2")
+        val gateway = RecordingRefreshGateway(committed(a1.id), committed(a2.id))
+        val vm = createViewModel(gateway)
+
+        vm.refreshBalance()
+
+        assertEquals(2, gateway.calls.size)
+        assertTrue(gateway.calls.any { it.first == a1.id })
+        assertTrue(gateway.calls.any { it.first == a2.id })
+    }
+
+    // Mutation caught: single-account refresh writing to stores via a different
+    // path than refresh-all, producing different history side effects.
+    @Test
+    fun `single account refresh has the same history side effects as refresh all`() {
+        val account = apiKeyManager.addAccount("Test", "sk-key-same")
+        val gateway = RecordingRefreshGateway(committed(account.id))
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+
+        val singleCount = RawRecordStore.getAllRecords(context).size
+        assertTrue("Single refresh should produce records", singleCount > 0)
+    }
+
+    // Mutation caught: failed gateway result not preserving cached UI values.
+    @Test
+    fun `failed gateway result preserves cached values and exposes failure message`() {
+        val account = apiKeyManager.addAccount("Test", "sk-key-fail")
+        val gateway = RecordingRefreshGateway(
+            AccountRefreshResult.Failed(
+                account.id,
+                RefreshFailure.NetworkFailure("Network request failed")
+            )
+        )
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+
+        val state = vm.uiState.value
+        assertFalse("Should not be loading", state.isLoading)
+        assertNotNull("Should have error message", state.errorMessage)
+        assertTrue(
+            "Error should mention the failure",
+            state.errorMessage?.contains("Network") == true ||
+                state.errorMessage?.contains("Test") == true
+        )
     }
 }

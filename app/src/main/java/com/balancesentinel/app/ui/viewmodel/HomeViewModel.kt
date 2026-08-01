@@ -10,6 +10,7 @@ import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.ProviderFactory
 import com.balancesentinel.app.data.api.ProviderResult
@@ -77,7 +78,9 @@ class HomeViewModel @JvmOverloads constructor(
     application: Application,
     // test-only: inject mocks for unit testing
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
-    private val repository: BalanceRepository = BalanceRepository()
+    private val repository: BalanceRepository = BalanceRepository(),
+    // Task 4: optional gateway injection; when present, refreshes route through it
+    private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null
 ) : AndroidViewModel(application) {
 
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)
