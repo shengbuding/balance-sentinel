@@ -90,4 +90,27 @@ class AccountInfoTest {
         )
         assertEquals("[]", jsonObj["authorizedScriptOrigins"].toString())
     }
+
+    @Test
+    fun `toConfig preserves complete account provider metadata`() {
+        val account = AccountInfo(
+            id = "account-1",
+            label = "Primary account",
+            apiKey = "sk-account-key",
+            providerType = ProviderType.CUSTOM,
+            extraCredentials = mapOf("secretKey" to "secret-value"),
+            extraSettings = mapOf("baseUrl" to "https://api.example.com"),
+            usageScript = "return balance",
+            usageScriptEnabled = false,
+            authorizedScriptOrigins = linkedSetOf("https://b.example.com/", "https://a.example.com")
+        )
+
+        val config = account.toConfig()
+
+        assertEquals("Primary account", config.credentials["accountLabel"])
+        assertEquals("secret-value", config.credentials["secretKey"])
+        assertEquals("return balance", config.settings["usageScript"])
+        assertEquals("false", config.settings["usageScriptEnabled"])
+        assertEquals("https://a.example.com,https://b.example.com", config.settings["authorizedScriptOrigins"])
+    }
 }
