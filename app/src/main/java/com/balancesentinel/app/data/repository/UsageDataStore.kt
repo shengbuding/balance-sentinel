@@ -23,6 +23,7 @@ object UsageDataStore {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val USAGE_LOCK = Any()
 
     /**
      * 批量保存用量快照。一次读、一次写，避免逐条 O(n²) 序列化。
@@ -53,6 +54,7 @@ object UsageDataStore {
      * 保存一条用量快照（同一天+同账户覆盖旧数据）。
      */
     fun saveSnapshot(context: Context, snapshot: UsageSnapshot) {
+        synchronized(USAGE_LOCK) {
         try {
             val snapshots = getAllSnapshots(context).toMutableList()
             val today = dateFormat.format(Date(snapshot.timestamp))
@@ -70,8 +72,9 @@ object UsageDataStore {
                 snapshots.subList(0, snapshots.size - MAX_SNAPSHOTS).clear()
             }
             val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
         } catch (e: Exception) { Logger.w(TAG, "saveSnapshot failed", e) }
+        }
     }
 
     /**
