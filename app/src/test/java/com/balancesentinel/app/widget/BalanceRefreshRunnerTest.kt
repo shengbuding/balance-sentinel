@@ -102,6 +102,28 @@ class BalanceRefreshRunnerTest {
         assertTrue("No gateway calls expected for empty accounts", gateway.calls.isEmpty())
     }
 
+    // Finding 1 RED: WidgetRefreshRunner must call refreshAll once, not
+    // refreshAccount per-account. This test uses a distinguishing gateway
+    // that tracks refreshAll and refreshAccount separately. On current
+    // production (which calls refreshAccount per-account), this test FAILS.
+    @Test
+    fun `widget refresh calls refreshAll once with WIDGET trigger`() = runTest {
+        val account = apiKeyManager.addAccount(
+            label = "Widget account",
+            apiKey = "widget-key-refreshall",
+            providerType = ProviderType.MODEL_ARK
+        )
+        val gateway = DistinguishingRefreshGateway(
+            committed(account.id, 8.0, "Token")
+        )
+
+        WidgetRefreshRunner(context, apiKeyManager, gateway).refreshNow()
+
+        assertEquals("refreshAll must be called exactly once", 1, gateway.refreshAllCalls.size)
+        assertEquals(RefreshTrigger.WIDGET, gateway.refreshAllCalls[0])
+        assertTrue("refreshAccount must not be called directly", gateway.refreshAccountCalls.isEmpty())
+    }
+
     private fun committed(accountId: String, amount: Double, currency: String) =
         AccountRefreshResult.Committed(
             accountId,
@@ -143,6 +165,40 @@ class BalanceRefreshRunnerTest {
         ): List<AccountRefreshResult> {
             // Delegate per-account for recording
             return listOf(refreshAccount(calls.lastOrNull()?.first ?: "unknown", trigger))
+        }
+
+        override fun invalidate(accountId: String) {}
+    }
+
+    /**
+     * Distinguishes refreshAll from refreshAccount calls.
+     * Used to verify the widget runner calls refreshAll once,
+     * not refreshAccount per-account.
+     */
+    private class DistinguishingRefreshGateway(
+        vararg private val results: AccountRefreshResult
+    ) : RefreshGateway {
+        val refreshAllCalls = mutableListOf<RefreshTrigger>()
+        val refreshAccountCalls = mutableListOf<Pair<String, RefreshTrigger>>()
+        private val resultsList = results.toMutableList()
+
+        override suspend fun refreshAccount(
+            accountId: String,
+            trigger: RefreshTrigger
+        ): AccountRefreshResult {
+            refreshAccountCalls += accountId to trigger
+            return if (resultsList.isNotEmpty()) resultsList.removeAt(0)
+            else AccountRefreshResult.Failed(
+                accountId,
+                RefreshFailure.NetworkFailure("No results")
+            )
+        }
+
+        override suspend fun refreshAll(
+            trigger: RefreshTrigger
+        ): List<AccountRefreshResult> {
+            refreshAllCalls += trigger
+            return resultsList.toList().also { resultsList.clear() }
         }
 
         override fun invalidate(accountId: String) {}
