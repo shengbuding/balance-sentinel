@@ -1,6 +1,8 @@
 package com.balancesentinel.app.widget
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.*
@@ -59,6 +61,68 @@ class BalanceWidgetDataStoreTest {
         assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
 
         assertEquals(writers, BalanceWidgetDataStore.getAllBalances(context).map { it.accountId }.toSet().size)
+    }
+
+    @Test
+    fun `account migration cannot overwrite an in-flight balance save`() {
+        BalanceWidgetDataStore.saveAccountBalance(
+            context,
+            "old",
+            "Old",
+            "1.00",
+            "USD",
+            true,
+            "0",
+            "0"
+        )
+        val migrationWriteReady = CountDownLatch(1)
+        val resumeMigrationWrite = CountDownLatch(1)
+        val blockingContext = BlockingWidgetWriteContext(
+            context,
+            migrationWriteReady,
+            resumeMigrationWrite
+        )
+        val migrationThread = Thread(
+            {
+                BalanceWidgetDataStore.migrateAccountIds(
+                    blockingContext,
+                    mapOf("old" to "migrated")
+                )
+            },
+            "widget-migrate"
+        )
+        val saveThread = Thread(
+            {
+                BalanceWidgetDataStore.saveAccountBalance(
+                    blockingContext,
+                    "saved",
+                    "Saved",
+                    "2.00",
+                    "USD",
+                    true,
+                    "0",
+                    "0"
+                )
+            },
+            "widget-save"
+        )
+
+        migrationThread.start()
+        assertTrue(migrationWriteReady.await(5, TimeUnit.SECONDS))
+        saveThread.start()
+        saveThread.join(1_000)
+        resumeMigrationWrite.countDown()
+        migrationThread.join(5_000)
+        saveThread.join(5_000)
+
+        assertFalse(migrationThread.isAlive)
+        assertFalse(saveThread.isAlive)
+        val accountIds = BalanceWidgetDataStore.getAllBalances(context)
+            .map { it.accountId }
+            .toSet()
+        assertFalse("old" in accountIds)
+        assertTrue("migrated" in accountIds)
+        assertTrue("saved" in accountIds)
     }
 
     @Test
@@ -316,5 +380,38 @@ class BalanceWidgetDataStoreTest {
 
         val balances = BalanceWidgetDataStore.getAllBalances(context)
         assertTrue(balances.isEmpty())
+    }
+
+    private class BlockingWidgetWriteContext(
+        base: Context,
+        private val writeReady: CountDownLatch,
+        private val resumeWrite: CountDownLatch
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = super.getSharedPreferences(name, mode)
+            if (name != "widget_balance_cache") return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            if (
+                                key == "account_balances" &&
+                                Thread.currentThread().name == "widget-migrate"
+                            ) {
+                                writeReady.countDown()
+                                check(resumeWrite.await(5, TimeUnit.SECONDS))
+                            }
+                            editor.putString(key, value)
+                            return this
+                        }
+                    }
+                }
+            }
+        }
     }
 }
