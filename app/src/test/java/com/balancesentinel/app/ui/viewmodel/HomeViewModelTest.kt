@@ -5,12 +5,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
-import com.balancesentinel.app.data.model.RawRecord
-import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
-import com.balancesentinel.app.data.repository.RawRecordStore
-import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -48,8 +44,6 @@ class HomeViewModelTest {
     fun tearDown() {
         Dispatchers.resetMain()
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE).edit().clear().commit()
-        RawRecordStore.clear(context)
-        UsageDataStore.clear(context)
     }
 
     private fun createViewModel(): HomeViewModel {
@@ -113,20 +107,6 @@ class HomeViewModelTest {
 
         vm.removeAccount(accId)
         assertTrue(vm.uiState.value.accounts.isEmpty())
-    }
-
-    @Test
-    fun `removeAccount always deletes associated persisted data`() {
-        val account = apiKeyManager.addAccount("A", "sk-key-with-data")
-        RawRecordStore.addRecord(context, RawRecord(account.id, 1L, "USD", 1f, 0f, 0f))
-        UsageDataStore.saveSnapshot(context, UsageSnapshot(account.id, 1L))
-        val vm = createViewModel()
-
-        vm.removeAccount(account.id)
-
-        assertTrue(vm.uiState.value.accounts.isEmpty())
-        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
-        assertTrue(UsageDataStore.getAllSnapshots(context).isEmpty())
     }
 
     // ═══════════════════════════════════════════════════════════

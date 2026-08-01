@@ -54,9 +54,6 @@ object ProviderConfigs {
         }
     }
 
-    fun validateFieldValues(type: ProviderType, values: Map<String, String>): Boolean =
-        getConfigFields(type).all { field -> field.isValidInput(values[field.key].orEmpty()) }
-
     /**
      * 获取供应商的配置字段
      */

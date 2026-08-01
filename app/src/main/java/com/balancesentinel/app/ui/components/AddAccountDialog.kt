@@ -36,10 +36,9 @@ fun AddAccountDialog(
     var values by remember { mutableStateOf(emptyMap<String, String>()) }
     var expanded by remember { mutableStateOf(false) }
     val fields = ProviderConfigs.getConfigFields(provider)
+    val allRequiredPresent = fields.filter { it.required }.all { values[it.key].orEmpty().isNotBlank() }
     val apiKey = values["apiKey"].orEmpty()
-    val valid = label.isNotBlank() &&
-        ProviderConfigs.validateFieldValues(provider, values) &&
-        ProviderConfigs.validateApiKey(provider, apiKey)
+    val valid = label.isNotBlank() && allRequiredPresent && ProviderConfigs.validateApiKey(provider, apiKey)
 
     AlertDialog(
         onDismissRequest = onDismiss,

@@ -41,10 +41,9 @@ fun EditAccountDialog(
     }
     var usageScript by remember(account.id) { mutableStateOf(account.usageScript.orEmpty()) }
     var usageScriptEnabled by remember(account.id) { mutableStateOf(account.usageScriptEnabled) }
+    val allRequiredPresent = fields.filter { it.required }.all { values[it.key].orEmpty().isNotBlank() }
     val apiKey = values["apiKey"].orEmpty()
-    val valid = label.isNotBlank() &&
-        ProviderConfigs.validateFieldValues(account.providerType, values) &&
-        ProviderConfigs.validateApiKey(account.providerType, apiKey)
+    val valid = label.isNotBlank() && allRequiredPresent && ProviderConfigs.validateApiKey(account.providerType, apiKey)
 
     AlertDialog(
         onDismissRequest = onDismiss,

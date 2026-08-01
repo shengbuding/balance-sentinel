@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ProviderCache(private val context: Context) {
 
-    private val writeLock = CACHE_LOCK
+    private val writeLock = Any()
 
     private val prefs: SharedPreferences by lazy {
         context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE)
@@ -64,10 +64,8 @@ class ProviderCache(private val context: Context) {
                     return cached.balance
                 }
             } catch (e: Exception) {
-                synchronized(writeLock) {
-                    memoryCache.remove(key)
-                    check(prefs.edit().remove(key).commit())
-                }
+                // 解析失败，删除缓存
+                prefs.edit().remove(key).apply()
             }
         }
 
@@ -179,7 +177,6 @@ class ProviderCache(private val context: Context) {
     }
 
     companion object {
-        private val CACHE_LOCK = Any()
         @Volatile
         private var instance: ProviderCache? = null
 
