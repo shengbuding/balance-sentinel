@@ -25,6 +25,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.repository.AlertChecker
+import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BalanceRepository
@@ -224,6 +225,13 @@ class HomeViewModel @JvmOverloads constructor(
      * 关联数据包括：Widget缓存、预警状态、原始记录、日摘要、用量快照
      */
     fun removeAccountWithData(id: String) {
+        AccountLifecycleManager(getApplication(), apiKeyManager).delete(id)
+        loadAccounts()
+        _uiState.value = _uiState.value.copy(
+            accountBalances = _uiState.value.accountBalances - id
+        )
+        return
+
         // 1. 删除账户本身
         apiKeyManager.removeAccount(id)
 

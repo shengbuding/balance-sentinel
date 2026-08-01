@@ -193,6 +193,19 @@ class WidgetPrefs(context: Context) {
         }.apply()
     }
 
+    fun removeAccountData(accountId: String) {
+        synchronized(WIDGET_PREFS_LOCK) {
+            val editor = prefs.edit()
+            prefs.all.keys
+                .filter { key -> key.endsWith("_$accountId") || key.contains("_${accountId}_") }
+                .forEach(editor::remove)
+            check(editor.commit())
+
+            val order = getRawNotificationWalletOrder().filterNot { it.startsWith("${accountId}_") }
+            setNotificationWalletOrder(order)
+        }
+    }
+
     // ── Per-account+currency 设置批量导出/导入 ──
 
     /**
@@ -469,6 +482,7 @@ class WidgetPrefs(context: Context) {
     }
 
     companion object {
+        private val WIDGET_PREFS_LOCK = Any()
         private const val TAG = "WidgetPrefs"
         const val KEY_INTERVAL = "refresh_interval_seconds"
         const val DEFAULT_INTERVAL = 30     // 30 seconds
