@@ -64,6 +64,7 @@ class AccountInfoTest {
             "Account JSON should contain 'revision' key for backward-compat defaults",
             jsonObj.containsKey("revision")
         )
+        assertEquals("0", jsonObj["revision"].toString())
     }
 
     @Test
@@ -75,6 +76,7 @@ class AccountInfoTest {
             "Account JSON should contain 'usageScriptEnabled' key",
             jsonObj.containsKey("usageScriptEnabled")
         )
+        assertEquals("true", jsonObj["usageScriptEnabled"].toString())
     }
 
     @Test
@@ -86,5 +88,6 @@ class AccountInfoTest {
             "Account JSON should contain 'authorizedScriptOrigins' key",
             jsonObj.containsKey("authorizedScriptOrigins")
         )
+        assertEquals("[]", jsonObj["authorizedScriptOrigins"].toString())
     }
 }

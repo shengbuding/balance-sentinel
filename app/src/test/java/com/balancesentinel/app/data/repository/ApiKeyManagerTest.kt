@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -339,5 +340,18 @@ class ApiKeyManagerTest {
         assertEquals("Should have 2 accounts after concurrent ops", 2, accounts.size)
         assertTrue("Renamed account should exist", accounts.any { it.label == "Renamed" })
         assertTrue("New account should exist", accounts.any { it.label == "NewAccount" })
+    }
+
+    @Test
+    fun `rename increments persisted revision`() {
+        val account = manager.addAccount("Original", "sk-revision-key")
+
+        manager.renameAccount(account.id, "Renamed")
+
+        val renamed = requireNotNull(manager.getAccount(account.id))
+        val codec = Json { encodeDefaults = true }
+        val encoded = codec.encodeToString(AccountInfo.serializer(), renamed)
+        val jsonObject = codec.parseToJsonElement(encoded) as JsonObject
+        assertEquals("1", jsonObject["revision"].toString())
     }
 }
