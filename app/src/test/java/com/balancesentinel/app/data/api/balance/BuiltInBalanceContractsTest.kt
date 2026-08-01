@@ -45,6 +45,17 @@ class BuiltInBalanceContractsTest {
     }
 
     @Test
+    fun `derived openrouter balance must remain finite`() {
+        val result = BuiltInBalanceContracts.openRouter.parse(
+            """{"data":{"total_credits":"1.7976931348623157E308","total_usage":"-1.7976931348623157E308"}}""",
+            ProviderType.CUSTOM,
+            "acct"
+        )
+
+        assertTrue(result is ProviderResult.Failure)
+    }
+
+    @Test
     fun `novita fixture converts ten thousandth dollars exactly once`() {
         val result = BuiltInBalanceContracts.novita.parse(
             resource("balance/novita.json"),
