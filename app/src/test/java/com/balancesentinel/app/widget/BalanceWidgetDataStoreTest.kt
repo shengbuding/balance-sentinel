@@ -8,6 +8,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class BalanceWidgetDataStoreTest {
@@ -35,6 +38,27 @@ class BalanceWidgetDataStoreTest {
         assertEquals("acc1", balances[0].accountId)
         assertEquals("100.50", balances[0].totalBalance)
         assertEquals("CNY", balances[0].currency)
+    }
+
+    @Test
+    fun `concurrent account balance saves retain every account`() {
+        val writers = 24
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(writers)
+        repeat(writers) { index ->
+            pool.submit {
+                start.await()
+                BalanceWidgetDataStore.saveAccountBalance(
+                    context, "acc-$index", "Account $index", "1.00", "USD", true, "0", "0"
+                )
+            }
+        }
+
+        start.countDown()
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        assertEquals(writers, BalanceWidgetDataStore.getAllBalances(context).map { it.accountId }.toSet().size)
     }
 
     @Test
