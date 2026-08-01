@@ -177,3 +177,77 @@ Staged and committed exactly the four source files plus this report:
 `DeepSeekApp.kt`, `RefreshRuntime.kt`, `AccountLifecycleManager.kt`,
 `WidgetRefreshRunner.kt`, `task-4-report.md`.
 
+## Fix Round 1
+
+### Finding
+
+**Important: Stale all-account results drop cached UI values** —
+`HomeViewModel.kt:530-531`. A concurrent Service/Widget refresh can make a manual
+result stale. Because `refreshBalance()` builds a fresh `newBalances` map and then
+replaces the entire UI map, omitting a stale account causes visible data loss.
+
+### RED
+
+**Test:** `refreshBalance retains cached balance when result is Stale` in
+`HomeViewModelTest.kt`.
+
+The test uses a `TwoCallGateway` that returns `[Committed]` on the first
+`refreshAll` call and `[Stale]` on the second. The first call seeds the cached
+balance; the second call triggers the bug.
+
+```
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.viewmodel.HomeViewModelTest" --rerun-tasks
+```
+
+Exit code: 1. Failing assertion:
+
+```
+HomeViewModelTest > refreshBalance retains cached balance when result is Stale FAILED
+    java.lang.AssertionError at HomeViewModelTest.kt:798
+```
+
+Line 798: `assertNotNull("Stale result must retain the cached balance, not drop it", retained)`.
+
+RED commit: `3582e35 test: add behavioral RED for stale cached balance preservation in refreshBalance`
+
+### GREEN
+
+**Production fix** in `HomeViewModel.kt:530-535` — three-line addition in the
+`Stale` branch of `refreshBalance()`:
+
+```kotlin
+is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
+    // stale — preserve cached value
+    _uiState.value.accountBalances[accountId]?.let { existing ->
+        newBalances[accountId] = existing
+    }
+}
+```
+
+The fix copies the existing map entry into `newBalances` when the account has a
+cached value. If no cached value exists (first refresh), the entry is simply
+absent from `newBalances` — same as the previous behavior. Failure semantics and
+scope are unchanged.
+
+### GREEN Verification
+
+#### Command 1: HomeViewModelTest
+```
+.\gradlew.bat testDebugUnitTest --tests com.balancesentinel.app.ui.viewmodel.HomeViewModelTest --rerun-tasks
+```
+Exit code: 0. All 42 tests pass.
+
+#### Command 2: All Task 4 test classes
+```
+.\gradlew.bat testDebugUnitTest --tests com.balancesentinel.app.widget.WidgetProviderTest --tests com.balancesentinel.app.ui.viewmodel.HomeViewModelTest --tests com.balancesentinel.app.service.BalanceRefreshRunnerTest --rerun-tasks
+```
+Exit code: 0. All tests pass.
+
+#### Command 3: Compile check
+```
+.\gradlew.bat compileDebugKotlin --rerun-tasks
+```
+Exit code: 0. Clean compilation (only pre-existing deprecation warnings).
+
+GREEN commit: `ae8cb52 fix: preserve cached UI value for Stale results in refreshBalance`
+
