@@ -18,6 +18,7 @@ import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -267,9 +268,28 @@ class HomeViewModel @JvmOverloads constructor(
     ) {
         if (newLabel.isBlank() || newApiKey.isBlank()) return
 
-        Logger.i("HomeViewModel", "editAccount: id=$id, usageScript=${usageScript?.take(50)}")
-
         val oldAccount = apiKeyManager.getAccount(id) ?: return
+        val result = apiKeyManager.saveAccount(
+            id,
+            AccountDraft(
+                label = newLabel,
+                apiKey = newApiKey,
+                providerType = oldAccount.providerType,
+                extraCredentials = oldAccount.extraCredentials,
+                extraSettings = extraSettings,
+                usageScript = usageScript,
+                usageScriptEnabled = oldAccount.usageScriptEnabled,
+                authorizedScriptOrigins = oldAccount.authorizedScriptOrigins
+            )
+        )
+        if (result is com.balancesentinel.app.data.model.AccountSaveResult.Replaced) {
+            migrateAccountData(result.before.id, result.account.id)
+        }
+        loadAccounts()
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+        refreshBalance()
+        return
+
         val newId = apiKeyManager.computeId(newApiKey)
 
         if (oldAccount.apiKey == newApiKey) {

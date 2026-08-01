@@ -56,3 +56,22 @@ data class AccountInfo(
         )
     }
 }
+
+data class AccountDraft(
+    val label: String,
+    val apiKey: String,
+    val providerType: ProviderType,
+    val extraCredentials: Map<String, String> = emptyMap(),
+    val extraSettings: Map<String, String> = emptyMap(),
+    val usageScript: String? = null,
+    val usageScriptEnabled: Boolean = true,
+    val authorizedScriptOrigins: Set<String> = emptySet()
+)
+
+sealed interface AccountSaveResult {
+    val account: AccountInfo
+
+    data class Created(override val account: AccountInfo) : AccountSaveResult
+    data class Updated(val before: AccountInfo, override val account: AccountInfo) : AccountSaveResult
+    data class Replaced(val before: AccountInfo, override val account: AccountInfo) : AccountSaveResult
+}

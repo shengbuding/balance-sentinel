@@ -6,7 +6,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.AccountSaveResult
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
@@ -67,6 +69,43 @@ class ApiKeyManager(
         )
         if (existingIndex >= 0) accounts[existingIndex] = account else accounts.add(account)
         account
+    }
+
+    fun saveAccount(existingId: String?, draft: AccountDraft): AccountSaveResult = mutateAccounts { accounts ->
+        val existingIndex = existingId?.let { id -> accounts.indexOfFirst { it.id == id } } ?: -1
+        val before = accounts.getOrNull(existingIndex)
+        val normalizedKey = draft.apiKey.trim()
+        val newId = computeId(normalizedKey)
+        val account = AccountInfo(
+            id = if (before != null && before.id == newId) before.id else newId,
+            label = draft.label.trim(),
+            apiKey = normalizedKey,
+            providerType = draft.providerType,
+            extraCredentials = draft.extraCredentials.toMap(),
+            extraSettings = draft.extraSettings.toMap(),
+            usageScript = draft.usageScript,
+            usageScriptEnabled = draft.usageScriptEnabled,
+            authorizedScriptOrigins = draft.authorizedScriptOrigins.toSet(),
+            revision = before?.revision?.plus(1) ?: 0
+        )
+
+        when {
+            before == null -> {
+                val duplicateIndex = accounts.indexOfFirst { it.id == newId }
+                if (duplicateIndex >= 0) accounts[duplicateIndex] = account else accounts.add(account)
+                AccountSaveResult.Created(account)
+            }
+            before.id == newId -> {
+                accounts[existingIndex] = account
+                AccountSaveResult.Updated(before, account)
+            }
+            else -> {
+                accounts.removeAt(existingIndex)
+                val duplicateIndex = accounts.indexOfFirst { it.id == newId }
+                if (duplicateIndex >= 0) accounts[duplicateIndex] = account else accounts.add(account)
+                AccountSaveResult.Replaced(before, account)
+            }
+        }
     }
 
     /**
