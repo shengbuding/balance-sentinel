@@ -319,6 +319,7 @@ class RefreshResultCommitterTest {
                             events += name
                             if (!failed && name == failNextCommitFor) {
                                 failed = true
+                                editor.commit()
                                 return false
                             }
                             return editor.commit()
