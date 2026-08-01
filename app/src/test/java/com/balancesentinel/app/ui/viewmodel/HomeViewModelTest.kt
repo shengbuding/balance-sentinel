@@ -3,6 +3,7 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.repository.ApiKeyManager
@@ -136,6 +137,35 @@ class HomeViewModelTest {
     // ═══════════════════════════════════════════════════════════
     // 设置变更
     // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `editAccount key replacement preserves credentials and advances revision`() {
+        val original = apiKeyManager.addAccount(
+            label = "Original",
+            apiKey = "old-key",
+            providerType = ProviderType.CUSTOM,
+            extraSettings = mapOf("baseUrl" to "https://old.example.com"),
+            extraCredentials = mapOf("secretKey" to "secret-value"),
+            usageScript = "return old"
+        )
+        val vm = createViewModel()
+
+        vm.editAccount(
+            id = original.id,
+            newLabel = "Updated",
+            newApiKey = "new-key",
+            extraSettings = mapOf("baseUrl" to "https://new.example.com"),
+            usageScript = "return new"
+        )
+
+        val updated = requireNotNull(apiKeyManager.getAccount(apiKeyManager.computeId("new-key")))
+        assertEquals("Updated", updated.label)
+        assertEquals(1L, updated.revision)
+        assertEquals("secret-value", updated.extraCredentials["secretKey"])
+        assertEquals("https://new.example.com", updated.extraSettings["baseUrl"])
+        assertEquals("return new", updated.usageScript)
+        assertNull(apiKeyManager.getAccount(original.id))
+    }
 
     @Test
     fun `setRefreshInterval updates state`() {
