@@ -31,9 +31,14 @@ data class AccountInfo(
      * 转换为ProviderConfig
      */
     fun toConfig(): ProviderConfig {
-        val credentials = mutableMapOf("apiKey" to apiKey, "accountId" to id, "accountLabel" to label)
-        credentials.putAll(extraCredentials)
+        val credentials = extraCredentials.toMutableMap()
+        credentials["apiKey"] = apiKey
+        credentials["accountId"] = id
+        credentials["accountLabel"] = label
         val settings = extraSettings.toMutableMap()
+        settings.remove("usageScript")
+        settings.remove("usageScriptEnabled")
+        settings.remove("authorizedScriptOrigins")
         // 添加自定义脚本到settings中
         if (usageScript != null) {
             settings["usageScript"] = usageScript
