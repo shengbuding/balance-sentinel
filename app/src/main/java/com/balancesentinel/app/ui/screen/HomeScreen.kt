@@ -85,10 +85,10 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 
     // 删除确认对话框
     var deleteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var deleteAssociatedData by remember { mutableStateOf(false) }
+    var deleteAssociatedData by remember { mutableStateOf(true) }
     deleteTarget?.let { (id, label) ->
         AlertDialog(
-            onDismissRequest = { deleteTarget = null; deleteAssociatedData = false },
+            onDismissRequest = { deleteTarget = null; deleteAssociatedData = true },
             title = { Text(stringResource(R.string.home_delete_account_title)) },
             text = {
                 Column {
@@ -98,12 +98,11 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { deleteAssociatedData = !deleteAssociatedData }
                             .padding(vertical = 4.dp)
                     ) {
                         Checkbox(
-                            checked = deleteAssociatedData,
-                            onCheckedChange = { deleteAssociatedData = it }
+                            checked = true,
+                            onCheckedChange = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
@@ -122,19 +121,15 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (deleteAssociatedData) {
-                        viewModel.removeAccountWithData(id)
-                    } else {
-                        viewModel.removeAccount(id)
-                    }
+                    viewModel.removeAccountWithData(id)
                     deleteTarget = null
-                    deleteAssociatedData = false
+                    deleteAssociatedData = true
                 }) {
                     Text(stringResource(R.string.home_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null; deleteAssociatedData = false }) {
+                TextButton(onClick = { deleteTarget = null; deleteAssociatedData = true }) {
                     Text(stringResource(R.string.home_cancel))
                 }
             }
