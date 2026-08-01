@@ -96,11 +96,10 @@ class ProviderCache(private val context: Context) {
             ttl = ttl
         )
 
-        // 保存到内存缓存
-        memoryCache[key] = cached
-
-        // 保存到SharedPreferences
+        // Persist before publishing the new process-wide cache value.
         check(prefs.edit().putString(key, json.encodeToString(cached)).commit())
+
+        memoryCache[key] = cached
         }
     }
 
@@ -110,8 +109,8 @@ class ProviderCache(private val context: Context) {
     fun clear(providerType: ProviderType, accountId: String) {
         synchronized(CACHE_LOCK) {
         val key = "${providerType.id}_$accountId"
-        memoryCache.remove(key)
         check(prefs.edit().remove(key).commit())
+        memoryCache.remove(key)
         }
     }
 
@@ -120,8 +119,8 @@ class ProviderCache(private val context: Context) {
      */
     fun clearAll() {
         synchronized(CACHE_LOCK) {
-        memoryCache.clear()
         check(prefs.edit().clear().commit())
+        memoryCache.clear()
         }
     }
 
@@ -149,10 +148,10 @@ class ProviderCache(private val context: Context) {
             if (keysToRemove.isNotEmpty()) {
                 val editor = prefs.edit()
                 keysToRemove.forEach { key ->
-                    memoryCache.remove(key)
                     editor.remove(key)
                 }
                 check(editor.commit())
+                keysToRemove.forEach(memoryCache::remove)
             }
         }
     }
