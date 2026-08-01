@@ -232,7 +232,7 @@ class WidgetPrefs(context: Context) {
 
             val order = getRawNotificationWalletOrder().map { entry ->
                 if (entry.startsWith("${oldAccountId}_")) {
-                    "${newAccountId}_${entry.removePrefix("${oldAccountId}_")}" 
+                    "${newAccountId}_${entry.removePrefix("${oldAccountId}_")}"
                 } else {
                     entry
                 }
