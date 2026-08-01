@@ -20,6 +20,7 @@ import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
+import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -240,7 +241,13 @@ class HomeViewModel @JvmOverloads constructor(
             !ProviderConfigs.validateFieldValues(draft.providerType, values)
         ) return
 
-        apiKeyManager.saveAccount(existingId = null, draft = draft)
+        val result = apiKeyManager.saveAccount(existingId = null, draft = draft)
+        if (result is AccountSaveResult.Conflict) {
+            _uiState.value = _uiState.value.copy(
+                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
+            )
+            return
+        }
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
@@ -286,7 +293,13 @@ class HomeViewModel @JvmOverloads constructor(
             !ProviderConfigs.validateFieldValues(draft.providerType, values)
         ) return
 
-        AccountLifecycleManager(getApplication(), apiKeyManager).save(id, draft)
+        val result = AccountLifecycleManager(getApplication(), apiKeyManager).save(id, draft)
+        if (result is AccountSaveResult.Conflict) {
+            _uiState.value = _uiState.value.copy(
+                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
+            )
+            return
+        }
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()

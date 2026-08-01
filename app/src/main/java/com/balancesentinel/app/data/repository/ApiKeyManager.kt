@@ -88,11 +88,17 @@ class ApiKeyManager(
             authorizedScriptOrigins = draft.authorizedScriptOrigins.toSet(),
             revision = before?.revision?.plus(1) ?: 0
         )
+        val destinationIndex = accounts.indexOfFirst { it.id == newId }
+        if (destinationIndex >= 0 && destinationIndex != existingIndex) {
+            return@mutateAccounts AccountSaveResult.Conflict(
+                existing = accounts[destinationIndex],
+                requested = account
+            )
+        }
 
         when {
             before == null -> {
-                val duplicateIndex = accounts.indexOfFirst { it.id == newId }
-                if (duplicateIndex >= 0) accounts[duplicateIndex] = account else accounts.add(account)
+                accounts.add(account)
                 AccountSaveResult.Created(account)
             }
             before.id == newId -> {
@@ -101,8 +107,7 @@ class ApiKeyManager(
             }
             else -> {
                 accounts.removeAt(existingIndex)
-                val duplicateIndex = accounts.indexOfFirst { it.id == newId }
-                if (duplicateIndex >= 0) accounts[duplicateIndex] = account else accounts.add(account)
+                accounts.add(account)
                 AccountSaveResult.Replaced(before, account)
             }
         }

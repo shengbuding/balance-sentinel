@@ -3,6 +3,7 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.AiProvider
 import com.balancesentinel.app.data.api.ProviderConfig
 import com.balancesentinel.app.data.api.ProviderError
@@ -430,7 +431,7 @@ class HomeViewModelTest {
         )
 
         assertEquals(accountsBefore, apiKeyManager.getAccounts())
-        assertEquals("该 API Key 已被另一个账户使用", vm.uiState.value.errorMessage)
+        assertEquals(context.getString(R.string.account_key_conflict), vm.uiState.value.errorMessage)
     }
 
     @Test

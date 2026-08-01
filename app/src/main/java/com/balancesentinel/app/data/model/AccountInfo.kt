@@ -89,4 +89,10 @@ sealed interface AccountSaveResult {
     data class Created(override val account: AccountInfo) : AccountSaveResult
     data class Updated(val before: AccountInfo, override val account: AccountInfo) : AccountSaveResult
     data class Replaced(val before: AccountInfo, override val account: AccountInfo) : AccountSaveResult
+    data class Conflict(
+        val existing: AccountInfo,
+        val requested: AccountInfo
+    ) : AccountSaveResult {
+        override val account: AccountInfo = existing
+    }
 }

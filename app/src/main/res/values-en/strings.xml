@@ -36,6 +36,7 @@
     <string name="add_account_show_key">Show</string>
     <string name="add_account_hide_key">Hide</string>
     <string name="add_account_paste_key">Paste from clipboard</string>
+    <string name="account_key_conflict">This API Key is already used by another account</string>
 
     <!-- ===== Balance Card ===== -->
     <string name="balance_total">%1$s Total Balance</string>
