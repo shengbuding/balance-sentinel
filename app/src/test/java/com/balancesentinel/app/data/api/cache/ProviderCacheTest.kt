@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,12 +26,12 @@ class ProviderCacheTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE).edit().clear().commit()
+        ProviderCache(context).clearAll()
     }
 
     @After
     fun tearDown() {
-        context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE).edit().clear().commit()
+        ProviderCache(context).clearAll()
     }
 
     @Test
@@ -138,6 +140,81 @@ class ProviderCacheTest {
         assertTrue(
             context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE).contains(key)
         )
+    }
+
+    @Test
+    fun `clear cannot be undone by an in flight persistent cache read`() {
+        val accountId = "inflight-read-account"
+        val key = "${ProviderType.DEEPSEEK.id}_$accountId"
+        val balance = UnifiedBalance(ProviderType.DEEPSEEK, accountId, true, emptyList())
+        val cached = ProviderCache.CachedBalance(
+            balance = balance,
+            cachedAt = System.currentTimeMillis(),
+            ttl = 60_000L
+        )
+        context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE)
+            .edit()
+            .putString(key, Json.encodeToString(cached))
+            .commit()
+        val readReady = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val blockingContext = BlockingProviderReadContext(context, readReady, resumeRead)
+        val getThread = Thread(
+            { ProviderCache(blockingContext).get(ProviderType.DEEPSEEK, accountId) },
+            "provider-get"
+        )
+        val clearThread = Thread(
+            { ProviderCache(blockingContext).clear(ProviderType.DEEPSEEK, accountId) },
+            "provider-clear"
+        )
+
+        getThread.start()
+        assertTrue(readReady.await(5, TimeUnit.SECONDS))
+        clearThread.start()
+        assertTrue(awaitCompletedOrSharedLock(clearThread))
+        resumeRead.countDown()
+        getThread.join(5_000)
+        clearThread.join(5_000)
+
+        assertFalse(getThread.isAlive)
+        assertFalse(clearThread.isAlive)
+        assertFalse(
+            context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE).contains(key)
+        )
+        assertNull(ProviderCache(context).get(ProviderType.DEEPSEEK, accountId))
+    }
+
+    private fun awaitCompletedOrSharedLock(thread: Thread): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline) {
+            if (thread.state == Thread.State.TERMINATED || thread.state == Thread.State.BLOCKED) {
+                return true
+            }
+            Thread.yield()
+        }
+        return false
+    }
+
+    private class BlockingProviderReadContext(
+        base: Context,
+        private val readReady: CountDownLatch,
+        private val resumeRead: CountDownLatch
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = super.getSharedPreferences(name, mode)
+            if (name != "provider_cache") return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun getString(key: String?, defValue: String?): String? {
+                    val value = delegate.getString(key, defValue)
+                    if (Thread.currentThread().name == "provider-get") {
+                        readReady.countDown()
+                        check(resumeRead.await(5, TimeUnit.SECONDS))
+                    }
+                    return value
+                }
+            }
+        }
     }
 
     private class BlockingProviderRemoveContext(
