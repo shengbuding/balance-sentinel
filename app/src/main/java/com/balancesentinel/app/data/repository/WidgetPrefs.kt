@@ -195,14 +195,14 @@ class WidgetPrefs(context: Context) {
 
     fun removeAccountData(accountId: String) {
         synchronized(WIDGET_PREFS_LOCK) {
+            val order = getRawNotificationWalletOrder()
+                .filterNot { it.startsWith("${accountId}_") }
             val editor = prefs.edit()
             prefs.all.keys
                 .filter { key -> key.endsWith("_$accountId") || key.contains("_${accountId}_") }
                 .forEach(editor::remove)
+            editor.putNotificationWalletOrder(order)
             check(editor.commit())
-
-            val order = getRawNotificationWalletOrder().filterNot { it.startsWith("${accountId}_") }
-            setNotificationWalletOrder(order)
         }
     }
 
@@ -210,6 +210,13 @@ class WidgetPrefs(context: Context) {
         if (oldAccountId == newAccountId) return
 
         synchronized(WIDGET_PREFS_LOCK) {
+            val order = getRawNotificationWalletOrder().map { entry ->
+                if (entry.startsWith("${oldAccountId}_")) {
+                    "${newAccountId}_${entry.removePrefix("${oldAccountId}_")}"
+                } else {
+                    entry
+                }
+            }
             val editor = prefs.edit()
             prefs.all.forEach { (key, value) ->
                 val newKey = when {
@@ -228,16 +235,8 @@ class WidgetPrefs(context: Context) {
                 }
                 editor.remove(key)
             }
+            editor.putNotificationWalletOrder(order)
             check(editor.commit())
-
-            val order = getRawNotificationWalletOrder().map { entry ->
-                if (entry.startsWith("${oldAccountId}_")) {
-                    "${newAccountId}_${entry.removePrefix("${oldAccountId}_")}"
-                } else {
-                    entry
-                }
-            }
-            setNotificationWalletOrder(order)
         }
     }
 
@@ -283,15 +282,19 @@ class WidgetPrefs(context: Context) {
     var showTotalBalanceInNotification: Boolean
         get() = prefs.getBoolean(KEY_NOTIFICATION_SHOW_TOTAL, true)
         set(value) {
-            prefs.edit().putBoolean(KEY_NOTIFICATION_SHOW_TOTAL, value).apply()
-            // 同步排序列表中的总余额条目
-            val order = getRawNotificationWalletOrder().toMutableList()
-            if (value && KEY_NOTIFICATION_TOTAL !in order) {
-                order.add(0, KEY_NOTIFICATION_TOTAL)
-                setNotificationWalletOrder(order)
-            } else if (!value) {
-                order.remove(KEY_NOTIFICATION_TOTAL)
-                setNotificationWalletOrder(order)
+            synchronized(WIDGET_PREFS_LOCK) {
+                val order = getRawNotificationWalletOrder().toMutableList()
+                if (value && KEY_NOTIFICATION_TOTAL !in order) {
+                    order.add(0, KEY_NOTIFICATION_TOTAL)
+                } else if (!value) {
+                    order.remove(KEY_NOTIFICATION_TOTAL)
+                }
+                check(
+                    prefs.edit()
+                        .putBoolean(KEY_NOTIFICATION_SHOW_TOTAL, value)
+                        .putNotificationWalletOrder(order)
+                        .commit()
+                )
             }
         }
 
@@ -301,15 +304,17 @@ class WidgetPrefs(context: Context) {
      * 首次调用时自动从旧版布尔 key 迁移。
      */
     fun getNotificationWalletOrder(): List<String> {
-        val order = getRawNotificationWalletOrder().toMutableList()
-        // 确保与 showTotal 标记一致
-        if (showTotalBalanceInNotification && KEY_NOTIFICATION_TOTAL !in order) {
-            order.add(0, KEY_NOTIFICATION_TOTAL)
-            setNotificationWalletOrder(order)
-        } else if (!showTotalBalanceInNotification) {
-            order.remove(KEY_NOTIFICATION_TOTAL)
+        return synchronized(WIDGET_PREFS_LOCK) {
+            val order = getRawNotificationWalletOrder().toMutableList()
+            // 确保与 showTotal 标记一致
+            if (showTotalBalanceInNotification && KEY_NOTIFICATION_TOTAL !in order) {
+                order.add(0, KEY_NOTIFICATION_TOTAL)
+                setNotificationWalletOrder(order)
+            } else if (!showTotalBalanceInNotification) {
+                order.remove(KEY_NOTIFICATION_TOTAL)
+            }
+            order
         }
-        return order
     }
 
     /** 读取原始排序列表（不做 total 一致性修正）。 */
@@ -341,9 +346,16 @@ class WidgetPrefs(context: Context) {
     }
 
     private fun setNotificationWalletOrder(order: List<String>) {
-        // 手动构造 JSON 数组，避免额外的 kotlinx.serialization 依赖
+        synchronized(WIDGET_PREFS_LOCK) {
+            check(prefs.edit().putNotificationWalletOrder(order).commit())
+        }
+    }
+
+    private fun SharedPreferences.Editor.putNotificationWalletOrder(
+        order: List<String>
+    ): SharedPreferences.Editor {
         val raw = order.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-        prefs.edit().putString(KEY_NOTIFICATION_WALLET_ORDER, raw).apply()
+        return putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
     }
 
     /** 总余额是否在排序列表中。 */
@@ -356,53 +368,62 @@ class WidgetPrefs(context: Context) {
 
     /** 设置指定账户+币种的通知栏展示。true=加入末尾，false=移除。 */
     fun setNotificationWalletSelected(accountId: String, currency: String, selected: Boolean) {
-        val key = "${accountId}_$currency"
-        val order = getRawNotificationWalletOrder().toMutableList()
-        if (selected && key !in order) {
-            order.add(key)
-        } else if (!selected) {
-            order.remove(key)
+        synchronized(WIDGET_PREFS_LOCK) {
+            val key = "${accountId}_$currency"
+            val order = getRawNotificationWalletOrder().toMutableList()
+            if (selected && key !in order) {
+                order.add(key)
+            } else if (!selected) {
+                order.remove(key)
+            }
+            check(
+                prefs.edit()
+                    .putNotificationWalletOrder(order)
+                    .putBoolean("${KEY_NOTIFICATION_SELECTED}_${accountId}_$currency", selected)
+                    .commit()
+            )
         }
-        setNotificationWalletOrder(order)
-        // 同步旧版布尔 key
-        prefs.edit().putBoolean("${KEY_NOTIFICATION_SELECTED}_${accountId}_$currency", selected).apply()
     }
 
     /** 重置排序列表，只保留布尔标记为 true 的条目 */
     fun resetNotificationWalletOrder() {
-        val newOrder = mutableListOf<String>()
+        synchronized(WIDGET_PREFS_LOCK) {
+            val newOrder = mutableListOf<String>()
 
-        // 检查所有布尔标记
-        for (key in prefs.all.keys) {
-            if (key.startsWith("${KEY_NOTIFICATION_SELECTED}_")) {
-                val suffix = key.removePrefix("${KEY_NOTIFICATION_SELECTED}_")
-                if (prefs.getBoolean(key, false)) {
-                    // 只保留16位ID的条目（新版格式）
-                    val parts = suffix.split("_", limit = 2)
-                    if (parts.size == 2 && parts[0].length == 16) {
-                        newOrder.add(suffix)
+            // 检查所有布尔标记
+            for (key in prefs.all.keys) {
+                if (key.startsWith("${KEY_NOTIFICATION_SELECTED}_")) {
+                    val suffix = key.removePrefix("${KEY_NOTIFICATION_SELECTED}_")
+                    if (prefs.getBoolean(key, false)) {
+                        // 只保留16位ID的条目（新版格式）
+                        val parts = suffix.split("_", limit = 2)
+                        if (parts.size == 2 && parts[0].length == 16) {
+                            newOrder.add(suffix)
+                        }
                     }
                 }
             }
-        }
 
-        setNotificationWalletOrder(newOrder)
+            setNotificationWalletOrder(newOrder)
+        }
     }
 
     /** 清理排序列表中的无效条目（保留16位ID的条目） */
     fun cleanupInvalidEntries() {
-        val order = getRawNotificationWalletOrder().toMutableList()
-        val cleaned = order.filter { key ->
-            if (key == KEY_NOTIFICATION_TOTAL) {
-                true
-            } else {
-                val parts = key.split("_", limit = 2)
-                parts.size == 2 && parts[0].length == 16
+        synchronized(WIDGET_PREFS_LOCK) {
+            val order = getRawNotificationWalletOrder().toMutableList()
+            val cleaned = order.filter { key ->
+                if (key == KEY_NOTIFICATION_TOTAL) {
+                    true
+                } else {
+                    val parts = key.split("_", limit = 2)
+                    parts.size == 2 && parts[0].length == 16
+                }
             }
-        }
-        if (cleaned.size != order.size) {
-            Logger.w(TAG, "Cleaned ${order.size - cleaned.size} invalid entries from notification order")
-            setNotificationWalletOrder(cleaned)
+            if (cleaned.size != order.size) {
+                Logger.w(TAG, "Cleaned ${order.size - cleaned.size} invalid entries from notification order")
+                setNotificationWalletOrder(cleaned)
+            }
         }
     }
 
@@ -457,22 +478,26 @@ class WidgetPrefs(context: Context) {
     }
 
     private fun moveEntryUp(key: String) {
-        val order = getNotificationWalletOrder().toMutableList()
-        val idx = order.indexOf(key)
-        if (idx > 0) {
-            order.removeAt(idx)
-            order.add(idx - 1, key)
-            setNotificationWalletOrder(order)
+        synchronized(WIDGET_PREFS_LOCK) {
+            val order = getNotificationWalletOrder().toMutableList()
+            val idx = order.indexOf(key)
+            if (idx > 0) {
+                order.removeAt(idx)
+                order.add(idx - 1, key)
+                setNotificationWalletOrder(order)
+            }
         }
     }
 
     private fun moveEntryDown(key: String) {
-        val order = getNotificationWalletOrder().toMutableList()
-        val idx = order.indexOf(key)
-        if (idx >= 0 && idx < order.size - 1) {
-            order.removeAt(idx)
-            order.add(idx + 1, key)
-            setNotificationWalletOrder(order)
+        synchronized(WIDGET_PREFS_LOCK) {
+            val order = getNotificationWalletOrder().toMutableList()
+            val idx = order.indexOf(key)
+            if (idx >= 0 && idx < order.size - 1) {
+                order.removeAt(idx)
+                order.add(idx + 1, key)
+                setNotificationWalletOrder(order)
+            }
         }
     }
 
@@ -506,14 +531,14 @@ class WidgetPrefs(context: Context) {
 
     /** 批量导入通知栏钱包选择（覆盖排序列表）。 */
     fun applyNotificationWalletSelections(selections: List<NotificationWalletSelection>) {
-        val order = selections.map { "${it.accountId}_${it.currency}" }
-        setNotificationWalletOrder(order)
-        // 同步旧版布尔 key
-        val editor = prefs.edit()
-        for (s in selections) {
-            editor.putBoolean("${KEY_NOTIFICATION_SELECTED}_${s.accountId}_${s.currency}", true)
+        synchronized(WIDGET_PREFS_LOCK) {
+            val order = selections.map { "${it.accountId}_${it.currency}" }
+            val editor = prefs.edit().putNotificationWalletOrder(order)
+            for (s in selections) {
+                editor.putBoolean("${KEY_NOTIFICATION_SELECTED}_${s.accountId}_${s.currency}", true)
+            }
+            check(editor.commit())
         }
-        editor.apply()
     }
 
     companion object {
