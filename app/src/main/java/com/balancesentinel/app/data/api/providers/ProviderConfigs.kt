@@ -129,6 +129,16 @@ object ProviderConfigs {
             validateFieldValue(field, values[field.key].orEmpty())
         }
 
+    fun valuesForStorage(
+        type: ProviderType,
+        values: Map<String, String>,
+        storage: ConfigFieldStorage
+    ): Map<String, String> = getConfigFields(type)
+        .asSequence()
+        .filter { it.storage == storage }
+        .mapNotNull { field -> values[field.key]?.let { field.key to it } }
+        .toMap()
+
     /**
      * 获取供应商默认初始余额
      */

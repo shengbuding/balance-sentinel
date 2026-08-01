@@ -1,43 +1,51 @@
 package com.balancesentinel.app.ui.components
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
-import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.data.model.AccountDraft
 
-/**
- * 添加账户对话框（支持多供应商）
- */
 @Composable
 fun AddAccountDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, String, ProviderType, Map<String, String>) -> Unit
+    onAdd: (AccountDraft) -> Unit
 ) {
     var selectedProvider by remember { mutableStateOf(ProviderType.DEEPSEEK) }
     var label by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    var baseUrl by remember { mutableStateOf("") }
-    var showKey by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    val clipboardManager = LocalClipboardManager.current
+    val fields = remember(selectedProvider) { ProviderConfigs.getConfigFields(selectedProvider) }
+    var values by remember(selectedProvider) {
+        mutableStateOf(fields.associate { it.key to it.defaultValue.orEmpty() })
+    }
 
-    // 供应商列表（只显示可用的）
     val availableProviders = remember {
         listOf(
             ProviderType.DEEPSEEK,
@@ -57,12 +65,21 @@ fun AddAccountDialog(
         )
     }
 
+    val apiKey = values["apiKey"].orEmpty()
+    val fieldsValid = ProviderConfigs.validateFieldValues(selectedProvider, values)
+    val apiKeyValid = ProviderConfigs.validateApiKey(selectedProvider, apiKey)
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_account_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // 供应商选择
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Box {
                     OutlinedTextField(
                         value = selectedProvider.displayName,
@@ -93,7 +110,6 @@ fun AddAccountDialog(
                     }
                 }
 
-                // 账户标签
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
@@ -104,90 +120,38 @@ fun AddAccountDialog(
                     shape = RoundedCornerShape(8.dp)
                 )
 
-                // API Key
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text(stringResource(R.string.add_account_key_label)) },
-                    placeholder = { Text(ProviderConfigs.getApiKeyHint(selectedProvider)) },
-                    visualTransformation = if (showKey) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    leadingIcon = {
-                        Box(modifier = Modifier
-                            .clickable {
-                                val clipText = clipboardManager.getText()?.text ?: ""
-                                if (clipText.isNotBlank()) apiKey = clipText.trim()
-                            }
-                            .padding(horizontal = 8.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.add_account_paste_key),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                imageVector = if (showKey) CustomIcons.VisibilityOff else CustomIcons.Visibility,
-                                contentDescription = if (showKey) stringResource(R.string.add_account_hide_key)
-                                    else stringResource(R.string.add_account_show_key)
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    isError = apiKey.isNotBlank() && !ProviderConfigs.validateApiKey(selectedProvider, apiKey)
+                ProviderCredentialFields(
+                    fields = fields,
+                    values = values,
+                    onValueChange = { key, value -> values = values + (key to value) }
                 )
-
-                // 验证提示
-                if (apiKey.isNotBlank() && !ProviderConfigs.validateApiKey(selectedProvider, apiKey)) {
-                    Text(
-                        text = "API Key格式不正确",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                // 自定义供应商的 Base URL
-                if (selectedProvider == ProviderType.CUSTOM) {
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text("API Base URL") },
-                        placeholder = { Text("https://api.example.com/v1") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        isError = baseUrl.isNotBlank() && !baseUrl.startsWith("http")
-                    )
-                    if (baseUrl.isNotBlank() && !baseUrl.startsWith("http")) {
-                        Text(
-                            text = "URL需要以 http:// 或 https:// 开头",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
-            val isCustomValid = selectedProvider != ProviderType.CUSTOM || (baseUrl.isNotBlank() && baseUrl.startsWith("http"))
             Button(
                 onClick = {
-                    val extraSettings = if (selectedProvider == ProviderType.CUSTOM) {
-                        mapOf("baseUrl" to baseUrl)
-                    } else {
-                        emptyMap()
-                    }
-                    onAdd(label, apiKey, selectedProvider, extraSettings)
+                    onAdd(
+                        AccountDraft(
+                            label = label,
+                            apiKey = apiKey,
+                            providerType = selectedProvider,
+                            extraCredentials = ProviderConfigs.valuesForStorage(
+                                selectedProvider,
+                                values,
+                                ConfigFieldStorage.EXTRA_CREDENTIAL
+                            ),
+                            extraSettings = ProviderConfigs.valuesForStorage(
+                                selectedProvider,
+                                values,
+                                ConfigFieldStorage.SETTING
+                            ),
+                            usageScript = null,
+                            usageScriptEnabled = true,
+                            authorizedScriptOrigins = emptySet()
+                        )
+                    )
                 },
-                enabled = label.isNotBlank() && apiKey.isNotBlank() &&
-                          ProviderConfigs.validateApiKey(selectedProvider, apiKey) &&
-                          isCustomValid,
+                enabled = label.isNotBlank() && fieldsValid && apiKeyValid,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(stringResource(R.string.home_add))

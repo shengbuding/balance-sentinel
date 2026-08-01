@@ -235,6 +235,19 @@ class HomeViewModel @JvmOverloads constructor(
         refreshBalance()
     }
 
+    fun addAccount(draft: AccountDraft) {
+        if (draft.label.isBlank() || draft.apiKey.isBlank()) return
+        val values = draft.extraCredentials + draft.extraSettings + ("apiKey" to draft.apiKey)
+        if (!ProviderConfigs.validateApiKey(draft.providerType, draft.apiKey) ||
+            !ProviderConfigs.validateFieldValues(draft.providerType, values)
+        ) return
+
+        apiKeyManager.saveAccount(existingId = null, draft = draft)
+        loadAccounts()
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+        refreshBalance()
+    }
+
     fun removeAccount(id: String) {
         apiKeyManager.removeAccount(id)
         BalanceWidgetDataStore.removeAccountBalance(getApplication(), id)
@@ -294,12 +307,47 @@ class HomeViewModel @JvmOverloads constructor(
      */
     fun editAccount(
         id: String,
+        draft: AccountDraft
+    ) {
+        if (draft.label.isBlank() || draft.apiKey.isBlank()) return
+        val values = draft.extraCredentials + draft.extraSettings + ("apiKey" to draft.apiKey)
+        if (!ProviderConfigs.validateApiKey(draft.providerType, draft.apiKey) ||
+            !ProviderConfigs.validateFieldValues(draft.providerType, values)
+        ) return
+
+        val result = apiKeyManager.saveAccount(id, draft)
+        if (result is com.balancesentinel.app.data.model.AccountSaveResult.Replaced) {
+            migrateAccountData(result.before.id, result.account.id)
+        }
+        loadAccounts()
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+        refreshBalance()
+    }
+
+    fun editAccount(
+        id: String,
         newLabel: String,
         newApiKey: String,
         extraSettings: Map<String, String> = emptyMap(),
         usageScript: String? = null
     ) {
         if (newLabel.isBlank() || newApiKey.isBlank()) return
+
+        val currentAccount = apiKeyManager.getAccount(id) ?: return
+        editAccount(
+            id,
+            AccountDraft(
+                label = newLabel,
+                apiKey = newApiKey,
+                providerType = currentAccount.providerType,
+                extraCredentials = currentAccount.extraCredentials,
+                extraSettings = extraSettings,
+                usageScript = usageScript,
+                usageScriptEnabled = currentAccount.usageScriptEnabled,
+                authorizedScriptOrigins = currentAccount.authorizedScriptOrigins
+            )
+        )
+        return
 
         val oldAccount = apiKeyManager.getAccount(id) ?: return
         val result = apiKeyManager.saveAccount(
