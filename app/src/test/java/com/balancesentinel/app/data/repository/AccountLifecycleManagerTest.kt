@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
@@ -17,6 +19,7 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -153,6 +156,84 @@ class AccountLifecycleManagerTest {
         assertTrue(providerCache.get(accountB.providerType, accountB.id) != null)
     }
 
+    @Test
+    fun `delete keeps account retryable when raw record cleanup persistence fails`() {
+        assertDeleteFailureKeepsAccount("raw_records")
+    }
+
+    @Test
+    fun `delete keeps account retryable when daily summary cleanup persistence fails`() {
+        assertDeleteFailureKeepsAccount("daily_summaries")
+    }
+
+    @Test
+    fun `delete keeps account retryable when usage cleanup persistence fails`() {
+        assertDeleteFailureKeepsAccount("usage_snapshots")
+    }
+
+    @Test
+    fun `key replacement keeps old account retryable when usage migration fails`() {
+        val before = accountManager.addAccount("Before", "sk-before-retry-key")
+        seedOwnedState(before)
+        val replacementKey = "sk-after-retry-key"
+        val failingContext = FailingPrefsContext(context, "usage_snapshots")
+        val failingLifecycle = AccountLifecycleManager(
+            failingContext,
+            accountManager
+        )
+
+        val failure = runCatching {
+            failingLifecycle.save(
+                before.id,
+                AccountDraft(
+                    label = "After",
+                    apiKey = replacementKey,
+                    providerType = before.providerType
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failingContext.failed)
+        assertNotNull(failure)
+        assertEquals(before, accountManager.getAccount(before.id))
+        assertNull(accountManager.getAccount(accountManager.computeId(replacementKey)))
+
+        lifecycleManager.save(
+            before.id,
+            AccountDraft(
+                label = "After",
+                apiKey = replacementKey,
+                providerType = before.providerType
+            )
+        )
+        val replacementId = accountManager.computeId(replacementKey)
+        assertNull(accountManager.getAccount(before.id))
+        assertNotNull(accountManager.getAccount(replacementId))
+        assertEquals(
+            listOf(replacementId),
+            UsageDataStore.getAllSnapshots(context).map { it.accountId }
+        )
+    }
+
+    private fun assertDeleteFailureKeepsAccount(failingPrefsName: String) {
+        val account = accountManager.addAccount("Retryable", "sk-retryable-$failingPrefsName")
+        seedOwnedState(account)
+        val failingContext = FailingPrefsContext(context, failingPrefsName)
+        val failingLifecycle = AccountLifecycleManager(
+            failingContext,
+            accountManager
+        )
+
+        val failure = runCatching { failingLifecycle.delete(account.id) }.exceptionOrNull()
+
+        assertTrue(failingContext.failed)
+        assertNotNull(failure)
+        assertEquals(account, accountManager.getAccount(account.id))
+
+        lifecycleManager.delete(account.id)
+        assertNull(accountManager.getAccount(account.id))
+    }
+
     private fun seedOwnedState(account: AccountInfo) {
         RawRecordStore.addRecord(
             context,
@@ -221,6 +302,52 @@ class AccountLifecycleManagerTest {
         widgetPrefs.resetAll()
         providerCache.clearAll()
         ApiDebugStore.clearAll()
+    }
+
+    private class FailingPrefsContext(
+        base: Context,
+        private val failingPrefsName: String
+    ) : ContextWrapper(base) {
+        var failed = false
+            private set
+
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != failingPrefsName) return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun commit(): Boolean {
+                            if (!failed) {
+                                failed = true
+                                return false
+                            }
+                            return editor.commit()
+                        }
+
+                        override fun apply() {
+                            if (!failed) {
+                                failed = true
+                                throw IllegalStateException("Injected persistence failure")
+                            }
+                            editor.apply()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private companion object {
