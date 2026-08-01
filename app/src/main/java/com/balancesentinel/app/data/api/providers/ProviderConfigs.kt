@@ -124,6 +124,11 @@ object ProviderConfigs {
         }
     }
 
+    fun validateFieldValues(type: ProviderType, values: Map<String, String>): Boolean =
+        getConfigFields(type).all { field ->
+            validateFieldValue(field, values[field.key].orEmpty())
+        }
+
     /**
      * 获取供应商默认初始余额
      */

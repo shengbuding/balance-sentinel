@@ -206,11 +206,8 @@ class HomeViewModel @JvmOverloads constructor(
         extraSettings: Map<String, String> = emptyMap()
     ) {
         if (label.isBlank() || apiKey.isBlank()) return
-        if (providerType == ProviderType.CUSTOM) {
-            val baseUrlField = ProviderConfigs.getConfigFields(providerType)
-                .single { it.key == "baseUrl" }
-            if (!ProviderConfigs.validateFieldValue(baseUrlField, extraSettings["baseUrl"].orEmpty())) return
-        }
+        val fieldValues = extraSettings + ("apiKey" to apiKey)
+        if (!ProviderConfigs.validateFieldValues(providerType, fieldValues)) return
         val providerFields = ProviderConfigs.getConfigFields(providerType)
         val extraCredentials = providerFields
             .filter { it.storage == ConfigFieldStorage.EXTRA_CREDENTIAL }
