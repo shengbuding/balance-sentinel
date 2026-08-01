@@ -116,6 +116,22 @@ class HomeViewModelTest {
         assertTrue(apiKeyManager.getAccounts().isEmpty())
     }
 
+    @Test
+    fun `addAccount stores dynamic credentials by provider field classification`() {
+        val vm = createViewModel()
+
+        vm.addAccount(
+            label = "Zhipu",
+            apiKey = "zhipu-api-key",
+            providerType = ProviderType.ZHIPU,
+            extraSettings = mapOf("secretKey" to "secret-value")
+        )
+
+        val account = apiKeyManager.getAccounts().single()
+        assertEquals("secret-value", account.extraCredentials["secretKey"])
+        assertFalse(account.extraSettings.containsKey("secretKey"))
+    }
+
     // ═══════════════════════════════════════════════════════════
     // removeAccount
     // ═══════════════════════════════════════════════════════════
