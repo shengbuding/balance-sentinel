@@ -15,6 +15,14 @@ class WidgetPrefs(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
 
+    private fun commitAccountState(block: SharedPreferences.Editor.() -> Unit) {
+        synchronized(WIDGET_PREFS_LOCK) {
+            val editor = prefs.edit()
+            editor.block()
+            check(editor.commit())
+        }
+    }
+
     // ── 全局设置 ──
 
     var refreshIntervalSeconds: Int
@@ -66,32 +74,37 @@ class WidgetPrefs(context: Context) {
     fun getLastAlertedBalance(accountId: String): Float =
         prefs.getFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", -1f)
 
-    fun setLastAlertedBalance(accountId: String, value: Float) =
-        prefs.edit().putFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", value).apply()
+    fun setLastAlertedBalance(accountId: String, value: Float) {
+        commitAccountState { putFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", value) }
+    }
 
     fun getPreviousBalance(accountId: String): Float =
         prefs.getFloat("${KEY_PREVIOUS_BALANCE}_$accountId", -1f)
 
-    fun setPreviousBalance(accountId: String, value: Float) =
-        prefs.edit().putFloat("${KEY_PREVIOUS_BALANCE}_$accountId", value).apply()
+    fun setPreviousBalance(accountId: String, value: Float) {
+        commitAccountState { putFloat("${KEY_PREVIOUS_BALANCE}_$accountId", value) }
+    }
 
     fun getPreviousBalanceTime(accountId: String): Long =
         prefs.getLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", 0L)
 
-    fun setPreviousBalanceTime(accountId: String, value: Long) =
-        prefs.edit().putLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", value).apply()
+    fun setPreviousBalanceTime(accountId: String, value: Long) {
+        commitAccountState { putLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", value) }
+    }
 
     fun getLastChangeAlertedBalance(accountId: String): Float =
         prefs.getFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", -1f)
 
-    fun setLastChangeAlertedBalance(accountId: String, value: Float) =
-        prefs.edit().putFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", value).apply()
+    fun setLastChangeAlertedBalance(accountId: String, value: Float) {
+        commitAccountState { putFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", value) }
+    }
 
     fun getLastChangeAlertedTime(accountId: String): Long =
         prefs.getLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", 0L)
 
-    fun setLastChangeAlertedTime(accountId: String, value: Long) =
-        prefs.edit().putLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", value).apply()
+    fun setLastChangeAlertedTime(accountId: String, value: Long) {
+        commitAccountState { putLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", value) }
+    }
 
     // ── Snooze 标记（按账户隔离）──
 
@@ -100,46 +113,54 @@ class WidgetPrefs(context: Context) {
         prefs.getLong("${KEY_SNOOZE_UNTIL}_$accountId", 0L)
 
     /** 设置该账户的 snooze 截止时间戳。传 0 清除。 */
-    fun setSnoozeUntil(accountId: String, until: Long) =
-        prefs.edit().putLong("${KEY_SNOOZE_UNTIL}_$accountId", until).apply()
+    fun setSnoozeUntil(accountId: String, until: Long) {
+        commitAccountState { putLong("${KEY_SNOOZE_UNTIL}_$accountId", until) }
+    }
 
     /** 清除所有账户的 snooze 标记 */
     fun clearAllSnooze() {
-        val editor = prefs.edit()
-        prefs.all.keys.filter { it.startsWith(KEY_SNOOZE_UNTIL) }.forEach { key ->
-            editor.remove(key)
+        commitAccountState {
+            prefs.all.keys.filter { it.startsWith(KEY_SNOOZE_UNTIL) }.forEach(::remove)
         }
-        editor.apply()
     }
 
     /** 获取所有账户的 snooze 信息。返回 active snooze 中最早到期的截止时间戳，以及 snoozed 的账户 ID 列表 */
     fun getSnoozeInfo(): SnoozeInfo {
-        val now = System.currentTimeMillis()
-        val snoozedAccounts = mutableListOf<String>()
-        var maxRemainingMs = 0L
-        prefs.all.keys.filter { it.startsWith(KEY_SNOOZE_UNTIL) }.forEach { key ->
-            val until = prefs.getLong(key, 0L)
-            if (until > now) {
-                val accountId = key.removePrefix("${KEY_SNOOZE_UNTIL}_")
-                snoozedAccounts.add(accountId)
-                if (until - now > maxRemainingMs) {
-                    maxRemainingMs = until - now
+        return synchronized(WIDGET_PREFS_LOCK) {
+            val now = System.currentTimeMillis()
+            val snoozedAccounts = mutableListOf<String>()
+            val expiredKeys = mutableListOf<String>()
+            var maxRemainingMs = 0L
+            prefs.all.keys.filter { it.startsWith(KEY_SNOOZE_UNTIL) }.forEach { key ->
+                val until = prefs.getLong(key, 0L)
+                if (until > now) {
+                    val accountId = key.removePrefix("${KEY_SNOOZE_UNTIL}_")
+                    snoozedAccounts.add(accountId)
+                    if (until - now > maxRemainingMs) {
+                        maxRemainingMs = until - now
+                    }
+                } else if (until > 0L) {
+                    expiredKeys.add(key)
                 }
-            } else if (until > 0L) {
-                // 清理已过期的 snooze
-                prefs.edit().remove(key).apply()
             }
+            if (expiredKeys.isNotEmpty()) {
+                val editor = prefs.edit()
+                expiredKeys.forEach(editor::remove)
+                check(editor.commit())
+            }
+            SnoozeInfo(
+                anySnoozed = snoozedAccounts.isNotEmpty(),
+                maxRemainingMs = maxRemainingMs,
+                snoozedAccountIds = snoozedAccounts
+            )
         }
-        return SnoozeInfo(
-            anySnoozed = snoozedAccounts.isNotEmpty(),
-            maxRemainingMs = maxRemainingMs,
-            snoozedAccountIds = snoozedAccounts
-        )
     }
 
     /** 将所有设置恢复为默认值（清空整个 widget_prefs）。 */
     fun resetAll() {
-        prefs.edit().clear().apply()
+        synchronized(WIDGET_PREFS_LOCK) {
+            check(prefs.edit().clear().commit())
+        }
     }
 
     // ── Per-account+currency 启用开关（v2.1 新增）──
@@ -155,7 +176,7 @@ class WidgetPrefs(context: Context) {
     }
 
     fun setBalanceAlertEnabled(accountId: String, currency: String, enabled: Boolean) {
-        prefs.edit().putBoolean("${KEY_ALERT_ENABLED}_${accountId}_$currency", enabled).apply()
+        commitAccountState { putBoolean("${KEY_ALERT_ENABLED}_${accountId}_$currency", enabled) }
     }
 
     /**
@@ -169,28 +190,28 @@ class WidgetPrefs(context: Context) {
     }
 
     fun setChangeAlertEnabled(accountId: String, currency: String, enabled: Boolean) {
-        prefs.edit().putBoolean("${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency", enabled).apply()
+        commitAccountState { putBoolean("${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency", enabled) }
     }
 
     // ── 清理 ──
 
     /** 删除指定账户的所有预警状态 */
     fun removeAccountAlertState(accountId: String) {
-        prefs.edit().apply {
+        commitAccountState {
             remove("${KEY_LAST_ALERTED_BALANCE}_$accountId")
             remove("${KEY_PREVIOUS_BALANCE}_$accountId")
             remove("${KEY_PREVIOUS_BALANCE_TIME}_$accountId")
             remove("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId")
             remove("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId")
-        }.apply()
+        }
     }
 
     /** 删除指定账户+币种的所有预警状态（含 per-currency 启用开关） */
     fun removeAccountCurrencyAlertState(accountId: String, currency: String) {
-        prefs.edit().apply {
+        commitAccountState {
             remove("${KEY_ALERT_ENABLED}_${accountId}_$currency")
             remove("${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency")
-        }.apply()
+        }
     }
 
     fun removeAccountData(accountId: String) {
@@ -268,12 +289,18 @@ class WidgetPrefs(context: Context) {
 
     /** 批量导入 per-account+currency 预警启用开关（覆盖同 key 旧值）。 */
     fun applyPerCurrencyAlertSettings(settings: List<PerCurrencyAlertSetting>) {
-        val editor = prefs.edit()
-        for (s in settings) {
-            editor.putBoolean("${KEY_ALERT_ENABLED}_${s.accountId}_${s.currency}", s.balanceAlertEnabled)
-            editor.putBoolean("${KEY_CHANGE_ALERT_ENABLED}_${s.accountId}_${s.currency}", s.changeAlertEnabled)
+        commitAccountState {
+            for (setting in settings) {
+                putBoolean(
+                    "${KEY_ALERT_ENABLED}_${setting.accountId}_${setting.currency}",
+                    setting.balanceAlertEnabled
+                )
+                putBoolean(
+                    "${KEY_CHANGE_ALERT_ENABLED}_${setting.accountId}_${setting.currency}",
+                    setting.changeAlertEnabled
+                )
+            }
         }
-        editor.apply()
     }
 
     // ── 通知栏显示偏好（v2.5）──
@@ -429,39 +456,44 @@ class WidgetPrefs(context: Context) {
 
     /** 清理所有旧版8位ID的数据 */
     fun cleanupLegacyIdData() {
-        val editor = prefs.edit()
-        var cleanedCount = 0
+        synchronized(WIDGET_PREFS_LOCK) {
+            val editor = prefs.edit()
+            var cleanedCount = 0
 
-        // 需要清理的key前缀
-        val prefixes = listOf(
-            KEY_ALERT_ENABLED,
-            KEY_CHANGE_ALERT_ENABLED,
-            KEY_LAST_ALERTED_BALANCE,
-            KEY_PREVIOUS_BALANCE,
-            KEY_PREVIOUS_BALANCE_TIME,
-            KEY_LAST_CHANGE_ALERTED_BALANCE,
-            KEY_LAST_CHANGE_ALERTED_TIME,
-            KEY_SNOOZE_UNTIL,
-            KEY_NOTIFICATION_SELECTED
-        )
+            // 需要清理的key前缀
+            val prefixes = listOf(
+                KEY_ALERT_ENABLED,
+                KEY_CHANGE_ALERT_ENABLED,
+                KEY_LAST_ALERTED_BALANCE,
+                KEY_PREVIOUS_BALANCE,
+                KEY_PREVIOUS_BALANCE_TIME,
+                KEY_LAST_CHANGE_ALERTED_BALANCE,
+                KEY_LAST_CHANGE_ALERTED_TIME,
+                KEY_SNOOZE_UNTIL,
+                KEY_NOTIFICATION_SELECTED
+            )
 
-        for (key in prefs.all.keys) {
-            for (prefix in prefixes) {
-                if (key.startsWith("${prefix}_")) {
-                    val suffix = key.removePrefix("${prefix}_")
-                    val parts = suffix.split("_", limit = 2)
-                    // 检查是否是旧版8位ID
-                    if (parts.size >= 1 && parts[0].length == 8 && parts[0] != KEY_NOTIFICATION_TOTAL) {
-                        editor.remove(key)
-                        cleanedCount++
+            for (key in prefs.all.keys) {
+                for (prefix in prefixes) {
+                    if (key.startsWith("${prefix}_")) {
+                        val suffix = key.removePrefix("${prefix}_")
+                        val parts = suffix.split("_", limit = 2)
+                        // 检查是否是旧版8位ID
+                        if (parts.isNotEmpty() &&
+                            parts[0].length == 8 &&
+                            parts[0] != KEY_NOTIFICATION_TOTAL
+                        ) {
+                            editor.remove(key)
+                            cleanedCount++
+                        }
                     }
                 }
             }
-        }
 
-        if (cleanedCount > 0) {
-            editor.apply()
-            Logger.w(TAG, "Cleaned $cleanedCount legacy 8-bit ID entries")
+            if (cleanedCount > 0) {
+                check(editor.commit())
+                Logger.w(TAG, "Cleaned $cleanedCount legacy 8-bit ID entries")
+            }
         }
     }
 
