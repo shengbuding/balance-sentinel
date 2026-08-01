@@ -10,6 +10,7 @@ import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
+import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -240,6 +241,35 @@ class HomeViewModelTest {
         assertEquals("https://new.example.com", updated.extraSettings["baseUrl"])
         assertEquals("return new", updated.usageScript)
         assertNull(apiKeyManager.getAccount(original.id))
+    }
+
+    @Test
+    fun `editAccount key replacement migrates alert settings and notification order`() {
+        val original = apiKeyManager.addAccount(
+            label = "Original",
+            apiKey = "old-key",
+            providerType = ProviderType.CUSTOM,
+            extraSettings = mapOf("baseUrl" to "https://old.example.com")
+        )
+        val widgetPrefs = WidgetPrefs(context)
+        widgetPrefs.setBalanceAlertEnabled(original.id, "USD", true)
+        widgetPrefs.setNotificationWalletSelected(original.id, "USD", true)
+        val vm = createViewModel()
+
+        vm.editAccount(
+            original.id,
+            AccountDraft(
+                label = "Updated",
+                apiKey = "new-key",
+                providerType = ProviderType.CUSTOM,
+                extraSettings = mapOf("baseUrl" to "https://new.example.com")
+            )
+        )
+
+        val newId = apiKeyManager.computeId("new-key")
+        assertTrue(widgetPrefs.isBalanceAlertEnabled(newId, "USD"))
+        assertTrue(widgetPrefs.getNotificationWalletOrder().contains("${newId}_USD"))
+        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${original.id}_USD"))
     }
 
     @Test
