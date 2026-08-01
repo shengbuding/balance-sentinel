@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
  */
 class WidgetPrefs(context: Context) {
 
+    private val writeLock = WIDGET_PREFS_LOCK
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
 
@@ -176,42 +178,46 @@ class WidgetPrefs(context: Context) {
 
     /** 删除指定账户的所有预警状态 */
     fun removeAccountAlertState(accountId: String) {
-        val editor = prefs.edit()
-        prefs.all.keys.filter { key -> isAccountKey(key, accountId) }.forEach(editor::remove)
-        val order = getRawNotificationWalletOrder()
-        val remainingOrder = order.filterNot { entry -> entry.startsWith("${accountId}_") }
-        if (remainingOrder != order) {
-            val raw = remainingOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-            editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
+        synchronized(writeLock) {
+            val editor = prefs.edit()
+            prefs.all.keys.filter { key -> isAccountKey(key, accountId) }.forEach(editor::remove)
+            val order = getRawNotificationWalletOrder()
+            val remainingOrder = order.filterNot { entry -> entry.startsWith("${accountId}_") }
+            if (remainingOrder != order) {
+                val raw = remainingOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
+                editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
+            }
+            check(editor.commit())
         }
-        check(editor.commit())
     }
 
     fun migrateAccountId(oldId: String, newId: String) {
         if (oldId == newId) return
-        val editor = prefs.edit()
-        prefs.all.forEach { (key, value) ->
-            if (!isAccountKey(key, oldId)) return@forEach
-            val newKey = key.replaceFirst(oldId, newId)
-            when (value) {
-                is String -> editor.putString(newKey, value)
-                is Set<*> -> editor.putStringSet(newKey, value.filterIsInstance<String>().toSet())
-                is Int -> editor.putInt(newKey, value)
-                is Long -> editor.putLong(newKey, value)
-                is Float -> editor.putFloat(newKey, value)
-                is Boolean -> editor.putBoolean(newKey, value)
+        synchronized(writeLock) {
+            val editor = prefs.edit()
+            prefs.all.forEach { (key, value) ->
+                if (!isAccountKey(key, oldId)) return@forEach
+                val newKey = key.replaceFirst(oldId, newId)
+                when (value) {
+                    is String -> editor.putString(newKey, value)
+                    is Set<*> -> editor.putStringSet(newKey, value.filterIsInstance<String>().toSet())
+                    is Int -> editor.putInt(newKey, value)
+                    is Long -> editor.putLong(newKey, value)
+                    is Float -> editor.putFloat(newKey, value)
+                    is Boolean -> editor.putBoolean(newKey, value)
+                }
+                editor.remove(key)
             }
-            editor.remove(key)
+            val order = getRawNotificationWalletOrder()
+            val migratedOrder = order.map { entry ->
+                if (entry.startsWith("${oldId}_")) newId + entry.removePrefix(oldId) else entry
+            }
+            if (migratedOrder != order) {
+                val raw = migratedOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
+                editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
+            }
+            check(editor.commit())
         }
-        val order = getRawNotificationWalletOrder()
-        val migratedOrder = order.map { entry ->
-            if (entry.startsWith("${oldId}_")) newId + entry.removePrefix(oldId) else entry
-        }
-        if (migratedOrder != order) {
-            val raw = migratedOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-            editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
-        }
-        check(editor.commit())
     }
 
     private fun isAccountKey(key: String, accountId: String): Boolean = ACCOUNT_KEY_PREFIXES.any { prefix ->
@@ -502,6 +508,7 @@ class WidgetPrefs(context: Context) {
     }
 
     companion object {
+        private val WIDGET_PREFS_LOCK = Any()
         private const val TAG = "WidgetPrefs"
         const val KEY_INTERVAL = "refresh_interval_seconds"
         const val DEFAULT_INTERVAL = 30     // 30 seconds

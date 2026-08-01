@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.api
 
 import kotlinx.serialization.Serializable
+import java.net.URI
 
 /**
  * 统一余额响应
@@ -82,7 +83,18 @@ data class ConfigField(
     val defaultValue: String? = null,
     val hint: String? = null,
     val storage: ConfigFieldStorage = ConfigFieldStorage.PRIMARY_CREDENTIAL
-)
+) {
+    fun isValidInput(value: String): Boolean {
+        if (value.isBlank()) return !required
+        return when (type) {
+            FieldType.URL -> runCatching {
+                val uri = URI(value)
+                uri.host != null && uri.scheme in setOf("http", "https")
+            }.getOrDefault(false)
+            else -> true
+        }
+    }
+}
 
 enum class ConfigFieldStorage { PRIMARY_CREDENTIAL, EXTRA_CREDENTIAL, SETTING }
 

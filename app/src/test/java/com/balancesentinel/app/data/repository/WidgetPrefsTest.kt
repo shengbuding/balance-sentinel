@@ -179,6 +179,25 @@ class WidgetPrefsTest {
         assertEquals(100f, prefs.getLastAlertedBalance("acc2"))
     }
 
+    @Test
+    fun `migrateAccountId atomically moves alert state and notification selection`() {
+        prefs.resetAll()
+        prefs.setLastAlertedBalance("old", 50f)
+        prefs.setBalanceAlertEnabled("old", "USD", true)
+        prefs.setChangeAlertEnabled("old", "USD", true)
+        prefs.setNotificationWalletSelected("old", "USD", true)
+
+        prefs.migrateAccountId("old", "new")
+
+        assertEquals(-1f, prefs.getLastAlertedBalance("old"))
+        assertEquals(50f, prefs.getLastAlertedBalance("new"))
+        assertFalse(prefs.isBalanceAlertEnabled("old", "USD"))
+        assertTrue(prefs.isBalanceAlertEnabled("new", "USD"))
+        assertTrue(prefs.isChangeAlertEnabled("new", "USD"))
+        assertFalse(prefs.isNotificationWalletSelected("old", "USD"))
+        assertTrue(prefs.isNotificationWalletSelected("new", "USD"))
+    }
+
     // ── resetAll ──
 
     @Test
