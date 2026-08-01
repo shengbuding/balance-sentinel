@@ -2,6 +2,8 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -353,5 +355,43 @@ class ApiKeyManagerTest {
         val encoded = codec.encodeToString(AccountInfo.serializer(), renamed)
         val jsonObject = codec.parseToJsonElement(encoded) as JsonObject
         assertEquals("1", jsonObject["revision"].toString())
+    }
+
+    @Test
+    fun `saveAccount creation never overwrites an existing normalized key`() {
+        val existing = manager.addAccount("Existing", "sk-existing-key-12345")
+        val before = manager.getAccounts()
+
+        manager.saveAccount(
+            existingId = null,
+            draft = AccountDraft(
+                label = "Injected replacement",
+                apiKey = "  sk-existing-key-12345  ",
+                providerType = ProviderType.DEEPSEEK
+            )
+        )
+
+        assertEquals(before, manager.getAccounts())
+        assertEquals(existing, manager.getAccount(existing.id))
+    }
+
+    @Test
+    fun `saveAccount edit never overwrites a different account with the destination key`() {
+        val accountA = manager.addAccount("Account A", "sk-account-key-aaaaa")
+        val accountB = manager.addAccount("Account B", "sk-account-key-bbbbb")
+        val before = manager.getAccounts()
+
+        manager.saveAccount(
+            existingId = accountA.id,
+            draft = AccountDraft(
+                label = "Account A edited",
+                apiKey = accountB.apiKey,
+                providerType = accountA.providerType
+            )
+        )
+
+        assertEquals(before, manager.getAccounts())
+        assertEquals(accountA, manager.getAccount(accountA.id))
+        assertEquals(accountB, manager.getAccount(accountB.id))
     }
 }

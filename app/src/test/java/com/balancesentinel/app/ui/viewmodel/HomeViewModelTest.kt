@@ -414,6 +414,26 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `editAccount key collision preserves accounts and reports a stable error`() {
+        val accountA = apiKeyManager.addAccount("Account A", "sk-account-key-aaaaa")
+        val accountB = apiKeyManager.addAccount("Account B", "sk-account-key-bbbbb")
+        val accountsBefore = apiKeyManager.getAccounts()
+        val vm = createViewModel()
+
+        vm.editAccount(
+            accountA.id,
+            AccountDraft(
+                label = "Account A edited",
+                apiKey = accountB.apiKey,
+                providerType = accountA.providerType
+            )
+        )
+
+        assertEquals(accountsBefore, apiKeyManager.getAccounts())
+        assertEquals("该 API Key 已被另一个账户使用", vm.uiState.value.errorMessage)
+    }
+
+    @Test
     fun `setRefreshInterval updates state`() {
         val vm = createViewModel()
         vm.setRefreshInterval(300)

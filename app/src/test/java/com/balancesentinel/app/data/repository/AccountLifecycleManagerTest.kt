@@ -118,6 +118,41 @@ class AccountLifecycleManagerTest {
         assertEquals(1, ApiDebugStore.getEntries(survivor.id).size)
     }
 
+    @Test
+    fun `key collision preserves both accounts and their owned state`() {
+        val accountA = accountManager.addAccount("Account A", "sk-account-key-aaaaa")
+        val accountB = accountManager.addAccount("Account B", "sk-account-key-bbbbb")
+        seedOwnedState(accountA)
+        seedOwnedState(accountB)
+        val accountsBefore = accountManager.getAccounts()
+
+        val result = lifecycleManager.save(
+            accountA.id,
+            AccountDraft(
+                label = "Account A edited",
+                apiKey = accountB.apiKey,
+                providerType = accountA.providerType
+            )
+        )
+
+        assertFalse(result is AccountSaveResult.Replaced)
+        assertEquals(accountsBefore, accountManager.getAccounts())
+        assertEquals(
+            setOf(accountA.id, accountB.id),
+            RawRecordStore.getAllRecords(context).map { it.accountId }.toSet()
+        )
+        assertEquals(
+            setOf(accountA.id, accountB.id),
+            DailySummaryStore.getSummaries(context).map { it.accountId }.toSet()
+        )
+        assertEquals(
+            setOf(accountA.id, accountB.id),
+            UsageDataStore.getAllSnapshots(context).map { it.accountId }.toSet()
+        )
+        assertTrue(providerCache.get(accountA.providerType, accountA.id) != null)
+        assertTrue(providerCache.get(accountB.providerType, accountB.id) != null)
+    }
+
     private fun seedOwnedState(account: AccountInfo) {
         RawRecordStore.addRecord(
             context,
