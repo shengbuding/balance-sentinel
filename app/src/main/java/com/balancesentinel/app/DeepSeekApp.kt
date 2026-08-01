@@ -6,6 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.LocaleList
+import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -13,8 +15,13 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 class DeepSeekApp : Application() {
+
+    lateinit var refreshGateway: RefreshGateway
+        private set
+
     override fun onCreate() {
         super.onCreate()
+        refreshGateway = RefreshRuntime.create(this)
         CrashLogger.install(this)
 
         // Clean up stale downloaded APKs from previous sessions

@@ -134,3 +134,46 @@ All four entry points verified clean of duplicate provider/network/committer sid
 
 All Task 4 source/test changes committed as an auditable GREEN commit.
 
+## Completion Round 2
+
+Controller verification found four required Task 4 production files still
+tracked-dirty after HEAD `178da55`. The uncommitted changes install the
+Application-scoped gateway, expose `RefreshRuntime.from`, invalidate before
+lifecycle persistence, and replace the Widget runner stub with WIDGET/WATCHDOG
+gateway routing. All were present during prior passing gates but were not
+included in the commit.
+
+### Inspected files
+
+| File | Change summary |
+|------|---------------|
+| `DeepSeekApp.kt` | Adds `lateinit var refreshGateway`, initialises it via `RefreshRuntime.create(this)` in `onCreate` |
+| `RefreshRuntime.kt` | Adds `from(context: Context)` to obtain the Application-scoped gateway |
+| `AccountLifecycleManager.kt` | Adds optional `gateway` constructor parameter; calls `gateway?.invalidate()` before edit/delete persistence |
+| `WidgetRefreshRunner.kt` | Replaces stub with real implementation: fetches accounts, routes each through `gateway.refreshAccount()` with `WIDGET`/`WATCHDOG` trigger |
+
+### Unused import removal
+
+Removed one genuinely unused import:
+- `AccountLifecycleManager.kt` line 7: `import com.balancesentinel.app.data.refresh.RefreshRuntime` — the default gateway value uses the fully-qualified `com.balancesentinel.app.DeepSeekApp`, not `RefreshRuntime`.
+
+### Verification
+
+#### Command 1: Focused JVM tests
+```
+.\gradlew.bat testDebugUnitTest --tests com.balancesentinel.app.widget.WidgetProviderTest --tests com.balancesentinel.app.widget.BalanceRefreshRunnerTest --tests com.balancesentinel.app.data.repository.AccountLifecycleManagerTest --rerun-tasks
+```
+Exit code: 0. All tests pass (BUILD SUCCESSFUL in 25s, 29 tasks executed).
+
+#### Command 2: Compile check
+```
+.\gradlew.bat compileDebugKotlin --rerun-tasks
+```
+Exit code: 0. Clean compilation (only pre-existing deprecation warnings, no errors).
+
+### Commit
+
+Staged and committed exactly the four source files plus this report:
+`DeepSeekApp.kt`, `RefreshRuntime.kt`, `AccountLifecycleManager.kt`,
+`WidgetRefreshRunner.kt`, `task-4-report.md`.
+
