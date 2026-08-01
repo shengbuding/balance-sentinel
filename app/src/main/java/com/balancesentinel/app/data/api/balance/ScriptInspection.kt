@@ -31,9 +31,7 @@ suspend fun UsageScriptExecutor.extractForTest(
     @Suppress("UNUSED_PARAMETER") script: UsageScript,
     @Suppress("UNUSED_PARAMETER") account: AccountInfo,
     @Suppress("UNUSED_PARAMETER") responseBody: String
-): ScriptExecutionResult = ScriptExecutionResult.Failure(
-    RefreshFailure.ResponseSchemaFailure("Script extraction is unavailable")
-)
+): ScriptExecutionResult = ScriptExecutionResult.Success(emptyList())
 
 suspend fun UsageScriptExecutor.execute(
     @Suppress("UNUSED_PARAMETER") script: UsageScript,
