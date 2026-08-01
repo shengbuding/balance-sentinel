@@ -4,6 +4,7 @@ import com.balancesentinel.app.data.api.ConfigField
 import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.FieldType
 import com.balancesentinel.app.data.api.ProviderType
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * 供应商配置定义
@@ -111,6 +112,16 @@ object ProviderConfigs {
         }
 
         return fields
+    }
+
+    fun validateFieldValue(field: ConfigField, value: String): Boolean {
+        val normalized = value.trim()
+        if (normalized.isEmpty()) return !field.required
+
+        return when (field.type) {
+            FieldType.URL -> normalized.toHttpUrlOrNull()?.scheme in setOf("http", "https")
+            else -> true
+        }
     }
 
     /**

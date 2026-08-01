@@ -17,6 +17,7 @@ import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderError
+import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.BalanceInfo
@@ -204,6 +205,11 @@ class HomeViewModel @JvmOverloads constructor(
         extraSettings: Map<String, String> = emptyMap()
     ) {
         if (label.isBlank() || apiKey.isBlank()) return
+        if (providerType == ProviderType.CUSTOM) {
+            val baseUrlField = ProviderConfigs.getConfigFields(providerType)
+                .single { it.key == "baseUrl" }
+            if (!ProviderConfigs.validateFieldValue(baseUrlField, extraSettings["baseUrl"].orEmpty())) return
+        }
         val account = apiKeyManager.addAccount(label, apiKey, providerType, extraSettings)
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
