@@ -101,6 +101,21 @@ class HomeViewModelTest {
         assertEquals("新账户", accounts[0].label)
     }
 
+    @Test
+    fun `addAccount rejects malformed custom provider URL`() {
+        val vm = createViewModel()
+
+        vm.addAccount(
+            label = "Custom",
+            apiKey = "custom-key",
+            providerType = ProviderType.CUSTOM,
+            extraSettings = mapOf("baseUrl" to "not-a-url")
+        )
+
+        assertTrue(vm.uiState.value.accounts.isEmpty())
+        assertTrue(apiKeyManager.getAccounts().isEmpty())
+    }
+
     // ═══════════════════════════════════════════════════════════
     // removeAccount
     // ═══════════════════════════════════════════════════════════
