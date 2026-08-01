@@ -49,7 +49,12 @@ class ProviderCacheTest {
     fun `expired cleanup cannot delete a concurrent fresh cache write`() {
         val removeReady = CountDownLatch(1)
         val resumeRemove = CountDownLatch(1)
-        val blockingContext = BlockingProviderRemoveContext(context, removeReady, resumeRemove)
+        val blockingContext = BlockingProviderRemoveContext(
+            context,
+            "provider-clear",
+            removeReady,
+            resumeRemove
+        )
         val cache = ProviderCache(blockingContext)
         val balance = UnifiedBalance(ProviderType.DEEPSEEK, "account-1", true, emptyList())
         cache.put(ProviderType.DEEPSEEK, "account-1", balance, ttl = -1L)
@@ -82,8 +87,62 @@ class ProviderCacheTest {
         )
     }
 
+    @Test
+    fun `corrupt cleanup cannot delete a concurrent fresh cache write`() {
+        val key = "${ProviderType.DEEPSEEK.id}_corrupt-account"
+        context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE)
+            .edit()
+            .putString(key, "not-json")
+            .commit()
+        val removeReady = CountDownLatch(1)
+        val resumeRemove = CountDownLatch(1)
+        val blockingContext = BlockingProviderRemoveContext(
+            context,
+            "provider-get",
+            removeReady,
+            resumeRemove
+        )
+        val cache = ProviderCache(blockingContext)
+        val balance = UnifiedBalance(
+            ProviderType.DEEPSEEK,
+            "corrupt-account",
+            true,
+            emptyList()
+        )
+        val getThread = Thread(
+            { cache.get(ProviderType.DEEPSEEK, "corrupt-account") },
+            "provider-get"
+        )
+        val putThread = Thread(
+            {
+                ProviderCache(blockingContext).put(
+                    ProviderType.DEEPSEEK,
+                    "corrupt-account",
+                    balance,
+                    ttl = 60_000L
+                )
+            },
+            "provider-put"
+        )
+
+        getThread.start()
+        assertTrue(removeReady.await(5, TimeUnit.SECONDS))
+        putThread.start()
+        putThread.join(1_000)
+        resumeRemove.countDown()
+        getThread.join(5_000)
+        putThread.join(5_000)
+
+        assertFalse(getThread.isAlive)
+        assertFalse(putThread.isAlive)
+        assertTrue(
+            context.getSharedPreferences("provider_cache", Context.MODE_PRIVATE).contains(key)
+        )
+    }
+
     private class BlockingProviderRemoveContext(
         base: Context,
+        private val blockingThreadName: String,
         private val removeReady: CountDownLatch,
         private val resumeRemove: CountDownLatch
     ) : ContextWrapper(base) {
@@ -96,7 +155,7 @@ class ProviderCacheTest {
                     val editor = delegate.edit()
                     return object : SharedPreferences.Editor by editor {
                         override fun remove(key: String?): SharedPreferences.Editor {
-                            if (Thread.currentThread().name == "provider-clear") {
+                            if (Thread.currentThread().name == blockingThreadName) {
                                 removeReady.countDown()
                                 check(resumeRemove.await(5, TimeUnit.SECONDS))
                             }
