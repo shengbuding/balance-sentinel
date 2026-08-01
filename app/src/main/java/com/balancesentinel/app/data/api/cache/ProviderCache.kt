@@ -43,36 +43,36 @@ class ProviderCache(private val context: Context) {
      * @return 缓存的余额，如果过期或不存在则返回null
      */
     fun get(providerType: ProviderType, accountId: String): UnifiedBalance? {
-        val key = "${providerType.id}_$accountId"
+        synchronized(CACHE_LOCK) {
+            val key = "${providerType.id}_$accountId"
 
-        // 先检查内存缓存
-        val memoryCached = memoryCache[key]
-        if (memoryCached != null && !memoryCached.isExpired) {
-            return memoryCached.balance
-        }
+            // 先检查内存缓存
+            val memoryCached = memoryCache[key]
+            if (memoryCached != null && !memoryCached.isExpired) {
+                return memoryCached.balance
+            }
 
-        // 再检查SharedPreferences
-        val prefsData = prefs.getString(key, null)
-        if (prefsData != null) {
-            try {
-                val cached = json.decodeFromString<CachedBalance>(prefsData)
-                if (!cached.isExpired) {
-                    // 加载到内存缓存
-                    memoryCache[key] = cached
-                    return cached.balance
-                }
-            } catch (e: Exception) {
-                // 解析失败，删除缓存
-                synchronized(CACHE_LOCK) {
+            // 再检查SharedPreferences
+            val prefsData = prefs.getString(key, null)
+            if (prefsData != null) {
+                try {
+                    val cached = json.decodeFromString<CachedBalance>(prefsData)
+                    if (!cached.isExpired) {
+                        // 加载到内存缓存
+                        memoryCache[key] = cached
+                        return cached.balance
+                    }
+                } catch (e: Exception) {
+                    // 解析失败，删除缓存
                     if (prefs.getString(key, null) == prefsData) {
                         memoryCache.remove(key)
                         check(prefs.edit().remove(key).commit())
                     }
                 }
             }
-        }
 
-        return null
+            return null
+        }
     }
 
     /**
