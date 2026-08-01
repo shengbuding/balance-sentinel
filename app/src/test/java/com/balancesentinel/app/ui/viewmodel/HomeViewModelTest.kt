@@ -151,13 +151,40 @@ class HomeViewModelTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `removeAccount removes from state and balances`() {
-        apiKeyManager.addAccount("A", "sk-key-a")
+    fun `removeAccount clears account caches debug records and alert state`() {
+        val account = apiKeyManager.addAccount("A", "sk-key-a")
+        val widgetPrefs = WidgetPrefs(context)
+        val cache = ProviderCache(context)
+        cache.put(
+            ProviderType.DEEPSEEK,
+            account.id,
+            UnifiedBalance(ProviderType.DEEPSEEK, account.id, true, emptyList())
+        )
+        widgetPrefs.setBalanceAlertEnabled(account.id, "USD", true)
+        widgetPrefs.setNotificationWalletSelected(account.id, "USD", true)
+        ApiDebugStore.addEntry(
+            ApiDebugEntry(
+                account.id,
+                "https://api.example.com",
+                "GET",
+                emptyMap(),
+                null,
+                200,
+                emptyMap(),
+                "{}",
+                1L,
+                1L
+            )
+        )
         val vm = createViewModel()
-        val accId = vm.uiState.value.accounts[0].id
 
-        vm.removeAccount(accId)
+        vm.removeAccount(account.id)
+
         assertTrue(vm.uiState.value.accounts.isEmpty())
+        assertNull(cache.get(ProviderType.DEEPSEEK, account.id))
+        assertTrue(ApiDebugStore.getEntries(account.id).isEmpty())
+        assertFalse(widgetPrefs.isBalanceAlertEnabled(account.id, "USD"))
+        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${account.id}_USD"))
     }
 
     @Test
