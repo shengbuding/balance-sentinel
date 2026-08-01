@@ -247,6 +247,46 @@ class UsageDataStoreTest {
         assertEquals(0, UsageDataStore.getAllSnapshots(context).size)
     }
 
+    @Test
+    fun `concurrent account removals and saves preserve both effects`() {
+        val workers = 12
+        val timestamp = 1_700_000_000_000L
+        val removedIds = (0 until workers).map { "remove-$it" }.toSet()
+        val savedIds = (0 until workers).map { "save-$it" }.toSet()
+        removedIds.forEach { accountId ->
+            UsageDataStore.saveSnapshot(
+                context,
+                createSnapshot(accountId = accountId, timestamp = timestamp)
+            )
+        }
+
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(workers * 2)
+        removedIds.forEach { accountId ->
+            pool.submit {
+                start.await()
+                UsageDataStore.removeByAccountId(context, accountId)
+            }
+        }
+        savedIds.forEach { accountId ->
+            pool.submit {
+                start.await()
+                UsageDataStore.saveSnapshot(
+                    context,
+                    createSnapshot(accountId = accountId, timestamp = timestamp)
+                )
+            }
+        }
+
+        start.countDown()
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        val finalIds = UsageDataStore.getAllSnapshots(context).map { it.accountId }.toSet()
+        assertTrue(removedIds.none { it in finalIds })
+        assertTrue(savedIds.all { it in finalIds })
+    }
+
     // ── saveSnapshots (batch) ──
 
     @Test
