@@ -86,6 +86,38 @@ class UsageDataStoreTest {
     }
 
     @Test
+    fun `concurrent snapshot batches retain every account`() {
+        val writers = 24
+        val timestamp = 1_700_000_000_000L
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(writers)
+        repeat(writers) { index ->
+            pool.submit {
+                start.await()
+                UsageDataStore.saveSnapshots(
+                    context,
+                    listOf(
+                        createSnapshot(
+                            accountId = "batch-$index",
+                            timestamp = timestamp,
+                            totalTokens = index.toLong()
+                        )
+                    )
+                )
+            }
+        }
+
+        start.countDown()
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        assertEquals(
+            writers,
+            UsageDataStore.getAllSnapshots(context).map { it.accountId }.toSet().size
+        )
+    }
+
+    @Test
     fun `same day and account overwrites previous snapshot`() {
         val s1 = createSnapshot(timestamp = 100_000_000_000L, totalTokens = 1000)
         val s2 = createSnapshot(timestamp = 100_000_050_000L, totalTokens = 2000)
