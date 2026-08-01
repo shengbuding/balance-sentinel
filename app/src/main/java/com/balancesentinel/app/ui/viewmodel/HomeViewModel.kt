@@ -644,7 +644,7 @@ class HomeViewModel @JvmOverloads constructor(
                         // 将usageScript添加到settings中
                         val settings = account.extraSettings.toMutableMap()
                         val scriptToUse = account.usageScript
-                        Logger.i("HomeViewModel", "Account ${account.label}: usageScript=${scriptToUse?.take(50) ?: "null"}")
+                        Logger.i("HomeViewModel", "Refreshing configured custom-provider usage")
                         if (scriptToUse != null) {
                             settings["usageScript"] = scriptToUse
                             Logger.i("HomeViewModel", "Added usageScript to settings")

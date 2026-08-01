@@ -13,6 +13,7 @@ import android.util.Log
 object Logger {
 
     private val API_KEY_REGEX = Regex("""sk-[a-zA-Z0-9]{10,}""")
+    private val USAGE_SCRIPT_REGEX = Regex("""(?i)(usageScript=)([^,\n]+)""")
     private const val REDACTED = "sk-***"
 
     fun d(tag: String, msg: String) {
@@ -47,7 +48,7 @@ object Logger {
      * 脱敏：替换 API Key 为 sk-***
      */
     private fun sanitize(text: String): String {
-        return API_KEY_REGEX.replace(text, REDACTED)
+        return USAGE_SCRIPT_REGEX.replace(API_KEY_REGEX.replace(text, REDACTED), "$1[redacted]")
     }
 
     /**
