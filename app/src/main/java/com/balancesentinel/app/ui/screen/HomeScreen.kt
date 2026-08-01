@@ -85,56 +85,31 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 
     // 删除确认对话框
     var deleteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var deleteAssociatedData by remember { mutableStateOf(false) }
     deleteTarget?.let { (id, label) ->
         AlertDialog(
-            onDismissRequest = { deleteTarget = null; deleteAssociatedData = false },
+            onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.home_delete_account_title)) },
             text = {
                 Column {
                     Text(stringResource(R.string.home_delete_account_confirm, label))
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { deleteAssociatedData = !deleteAssociatedData }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Checkbox(
-                            checked = deleteAssociatedData,
-                            onCheckedChange = { deleteAssociatedData = it }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "同时删除关联数据",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "包括：刷新日志、用量记录、原始数据",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = "同时删除刷新日志、用量记录、原始数据、缓存与告警状态。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (deleteAssociatedData) {
-                        viewModel.removeAccountWithData(id)
-                    } else {
-                        viewModel.removeAccount(id)
-                    }
+                    viewModel.removeAccount(id)
                     deleteTarget = null
-                    deleteAssociatedData = false
                 }) {
                     Text(stringResource(R.string.home_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null; deleteAssociatedData = false }) {
+                TextButton(onClick = { deleteTarget = null }) {
                     Text(stringResource(R.string.home_cancel))
                 }
             }
