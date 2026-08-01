@@ -29,6 +29,18 @@ import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 class BalanceQueryServiceTest {
 
     @Test
+    fun `server errors never retain raw response bodies`() {
+        val error = ProviderError.ServerError(
+            ProviderType.DEEPSEEK,
+            503,
+            "raw-response-secret"
+        )
+
+        assertEquals(503, error.code)
+        assertFalse(error.message.contains("raw-response-secret"))
+    }
+
+    @Test
     fun `unsupported provider does not probe generic endpoints`() = runTest {
         val server = MockWebServer().also { it.start() }
         try {
