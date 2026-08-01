@@ -12,6 +12,7 @@ local.properties
 /app/release
 /node_modules
 /.kotlin
+/.worktrees
 keystore.properties
 *.jks
 *.b64
