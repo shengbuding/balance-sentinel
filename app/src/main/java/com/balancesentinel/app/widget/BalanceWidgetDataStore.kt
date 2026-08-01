@@ -152,25 +152,28 @@ object BalanceWidgetDataStore {
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
 
-        try {
-            val balances = getAllBalances(context).toMutableList()
-            var migrated = false
+        synchronized(STORE_LOCK) {
+            try {
+                val prefs = getPrefs(context)
+                val balances = getAllBalances(prefs).toMutableList()
+                var migrated = false
 
-            for (i in balances.indices) {
-                val balance = balances[i]
-                val newId = migrationMap[balance.accountId]
-                if (newId != null) {
-                    balances[i] = balance.copy(accountId = newId)
-                    migrated = true
+                for (i in balances.indices) {
+                    val balance = balances[i]
+                    val newId = migrationMap[balance.accountId]
+                    if (newId != null) {
+                        balances[i] = balance.copy(accountId = newId)
+                        migrated = true
+                    }
                 }
-            }
 
-            if (migrated) {
-                val serialized = json.encodeToString(balances)
-                check(getPrefs(context).edit().putString(KEY_BALANCES, serialized).commit())
+                if (migrated) {
+                    val serialized = json.encodeToString(balances)
+                    check(prefs.edit().putString(KEY_BALANCES, serialized).commit())
+                }
+            } catch (e: Exception) {
+                // Widget 数据迁移失败不影响主功能。
             }
-        } catch (e: Exception) {
-            // Widget数据迁移失败不影响主功能
         }
     }
 }
