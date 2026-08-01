@@ -31,13 +31,24 @@ data class AccountInfo(
      * 转换为ProviderConfig
      */
     fun toConfig(): ProviderConfig {
-        val credentials = mutableMapOf("apiKey" to apiKey, "accountId" to id)
+        val credentials = mutableMapOf("apiKey" to apiKey, "accountId" to id, "accountLabel" to label)
         credentials.putAll(extraCredentials)
         val settings = extraSettings.toMutableMap()
         // 添加自定义脚本到settings中
         if (usageScript != null) {
             settings["usageScript"] = usageScript
         }
+        settings["usageScriptEnabled"] = usageScriptEnabled.toString()
+        settings["authorizedScriptOrigins"] = authorizedScriptOrigins
+            .map { origin ->
+                if (origin.startsWith("http://") || origin.startsWith("https://")) {
+                    origin.removeSuffix("/")
+                } else {
+                    origin
+                }
+            }
+            .sorted()
+            .joinToString(",")
         return ProviderConfig(
             providerType = providerType,
             credentials = credentials,
