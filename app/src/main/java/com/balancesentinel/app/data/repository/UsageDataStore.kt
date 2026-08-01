@@ -133,12 +133,19 @@ object UsageDataStore {
      * 用于删除账户时清理关联数据。
      */
     fun removeByAccountId(context: Context, accountId: String) {
-        try {
-            val snapshots = getAllSnapshots(context)
-            val remaining = snapshots.filter { it.accountId != accountId }
-            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), remaining)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "removeByAccountId failed", e) }
+        synchronized(USAGE_LOCK) {
+            try {
+                val snapshots = getAllSnapshots(context)
+                val remaining = snapshots.filter { it.accountId != accountId }
+                val serialized = json.encodeToString(
+                    ListSerializer(UsageSnapshot.serializer()),
+                    remaining
+                )
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+            } catch (e: Exception) {
+                Logger.w(TAG, "removeByAccountId failed", e)
+            }
+        }
     }
 
     /**
