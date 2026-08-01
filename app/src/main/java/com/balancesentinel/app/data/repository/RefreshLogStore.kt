@@ -16,7 +16,23 @@ object RefreshLogStore {
     private val json = Json { ignoreUnknownKeys = true }
     private val LOG_LOCK = Any()
 
+    /**
+     * 批量追加日志条目。
+     * 公共方法：写入失败时不抛出异常，兼容旧调用方。
+     */
     fun addEntries(context: Context, entries: List<RefreshLogEntry>) {
+        try {
+            addEntriesStrict(context, entries)
+        } catch (e: Exception) {
+            Logger.w(TAG, "addEntries failed: ${e.message}")
+        }
+    }
+
+    /**
+     * 批量追加日志条目（严格模式）。
+     * 内部方法：写入失败时抛出异常，用于 RefreshResultCommitter 的持久化失败检测。
+     */
+    internal fun addEntriesStrict(context: Context, entries: List<RefreshLogEntry>) {
         if (entries.isEmpty()) return
         synchronized(LOG_LOCK) {
             val maxEntries = getMaxEntries(context)
@@ -40,7 +56,23 @@ object RefreshLogStore {
         readEntries(context)
     }
 
+    /**
+     * 清空所有日志条目。
+     * 公共方法：写入失败时不抛出异常，兼容旧调用方。
+     */
     fun clear(context: Context) {
+        try {
+            clearStrict(context)
+        } catch (e: Exception) {
+            Logger.w(TAG, "clear failed: ${e.message}")
+        }
+    }
+
+    /**
+     * 清空所有日志条目（严格模式）。
+     * 内部方法：写入失败时抛出异常，用于 RefreshResultCommitter 的持久化失败检测。
+     */
+    internal fun clearStrict(context: Context) {
         synchronized(LOG_LOCK) {
             check(getPrefs(context).edit().remove(KEY_ENTRIES).commit())
         }

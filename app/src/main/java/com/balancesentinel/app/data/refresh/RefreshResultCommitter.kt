@@ -87,7 +87,7 @@ class RefreshResultCommitter(
                 )
 
                 attemptedStage = 3
-                RawRecordStore.addRecords(
+                RawRecordStore.addRecordsStrict(
                     context,
                     fetched.balance.balances.map { entry ->
                         entry.toRawRecord(account.id, fetched.completedAt)
@@ -95,7 +95,7 @@ class RefreshResultCommitter(
                 )
 
                 attemptedStage = 4
-                RefreshLogStore.addEntries(
+                RefreshLogStore.addEntriesStrict(
                     context,
                     fetched.balance.balances.map { entry ->
                         entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)

@@ -33,21 +33,30 @@ object RawRecordStore {
     /**
      * 批量追加原始记录。一次读、一次写，避免逐条 O(n²) 序列化。
      * 用于数据导入等大量写入场景。
+     * 公共方法：写入失败时不抛出异常，兼容旧调用方。
      */
     fun addRecords(context: Context, records: List<RawRecord>) {
+        try {
+            addRecordsStrict(context, records)
+        } catch (e: Exception) {
+            Logger.w(TAG, "addRecords failed: ${e.message}")
+        }
+    }
+
+    /**
+     * 批量追加原始记录（严格模式）。
+     * 内部方法：写入失败时抛出异常，用于 RefreshResultCommitter 的持久化失败检测。
+     */
+    internal fun addRecordsStrict(context: Context, records: List<RawRecord>) {
         if (records.isEmpty()) return
         synchronized(writeLock) {
-            try {
-                val existing = getRecordsInternal(context).toMutableList()
-                existing.addAll(records)
-                if (existing.size > MAX_RECORDS) {
-                    existing.subList(0, existing.size - MAX_RECORDS).clear()
-                }
-                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
-                check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
-            } catch (error: Exception) {
-                throw error
+            val existing = getRecordsInternal(context).toMutableList()
+            existing.addAll(records)
+            if (existing.size > MAX_RECORDS) {
+                existing.subList(0, existing.size - MAX_RECORDS).clear()
             }
+            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
+            check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
         }
     }
 
