@@ -19,6 +19,7 @@ object BalanceWidgetDataStore {
     private const val KEY_BALANCES = "account_balances"
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val STORE_LOCK = Any()
 
     fun saveAccountBalance(
         context: Context,
@@ -30,6 +31,7 @@ object BalanceWidgetDataStore {
         grantedBalance: String,
         toppedUpBalance: String
     ) {
+        synchronized(STORE_LOCK) {
         val p = getPrefs(context)
         val balances = getAllBalances(p).toMutableList()
         val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
@@ -44,17 +46,20 @@ object BalanceWidgetDataStore {
             lastUpdated = System.currentTimeMillis()
         )
         if (idx >= 0) balances[idx] = entry else balances.add(entry)
-        p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).apply()
+        check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+        }
     }
 
     fun removeAccountBalance(context: Context, accountId: String) {
+        synchronized(STORE_LOCK) {
         val p = getPrefs(context)
         val balances = getAllBalances(p).filter { it.accountId != accountId }
-        p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).apply()
+        check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+        }
     }
 
-    fun getAllBalances(context: Context): List<AccountBalance> {
-        return getAllBalances(getPrefs(context))
+    fun getAllBalances(context: Context): List<AccountBalance> = synchronized(STORE_LOCK) {
+        getAllBalances(getPrefs(context))
     }
 
     private fun getAllBalances(p: SharedPreferences): List<AccountBalance> {
@@ -131,7 +136,9 @@ object BalanceWidgetDataStore {
 
     /** 清除所有缓存的账户余额。 */
     fun clearAll(context: Context) {
-        getPrefs(context).edit().remove(KEY_BALANCES).apply()
+        synchronized(STORE_LOCK) {
+            check(getPrefs(context).edit().remove(KEY_BALANCES).commit())
+        }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -160,7 +167,7 @@ object BalanceWidgetDataStore {
 
             if (migrated) {
                 val serialized = json.encodeToString(balances)
-                getPrefs(context).edit().putString(KEY_BALANCES, serialized).apply()
+                check(getPrefs(context).edit().putString(KEY_BALANCES, serialized).commit())
             }
         } catch (e: Exception) {
             // Widget数据迁移失败不影响主功能
