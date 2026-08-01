@@ -162,4 +162,26 @@ class AccountInfoTest {
         assertEquals("", settings["authorizedScriptOrigins"])
         assertEquals("https://api.example.com", settings["baseUrl"])
     }
+
+    @Test
+    fun `toConfig emits only canonical https authorized origins`() {
+        val account = AccountInfo(
+            id = "canonical-origins",
+            label = "Canonical origins",
+            apiKey = "trusted-api-key",
+            providerType = ProviderType.CUSTOM,
+            authorizedScriptOrigins = linkedSetOf(
+                "HTTPS://Example.COM:443/path?q=1#fragment",
+                "https://example.com:8443/another/path",
+                "https://user:password@credentialed.example.com/path",
+                "http://insecure.example.com/path",
+                "not a url"
+            )
+        )
+
+        assertEquals(
+            "https://example.com,https://example.com:8443",
+            account.toConfig().settings["authorizedScriptOrigins"]
+        )
+    }
 }
