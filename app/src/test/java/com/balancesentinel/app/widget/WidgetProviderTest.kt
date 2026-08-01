@@ -41,6 +41,38 @@ class WidgetProviderTest {
         }
     }
 
+    // Finding 5 RED: WidgetRefreshDispatcher must guarantee finish callback
+    // on both success and failure. On current inert shell (empty dispatch()),
+    // these tests FAIL because action/finish are never called.
+
+    @Test
+    fun `dispatcher invokes action and calls finish on success`() {
+        var actionExecuted = false
+        var finishCalled = false
+
+        WidgetRefreshDispatcher(
+            action = { actionExecuted = true },
+            finish = { finishCalled = true }
+        ).dispatch()
+
+        assertTrue("action must execute", actionExecuted)
+        assertTrue("finish must be called on success", finishCalled)
+    }
+
+    @Test
+    fun `dispatcher calls finish even when action throws`() {
+        var finishCalled = false
+
+        try {
+            WidgetRefreshDispatcher(
+                action = { throw RuntimeException("refresh failed") },
+                finish = { finishCalled = true }
+            ).dispatch()
+        } catch (_: RuntimeException) {}
+
+        assertTrue("finish must be called even on failure", finishCalled)
+    }
+
     @Test
     @org.junit.Ignore("Robolectric: AndroidKeyStore not available — requires instrumentation test")
     fun `widget renders without crash when no data`() {
