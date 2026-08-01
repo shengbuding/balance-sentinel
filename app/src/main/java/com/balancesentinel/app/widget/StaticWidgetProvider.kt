@@ -114,8 +114,6 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             try {
                 kotlinx.coroutines.runBlocking {
                     WidgetRefreshRunner(
-                        context,
-                        ApiKeyManager(context),
                         com.balancesentinel.app.data.refresh.RefreshRuntime.from(context)
                     ).refreshNow(watchdog = !fromButton)
                 }
