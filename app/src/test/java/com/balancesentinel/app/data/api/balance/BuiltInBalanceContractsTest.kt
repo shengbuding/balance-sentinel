@@ -72,6 +72,7 @@ class BuiltInBalanceContractsTest {
             FixtureCase(BuiltInBalanceContracts.deepSeek, "deepseek.json", ProviderType.DEEPSEEK, 12.5, "CNY"),
             FixtureCase(BuiltInBalanceContracts.stepFun, "stepfun.json", ProviderType.CUSTOM, 88.75, "CNY"),
             FixtureCase(BuiltInBalanceContracts.siliconFlowCn, "siliconflow.json", ProviderType.CUSTOM, 21.5, "CNY"),
+            FixtureCase(BuiltInBalanceContracts.siliconFlowCom, "siliconflow.json", ProviderType.CUSTOM, 21.5, "USD"),
             FixtureCase(BuiltInBalanceContracts.openRouter, "openrouter.json", ProviderType.CUSTOM, 57.5, "USD"),
             FixtureCase(BuiltInBalanceContracts.novita, "novita.json", ProviderType.CUSTOM, 12.3456, "USD"),
             FixtureCase(BuiltInBalanceContracts.modelArk, "model_ark.json", ProviderType.MODEL_ARK, 700.0, "Token")
