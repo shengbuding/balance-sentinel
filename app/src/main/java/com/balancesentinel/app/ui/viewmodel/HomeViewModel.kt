@@ -249,7 +249,9 @@ class HomeViewModel @JvmOverloads constructor(
     }
 
     fun removeAccount(id: String) {
-        AccountLifecycleManager(getApplication(), apiKeyManager).delete(id)
+        apiKeyManager.removeAccount(id)
+        BalanceWidgetDataStore.removeAccountBalance(getApplication(), id)
+        widgetPrefs.removeAccountAlertState(id)
         loadAccounts()
         _uiState.value = _uiState.value.copy(
             accountBalances = _uiState.value.accountBalances - id
