@@ -72,11 +72,12 @@ class RefreshResultCommitter(
                 return@synchronized stale(request.accountId)
             }
 
-            var completedStage = 0
+            var attemptedStage = 0
             try {
+                attemptedStage = 1
                 providerCache.put(account.providerType, account.id, fetched.balance)
-                completedStage = 1
 
+                attemptedStage = 2
                 BalanceWidgetDataStore.replaceAccountBalances(
                     context,
                     account.id,
@@ -84,32 +85,31 @@ class RefreshResultCommitter(
                         entry.toWidgetBalance(account, fetched.balance.isAvailable, fetched.completedAt)
                     }
                 )
-                completedStage = 2
 
+                attemptedStage = 3
                 RawRecordStore.addRecords(
                     context,
                     fetched.balance.balances.map { entry ->
                         entry.toRawRecord(account.id, fetched.completedAt)
                     }
                 )
-                completedStage = 3
 
+                attemptedStage = 4
                 RefreshLogStore.addEntries(
                     context,
                     fetched.balance.balances.map { entry ->
                         entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)
                     }
                 )
-                completedStage = 4
 
+                attemptedStage = 5
                 UsageDataStore.saveSnapshot(
                     context,
                     UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
                 )
-                completedStage = 5
             } catch (_: Exception) {
                 rollback(
-                    completedStage = completedStage,
+                    attemptedStage = attemptedStage,
                     account = account,
                     providerBefore = providerBefore,
                     widgetBefore = widgetBefore,
@@ -131,7 +131,7 @@ class RefreshResultCommitter(
     }
 
     private fun rollback(
-        completedStage: Int,
+        attemptedStage: Int,
         account: AccountInfo,
         providerBefore: ProviderCache.CachedBalance?,
         widgetBefore: List<AccountBalance>,
@@ -139,15 +139,15 @@ class RefreshResultCommitter(
         logsBefore: List<RefreshLogEntry>,
         usageBefore: List<UsageSnapshot>
     ) {
-        if (completedStage >= 5) runCatching { UsageDataStore.restoreAll(context, usageBefore) }
-        if (completedStage >= 4) runCatching { RefreshLogStore.restoreEntries(context, logsBefore) }
-        if (completedStage >= 3) runCatching { RawRecordStore.restoreRecords(context, recordsBefore) }
-        if (completedStage >= 2) {
+        if (attemptedStage >= 5) runCatching { UsageDataStore.restoreAll(context, usageBefore) }
+        if (attemptedStage >= 4) runCatching { RefreshLogStore.restoreEntries(context, logsBefore) }
+        if (attemptedStage >= 3) runCatching { RawRecordStore.restoreRecords(context, recordsBefore) }
+        if (attemptedStage >= 2) {
             runCatching {
                 BalanceWidgetDataStore.replaceAccountBalances(context, account.id, widgetBefore)
             }
         }
-        if (completedStage >= 1) {
+        if (attemptedStage >= 1) {
             runCatching { providerCache.restore(account.providerType, account.id, providerBefore) }
         }
     }
