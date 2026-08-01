@@ -11,6 +11,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class ApiKeyManagerTest {
@@ -306,5 +309,35 @@ class ApiKeyManagerTest {
         val legacyRemaining = context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
             .getString("deepseek_api_key", null)
         assertNull(legacyRemaining)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // RED: concurrent account mutations
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `concurrent addAccount and renameAccount never loses data`() {
+        manager.addAccount("Original", "sk-original-key")
+        val originalId = manager.computeId("sk-original-key")
+
+        val barrier = CyclicBarrier(2)
+        val pool = Executors.newFixedThreadPool(2)
+        val f1 = pool.submit {
+            barrier.await(5, TimeUnit.SECONDS)
+            manager.renameAccount(originalId, "Renamed")
+        }
+        val f2 = pool.submit {
+            barrier.await(5, TimeUnit.SECONDS)
+            manager.addAccount("NewAccount", "sk-new-key")
+        }
+        f1.get(5, TimeUnit.SECONDS)
+        f2.get(5, TimeUnit.SECONDS)
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        val accounts = manager.getAccounts()
+        assertEquals("Should have 2 accounts after concurrent ops", 2, accounts.size)
+        assertTrue("Renamed account should exist", accounts.any { it.label == "Renamed" })
+        assertTrue("New account should exist", accounts.any { it.label == "NewAccount" })
     }
 }
