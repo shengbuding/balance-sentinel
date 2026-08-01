@@ -113,4 +113,53 @@ class AccountInfoTest {
         assertEquals("false", config.settings["usageScriptEnabled"])
         assertEquals("https://a.example.com,https://b.example.com", config.settings["authorizedScriptOrigins"])
     }
+
+    @Test
+    fun `toConfig structured credentials override reserved extra credential keys`() {
+        val account = AccountInfo(
+            id = "trusted-account-id",
+            label = "Trusted label",
+            apiKey = "trusted-api-key",
+            providerType = ProviderType.CUSTOM,
+            extraCredentials = mapOf(
+                "apiKey" to "injected-api-key",
+                "accountId" to "injected-account-id",
+                "accountLabel" to "Injected label",
+                "secretKey" to "preserved-secret"
+            )
+        )
+
+        val credentials = account.toConfig().credentials
+
+        assertEquals("trusted-api-key", credentials["apiKey"])
+        assertEquals("trusted-account-id", credentials["accountId"])
+        assertEquals("Trusted label", credentials["accountLabel"])
+        assertEquals("preserved-secret", credentials["secretKey"])
+    }
+
+    @Test
+    fun `toConfig cannot revive an absent structured script from extra settings`() {
+        val account = AccountInfo(
+            id = "account-without-script",
+            label = "No script",
+            apiKey = "trusted-api-key",
+            providerType = ProviderType.CUSTOM,
+            extraSettings = mapOf(
+                "baseUrl" to "https://api.example.com",
+                "usageScript" to "stale imported script",
+                "usageScriptEnabled" to "false",
+                "authorizedScriptOrigins" to "https://stale.example.com"
+            ),
+            usageScript = null,
+            usageScriptEnabled = true,
+            authorizedScriptOrigins = emptySet()
+        )
+
+        val settings = account.toConfig().settings
+
+        assertNull(settings["usageScript"])
+        assertEquals("true", settings["usageScriptEnabled"])
+        assertEquals("", settings["authorizedScriptOrigins"])
+        assertEquals("https://api.example.com", settings["baseUrl"])
+    }
 }
