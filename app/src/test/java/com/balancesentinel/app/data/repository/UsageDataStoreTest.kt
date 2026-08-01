@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
@@ -248,6 +250,43 @@ class UsageDataStoreTest {
     }
 
     @Test
+    fun `clear cannot be undone by an in-flight save`() {
+        val timestamp = 1_700_000_000_000L
+        UsageDataStore.saveSnapshot(
+            context,
+            createSnapshot(accountId = "old", timestamp = timestamp)
+        )
+        val readStarted = CountDownLatch(1)
+        val resumeRead = CountDownLatch(1)
+        val blockingContext = BlockingUsageReadContext(context, readStarted, resumeRead)
+        val saveThread = Thread(
+            {
+                UsageDataStore.saveSnapshots(
+                    blockingContext,
+                    listOf(createSnapshot(accountId = "new", timestamp = timestamp))
+                )
+            },
+            "usage-save"
+        )
+        val clearThread = Thread(
+            { UsageDataStore.clear(blockingContext) },
+            "usage-clear"
+        )
+
+        saveThread.start()
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+        clearThread.start()
+        clearThread.join(1_000)
+        resumeRead.countDown()
+        saveThread.join(5_000)
+        clearThread.join(5_000)
+
+        assertFalse(saveThread.isAlive)
+        assertFalse(clearThread.isAlive)
+        assertTrue(UsageDataStore.getAllSnapshots(context).none { it.accountId == "old" })
+    }
+
+    @Test
     fun `concurrent account removals and saves preserve both effects`() {
         val workers = 12
         val timestamp = 1_700_000_000_000L
@@ -365,5 +404,27 @@ class UsageDataStoreTest {
     fun `saveSnapshots with empty list is no-op`() {
         UsageDataStore.saveSnapshots(context, emptyList())
         assertTrue(UsageDataStore.getAllSnapshots(context).isEmpty())
+    }
+
+    private class BlockingUsageReadContext(
+        base: Context,
+        private val readStarted: CountDownLatch,
+        private val resumeRead: CountDownLatch
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = super.getSharedPreferences(name, mode)
+            if (name != "usage_snapshots") return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun getString(key: String?, defValue: String?): String? {
+                    val value = delegate.getString(key, defValue)
+                    if (key == "snapshots" && Thread.currentThread().name == "usage-save") {
+                        readStarted.countDown()
+                        check(resumeRead.await(5, TimeUnit.SECONDS))
+                    }
+                    return value
+                }
+            }
+        }
     }
 }
