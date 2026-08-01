@@ -745,6 +745,66 @@ class HomeViewModelTest {
         assertEquals(account.id, gateway.calls[0].first)
     }
 
+    // Bug: refreshBalance() creates a fresh newBalances map and replaces the
+    // entire accountBalances state. A Stale result copies nothing into newBalances,
+    // so the account's previously cached balance disappears from the UI.
+    @Test
+    fun `refreshBalance retains cached balance when result is Stale`() {
+        val account = apiKeyManager.addAccount("StaleTest", "sk-stale-key")
+        // First refresh seeds the balance with a Committed result;
+        // second refresh returns Stale for the same account.
+        class TwoCallGateway(
+            private val first: List<AccountRefreshResult>,
+            private val second: List<AccountRefreshResult>
+        ) : RefreshGateway {
+            val calls = mutableListOf<Pair<String, RefreshTrigger>>()
+            private var callCount = 0
+
+            override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult {
+                calls += accountId to trigger
+                return AccountRefreshResult.Failed(accountId, RefreshFailure.NetworkFailure("not used"))
+            }
+
+            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+                val results = if (callCount++ == 0) first else second
+                for (r in results) calls += r.accountId to trigger
+                return results
+            }
+
+            override fun invalidate(accountId: String) {}
+        }
+
+        val gateway = TwoCallGateway(
+            first = listOf(committed(account.id)),
+            second = listOf(
+                AccountRefreshResult.Stale(
+                    account.id,
+                    RefreshFailure.AccountStale("concurrent refresh superseded")
+                )
+            )
+        )
+        val vm = createViewModel(gateway)
+
+        // Seed the cached balance via all-account refresh (Committed)
+        vm.refreshBalance()
+        val seeded = vm.uiState.value.accountBalances[account.id]
+        assertNotNull("Seeded balance must exist before stale refresh", seeded)
+
+        // Second all-account refresh returns Stale for this account
+        vm.refreshBalance()
+
+        // The previously cached balance must be retained, not dropped
+        val retained = vm.uiState.value.accountBalances[account.id]
+        assertNotNull(
+            "Stale result must retain the cached balance, not drop it",
+            retained
+        )
+        assertEquals(
+            "Retained balance must equal the previously seeded value",
+            seeded, retained
+        )
+    }
+
     // Mutation caught: failed gateway result not preserving cached UI values.
     // Tests that the ViewModel's gateway receives a Failed result and the
     // failure message is stable (no raw response bodies or credentials).
