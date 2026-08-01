@@ -2,6 +2,8 @@ package com.balancesentinel.app.data.api.balance
 
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshFailure
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
 
 sealed interface ScriptExecutionResult {
     data class Success(val balances: List<BalanceData>) : ScriptExecutionResult
@@ -31,4 +33,14 @@ suspend fun UsageScriptExecutor.extractForTest(
     @Suppress("UNUSED_PARAMETER") responseBody: String
 ): ScriptExecutionResult = ScriptExecutionResult.Failure(
     RefreshFailure.ResponseSchemaFailure("Script extraction is unavailable")
+)
+
+suspend fun UsageScriptExecutor.execute(
+    @Suppress("UNUSED_PARAMETER") script: UsageScript,
+    @Suppress("UNUSED_PARAMETER") account: AccountInfo,
+    @Suppress("UNUSED_PARAMETER") resolver: HostResolver = HostResolver { emptyList() },
+    @Suppress("UNUSED_PARAMETER") client: OkHttpClient = OkHttpClient(),
+    @Suppress("UNUSED_PARAMETER") connectionUrlOverride: ((HttpUrl) -> HttpUrl)? = null
+): ScriptExecutionResult = ScriptExecutionResult.Failure(
+    RefreshFailure.ResponseSchemaFailure("Script execution is unavailable")
 )
