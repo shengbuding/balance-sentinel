@@ -708,6 +708,48 @@ class WidgetPrefsTest {
         )
     }
 
+    @Test
+    fun `account migration cannot resurrect concurrently removed per currency alert state`() {
+        prefs.resetAll()
+        prefs.setBalanceAlertEnabled("old-account", "USD", true)
+        prefs.setChangeAlertEnabled("old-account", "USD", true)
+        val migrationReady = CountDownLatch(1)
+        val removalObserved = CountDownLatch(1)
+        val resumeMigration = CountDownLatch(1)
+        val blockingContext = BlockingAlertMigrationContext(
+            context,
+            migrationReady,
+            removalObserved,
+            resumeMigration
+        )
+        val migrationThread = Thread(
+            { WidgetPrefs(blockingContext).migrateAccountData("old-account", "new-account") },
+            "widget-alert-migrate"
+        )
+        val removalThread = Thread(
+            {
+                WidgetPrefs(blockingContext)
+                    .removeAccountCurrencyAlertState("new-account", "USD")
+            },
+            "widget-alert-remove"
+        )
+
+        migrationThread.start()
+        assertTrue(migrationReady.await(5, TimeUnit.SECONDS))
+        removalThread.start()
+        assertTrue(awaitConcurrentWriteOrSharedLock(removalThread, removalObserved))
+        resumeMigration.countDown()
+        migrationThread.join(5_000)
+        removalThread.join(5_000)
+
+        assertFalse(migrationThread.isAlive)
+        assertFalse(removalThread.isAlive)
+        assertFalse(prefs.isBalanceAlertEnabled("old-account", "USD"))
+        assertFalse(prefs.isChangeAlertEnabled("old-account", "USD"))
+        assertFalse(prefs.isBalanceAlertEnabled("new-account", "USD"))
+        assertFalse(prefs.isChangeAlertEnabled("new-account", "USD"))
+    }
+
     // ═══════════════════════════════════════════════════════════
     // isTotalInNotification
     // ═══════════════════════════════════════════════════════════
@@ -816,6 +858,49 @@ class WidgetPrefsTest {
                                 }
                             }
                             editor.putString(key, value)
+                            return this
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private class BlockingAlertMigrationContext(
+        base: Context,
+        private val migrationReady: CountDownLatch,
+        private val removalObserved: CountDownLatch,
+        private val resumeMigration: CountDownLatch
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = super.getSharedPreferences(name, mode)
+            if (name != "widget_prefs") return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putBoolean(
+                            key: String?,
+                            value: Boolean
+                        ): SharedPreferences.Editor {
+                            if (Thread.currentThread().name == "widget-alert-migrate" &&
+                                key == "${WidgetPrefs.KEY_ALERT_ENABLED}_new-account_USD"
+                            ) {
+                                migrationReady.countDown()
+                                check(resumeMigration.await(5, TimeUnit.SECONDS))
+                            }
+                            editor.putBoolean(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            if (Thread.currentThread().name == "widget-alert-remove" &&
+                                key == "${WidgetPrefs.KEY_ALERT_ENABLED}_new-account_USD"
+                            ) {
+                                removalObserved.countDown()
+                            }
+                            editor.remove(key)
                             return this
                         }
                     }
