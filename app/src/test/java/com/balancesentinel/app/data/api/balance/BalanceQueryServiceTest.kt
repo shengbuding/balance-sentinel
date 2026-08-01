@@ -5,6 +5,7 @@ import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -12,6 +13,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,6 +32,47 @@ class BalanceQueryServiceTest {
 
         assertEquals(503, error.code)
         assertFalse(error.message.contains("raw-response-secret"))
+    }
+
+    @Test
+    fun `network errors expose a stable message and retain no exception details`() {
+        val error = ProviderError.NetworkError(
+            ProviderType.DEEPSEEK,
+            IOException("network-error-secret")
+        )
+
+        assertEquals("网络错误", error.message)
+        assertFalse(error.message.contains("network-error-secret"))
+        assertNull(error.cause)
+    }
+
+    @Test
+    fun `configured script failure never falls through to a native contract`() = runTest {
+        val server = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(MockResponse().setBody(resource("balance/stepfun.json")))
+            val service = BalanceQueryService(OkHttpClient(), endpointOverride(server))
+            val provider = OpenAiCompatibleProvider(
+                ProviderType.CUSTOM,
+                "https://api.stepfun.com",
+                service
+            )
+            val result = provider.getBalance(
+                ProviderConfig(
+                    providerType = ProviderType.CUSTOM,
+                    credentials = mapOf("apiKey" to "test-api-key-12345"),
+                    settings = mapOf(
+                        "baseUrl" to "https://api.stepfun.com",
+                        "usageScript" to "this is not valid JavaScript {"
+                    )
+                )
+            )
+
+            assertTrue(result is ProviderResult.Failure)
+            assertEquals(0, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test
