@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.model
 import com.balancesentinel.app.data.api.ProviderConfig
 import com.balancesentinel.app.data.api.ProviderType
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * 账户信息
@@ -45,13 +46,8 @@ data class AccountInfo(
         }
         settings["usageScriptEnabled"] = usageScriptEnabled.toString()
         settings["authorizedScriptOrigins"] = authorizedScriptOrigins
-            .map { origin ->
-                if (origin.startsWith("http://") || origin.startsWith("https://")) {
-                    origin.removeSuffix("/")
-                } else {
-                    origin
-                }
-            }
+            .mapNotNull(::canonicalHttpsOrigin)
+            .distinct()
             .sorted()
             .joinToString(",")
         return ProviderConfig(
@@ -59,6 +55,20 @@ data class AccountInfo(
             credentials = credentials,
             settings = settings
         )
+    }
+
+    private fun canonicalHttpsOrigin(value: String): String? {
+        val url = value.trim().toHttpUrlOrNull() ?: return null
+        if (url.scheme != "https" || url.username.isNotEmpty() || url.password.isNotEmpty()) {
+            return null
+        }
+        return url.newBuilder()
+            .encodedPath("/")
+            .query(null)
+            .fragment(null)
+            .build()
+            .toString()
+            .removeSuffix("/")
     }
 }
 
