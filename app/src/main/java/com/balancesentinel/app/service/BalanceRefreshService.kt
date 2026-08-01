@@ -35,7 +35,6 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_4x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
-import com.balancesentinel.app.data.refresh.RefreshTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -204,8 +203,10 @@ class BalanceRefreshService : Service() {
                     return@launch
                 }
 
-                refreshGateway.refreshAll(RefreshTrigger.SERVICE)
-                val committedBalances = BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
+                val runner = BalanceRefreshRunner(refreshGateway) {
+                    BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
+                }
+                val committedBalances = runner.refreshAndReadCommitted()
                 val primary = committedBalances.maxByOrNull { it.totalBalance.toDoubleOrNull() ?: 0.0 }
                 if (primary == null) {
                     notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_no_data))
