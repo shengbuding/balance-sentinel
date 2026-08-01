@@ -132,6 +132,19 @@ class HomeViewModelTest {
         assertFalse(account.extraSettings.containsKey("secretKey"))
     }
 
+    @Test
+    fun `addAccount rejects missing required dynamic credential`() {
+        val vm = createViewModel()
+
+        vm.addAccount(
+            label = "Zhipu",
+            apiKey = "zhipu-api-key",
+            providerType = ProviderType.ZHIPU
+        )
+
+        assertTrue(apiKeyManager.getAccounts().isEmpty())
+    }
+
     // ═══════════════════════════════════════════════════════════
     // removeAccount
     // ═══════════════════════════════════════════════════════════
