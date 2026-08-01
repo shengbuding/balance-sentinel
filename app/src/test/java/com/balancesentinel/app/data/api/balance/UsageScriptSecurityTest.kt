@@ -1,0 +1,236 @@
+package com.balancesentinel.app.data.api.balance
+
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.refresh.RefreshFailure
+import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.net.InetAddress
+
+class UsageScriptSecurityTest {
+    private lateinit var server: MockWebServer
+    private lateinit var client: OkHttpClient
+
+    @Before
+    fun setUp() {
+        val certificate = HeldCertificate.Builder()
+            .commonName("localhost")
+            .addSubjectAlternativeName("localhost")
+            .build()
+        val serverCertificates = HandshakeCertificates.Builder()
+            .heldCertificate(certificate)
+            .build()
+        val clientCertificates = HandshakeCertificates.Builder()
+            .addTrustedCertificate(certificate.certificate)
+            .build()
+        server = MockWebServer().apply {
+            useHttps(serverCertificates.sslSocketFactory(), false)
+            start()
+        }
+        client = OkHttpClient.Builder()
+            .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
+            .build()
+    }
+
+    @After
+    fun tearDown() {
+        server.shutdown()
+    }
+
+    // Mutation caught: denying the full same origin, including its registered non-default port.
+    @Test
+    fun `same origin https request succeeds`() = runBlocking {
+        server.enqueue(successResponse())
+
+        val result = execute(
+            requestUrl = "https://api.example.com:8443/balance",
+            baseUrl = "https://api.example.com:8443/v1"
+        )
+
+        assertSuccess(result)
+        assertEquals(1, server.requestCount)
+    }
+
+    // Mutation caught: ignoring an explicitly authorized canonical public origin.
+    @Test
+    fun `authorized public origin succeeds`() = runBlocking {
+        server.enqueue(successResponse())
+
+        val result = execute(
+            requestUrl = "https://cdn.example.com/balance",
+            baseUrl = "https://api.example.com/v1",
+            authorizedOrigins = setOf("https://cdn.example.com")
+        )
+
+        assertSuccess(result)
+        assertEquals(1, server.requestCount)
+    }
+
+    // Mutation caught: performing a request before rejecting cleartext HTTP.
+    @Test
+    fun `http request is denied before connection`() = runBlocking {
+        val result = execute(
+            requestUrl = "http://api.example.com/balance",
+            baseUrl = "https://api.example.com/v1"
+        )
+
+        assertPolicyDenied(result)
+        assertEquals(0, server.requestCount)
+    }
+
+    // Mutation caught: treating an unlisted cross-origin destination as same origin.
+    @Test
+    fun `unauthorized origin is denied before connection`() = runBlocking {
+        val result = execute(
+            requestUrl = "https://cdn.example.com/balance",
+            baseUrl = "https://api.example.com/v1"
+        )
+
+        assertPolicyDenied(result)
+        assertEquals(0, server.requestCount)
+    }
+
+    // Mutation caught: connecting after policy DNS resolves the destination to a private address.
+    @Test
+    fun `private dns result is denied before connection`() = runBlocking {
+        val result = execute(
+            requestUrl = "https://api.example.com/balance",
+            baseUrl = "https://api.example.com/v1",
+            resolver = FixedResolver(mapOf("api.example.com" to listOf("10.0.0.7")))
+        )
+
+        assertPolicyDenied(result)
+        assertEquals(0, server.requestCount)
+    }
+
+    // Mutation caught: allowing OkHttp automatic redirects or skipping policy on a redirect target.
+    @Test
+    fun `cross origin redirect is denied without a second request`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(302)
+                .addHeader("Location", "https://evil.example.com/stolen")
+        )
+
+        val result = execute(
+            requestUrl = "https://api.example.com/start",
+            baseUrl = "https://api.example.com/v1"
+        )
+
+        assertPolicyDenied(result)
+        assertEquals(1, server.requestCount)
+    }
+
+    // Mutation caught: following more than five manually revalidated redirects.
+    @Test
+    fun `redirect chain follows at most five redirects`() = runBlocking {
+        repeat(6) { index ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .addHeader("Location", "/redirect-${index + 1}")
+            )
+        }
+
+        val result = execute(
+            requestUrl = "https://api.example.com/start",
+            baseUrl = "https://api.example.com/v1"
+        )
+
+        assertPolicyDenied(result)
+        assertEquals(6, server.requestCount)
+    }
+
+    // Mutation caught: sharing the configuration deadline with extractor work or omitting extractor cancellation.
+    @Test(timeout = 3_000)
+    fun `extractor infinite loop hits its own wall clock deadline`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/x"},extractor:function(r){while(true){}}})""",
+            timeout = 1
+        )
+
+        val result = UsageScriptExecutor.extractForTest(script, account("https://api.example.com"), "{}")
+
+        assertTrue(result is ScriptExecutionResult.Failure)
+        assertTrue((result as ScriptExecutionResult.Failure).failure is RefreshFailure.ScriptTimeout)
+    }
+
+    private suspend fun execute(
+        requestUrl: String,
+        baseUrl: String,
+        authorizedOrigins: Set<String> = emptySet(),
+        resolver: HostResolver = PUBLIC_RESOLVER
+    ): ScriptExecutionResult {
+        val script = UsageScript(
+            """({request:{url:"$requestUrl"},extractor:function(r){return r;}})""",
+            timeout = 1
+        )
+        return UsageScriptExecutor.execute(
+            script = script,
+            account = account(baseUrl, authorizedOrigins),
+            resolver = resolver,
+            client = client,
+            connectionUrlOverride = ::routeToTestServer
+        )
+    }
+
+    private fun routeToTestServer(logicalUrl: HttpUrl): HttpUrl = server.url(logicalUrl.encodedPath)
+        .newBuilder()
+        .encodedQuery(logicalUrl.encodedQuery)
+        .build()
+
+    private fun account(
+        baseUrl: String,
+        authorizedOrigins: Set<String> = emptySet()
+    ) = AccountInfo(
+        id = "account-id",
+        label = "Primary",
+        apiKey = "api-key-123456",
+        providerType = ProviderType.CUSTOM,
+        extraSettings = mapOf("baseUrl" to baseUrl),
+        usageScriptEnabled = true,
+        authorizedScriptOrigins = authorizedOrigins
+    )
+
+    private fun successResponse() = MockResponse()
+        .setResponseCode(200)
+        .setHeader("Content-Type", "application/json")
+        .setBody("""{"remaining":12.5,"unit":"USD"}""")
+
+    private fun assertSuccess(result: ScriptExecutionResult) {
+        assertTrue(result is ScriptExecutionResult.Success)
+        assertEquals(12.5, (result as ScriptExecutionResult.Success).balances.single().remaining!!, 0.0)
+    }
+
+    private fun assertPolicyDenied(result: ScriptExecutionResult) {
+        assertTrue(result is ScriptExecutionResult.Failure)
+        assertTrue((result as ScriptExecutionResult.Failure).failure is RefreshFailure.ScriptPolicyDenied)
+    }
+
+    private class FixedResolver(
+        private val addresses: Map<String, List<String>>
+    ) : HostResolver {
+        override fun lookup(host: String): List<InetAddress> =
+            addresses[host].orEmpty().map(InetAddress::getByName)
+    }
+
+    private companion object {
+        val PUBLIC_RESOLVER = FixedResolver(
+            mapOf(
+                "api.example.com" to listOf("93.184.216.34"),
+                "cdn.example.com" to listOf("93.184.216.35"),
+                "evil.example.com" to listOf("93.184.216.36")
+            )
+        )
+    }
+}
