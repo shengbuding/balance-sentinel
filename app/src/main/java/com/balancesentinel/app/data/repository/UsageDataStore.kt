@@ -31,23 +31,30 @@ object UsageDataStore {
      */
     fun saveSnapshots(context: Context, snapshots: List<UsageSnapshot>) {
         if (snapshots.isEmpty()) return
-        try {
-            val existing = getAllSnapshots(context).toMutableList()
-            val existingDates = existing.map {
-                dateFormat.format(Date(it.timestamp)) to it.accountId
-            }.toSet()
-            val toAdd = snapshots.filter {
-                (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
+        synchronized(USAGE_LOCK) {
+            try {
+                val existing = getAllSnapshots(context).toMutableList()
+                val existingDates = existing.map {
+                    dateFormat.format(Date(it.timestamp)) to it.accountId
+                }.toSet()
+                val toAdd = snapshots.filter {
+                    (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
+                }
+                if (toAdd.isEmpty()) return
+                existing.addAll(toAdd)
+                existing.sortBy { it.timestamp }
+                if (existing.size > MAX_SNAPSHOTS) {
+                    existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
+                }
+                val serialized = json.encodeToString(
+                    ListSerializer(UsageSnapshot.serializer()),
+                    existing
+                )
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+            } catch (e: Exception) {
+                Logger.w(TAG, "saveSnapshots failed", e)
             }
-            if (toAdd.isEmpty()) return
-            existing.addAll(toAdd)
-            existing.sortBy { it.timestamp }
-            if (existing.size > MAX_SNAPSHOTS) {
-                existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
-            }
-            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), existing)
-            getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-        } catch (e: Exception) { Logger.w(TAG, "saveSnapshots failed", e) }
+        }
     }
 
     /**
