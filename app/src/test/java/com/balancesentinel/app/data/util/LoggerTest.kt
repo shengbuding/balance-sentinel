@@ -4,9 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 class LoggerTest {
+
+    @Test
+    fun `custom script contents are not emitted to logcat`() {
+        val script = "return credentials.secretKey"
+        ShadowLog.clear()
+
+        Logger.i("HomeViewModel", "usageScript=$script")
+
+        assertFalse(ShadowLog.getLogsForTag("HomeViewModel").any { it.msg.contains(script) })
+    }
 
     @Test
     fun `sanitize redacts API key`() {
