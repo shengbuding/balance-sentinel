@@ -153,22 +153,29 @@ object UsageDataStore {
      */
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-        try {
-            val snapshots = getAllSnapshots(context).toMutableList()
-            var migrated = false
-            for (i in snapshots.indices) {
-                val newId = migrationMap[snapshots[i].accountId]
-                if (newId != null) {
-                    snapshots[i] = snapshots[i].copy(accountId = newId)
-                    migrated = true
+        synchronized(USAGE_LOCK) {
+            try {
+                val snapshots = getAllSnapshots(context).toMutableList()
+                var migrated = false
+                for (i in snapshots.indices) {
+                    val newId = migrationMap[snapshots[i].accountId]
+                    if (newId != null) {
+                        snapshots[i] = snapshots[i].copy(accountId = newId)
+                        migrated = true
+                    }
                 }
+                if (migrated) {
+                    val serialized = json.encodeToString(
+                        ListSerializer(UsageSnapshot.serializer()),
+                        snapshots
+                    )
+                    check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+                    Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
+                }
+            } catch (e: Exception) {
+                Logger.w(TAG, "migrateAccountIds failed", e)
             }
-            if (migrated) {
-                val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
-                getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).apply()
-                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
-            }
-        } catch (e: Exception) { Logger.w(TAG, "migrateAccountIds failed", e) }
+        }
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
