@@ -38,8 +38,8 @@ sealed class ProviderError(
      */
     class NetworkError(
         provider: ProviderType,
-        cause: Throwable
-    ) : ProviderError(provider, cause.message ?: "网络错误", cause)
+        @Suppress("UNUSED_PARAMETER") cause: Throwable
+    ) : ProviderError(provider, "网络错误")
 
     /**
      * 服务端错误（5xx等）

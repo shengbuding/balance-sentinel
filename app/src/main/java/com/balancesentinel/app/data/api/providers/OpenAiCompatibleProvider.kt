@@ -42,9 +42,16 @@ class OpenAiCompatibleProvider(
 
         if (!customScript.isNullOrBlank()) {
             val scripted = executeCustomScript(effectiveConfig, customScript)
-            if (scripted != null) {
-                return ProviderResult.Success(
+            return if (scripted != null) {
+                ProviderResult.Success(
                     scripted.toUnifiedBalance(providerType, accountId)
+                )
+            } else {
+                ProviderResult.Failure(
+                    ProviderError.ApiUnavailableError(
+                        providerType,
+                        "自定义余额脚本执行失败"
+                    )
                 )
             }
         }
