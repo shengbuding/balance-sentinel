@@ -55,7 +55,7 @@ class OpenAiCompatibleProvider(
 
         // 优先使用用户配置的自定义脚本
         if (!customScript.isNullOrBlank()) {
-            Logger.i("OpenAiCompatibleProvider", "Using custom script: ${customScript.take(50)}...")
+            Logger.i("OpenAiCompatibleProvider", "Using custom script")
             try {
                 val script = UsageScript(code = customScript)
                 val result = UsageScriptExecutor.execute(
