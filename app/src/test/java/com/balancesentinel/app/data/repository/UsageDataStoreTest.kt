@@ -287,6 +287,47 @@ class UsageDataStoreTest {
         assertTrue(savedIds.all { it in finalIds })
     }
 
+    @Test
+    fun `concurrent account migrations and saves preserve both effects`() {
+        val workers = 12
+        val timestamp = 1_700_000_000_000L
+        val migrations = (0 until workers).associate { "old-$it" to "new-$it" }
+        val savedIds = (0 until workers).map { "saved-$it" }.toSet()
+        migrations.keys.forEach { accountId ->
+            UsageDataStore.saveSnapshot(
+                context,
+                createSnapshot(accountId = accountId, timestamp = timestamp)
+            )
+        }
+
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(workers * 2)
+        migrations.forEach { (oldId, newId) ->
+            pool.submit {
+                start.await()
+                UsageDataStore.migrateAccountIds(context, mapOf(oldId to newId))
+            }
+        }
+        savedIds.forEach { accountId ->
+            pool.submit {
+                start.await()
+                UsageDataStore.saveSnapshot(
+                    context,
+                    createSnapshot(accountId = accountId, timestamp = timestamp)
+                )
+            }
+        }
+
+        start.countDown()
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        val finalIds = UsageDataStore.getAllSnapshots(context).map { it.accountId }.toSet()
+        assertTrue(migrations.keys.none { it in finalIds })
+        assertTrue(migrations.values.all { it in finalIds })
+        assertTrue(savedIds.all { it in finalIds })
+    }
+
     // ── saveSnapshots (batch) ──
 
     @Test
