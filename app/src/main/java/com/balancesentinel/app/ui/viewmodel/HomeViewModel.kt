@@ -17,6 +17,7 @@ import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderError
+import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
@@ -210,7 +211,28 @@ class HomeViewModel @JvmOverloads constructor(
                 .single { it.key == "baseUrl" }
             if (!ProviderConfigs.validateFieldValue(baseUrlField, extraSettings["baseUrl"].orEmpty())) return
         }
-        val account = apiKeyManager.addAccount(label, apiKey, providerType, extraSettings)
+        val providerFields = ProviderConfigs.getConfigFields(providerType)
+        val extraCredentials = providerFields
+            .filter { it.storage == ConfigFieldStorage.EXTRA_CREDENTIAL }
+            .mapNotNull { field -> extraSettings[field.key]?.let { field.key to it } }
+            .toMap()
+        val settings = providerFields
+            .filter { it.storage == ConfigFieldStorage.SETTING }
+            .mapNotNull { field -> extraSettings[field.key]?.let { field.key to it } }
+            .toMap()
+        apiKeyManager.saveAccount(
+            existingId = null,
+            draft = AccountDraft(
+                label = label,
+                apiKey = apiKey,
+                providerType = providerType,
+                extraCredentials = extraCredentials,
+                extraSettings = settings,
+                usageScript = null,
+                usageScriptEnabled = true,
+                authorizedScriptOrigins = emptySet()
+            )
+        )
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
