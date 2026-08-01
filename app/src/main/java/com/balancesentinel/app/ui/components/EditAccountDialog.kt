@@ -203,17 +203,6 @@ fun EditAccountDialog(
                                         usageScript = PresetScripts.getCustomTemplate().code
                                     }
                                 )
-                                if (baseUrl.isNotBlank()) {
-                                    PresetScripts.getPresetScript(baseUrl)?.let { preset ->
-                                        DropdownMenuItem(
-                                            text = { Text("自动检测 (${baseUrl.take(30)}...)") },
-                                            onClick = {
-                                                showPresetMenu = false
-                                                usageScript = preset.code
-                                            }
-                                        )
-                                    }
-                                }
                             }
                         }
                     }

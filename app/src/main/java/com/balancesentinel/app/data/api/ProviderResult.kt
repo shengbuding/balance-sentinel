@@ -47,8 +47,8 @@ sealed class ProviderError(
     class ServerError(
         provider: ProviderType,
         val code: Int,
-        message: String
-    ) : ProviderError(provider, message)
+        @Suppress("UNUSED_PARAMETER") responseBody: String? = null
+    ) : ProviderError(provider, "Server error (HTTP $code)")
 
     /**
      * 配额超限

@@ -1,60 +1,44 @@
 package com.balancesentinel.app.data.api
 
+import com.balancesentinel.app.data.api.balance.BalanceQueryService
 import com.balancesentinel.app.data.api.providers.DeepSeekProvider
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
+import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 供应商工厂
- * 根据ProviderType创建对应的AiProvider实例
- */
 object ProviderFactory {
-    private val providers = java.util.concurrent.ConcurrentHashMap<String, AiProvider>()
+    private val providers = ConcurrentHashMap<String, AiProvider>()
+    private val balanceQueryService = BalanceQueryService()
 
-    /**
-     * 获取供应商实例
-     * @param type 供应商类型
-     * @param baseUrl 自定义供应商的Base URL（仅对CUSTOM类型有效）
-     * @return AiProvider实例
-     * @throws IllegalArgumentException 未知的供应商类型
-     */
-    fun get(type: ProviderType, baseUrl: String? = null): AiProvider {
-        return when (type) {
-            ProviderType.CUSTOM -> {
-                if (baseUrl.isNullOrBlank()) {
-                    throw IllegalArgumentException("自定义供应商需要指定baseUrl")
-                }
-                val key = "custom_$baseUrl"
-                providers.getOrPut(key) { OpenAiCompatibleProvider(type, baseUrl) }
+    fun get(type: ProviderType, baseUrl: String? = null): AiProvider = when (type) {
+        ProviderType.CUSTOM -> {
+            require(!baseUrl.isNullOrBlank()) { "自定义供应商需要指定baseUrl" }
+            providers.getOrPut("custom_$baseUrl") {
+                OpenAiCompatibleProvider(type, baseUrl, balanceQueryService)
             }
-            else -> providers.getOrPut(type.name) { create(type) }
         }
+        else -> providers.getOrPut(type.name) { create(type) }
     }
 
-    /**
-     * 创建供应商实例
-     */
-    private fun create(type: ProviderType): AiProvider {
-        return when (type) {
-            ProviderType.DEEPSEEK -> DeepSeekProvider()
-            ProviderType.MOONSHOT -> OpenAiCompatibleProvider(type, "https://api.moonshot.cn")
-            ProviderType.DOUBAO -> OpenAiCompatibleProvider(type, "https://ark.cn-beijing.volces.com/api/v3")
-            ProviderType.BAICHUAN -> OpenAiCompatibleProvider(type, "https://api.baichuan-ai.com")
-            ProviderType.QWEN -> OpenAiCompatibleProvider(type, "https://dashscope.aliyuncs.com/compatible-mode/v1")
-            ProviderType.ZHIPU -> OpenAiCompatibleProvider(type, "https://open.bigmodel.cn/api/paas/v4")
-            ProviderType.WENXIN -> OpenAiCompatibleProvider(type, "https://aip.baidubce.com")
-            ProviderType.OPENAI -> OpenAiCompatibleProvider(type, "https://api.openai.com/v1")
-            ProviderType.ANTHROPIC -> OpenAiCompatibleProvider(type, "https://api.anthropic.com")
-            ProviderType.GEMINI -> OpenAiCompatibleProvider(type, "https://generativelanguage.googleapis.com/v1beta")
-            ProviderType.MISTRAL -> OpenAiCompatibleProvider(type, "https://api.mistral.ai/v1")
-            ProviderType.COHERE -> OpenAiCompatibleProvider(type, "https://api.cohere.ai/v1")
-            ProviderType.MODEL_ARK -> OpenAiCompatibleProvider(type, "https://ai.gitee.com")
-            ProviderType.CUSTOM -> throw IllegalArgumentException("自定义供应商需要指定baseUrl")
-        }
+    private fun create(type: ProviderType): AiProvider = when (type) {
+        ProviderType.DEEPSEEK -> DeepSeekProvider(balanceQueryService)
+        ProviderType.MOONSHOT -> openAiCompatible(type, "https://api.moonshot.cn")
+        ProviderType.DOUBAO -> openAiCompatible(type, "https://ark.cn-beijing.volces.com/api/v3")
+        ProviderType.BAICHUAN -> openAiCompatible(type, "https://api.baichuan-ai.com")
+        ProviderType.QWEN -> openAiCompatible(type, "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        ProviderType.ZHIPU -> openAiCompatible(type, "https://open.bigmodel.cn/api/paas/v4")
+        ProviderType.WENXIN -> openAiCompatible(type, "https://aip.baidubce.com")
+        ProviderType.OPENAI -> openAiCompatible(type, "https://api.openai.com/v1")
+        ProviderType.ANTHROPIC -> openAiCompatible(type, "https://api.anthropic.com")
+        ProviderType.GEMINI -> openAiCompatible(type, "https://generativelanguage.googleapis.com/v1beta")
+        ProviderType.MISTRAL -> openAiCompatible(type, "https://api.mistral.ai/v1")
+        ProviderType.COHERE -> openAiCompatible(type, "https://api.cohere.ai/v1")
+        ProviderType.MODEL_ARK -> openAiCompatible(type, "https://ai.gitee.com")
+        ProviderType.CUSTOM -> error("自定义供应商需要指定baseUrl")
     }
 
-    /**
-     * 注册自定义供应商
-     */
+    private fun openAiCompatible(type: ProviderType, baseUrl: String): AiProvider =
+        OpenAiCompatibleProvider(type, baseUrl, balanceQueryService)
+
     fun register(type: ProviderType, provider: AiProvider, baseUrl: String? = null) {
         val key = if (type == ProviderType.CUSTOM && baseUrl != null) {
             "custom_$baseUrl"

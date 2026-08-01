@@ -1,21 +1,25 @@
 package com.balancesentinel.app.data.api.providers
 
-import com.balancesentinel.app.data.api.*
+import com.balancesentinel.app.data.api.AiProvider
+import com.balancesentinel.app.data.api.ProviderConfig
+import com.balancesentinel.app.data.api.ProviderError
+import com.balancesentinel.app.data.api.ProviderFeature
+import com.balancesentinel.app.data.api.ProviderResult
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.UnifiedUsage
+import com.balancesentinel.app.data.api.balance.BalanceQueryService
 import com.balancesentinel.app.data.debug.DebugInterceptor
-import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
-import com.balancesentinel.app.data.util.Logger
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
-/**
- * DeepSeek供应商实现
- * 唯一具有真实余额API的供应商
- */
-class DeepSeekProvider : AiProvider {
+class DeepSeekProvider(
+    private val balanceQueryService: BalanceQueryService = BalanceQueryService()
+) : AiProvider {
     override val providerType = ProviderType.DEEPSEEK
     override val displayName = "DeepSeek"
     override val supportedFeatures = setOf(
@@ -25,156 +29,77 @@ class DeepSeekProvider : AiProvider {
     )
 
     private val json = Json { ignoreUnknownKeys = true }
-
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * 获取带有调试拦截器的OkHttpClient
-     */
-    private fun getClientWithDebug(accountId: String?): OkHttpClient {
-        return if (accountId != null) {
-            client.newBuilder()
-                .addInterceptor(DebugInterceptor(accountId))
-                .build()
+    private fun getClientWithDebug(accountId: String?): OkHttpClient =
+        if (accountId != null) {
+            client.newBuilder().addInterceptor(DebugInterceptor(accountId)).build()
         } else {
             client
         }
-    }
 
-    override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> {
-        return try {
-            val apiKey = config.apiKey
-            val baseUrl = config.baseUrl ?: "https://api.deepseek.com"
-            val accountId = config.credentials["accountId"]
-
-            val debugClient = getClientWithDebug(accountId)
-
-            val request = Request.Builder()
-                .url("$baseUrl/user/balance")
-                .header("Authorization", "Bearer $apiKey")
-                .header("Accept", "application/json")
-                .get()
-                .build()
-
-            debugClient.newCall(request).execute().use { response ->
-                val body = response.body?.string()
-                    ?: throw IOException("Empty response body")
-
-                if (!response.isSuccessful) {
-                    when (response.code) {
-                        401 -> return ProviderResult.Failure(
-                            ProviderError.AuthError(providerType, "API Key 无效")
-                        )
-                        429 -> return ProviderResult.Failure(
-                            ProviderError.RateLimitError(providerType)
-                        )
-                        else -> return ProviderResult.Failure(
-                            ProviderError.ServerError(providerType, response.code, body)
-                        )
-                    }
-                }
-
-                val balanceResponse = json.decodeFromString<BalanceResponse>(body)
-                val balances = balanceResponse.balanceInfos.map { info ->
-                    BalanceEntry(
-                        currency = info.currency,
-                        totalBalance = info.totalBalance.toDoubleOrNull() ?: 0.0,
-                        grantedBalance = info.grantedBalance.toDoubleOrNull(),
-                        toppedUpBalance = info.toppedUpBalance.toDoubleOrNull()
-                    )
-                }
-
-                ProviderResult.Success(
-                    UnifiedBalance(
-                        provider = providerType,
-                        accountId = config.credentials["accountId"] ?: "",
-                        isAvailable = balanceResponse.isAvailable,
-                        balances = balances,
-                        isEstimated = false
-                    )
-                )
-            }
-        } catch (e: IOException) {
-            ProviderResult.Failure(ProviderError.NetworkError(providerType, e))
-        } catch (e: Exception) {
-            ProviderResult.Failure(ProviderError.InvalidResponseError(providerType, e.message ?: "未知错误", e))
-        }
-    }
+    override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> =
+        balanceQueryService.queryBalance(config)
 
     override suspend fun getUsage(
         config: ProviderConfig,
         startDate: String?,
         endDate: String?
-    ): ProviderResult<UnifiedUsage> {
-        return try {
-            val apiKey = config.apiKey
-            val baseUrl = config.baseUrl ?: "https://api.deepseek.com"
-            val accountId = config.credentials["accountId"]
-
-            val debugClient = getClientWithDebug(accountId)
-
-            val url = buildString {
-                append("$baseUrl/v1/usage")
-                if (startDate != null || endDate != null) {
-                    append("?")
-                    if (startDate != null) append("start_date=$startDate")
-                    if (startDate != null && endDate != null) append("&")
-                    if (endDate != null) append("end_date=$endDate")
-                }
+    ): ProviderResult<UnifiedUsage> = try {
+        val url = buildString {
+            append("${config.baseUrl ?: "https://api.deepseek.com"}/v1/usage")
+            if (startDate != null || endDate != null) {
+                append("?")
+                if (startDate != null) append("start_date=$startDate")
+                if (startDate != null && endDate != null) append("&")
+                if (endDate != null) append("end_date=$endDate")
             }
-
-            val request = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $apiKey")
-                .header("Accept", "application/json")
-                .get()
-                .build()
-
-            debugClient.newCall(request).execute().use { response ->
-                val body = response.body?.string()
-                    ?: throw IOException("Empty response body")
-
-                if (!response.isSuccessful) {
-                    when (response.code) {
-                        401 -> return ProviderResult.Failure(
-                            ProviderError.AuthError(providerType, "API Key 无效")
-                        )
-                        429 -> return ProviderResult.Failure(
-                            ProviderError.RateLimitError(providerType)
-                        )
-                        else -> return ProviderResult.Failure(
-                            ProviderError.ServerError(providerType, response.code, body)
-                        )
-                    }
-                }
-
-                val usageResponse = json.decodeFromString<UsageResponse>(body)
-                // C3 修复：映射 usageResponse 数据而非硬编码零
-                val totalTokens = usageResponse.data.sumOf { it.total_tokens }
-                val promptTokens = usageResponse.data.sumOf { it.prompt_tokens }
-                val completionTokens = usageResponse.data.sumOf { it.completion_tokens }
-                // DeepSeek API 不返回费用，使用费率估算（元/千token）
-                val estimatedCost = (promptTokens / 1000.0) * 0.002 + (completionTokens / 1000.0) * 0.01
-                ProviderResult.Success(
-                    UnifiedUsage(
-                        provider = providerType,
-                        accountId = config.credentials["accountId"] ?: "",
-                        totalTokens = totalTokens,
-                        totalCost = estimatedCost
-                    )
-                )
-            }
-        } catch (e: IOException) {
-            ProviderResult.Failure(ProviderError.NetworkError(providerType, e))
-        } catch (e: Exception) {
-            ProviderResult.Failure(ProviderError.InvalidResponseError(providerType, e.message ?: "未知错误", e))
         }
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer ${config.apiKey}")
+            .header("Accept", "application/json")
+            .get()
+            .build()
+
+        getClientWithDebug(config.credentials["accountId"]).newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                return@use when (response.code) {
+                    401 -> ProviderResult.Failure(ProviderError.AuthError(providerType, "API Key is invalid"))
+                    429 -> ProviderResult.Failure(ProviderError.RateLimitError(providerType))
+                    else -> ProviderResult.Failure(ProviderError.ServerError(providerType, response.code))
+                }
+            }
+
+            val body = response.body?.string() ?: throw IOException("Empty response body")
+            val usage = json.decodeFromString<UsageResponse>(body)
+            val promptTokens = usage.data.sumOf { it.prompt_tokens }
+            val completionTokens = usage.data.sumOf { it.completion_tokens }
+            ProviderResult.Success(
+                UnifiedUsage(
+                    provider = providerType,
+                    accountId = config.credentials["accountId"].orEmpty(),
+                    totalTokens = usage.data.sumOf { it.total_tokens },
+                    totalCost = (promptTokens / 1000.0) * 0.002 +
+                        (completionTokens / 1000.0) * 0.01
+                )
+            )
+        }
+    } catch (error: IOException) {
+        ProviderResult.Failure(ProviderError.NetworkError(providerType, error))
+    } catch (error: Exception) {
+        ProviderResult.Failure(
+            ProviderError.InvalidResponseError(
+                providerType,
+                error.message ?: "Invalid usage response",
+                error
+            )
+        )
     }
 
-    override fun validateApiKeyFormat(apiKey: String): Boolean {
-        return apiKey.startsWith("sk-") && apiKey.length > 10
-    }
+    override fun validateApiKeyFormat(apiKey: String): Boolean =
+        apiKey.startsWith("sk-") && apiKey.length > 10
 }
