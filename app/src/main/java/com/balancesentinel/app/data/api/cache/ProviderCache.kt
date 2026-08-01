@@ -63,7 +63,12 @@ class ProviderCache(private val context: Context) {
                 }
             } catch (e: Exception) {
                 // 解析失败，删除缓存
-                prefs.edit().remove(key).apply()
+                synchronized(CACHE_LOCK) {
+                    if (prefs.getString(key, null) == prefsData) {
+                        memoryCache.remove(key)
+                        check(prefs.edit().remove(key).commit())
+                    }
+                }
             }
         }
 
