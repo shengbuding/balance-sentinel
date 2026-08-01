@@ -128,6 +128,10 @@ object BuiltInBalanceContracts {
         amount: (JsonObject) -> Double,
         currency: String
     ): BalanceContract = contract(type, endpoint) { root, providerType, accountId ->
+        val totalBalance = amount(root)
+        if (!totalBalance.isFinite()) {
+            throw SerializationException("non-finite derived balance")
+        }
         UnifiedBalance(
             provider = providerType,
             accountId = accountId,
@@ -135,7 +139,7 @@ object BuiltInBalanceContracts {
             balances = listOf(
                 BalanceEntry(
                     currency = currency,
-                    totalBalance = amount(root),
+                    totalBalance = totalBalance,
                     unit = currency
                 )
             )
