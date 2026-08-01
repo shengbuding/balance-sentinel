@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.*
@@ -8,6 +10,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class WidgetPrefsTest {
@@ -686,6 +690,24 @@ class WidgetPrefsTest {
         assertEquals(0, prefs.getNotificationWalletCount())
     }
 
+    @Test
+    fun `account removal cannot lose a concurrent notification selection`() {
+        assertLifecycleOrderMutationRetainsConcurrentSelection(
+            lifecycleThreadName = "widget-remove",
+            lifecycleMutation = { it.removeAccountData("old-account") },
+            expectedMigratedAccountId = null
+        )
+    }
+
+    @Test
+    fun `account migration cannot lose a concurrent notification selection`() {
+        assertLifecycleOrderMutationRetainsConcurrentSelection(
+            lifecycleThreadName = "widget-migrate",
+            lifecycleMutation = { it.migrateAccountData("old-account", "new-account") },
+            expectedMigratedAccountId = "new-account"
+        )
+    }
+
     // ═══════════════════════════════════════════════════════════
     // isTotalInNotification
     // ═══════════════════════════════════════════════════════════
@@ -697,5 +719,108 @@ class WidgetPrefsTest {
         assertTrue(prefs.isTotalInNotification())
         prefs.showTotalBalanceInNotification = false
         assertFalse(prefs.isTotalInNotification())
+    }
+
+    private fun assertLifecycleOrderMutationRetainsConcurrentSelection(
+        lifecycleThreadName: String,
+        lifecycleMutation: (WidgetPrefs) -> Unit,
+        expectedMigratedAccountId: String?
+    ) {
+        prefs.resetAll()
+        prefs.showTotalBalanceInNotification = false
+        prefs.setNotificationWalletSelected("old-account", "USD", true)
+        prefs.setNotificationWalletSelected("survivor", "USD", true)
+        val lifecycleWriteReady = CountDownLatch(1)
+        val concurrentWriteObserved = CountDownLatch(1)
+        val resumeLifecycleWrite = CountDownLatch(1)
+        val blockingContext = BlockingNotificationOrderContext(
+            context,
+            lifecycleThreadName,
+            lifecycleWriteReady,
+            concurrentWriteObserved,
+            resumeLifecycleWrite
+        )
+        val lifecycleThread = Thread(
+            { lifecycleMutation(WidgetPrefs(blockingContext)) },
+            lifecycleThreadName
+        )
+        val selectionThread = Thread(
+            {
+                WidgetPrefs(blockingContext)
+                    .setNotificationWalletSelected("fresh-account", "CNY", true)
+            },
+            "widget-select"
+        )
+
+        lifecycleThread.start()
+        assertTrue(lifecycleWriteReady.await(5, TimeUnit.SECONDS))
+        selectionThread.start()
+        assertTrue(awaitConcurrentWriteOrSharedLock(selectionThread, concurrentWriteObserved))
+        resumeLifecycleWrite.countDown()
+        lifecycleThread.join(5_000)
+        selectionThread.join(5_000)
+
+        assertFalse(lifecycleThread.isAlive)
+        assertFalse(selectionThread.isAlive)
+        assertFalse(prefs.isNotificationWalletSelected("old-account", "USD"))
+        assertTrue(prefs.isNotificationWalletSelected("survivor", "USD"))
+        assertTrue(prefs.isNotificationWalletSelected("fresh-account", "CNY"))
+        if (expectedMigratedAccountId != null) {
+            assertTrue(prefs.isNotificationWalletSelected(expectedMigratedAccountId, "USD"))
+        }
+    }
+
+    private fun awaitConcurrentWriteOrSharedLock(
+        selectionThread: Thread,
+        concurrentWriteObserved: CountDownLatch
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline) {
+            if (concurrentWriteObserved.count == 0L ||
+                selectionThread.state == Thread.State.BLOCKED
+            ) {
+                return true
+            }
+            Thread.yield()
+        }
+        return false
+    }
+
+    private class BlockingNotificationOrderContext(
+        base: Context,
+        private val lifecycleThreadName: String,
+        private val lifecycleWriteReady: CountDownLatch,
+        private val concurrentWriteObserved: CountDownLatch,
+        private val resumeLifecycleWrite: CountDownLatch
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = super.getSharedPreferences(name, mode)
+            if (name != "widget_prefs") return delegate
+
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            if (key == WidgetPrefs.KEY_NOTIFICATION_WALLET_ORDER) {
+                                when (Thread.currentThread().name) {
+                                    lifecycleThreadName -> {
+                                        lifecycleWriteReady.countDown()
+                                        check(resumeLifecycleWrite.await(5, TimeUnit.SECONDS))
+                                    }
+
+                                    "widget-select" -> concurrentWriteObserved.countDown()
+                                }
+                            }
+                            editor.putString(key, value)
+                            return this
+                        }
+                    }
+                }
+            }
+        }
     }
 }
