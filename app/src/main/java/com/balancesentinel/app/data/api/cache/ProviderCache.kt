@@ -21,7 +21,7 @@ class ProviderCache(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
     // 内存缓存
-    private val memoryCache = ConcurrentHashMap<String, CachedBalance>()
+    private val memoryCache = CACHE_MEMORY_CACHE
 
     /**
      * 缓存的余额数据
@@ -83,6 +83,7 @@ class ProviderCache(private val context: Context) {
         balance: UnifiedBalance,
         ttl: Long = getDefaultTtl(providerType)
     ) {
+        synchronized(CACHE_LOCK) {
         val key = "${providerType.id}_$accountId"
         val cached = CachedBalance(
             balance = balance,
@@ -94,24 +95,29 @@ class ProviderCache(private val context: Context) {
         memoryCache[key] = cached
 
         // 保存到SharedPreferences
-        prefs.edit().putString(key, json.encodeToString(cached)).apply()
+        check(prefs.edit().putString(key, json.encodeToString(cached)).commit())
+        }
     }
 
     /**
      * 清除指定供应商的缓存
      */
     fun clear(providerType: ProviderType, accountId: String) {
+        synchronized(CACHE_LOCK) {
         val key = "${providerType.id}_$accountId"
         memoryCache.remove(key)
-        prefs.edit().remove(key).apply()
+        check(prefs.edit().remove(key).commit())
+        }
     }
 
     /**
      * 清除所有缓存
      */
     fun clearAll() {
+        synchronized(CACHE_LOCK) {
         memoryCache.clear()
-        prefs.edit().clear().apply()
+        check(prefs.edit().clear().commit())
+        }
     }
 
     /**
@@ -167,6 +173,8 @@ class ProviderCache(private val context: Context) {
     }
 
     companion object {
+        private val CACHE_LOCK = Any()
+        private val CACHE_MEMORY_CACHE = ConcurrentHashMap<String, CachedBalance>()
         @Volatile
         private var instance: ProviderCache? = null
 
