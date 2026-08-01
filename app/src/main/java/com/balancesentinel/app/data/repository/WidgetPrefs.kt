@@ -176,46 +176,13 @@ class WidgetPrefs(context: Context) {
 
     /** 删除指定账户的所有预警状态 */
     fun removeAccountAlertState(accountId: String) {
-        val editor = prefs.edit()
-        prefs.all.keys.filter { key -> isAccountKey(key, accountId) }.forEach(editor::remove)
-        val order = getRawNotificationWalletOrder()
-        val remainingOrder = order.filterNot { entry -> entry.startsWith("${accountId}_") }
-        if (remainingOrder != order) {
-            val raw = remainingOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-            editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
-        }
-        check(editor.commit())
-    }
-
-    fun migrateAccountId(oldId: String, newId: String) {
-        if (oldId == newId) return
-        val editor = prefs.edit()
-        prefs.all.forEach { (key, value) ->
-            if (!isAccountKey(key, oldId)) return@forEach
-            val newKey = key.replaceFirst(oldId, newId)
-            when (value) {
-                is String -> editor.putString(newKey, value)
-                is Set<*> -> editor.putStringSet(newKey, value.filterIsInstance<String>().toSet())
-                is Int -> editor.putInt(newKey, value)
-                is Long -> editor.putLong(newKey, value)
-                is Float -> editor.putFloat(newKey, value)
-                is Boolean -> editor.putBoolean(newKey, value)
-            }
-            editor.remove(key)
-        }
-        val order = getRawNotificationWalletOrder()
-        val migratedOrder = order.map { entry ->
-            if (entry.startsWith("${oldId}_")) newId + entry.removePrefix(oldId) else entry
-        }
-        if (migratedOrder != order) {
-            val raw = migratedOrder.joinToString(",", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-            editor.putString(KEY_NOTIFICATION_WALLET_ORDER, raw)
-        }
-        check(editor.commit())
-    }
-
-    private fun isAccountKey(key: String, accountId: String): Boolean = ACCOUNT_KEY_PREFIXES.any { prefix ->
-        key == "${prefix}_$accountId" || key.startsWith("${prefix}_${accountId}_")
+        prefs.edit().apply {
+            remove("${KEY_LAST_ALERTED_BALANCE}_$accountId")
+            remove("${KEY_PREVIOUS_BALANCE}_$accountId")
+            remove("${KEY_PREVIOUS_BALANCE_TIME}_$accountId")
+            remove("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId")
+            remove("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId")
+        }.apply()
     }
 
     /** 删除指定账户+币种的所有预警状态（含 per-currency 启用开关） */
@@ -525,17 +492,6 @@ class WidgetPrefs(context: Context) {
         const val KEY_NOTIFICATION_WALLET_ORDER = "notification_wallet_order"
         const val KEY_NOTIFICATION_TOTAL = "__total__"
         const val KEY_LANGUAGE = "pref_language"
-        private val ACCOUNT_KEY_PREFIXES = listOf(
-            KEY_ALERT_ENABLED,
-            KEY_CHANGE_ALERT_ENABLED,
-            KEY_LAST_ALERTED_BALANCE,
-            KEY_PREVIOUS_BALANCE,
-            KEY_PREVIOUS_BALANCE_TIME,
-            KEY_LAST_CHANGE_ALERTED_BALANCE,
-            KEY_LAST_CHANGE_ALERTED_TIME,
-            KEY_SNOOZE_UNTIL,
-            KEY_NOTIFICATION_SELECTED
-        )
     }
 }
 

@@ -76,8 +76,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     if (showAddDialog) {
         AddAccountDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { draft ->
-                viewModel.addAccount(draft)
+            onAdd = { label, key, providerType, extraSettings ->
+                viewModel.addAccount(label, key, providerType, extraSettings)
                 showAddDialog = false
             }
         )
@@ -147,8 +147,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
         EditAccountDialog(
             account = account,
             onDismiss = { editTarget = null },
-            onConfirm = { draft ->
-                viewModel.editAccount(account.id, draft)
+            onConfirm = { newLabel, newApiKey, extraSettings, usageScript ->
+                viewModel.editAccount(account.id, newLabel, newApiKey, extraSettings, usageScript)
                 editTarget = null
             }
         )

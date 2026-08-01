@@ -50,13 +50,12 @@ class OpenAiCompatibleProvider(
         val accountId = config.credentials["accountId"]
         val accountLabel = config.credentials["accountLabel"]
         val customScript = config.settings["usageScript"]
-            .takeIf { config.settings["usageScriptEnabled"] != "false" }
 
         Logger.i("OpenAiCompatibleProvider", "getBalance called: baseUrl=$baseUrl, hasCustomScript=${!customScript.isNullOrBlank()}")
 
         // 优先使用用户配置的自定义脚本
         if (!customScript.isNullOrBlank()) {
-            Logger.i("OpenAiCompatibleProvider", "Using configured custom script")
+            Logger.i("OpenAiCompatibleProvider", "Using custom script: ${customScript.take(50)}...")
             try {
                 val script = UsageScript(code = customScript)
                 val result = UsageScriptExecutor.execute(

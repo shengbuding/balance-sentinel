@@ -3,7 +3,6 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.AccountInfo
-import com.balancesentinel.app.data.model.AccountDraft
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -12,9 +11,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class ApiKeyManagerTest {
@@ -310,52 +306,5 @@ class ApiKeyManagerTest {
         val legacyRemaining = context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
             .getString("deepseek_api_key", null)
         assertNull(legacyRemaining)
-    }
-
-    @Test
-    fun `editing one account never loses a concurrent account`() {
-        manager.addAccount("A", "sk-aaaaaaaaaaa")
-        val start = CountDownLatch(1)
-        val pool = Executors.newFixedThreadPool(2)
-        pool.submit {
-            start.await()
-            manager.renameAccount(manager.computeId("sk-aaaaaaaaaaa"), "A2")
-        }
-        pool.submit {
-            start.await()
-            manager.addAccount("B", "sk-bbbbbbbbbbb")
-        }
-        start.countDown()
-        pool.shutdown()
-        assertTrue(pool.awaitTermination(2, TimeUnit.SECONDS))
-
-        assertEquals(setOf("A2", "B"), manager.getAccounts().map { it.label }.toSet())
-        assertEquals(1L, manager.getAccounts().single { it.label == "A2" }.revision)
-    }
-
-    @Test
-    fun `saveAccount changes key atomically and preserves complete draft`() {
-        val original = manager.addAccount("Before", "sk-original-key")
-        val draft = AccountDraft(
-            label = "After",
-            apiKey = "sk-replacement-key",
-            providerType = original.providerType,
-            extraCredentials = mapOf("secretKey" to "secret"),
-            extraSettings = mapOf("baseUrl" to "https://api.example.com"),
-            usageScript = "script",
-            usageScriptEnabled = false,
-            authorizedScriptOrigins = setOf("https://api.example.com")
-        )
-
-        val result = manager.saveAccount(original.id, draft)
-
-        assertTrue(result is AccountSaveResult.Replaced)
-        val replaced = result as AccountSaveResult.Replaced
-        assertEquals(original.id, replaced.before.id)
-        assertEquals(1L, replaced.account.revision)
-        assertEquals("secret", replaced.account.extraCredentials["secretKey"])
-        assertFalse(replaced.account.usageScriptEnabled)
-        assertNull(manager.getAccount(original.id))
-        assertEquals(replaced.account, manager.getAccount(replaced.account.id))
     }
 }

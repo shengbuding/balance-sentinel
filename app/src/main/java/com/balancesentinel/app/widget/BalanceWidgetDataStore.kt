@@ -17,7 +17,6 @@ object BalanceWidgetDataStore {
     private const val TAG = "BalanceWidgetDataStore"
     private const val PREFS_NAME = "widget_balance_cache"
     private const val KEY_BALANCES = "account_balances"
-    private val writeLock = Any()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -31,25 +30,27 @@ object BalanceWidgetDataStore {
         grantedBalance: String,
         toppedUpBalance: String
     ) {
-        synchronized(writeLock) {
-            val p = getPrefs(context)
-            val balances = getAllBalances(p).toMutableList()
-            val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
-            val entry = AccountBalance(
-                accountId, label, totalBalance, currency, isAvailable, grantedBalance, toppedUpBalance,
-                System.currentTimeMillis()
-            )
-            if (idx >= 0) balances[idx] = entry else balances.add(entry)
-            check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
-        }
+        val p = getPrefs(context)
+        val balances = getAllBalances(p).toMutableList()
+        val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
+        val entry = AccountBalance(
+            accountId = accountId,
+            label = label,
+            totalBalance = totalBalance,
+            currency = currency,
+            isAvailable = isAvailable,
+            grantedBalance = grantedBalance,
+            toppedUpBalance = toppedUpBalance,
+            lastUpdated = System.currentTimeMillis()
+        )
+        if (idx >= 0) balances[idx] = entry else balances.add(entry)
+        p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).apply()
     }
 
     fun removeAccountBalance(context: Context, accountId: String) {
-        synchronized(writeLock) {
-            val p = getPrefs(context)
-            val balances = getAllBalances(p).filter { it.accountId != accountId }
-            check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
-        }
+        val p = getPrefs(context)
+        val balances = getAllBalances(p).filter { it.accountId != accountId }
+        p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).apply()
     }
 
     fun getAllBalances(context: Context): List<AccountBalance> {
@@ -130,9 +131,7 @@ object BalanceWidgetDataStore {
 
     /** 清除所有缓存的账户余额。 */
     fun clearAll(context: Context) {
-        synchronized(writeLock) {
-            check(getPrefs(context).edit().remove(KEY_BALANCES).commit())
-        }
+        getPrefs(context).edit().remove(KEY_BALANCES).apply()
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -146,7 +145,7 @@ object BalanceWidgetDataStore {
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
 
-        synchronized(writeLock) { try {
+        try {
             val balances = getAllBalances(context).toMutableList()
             var migrated = false
 
@@ -161,11 +160,11 @@ object BalanceWidgetDataStore {
 
             if (migrated) {
                 val serialized = json.encodeToString(balances)
-                check(getPrefs(context).edit().putString(KEY_BALANCES, serialized).commit())
+                getPrefs(context).edit().putString(KEY_BALANCES, serialized).apply()
             }
         } catch (e: Exception) {
             // Widget数据迁移失败不影响主功能
-        } }
+        }
     }
 }
 
