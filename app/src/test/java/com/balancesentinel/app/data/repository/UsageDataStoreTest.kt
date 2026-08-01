@@ -10,6 +10,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class UsageDataStoreTest {
@@ -58,6 +61,28 @@ class UsageDataStoreTest {
         assertEquals(1, all.size)
         assertEquals("acc1", all[0].accountId)
         assertEquals(1000, all[0].records[0].total_tokens)
+    }
+
+    @Test
+    fun `concurrent snapshots retain every account`() {
+        val writers = 24
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(writers)
+        repeat(writers) { index ->
+            pool.submit {
+                start.await()
+                UsageDataStore.saveSnapshot(
+                    context,
+                    createSnapshot(accountId = "acc-$index", totalTokens = index.toLong())
+                )
+            }
+        }
+
+        start.countDown()
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS))
+
+        assertEquals(writers, UsageDataStore.getAllSnapshots(context).map { it.accountId }.toSet().size)
     }
 
     @Test
