@@ -529,6 +529,9 @@ class HomeViewModel @JvmOverloads constructor(
                         }
                         is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
                             // stale — preserve cached value
+                            _uiState.value.accountBalances[accountId]?.let { existing ->
+                                newBalances[accountId] = existing
+                            }
                         }
                         is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
                             newBalances[accountId] = null
