@@ -111,25 +111,26 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         try { wl?.acquire(30_000L) } catch (_: Exception) {}
 
         Thread {
-            try {
-                kotlinx.coroutines.runBlocking {
-                    WidgetRefreshRunner(
-                        com.balancesentinel.app.data.refresh.RefreshRuntime.from(context)
-                    ).refreshNow(watchdog = !fromButton)
+            WidgetRefreshDispatcher(
+                action = {
+                    kotlinx.coroutines.runBlocking {
+                        WidgetRefreshRunner(
+                            com.balancesentinel.app.data.refresh.RefreshRuntime.from(context)
+                        ).refreshNow(watchdog = !fromButton)
+                    }
+                    setRefreshProgress(context, manager, allIds, visible = false)
+                    onUpdate(context, manager, widgetIds)
+                },
+                finish = {
+                    pendingResult.finish()
+                    processingRefresh.set(false)
+                    if (svcDead) {
+                        restartServiceNow(context)
+                    }
+                    // 释放 WakeLock
+                    try { if (wl?.isHeld == true) wl.release() } catch (_: Exception) {}
                 }
-                setRefreshProgress(context, manager, allIds, visible = false)
-                onUpdate(context, manager, widgetIds)
-            } catch (e: Exception) {
-                Logger.e("StaticWidget", "Manual refresh failed", e)
-            } finally {
-                pendingResult.finish()
-                processingRefresh.set(false)
-                if (svcDead) {
-                    restartServiceNow(context)
-                }
-                // 释放 WakeLock
-                try { if (wl?.isHeld == true) wl.release() } catch (_: Exception) {}
-            }
+            ).dispatch()
         }.start()
     }
 
