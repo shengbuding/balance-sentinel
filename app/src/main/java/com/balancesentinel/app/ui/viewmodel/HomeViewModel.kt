@@ -6,17 +6,12 @@ import android.content.ComponentName
 import android.content.Intent
 import com.balancesentinel.app.data.util.Logger
 import androidx.core.content.ContextCompat
-import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.api.ProviderType
-import com.balancesentinel.app.data.api.ProviderFactory
-import com.balancesentinel.app.data.api.ProviderResult
-import com.balancesentinel.app.data.api.UnifiedBalance
-import com.balancesentinel.app.data.api.BalanceEntry
-import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
@@ -26,8 +21,6 @@ import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
-import com.balancesentinel.app.data.model.RawRecord
-import com.balancesentinel.app.data.repository.AlertChecker
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
@@ -35,15 +28,12 @@ import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
 import com.balancesentinel.app.data.repository.MidnightScheduler
-import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RefreshStats
 import com.balancesentinel.app.data.repository.RefreshStatsStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.model.UsageSnapshot
-import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
@@ -79,7 +69,7 @@ class HomeViewModel @JvmOverloads constructor(
     // test-only: inject mocks for unit testing
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val repository: BalanceRepository = BalanceRepository(),
-    // Task 4: optional gateway injection; when present, refreshes route through it
+    // Tests provide a deterministic gateway; production resolves the Application singleton.
     private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null
 ) : AndroidViewModel(application) {
 
@@ -166,7 +156,8 @@ class HomeViewModel @JvmOverloads constructor(
                     lastRefreshTime = allBalances.maxOfOrNull { it.lastUpdated } ?: 0L
                 )
                 Logger.i("HomeViewModel", "loadCachedBalances: updated UI with ${accountBalances.size} accounts")
-            } else {
+            }
+            if (gateway == null && getApplication<Application>() !is com.balancesentinel.app.DeepSeekApp) {
                 Logger.w("HomeViewModel", "loadCachedBalances: no cached data found")
             }
         } catch (e: Exception) { Logger.e("HomeViewModel", "loadCachedBalances failed", e) }
@@ -439,105 +430,54 @@ class HomeViewModel @JvmOverloads constructor(
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            val now = System.currentTimeMillis()
 
-            try {
-                // 根据供应商类型选择不同的API调用方式
-                val result = if (account.providerType == ProviderType.DEEPSEEK) {
-                    // DeepSeek供应商：使用原有的BalanceRepository
-                    val deepSeekResult = repository.fetchBalance(account.apiKey, account.id)
-                    if (deepSeekResult.isSuccess) {
-                        val response = deepSeekResult.getOrThrow()
-                        ProviderResult.Success(
-                            UnifiedBalance(
-                                provider = account.providerType,
-                                accountId = account.id,
-                                isAvailable = true,
-                                balances = response.balanceInfos.map { info ->
-                                    BalanceEntry(
-                                        currency = info.currency,
-                                        totalBalance = info.totalBalance.toDoubleOrNull() ?: 0.0,
-                                        unit = "元",
-                                        grantedBalance = info.grantedBalance.toDoubleOrNull() ?: 0.0,
-                                        toppedUpBalance = info.toppedUpBalance.toDoubleOrNull() ?: 0.0
+            val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
+            if (gw != null) {
+                // Task 4: route through shared gateway — committer owns all persistence
+                try {
+                    when (val result = gw.refreshAccount(accountId, RefreshTrigger.MANUAL_ACCOUNT)) {
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
+                            val balance = result.balance
+                            val balanceResponse = BalanceResponse(
+                                isAvailable = balance.isAvailable,
+                                balanceInfos = balance.balances.map { entry ->
+                                    BalanceInfo(
+                                        currency = entry.currency,
+                                        totalBalance = entry.totalBalance.toString(),
+                                        grantedBalance = entry.grantedBalance.toString(),
+                                        toppedUpBalance = entry.toppedUpBalance.toString()
                                     )
-                                },
-                                isEstimated = false
+                                }
                             )
-                        )
-                    } else {
-                        val exception = deepSeekResult.exceptionOrNull() ?: IOException("查询失败")
-                        ProviderResult.Failure(
-                            ProviderError.NetworkError(account.providerType, exception)
-                        )
-                    }
-                } else {
-                    // 其他供应商：使用 ProviderFactory 获取对应供应商实例
-                    val provider = if (account.providerType == ProviderType.CUSTOM) {
-                        val baseUrl = account.extraSettings["baseUrl"] ?: ""
-                        ProviderFactory.get(account.providerType, baseUrl)
-                    } else {
-                        ProviderFactory.get(account.providerType)
-                    }
-
-                    val config = account.toConfig()
-
-                    provider.getBalance(config)
-                }
-
-                when (result) {
-                    is ProviderResult.Success -> {
-                        val balance = result.data
-                        val balanceResponse = BalanceResponse(
-                            isAvailable = balance.isAvailable,
-                            balanceInfos = balance.balances.map { entry ->
-                                com.balancesentinel.app.data.model.BalanceInfo(
-                                    currency = entry.currency,
-                                    totalBalance = entry.totalBalance.toString(),
-                                    grantedBalance = entry.grantedBalance.toString(),
-                                    toppedUpBalance = entry.toppedUpBalance.toString()
-                                )
-                            }
-                        )
-
-                        // 更新余额
-                        val currentBalances = _uiState.value.accountBalances.toMutableMap()
-                        currentBalances[account.id] = balanceResponse
-                        _uiState.value = _uiState.value.copy(
-                            accountBalances = currentBalances,
-                            lastRefreshTime = now
-                        )
-
-                        // 先清除该账户的旧缓存数据，再保存新数据
-                        BalanceWidgetDataStore.removeAccountBalance(getApplication(), account.id)
-
-                        // 同步 Widget 缓存
-                        for (info in balanceResponse.balanceInfos) {
-                            BalanceWidgetDataStore.saveAccountBalance(
-                                context = getApplication(),
-                                accountId = account.id,
-                                label = account.label,
-                                totalBalance = info.totalBalance,
-                                currency = info.currency,
-                                isAvailable = balanceResponse.isAvailable,
-                                grantedBalance = info.grantedBalance,
-                                toppedUpBalance = info.toppedUpBalance
+                            val currentBalances = _uiState.value.accountBalances.toMutableMap()
+                            currentBalances[accountId] = balanceResponse
+                            _uiState.value = _uiState.value.copy(
+                                accountBalances = currentBalances,
+                                lastRefreshTime = System.currentTimeMillis()
+                            )
+                        }
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
+                            _uiState.value = _uiState.value.copy(
+                                errorMessage = "[$account.label] ${result.failure.message}"
+                            )
+                        }
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
+                            // stale — no-op, preserve cached values
+                        }
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
+                            _uiState.value = _uiState.value.copy(
+                                errorMessage = "[$account.label] ${result.reason}"
                             )
                         }
                     }
-                    is ProviderResult.Failure -> {
-                        val errorMsg = when (val error = result.error) {
-                            is ProviderError.NetworkError -> error.message
-                            is ProviderError.ApiUnavailableError -> error.message
-                            is ProviderError.AuthError -> error.message
-                            else -> "查询失败"
-                        }
-                        _uiState.value = _uiState.value.copy(errorMessage = "[$account.label] $errorMsg")
-                    }
+                } catch (e: Exception) {
+                    Logger.e("HomeViewModel", "refreshSingleAccount failed for ${account.label}", e)
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = "[$account.label] ${e.message ?: "查询失败"}"
+                    )
                 }
-            } catch (e: Exception) {
-                Logger.e("HomeViewModel", "refreshSingleAccount failed for ${account.label}", e)
-                _uiState.value = _uiState.value.copy(errorMessage = "[$account.label] ${e.message ?: "查询失败"}")
+            } else {
+                Logger.w("HomeViewModel", "refreshSingleAccount: no gateway available")
             }
 
             _uiState.value = _uiState.value.copy(isLoading = false)
@@ -562,63 +502,19 @@ class HomeViewModel @JvmOverloads constructor(
             val newBalances = mutableMapOf<String, BalanceResponse?>()
             var firstError: String? = null
 
-            for (account in accounts) {
-                try {
-                    // 根据供应商类型选择不同的API调用方式
-                    val result = if (account.providerType == ProviderType.DEEPSEEK) {
-                        // DeepSeek供应商：使用原有的BalanceRepository
-                        val deepSeekResult = repository.fetchBalance(account.apiKey, account.id)
-                        if (deepSeekResult.isSuccess) {
-                            val response = deepSeekResult.getOrThrow()
-                            ProviderResult.Success(
-                                UnifiedBalance(
-                                    provider = account.providerType,
-                                    accountId = account.id,
-                                    isAvailable = true,
-                                    balances = response.balanceInfos.map { info ->
-                                        BalanceEntry(
-                                            currency = info.currency,
-                                            totalBalance = info.totalBalance.toDoubleOrNull() ?: 0.0,
-                                            unit = "元",
-                                            grantedBalance = info.grantedBalance.toDoubleOrNull() ?: 0.0,
-                                            toppedUpBalance = info.toppedUpBalance.toDoubleOrNull() ?: 0.0
-                                        )
-                                    },
-                                    isEstimated = false
-                                )
-                            )
-                        } else {
-                            val exception = deepSeekResult.exceptionOrNull() ?: IOException("查询失败")
-                            ProviderResult.Failure(
-                                ProviderError.NetworkError(
-                                    account.providerType,
-                                    exception
-                                )
-                            )
-                        }
-                    } else {
-                        // 其他供应商：使用 ProviderFactory 获取对应供应商实例
-                        val provider = if (account.providerType == ProviderType.CUSTOM) {
-                            val baseUrl = account.extraSettings["baseUrl"] ?: ""
-                            ProviderFactory.get(account.providerType, baseUrl)
-                        } else {
-                            ProviderFactory.get(account.providerType)
-                        }
-
-                        val config = account.toConfig()
-
-                        provider.getBalance(config)
-                    }
-
+            val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
+            if (gw != null) {
+                // Task 4: route through shared gateway — committer owns all persistence
+                val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL)
+                for (result in results) {
+                    val accountId = result.accountId
                     when (result) {
-                        is ProviderResult.Success -> {
-                            val balance = result.data
-                            Logger.i("HomeViewModel", "Provider success: isAvailable=${balance.isAvailable}, balances=${balance.balances.size}")
-                            // 转换为 BalanceResponse 格式
-                            val balanceResponse = BalanceResponse(
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
+                            val balance = result.balance
+                            newBalances[accountId] = BalanceResponse(
                                 isAvailable = balance.isAvailable,
                                 balanceInfos = balance.balances.map { entry ->
-                                    com.balancesentinel.app.data.model.BalanceInfo(
+                                    BalanceInfo(
                                         currency = entry.currency,
                                         totalBalance = entry.totalBalance.toString(),
                                         grantedBalance = entry.grantedBalance.toString(),
@@ -626,140 +522,22 @@ class HomeViewModel @JvmOverloads constructor(
                                     )
                                 }
                             )
-                            Logger.i("HomeViewModel", "BalanceResponse: isAvailable=${balanceResponse.isAvailable}, balanceInfos=${balanceResponse.balanceInfos.size}")
-
-                            // 添加调试信息到 ApiDebugStore
-                            val debugEntry = com.balancesentinel.app.data.debug.ApiDebugEntry(
-                                accountId = account.id,
-                                url = "Provider结果",
-                                method = "PROVIDER",
-                                requestHeaders = emptyMap(),
-                                requestBody = "isAvailable=${balance.isAvailable}",
-                                statusCode = 200,
-                                responseHeaders = emptyMap(),
-                                responseBody = "isAvailable=${balanceResponse.isAvailable}, balanceInfos=${balanceResponse.balanceInfos.size}",
-                                timestamp = System.currentTimeMillis(),
-                                duration = 0,
-                                error = null,
-                                accountLabel = account.label,
-                                providerType = account.providerType.displayName,
-                                baseUrl = account.extraSettings["baseUrl"],
-                                endpoint = "Provider结果",
-                                isCustomScript = account.usageScript != null,
-                                scriptPreview = "isAvailable=${balance.isAvailable}, balances=${balance.balances.size}"
-                            )
-                            com.balancesentinel.app.data.debug.ApiDebugStore.addEntry(debugEntry)
-
-                            newBalances[account.id] = balanceResponse
-
-                            // 先清除该账户的旧缓存数据，再保存新数据
-                            BalanceWidgetDataStore.removeAccountBalance(getApplication(), account.id)
-
-                            // 同步 Widget 缓存
-                            for (info in balanceResponse.balanceInfos) {
-                                BalanceWidgetDataStore.saveAccountBalance(
-                                    context = getApplication(),
-                                    accountId = account.id,
-                                    label = account.label,
-                                    totalBalance = info.totalBalance,
-                                    currency = info.currency,
-                                    isAvailable = balanceResponse.isAvailable,
-                                    grantedBalance = info.grantedBalance,
-                                    toppedUpBalance = info.toppedUpBalance
-                                )
-
-                                // 写日志
-                                RefreshLogStore.addEntry(getApplication(), RefreshLogEntry(
-                                    id = now,
-                                    type = RefreshLogType.MANUAL,
-                                    totalBalance = info.totalBalance,
-                                    currency = info.currency,
-                                    isAvailable = balanceResponse.isAvailable,
-                                    grantedBalance = info.grantedBalance,
-                                    toppedUpBalance = info.toppedUpBalance,
-                                    timestamp = now,
-                                    message = account.label
-                                ))
-
-                                // 写 RawRecord
-                                RawRecordStore.addRecord(getApplication(), RawRecord(
-                                    accountId = account.id,
-                                    timestamp = now,
-                                    currency = info.currency,
-                                    totalBalance = info.totalBalance.toFloatOrNull() ?: 0f,
-                                    grantedBalance = info.grantedBalance.toFloatOrNull() ?: 0f,
-                                    toppedUpBalance = info.toppedUpBalance.toFloatOrNull() ?: 0f
-                                ))
-
-                                // 每账户预警检查
-                                AlertChecker.check(
-                                    getApplication(), account.id,
-                                    info.totalBalance, info.currency, account.label
-                                )
-                                AlertChecker.checkChange(
-                                    getApplication(), account.id,
-                                    info.totalBalance, info.currency, account.label
-                                )
-                            }
                         }
-                        is ProviderResult.Failure -> {
-                            newBalances[account.id] = null
-                            val errorMsg = when (val error = result.error) {
-                                is ProviderError.NetworkError -> error.message
-                                is ProviderError.ApiUnavailableError -> error.message
-                                is ProviderError.AuthError -> error.message
-                                else -> "查询失败"
-                            }
-                            if (firstError == null) firstError = "[${account.label}] $errorMsg"
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
+                            val label = accounts.find { it.id == accountId }?.label ?: accountId
+                            if (firstError == null) firstError = "[$label] ${result.failure.message}"
+                        }
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
+                            // stale — preserve cached value
+                        }
+                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
+                            newBalances[accountId] = null
                         }
                     }
-                } catch (e: Exception) {
-                    Logger.e("HomeViewModel", "refreshBalance failed for ${account.label}", e)
-                    newBalances[account.id] = null
-                    if (firstError == null) firstError = "[${account.label}] ${e.message ?: "查询失败"}"
                 }
             }
-
-            // 拉取用量统计（异步，失败不影响余额刷新）
-            for (account in accounts) {
-                try {
-                    if (account.providerType == ProviderType.DEEPSEEK) {
-                        // DeepSeek供应商：使用原有的BalanceRepository
-                        val result = repository.fetchUsage(account.apiKey, account.id)
-                        result.onSuccess { usage ->
-                            UsageDataStore.saveSnapshot(getApplication(), UsageSnapshot(
-                                accountId = account.id,
-                                timestamp = now,
-                                records = usage.data
-                            ))
-                        }
-                    } else {
-                        // 其他供应商：使用 ProviderFactory 获取对应供应商实例
-                        val provider = if (account.providerType == ProviderType.CUSTOM) {
-                            val baseUrl = account.extraSettings["baseUrl"] ?: ""
-                            ProviderFactory.get(account.providerType, baseUrl)
-                        } else {
-                            ProviderFactory.get(account.providerType)
-                        }
-
-                        val config = account.toConfig()
-
-                        val result = provider.getUsage(config)
-                        when (result) {
-                            is ProviderResult.Success -> {
-                                UsageDataStore.saveSnapshot(getApplication(), UsageSnapshot(
-                                    accountId = account.id,
-                                    timestamp = now,
-                                    records = emptyList() // 其他供应商可能不支持用量API
-                                ))
-                            }
-                            is ProviderResult.Failure -> {
-                                // 用量查询失败不影响余额刷新
-                                Logger.w("HomeViewModel", "Usage query failed for ${account.label}: ${result.error.message}")
-                            }
-                        }
-                    }
-                } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
+            if (gw == null) {
+                Logger.w("HomeViewModel", "refreshBalance: no gateway available")
             }
 
             _uiState.value = _uiState.value.copy(

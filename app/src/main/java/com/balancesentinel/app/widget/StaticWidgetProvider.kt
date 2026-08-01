@@ -17,7 +17,6 @@ import androidx.core.app.NotificationCompat
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.api.DeepSeekApiService
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.ApiKeyManager
@@ -113,44 +112,15 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         Thread {
             try {
-                val keyManager = ApiKeyManager(context)
-                val accounts = keyManager.getAccounts()
-                if (accounts.isNotEmpty()) {
-                    val api = DeepSeekApiService()
-                    var hasData = false
-                    var totalStr = "0"
-                    var currencyStr = "CNY"
-                    for (account in accounts) {
-                        try {
-                            val response = api.getBalance(account.apiKey)
-                            for (info in response.balanceInfos) {
-                                BalanceWidgetDataStore.saveAccountBalance(
-                                    context, account.id, account.label,
-                                    info.totalBalance, info.currency,
-                                    response.isAvailable, info.grantedBalance, info.toppedUpBalance
-                                )
-                                if (!hasData || info.currency == "CNY") {
-                                    totalStr = info.totalBalance
-                                    currencyStr = info.currency
-                                }
-                                hasData = true
-                            }
-                        } catch (_: Exception) {}
-                    }
-                    if (hasData) {
-                        setRefreshProgress(context, manager, allIds, visible = false)
-                        onUpdate(context, manager, widgetIds)
-                        val now = System.currentTimeMillis()
-                        val logType = if (fromButton) RefreshLogType.MANUAL else RefreshLogType.WATCHDOG
-                        val logMsg = if (fromButton) "小组件手动刷新 (${accounts.size} 个账户)"
-                            else "看门狗：已刷新 ${accounts.size} 个账户"
-                        RefreshLogStore.addEntry(context, RefreshLogEntry(
-                            id = now, type = logType, timestamp = now,
-                            totalBalance = totalStr, currency = currencyStr, isAvailable = true,
-                            message = logMsg
-                        ))
-                    }
+                kotlinx.coroutines.runBlocking {
+                    WidgetRefreshRunner(
+                        context,
+                        ApiKeyManager(context),
+                        com.balancesentinel.app.data.refresh.RefreshRuntime.from(context)
+                    ).refreshNow(watchdog = !fromButton)
                 }
+                setRefreshProgress(context, manager, allIds, visible = false)
+                onUpdate(context, manager, widgetIds)
             } catch (e: Exception) {
                 Logger.e("StaticWidget", "Manual refresh failed", e)
             } finally {
