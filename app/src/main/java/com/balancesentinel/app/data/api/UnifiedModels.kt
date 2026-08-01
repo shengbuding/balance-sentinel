@@ -79,9 +79,16 @@ data class ConfigField(
     val displayName: String,
     val type: FieldType,
     val required: Boolean,
+    val storage: ConfigFieldStorage = ConfigFieldStorage.SETTING,
     val defaultValue: String? = null,
     val hint: String? = null
 )
+
+enum class ConfigFieldStorage {
+    PRIMARY_CREDENTIAL,
+    EXTRA_CREDENTIAL,
+    SETTING
+}
 
 /**
  * 字段类型
