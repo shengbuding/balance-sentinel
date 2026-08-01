@@ -19,7 +19,7 @@ class AccountLifecycleManager(
     fun save(existingId: String?, draft: AccountDraft): AccountSaveResult {
         return apiKeyManager.saveAccount(existingId, draft) { result ->
             if (result is AccountSaveResult.Replaced) {
-                // TDD restart: invalidate call temporarily removed for RED ordering test
+                gateway?.invalidate(result.before.id)
                 val migration = mapOf(result.before.id to result.account.id)
                 RawRecordStore.migrateAccountIds(context, migration)
                 DailySummaryStore.migrateAccountIds(context, migration)
@@ -33,7 +33,7 @@ class AccountLifecycleManager(
 
     fun delete(accountId: String) {
         apiKeyManager.removeAccount(accountId) { account ->
-            // TDD restart: invalidate call temporarily removed for RED ordering test
+            gateway?.invalidate(accountId)
             RawRecordStore.removeByAccountId(context, accountId)
             DailySummaryStore.removeByAccountId(context, accountId)
             UsageDataStore.removeByAccountId(context, accountId)
