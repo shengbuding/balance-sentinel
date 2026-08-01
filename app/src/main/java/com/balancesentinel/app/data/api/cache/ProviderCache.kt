@@ -124,28 +124,30 @@ class ProviderCache(private val context: Context) {
      * 清除过期缓存
      */
     fun clearExpired() {
-        val keysToRemove = mutableListOf<String>()
+        synchronized(CACHE_LOCK) {
+            val keysToRemove = memoryCache
+                .filterValues { it.isExpired }
+                .keys
+                .toMutableSet()
 
-        // 检查内存缓存
-        memoryCache.forEach { (key, cached) ->
-            if (cached.isExpired) {
-                keysToRemove.add(key)
-            }
-        }
-
-        keysToRemove.forEach { memoryCache.remove(it) }
-
-        // 检查SharedPreferences
-        val allKeys = prefs.all.keys
-        allKeys.forEach { key ->
-            val data = prefs.getString(key, null) ?: return@forEach
-            try {
-                val cached = json.decodeFromString<CachedBalance>(data)
-                if (cached.isExpired) {
-                    prefs.edit().remove(key).apply()
+            prefs.all.keys.forEach { key ->
+                val data = prefs.getString(key, null) ?: return@forEach
+                try {
+                    if (json.decodeFromString<CachedBalance>(data).isExpired) {
+                        keysToRemove.add(key)
+                    }
+                } catch (e: Exception) {
+                    keysToRemove.add(key)
                 }
-            } catch (e: Exception) {
-                prefs.edit().remove(key).apply()
+            }
+
+            if (keysToRemove.isNotEmpty()) {
+                val editor = prefs.edit()
+                keysToRemove.forEach { key ->
+                    memoryCache.remove(key)
+                    editor.remove(key)
+                }
+                check(editor.commit())
             }
         }
     }
