@@ -44,8 +44,10 @@ object RawRecordStore {
                     existing.subList(0, existing.size - MAX_RECORDS).clear()
                 }
                 val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
-                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-            } catch (_: Exception) { }
+                check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
+            } catch (error: Exception) {
+                throw error
+            }
         }
     }
 
@@ -231,6 +233,17 @@ object RawRecordStore {
                     getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
                 }
             } catch (e: Exception) { Logger.w(TAG, "removeByDate failed", e) }
+        }
+    }
+
+    internal fun snapshotRecords(context: Context): List<RawRecord> = synchronized(writeLock) {
+        getRecordsInternal(context).toList()
+    }
+
+    internal fun restoreRecords(context: Context, snapshot: List<RawRecord>) {
+        synchronized(writeLock) {
+            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), snapshot)
+            check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
         }
     }
 

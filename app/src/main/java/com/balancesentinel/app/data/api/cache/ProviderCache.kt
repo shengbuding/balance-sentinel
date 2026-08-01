@@ -156,6 +156,32 @@ class ProviderCache(private val context: Context) {
         }
     }
 
+    internal fun snapshot(
+        providerType: ProviderType,
+        accountId: String
+    ): CachedBalance? = synchronized(CACHE_LOCK) {
+        val data = prefs.getString("${providerType.id}_$accountId", null) ?: return@synchronized null
+        json.decodeFromString<CachedBalance>(data)
+    }
+
+    internal fun restore(
+        providerType: ProviderType,
+        accountId: String,
+        snapshot: CachedBalance?
+    ) {
+        synchronized(CACHE_LOCK) {
+            val key = "${providerType.id}_$accountId"
+            val editor = prefs.edit()
+            if (snapshot == null) {
+                editor.remove(key)
+            } else {
+                editor.putString(key, json.encodeToString(snapshot))
+            }
+            check(editor.commit())
+            if (snapshot == null) memoryCache.remove(key) else memoryCache[key] = snapshot
+        }
+    }
+
     /**
      * 获取默认TTL（根据供应商类型）
      */

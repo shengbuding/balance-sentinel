@@ -78,6 +78,17 @@ object UsageDataStore {
         }
     }
 
+    internal fun snapshotAll(context: Context): List<UsageSnapshot> = synchronized(USAGE_LOCK) {
+        getAllSnapshots(context).toList()
+    }
+
+    internal fun restoreAll(context: Context, snapshot: List<UsageSnapshot>) {
+        synchronized(USAGE_LOCK) {
+            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshot)
+            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        }
+    }
+
     /**
      * 读取全部快照。
      */

@@ -176,6 +176,26 @@ object BalanceWidgetDataStore {
             }
         }
     }
+
+    fun replaceAccountBalances(
+        context: Context,
+        accountId: String,
+        replacements: List<AccountBalance>
+    ) {
+        require(replacements.all { it.accountId == accountId })
+        synchronized(STORE_LOCK) {
+            val prefs = getPrefs(context)
+            val balances = getAllBalances(prefs).filter { it.accountId != accountId } + replacements
+            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+        }
+    }
+
+    internal fun snapshotAccountBalances(
+        context: Context,
+        accountId: String
+    ): List<AccountBalance> = synchronized(STORE_LOCK) {
+        getAllBalances(getPrefs(context)).filter { it.accountId == accountId }
+    }
 }
 
 @Serializable

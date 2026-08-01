@@ -1,9 +1,14 @@
 package com.balancesentinel.app.data.refresh
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 
 class RefreshCoordinator(
     private val accountStore: RefreshAccountStore,
@@ -12,20 +17,48 @@ class RefreshCoordinator(
     private val backgroundScope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis
 ) : RefreshGateway {
+    private val generations = ConcurrentHashMap<String, AtomicLong>()
+    private val accountLocks = ConcurrentHashMap<String, Any>()
+
     override suspend fun refreshAccount(
         accountId: String,
         trigger: RefreshTrigger
     ): AccountRefreshResult {
+        val token = nextToken(accountId)
         val account = accountStore.getAccount(accountId)
             ?: return AccountRefreshResult.Skipped(accountId, "Account not found")
-        return try {
-            backgroundScope.async { source.fetch(account) }.await()
-            AccountRefreshResult.Skipped(accountId, "Refresh coordination is unavailable")
+        val request = RefreshRequest(
+            accountId = account.id,
+            revision = account.revision,
+            token = token,
+            trigger = trigger,
+            startedAt = clock()
+        )
+        val fetched = try {
+            withContext(backgroundScope.coroutineContext.minusKey(Job)) {
+                source.fetch(account)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
-            AccountRefreshResult.Failed(
-                accountId,
+            BalanceFetchResult.Failure(
                 RefreshFailure.NetworkFailure("Balance request failed")
             )
+        }
+
+        return synchronized(lockFor(accountId)) {
+            if (!isLatest(accountId, token)) {
+                return@synchronized stale(accountId)
+            }
+            when (fetched) {
+                is BalanceFetchResult.Success -> committer.commit(request, fetched) {
+                    isLatest(accountId, token)
+                }
+                is BalanceFetchResult.Failure -> AccountRefreshResult.Failed(
+                    accountId,
+                    fetched.failure
+                )
+            }
         }
     }
 
@@ -36,5 +69,24 @@ class RefreshCoordinator(
             }.awaitAll()
         }
 
-    override fun invalidate(accountId: String) = Unit
+    override fun invalidate(accountId: String) {
+        synchronized(lockFor(accountId)) {
+            generations.computeIfAbsent(accountId) { AtomicLong(0) }.incrementAndGet()
+        }
+    }
+
+    private fun nextToken(accountId: String): Long = synchronized(lockFor(accountId)) {
+        generations.computeIfAbsent(accountId) { AtomicLong(0) }.incrementAndGet()
+    }
+
+    private fun isLatest(accountId: String, token: Long): Boolean =
+        generations[accountId]?.get() == token
+
+    private fun lockFor(accountId: String): Any =
+        accountLocks.computeIfAbsent(accountId) { Any() }
+
+    private fun stale(accountId: String) = AccountRefreshResult.Stale(
+        accountId,
+        RefreshFailure.AccountStale("Refresh result is stale")
+    )
 }
