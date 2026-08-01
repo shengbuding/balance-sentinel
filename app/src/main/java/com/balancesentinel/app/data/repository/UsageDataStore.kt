@@ -123,9 +123,13 @@ object UsageDataStore {
      * 清除所有用量快照。
      */
     fun clear(context: Context) {
-        try {
-            getPrefs(context).edit().remove(KEY_SNAPSHOTS).apply()
-        } catch (e: Exception) { Logger.w(TAG, "clear failed", e) }
+        synchronized(USAGE_LOCK) {
+            try {
+                check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
+            } catch (e: Exception) {
+                Logger.w(TAG, "clear failed", e)
+            }
+        }
     }
 
     /**
