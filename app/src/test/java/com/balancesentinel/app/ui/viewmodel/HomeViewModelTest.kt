@@ -3,11 +3,18 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.AiProvider
+import com.balancesentinel.app.data.api.ProviderConfig
+import com.balancesentinel.app.data.api.ProviderError
+import com.balancesentinel.app.data.api.ProviderFactory
+import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.UnifiedUsage
 import com.balancesentinel.app.data.api.cache.ProviderCache
 import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.AccountDraft
@@ -55,6 +62,113 @@ class HomeViewModelTest {
 
     private fun createViewModel(): HomeViewModel {
         return HomeViewModel(context, apiKeyManager, mockRepository)
+    }
+
+    private fun addConfiguredCustomAccount(baseUrl: String): AccountInfo {
+        return apiKeyManager.saveAccount(
+            existingId = null,
+            draft = AccountDraft(
+                label = "Configured account",
+                apiKey = "primary-key",
+                providerType = ProviderType.CUSTOM,
+                extraCredentials = mapOf("secretKey" to "secondary-secret"),
+                extraSettings = mapOf("baseUrl" to baseUrl, "region" to "eu-test"),
+                usageScript = "return 42",
+                usageScriptEnabled = false,
+                authorizedScriptOrigins = setOf("https://z.example/", "https://a.example")
+            )
+        ).account
+    }
+
+    private fun assertCompleteProviderConfig(
+        config: ProviderConfig,
+        accountId: String,
+        baseUrl: String
+    ) {
+        assertEquals(ProviderType.CUSTOM, config.providerType)
+        assertEquals(
+            mapOf(
+                "apiKey" to "primary-key",
+                "accountId" to accountId,
+                "accountLabel" to "Configured account",
+                "secretKey" to "secondary-secret"
+            ),
+            config.credentials
+        )
+        assertEquals(
+            mapOf(
+                "baseUrl" to baseUrl,
+                "region" to "eu-test",
+                "usageScript" to "return 42",
+                "usageScriptEnabled" to "false",
+                "authorizedScriptOrigins" to "https://a.example,https://z.example"
+            ),
+            config.settings
+        )
+    }
+
+    private class RecordingProvider : AiProvider {
+        override val providerType = ProviderType.CUSTOM
+        override val displayName = "Recording provider"
+        val balanceConfigs = mutableListOf<ProviderConfig>()
+        val usageConfigs = mutableListOf<ProviderConfig>()
+
+        override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> {
+            balanceConfigs += config
+            return ProviderResult.Failure(
+                ProviderError.ApiUnavailableError(providerType, "balance recorded")
+            )
+        }
+
+        override suspend fun getUsage(
+            config: ProviderConfig,
+            startDate: String?,
+            endDate: String?
+        ): ProviderResult<UnifiedUsage> {
+            usageConfigs += config
+            return ProviderResult.Failure(
+                ProviderError.ApiUnavailableError(providerType, "usage recorded")
+            )
+        }
+    }
+
+    @Test
+    fun `refreshSingleAccount passes complete account config to provider`() {
+        val baseUrl = "https://single-config.example"
+        val provider = RecordingProvider()
+        ProviderFactory.register(ProviderType.CUSTOM, provider, baseUrl)
+        val account = addConfiguredCustomAccount(baseUrl)
+        val vm = createViewModel()
+
+        vm.refreshSingleAccount(account.id)
+
+        assertCompleteProviderConfig(provider.balanceConfigs.single(), account.id, baseUrl)
+    }
+
+    @Test
+    fun `refreshBalance passes complete account config to balance provider`() {
+        val baseUrl = "https://all-balance-config.example"
+        val provider = RecordingProvider()
+        ProviderFactory.register(ProviderType.CUSTOM, provider, baseUrl)
+        val account = addConfiguredCustomAccount(baseUrl)
+        val vm = createViewModel()
+
+        vm.refreshBalance()
+
+        assertCompleteProviderConfig(provider.balanceConfigs.single(), account.id, baseUrl)
+    }
+
+    @Test
+    fun `refreshBalance passes complete account config to usage provider`() {
+        val baseUrl = "https://all-usage-config.example"
+        val provider = RecordingProvider()
+        ProviderFactory.register(ProviderType.CUSTOM, provider, baseUrl)
+        val account = addConfiguredCustomAccount(baseUrl)
+        val vm = createViewModel()
+
+        vm.refreshBalance()
+
+        assertCompleteProviderConfig(provider.usageConfigs.single(), account.id, baseUrl)
     }
 
     // ═══════════════════════════════════════════════════════════
