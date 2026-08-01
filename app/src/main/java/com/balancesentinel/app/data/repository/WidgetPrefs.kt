@@ -206,6 +206,41 @@ class WidgetPrefs(context: Context) {
         }
     }
 
+    fun migrateAccountData(oldAccountId: String, newAccountId: String) {
+        if (oldAccountId == newAccountId) return
+
+        synchronized(WIDGET_PREFS_LOCK) {
+            val editor = prefs.edit()
+            prefs.all.forEach { (key, value) ->
+                val newKey = when {
+                    key.endsWith("_$oldAccountId") -> key.removeSuffix(oldAccountId) + newAccountId
+                    key.contains("_${oldAccountId}_") -> key.replace("_${oldAccountId}_", "_${newAccountId}_")
+                    else -> null
+                } ?: return@forEach
+
+                when (value) {
+                    is Boolean -> editor.putBoolean(newKey, value)
+                    is Float -> editor.putFloat(newKey, value)
+                    is Int -> editor.putInt(newKey, value)
+                    is Long -> editor.putLong(newKey, value)
+                    is String -> editor.putString(newKey, value)
+                    is Set<*> -> editor.putStringSet(newKey, value.filterIsInstance<String>().toSet())
+                }
+                editor.remove(key)
+            }
+            check(editor.commit())
+
+            val order = getRawNotificationWalletOrder().map { entry ->
+                if (entry.startsWith("${oldAccountId}_")) {
+                    "${newAccountId}_${entry.removePrefix("${oldAccountId}_")}" 
+                } else {
+                    entry
+                }
+            }
+            setNotificationWalletOrder(order)
+        }
+    }
+
     // ── Per-account+currency 设置批量导出/导入 ──
 
     /**

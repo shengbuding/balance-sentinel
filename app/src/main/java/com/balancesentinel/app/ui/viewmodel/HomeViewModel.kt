@@ -315,10 +315,7 @@ class HomeViewModel @JvmOverloads constructor(
             !ProviderConfigs.validateFieldValues(draft.providerType, values)
         ) return
 
-        val result = apiKeyManager.saveAccount(id, draft)
-        if (result is com.balancesentinel.app.data.model.AccountSaveResult.Replaced) {
-            migrateAccountData(result.before.id, result.account.id)
-        }
+        AccountLifecycleManager(getApplication(), apiKeyManager).save(id, draft)
         loadAccounts()
         _uiState.value = _uiState.value.copy(errorMessage = null)
         refreshBalance()
