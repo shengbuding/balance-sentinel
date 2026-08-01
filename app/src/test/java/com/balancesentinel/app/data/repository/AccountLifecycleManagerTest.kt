@@ -12,6 +12,8 @@ import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountSaveResult
+import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
@@ -348,6 +350,92 @@ class AccountLifecycleManagerTest {
                 }
             }
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Lifecycle invalidation ordering (Finding 4)
+    // ═══════════════════════════════════════════════════════════
+
+    // RED: gateway.invalidate(oldId) must be called while the old account
+    // is still persisted — before migration/cleanup removes it. With the
+    // invalidate calls temporarily removed, this test FAILS because
+    // invalidations is empty.
+    @Test
+    fun `replacement invalidates old account while old data is still persisted`() {
+        val before = accountManager.addAccount("Before", "sk-ordering-key")
+        seedOwnedState(before)
+        val recordingGateway = RecordingLifecycleGateway(accountManager)
+        val orderingLifecycle = AccountLifecycleManager(context, accountManager, recordingGateway)
+
+        orderingLifecycle.save(
+            before.id,
+            AccountDraft(
+                label = "After",
+                apiKey = "sk-ordering-after-key",
+                providerType = before.providerType
+            )
+        )
+
+        assertEquals("invalidate must be called exactly once", 1, recordingGateway.invalidations.size)
+        assertEquals(before.id, recordingGateway.invalidations[0].accountId)
+        assertTrue(
+            "Old account must still be persisted when invalidate runs",
+            recordingGateway.invalidations[0].oldAccountStillPersisted
+        )
+    }
+
+    // RED: gateway.invalidate(accountId) must be called while the account
+    // is still persisted — before cleanup removes it. With the invalidate
+    // calls temporarily removed, this test FAILS because invalidations is empty.
+    @Test
+    fun `delete invalidates account while old data is still persisted`() {
+        val target = accountManager.addAccount("Target", "sk-delete-ordering")
+        seedOwnedState(target)
+        val recordingGateway = RecordingLifecycleGateway(accountManager)
+        val orderingLifecycle = AccountLifecycleManager(context, accountManager, recordingGateway)
+
+        orderingLifecycle.delete(target.id)
+
+        assertEquals("invalidate must be called exactly once", 1, recordingGateway.invalidations.size)
+        assertEquals(target.id, recordingGateway.invalidations[0].accountId)
+        assertTrue(
+            "Account must still be persisted when invalidate runs",
+            recordingGateway.invalidations[0].oldAccountStillPersisted
+        )
+    }
+
+    data class InvalidationRecord(
+        val accountId: String,
+        val oldAccountStillPersisted: Boolean
+    )
+
+    /**
+     * Records invalidate calls and whether the old account was still
+     * persisted at the time of the call. Used to verify ordering:
+     * invalidate(oldId) must run before migration/cleanup persistence.
+     */
+    private class RecordingLifecycleGateway(
+        private val accountManager: ApiKeyManager
+    ) : RefreshGateway {
+        val invalidations = mutableListOf<InvalidationRecord>()
+
+        override fun invalidate(accountId: String) {
+            invalidations += InvalidationRecord(
+                accountId = accountId,
+                oldAccountStillPersisted = accountManager.getAccount(accountId) != null
+            )
+        }
+
+        override suspend fun refreshAccount(
+            accountId: String,
+            trigger: RefreshTrigger
+        ): com.balancesentinel.app.data.refresh.AccountRefreshResult =
+            throw UnsupportedOperationException("Not used in lifecycle tests")
+
+        override suspend fun refreshAll(
+            trigger: RefreshTrigger
+        ): List<com.balancesentinel.app.data.refresh.AccountRefreshResult> =
+            throw UnsupportedOperationException("Not used in lifecycle tests")
     }
 
     private companion object {
