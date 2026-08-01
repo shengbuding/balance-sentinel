@@ -4,6 +4,10 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.cache.ProviderCache
+import com.balancesentinel.app.data.debug.ApiDebugEntry
+import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.repository.ApiKeyManager
@@ -44,6 +48,7 @@ class HomeViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        ApiDebugStore.clearAll()
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -108,6 +113,32 @@ class HomeViewModelTest {
 
         vm.removeAccount(accId)
         assertTrue(vm.uiState.value.accounts.isEmpty())
+    }
+
+    @Test
+    fun `removeAccountWithData clears account caches debug records and alert state`() {
+        val account = apiKeyManager.addAccount("Account", "delete-key")
+        val widgetPrefs = WidgetPrefs(context)
+        val cache = ProviderCache(context)
+        cache.put(
+            ProviderType.DEEPSEEK,
+            account.id,
+            UnifiedBalance(ProviderType.DEEPSEEK, account.id, true, emptyList())
+        )
+        widgetPrefs.setBalanceAlertEnabled(account.id, "USD", true)
+        widgetPrefs.setNotificationWalletSelected(account.id, "USD", true)
+        ApiDebugStore.addEntry(
+            ApiDebugEntry(account.id, "https://api.example.com", "GET", emptyMap(), null, 200, emptyMap(), "{}", 1L, 1L)
+        )
+        val vm = createViewModel()
+
+        vm.removeAccountWithData(account.id)
+
+        assertNull(apiKeyManager.getAccount(account.id))
+        assertNull(cache.get(ProviderType.DEEPSEEK, account.id))
+        assertTrue(ApiDebugStore.getEntries(account.id).isEmpty())
+        assertFalse(widgetPrefs.isBalanceAlertEnabled(account.id, "USD"))
+        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${account.id}_USD"))
     }
 
     // ═══════════════════════════════════════════════════════════
