@@ -180,3 +180,88 @@ Android compile/min/target SDK remain 35 and JVM target remains 17.
 ## Remaining Concerns
 
 No scoped security or connection-semantics concern remains. Existing unrelated Kotlin/deprecation warnings remain visible. Per dispatch, the unrelated full unit suite and connected tests were intentionally not run.
+
+## Fix Round 1
+
+Status: DONE
+
+Baseline gate:
+
+- `git rev-parse HEAD` returned the required `ced00217f07f7485df0d21b335ee8ecbe8863255`.
+- `git status --short --untracked-files=all` was empty.
+- Process inspection found only one idle Gradle 8.11.1 daemon and no active Gradle client/build.
+
+### Root-Cause Verification
+
+- `isCanonicalDomainName("localhost")` passed every existing canonical-label check. A same-origin `https://localhost` request therefore reached `HostResolver`, and a fake public answer was accepted.
+- `isGlobalIpv6` admitted nearly all of `2000::/3`, excluding only Teredo and documentation space. It accepted benchmarking `2001:2::/48`, ORCHID `2001:10::/28`, ORCHIDv2 `2001:20::/28`, DETs, 6to4, AS112, and the new `3fff::/20` documentation block.
+- The IANA IPv6 Special-Purpose Address Registry was audited on 2026-08-02. The local classifier now denies all registry families: entries outside `2000::/3` are rejected by the global-unicast gate, and special prefixes inside it are explicitly represented by `2001::/23`, `2001:db8::/32`, `2002::/16`, `2620:4f:8000::/48`, and `3fff::/20`.
+- `hasLiteralRequestUrl` delegated only to anchored `STATIC_URL_PATTERN`. The pattern matched the first literal `request.url` despite a later duplicate, a direct or computed mutation performed by `request.toJSON`, or an origin-affecting credential placeholder.
+
+### Corrected RED Evidence
+
+The first candidate fixture put `{{apiKey}}` directly in a hostname. The inspection sentinel contains underscores, so that fixture failed at `assertNotNull` before reaching the static verdict. That run and the resulting intermediate 15/16 GREEN attempt were diagnostics, not RED/GREEN evidence. The uncommitted production changes were removed, the fixture was corrected to the valid authority form `https://{{apiKey}}@api.example.com/...`, and RED was observed again against unchanged production.
+
+Command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.ScriptNetworkPolicyTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --rerun-tasks
+```
+
+Exit code: 1. Result: 16 tests executed, 6 failures, 0 errors, 0 skipped. Both production and test Kotlin compilation completed, and all failures reached behavior assertions:
+
+- `localhost is denied before dns even when same origin resolves publicly`: expected resolver lookups `0`, was `1`.
+- `special purpose ipv6 is denied while ordinary global ipv6 is allowed`: accepted `2001:2::1`.
+- `duplicate request url cannot make the overridden value look static`: failed the false static-verdict assertion after evaluation selected `https://api.example.com/2`.
+- `later request url assignment cannot look static`: failed the false static-verdict assertion after direct assignment selected `https://api.example.com/2`.
+- `computed request url mutation cannot look static`: failed the false static-verdict assertion after computed assignment selected `https://api.example.com/2`.
+- `credential placeholder in url authority cannot look static`: reached and failed the false static-verdict assertion.
+
+RED commits:
+
+1. `48cd24a test: add RED for script policy review findings`
+2. `5961a09 test: correct authority placeholder RED fixture`
+
+### GREEN Implementation
+
+- `localhost` is rejected by canonical hostname validation before origin authorization and DNS.
+- IPv6 remains allowlisted to `2000::/3`, with deterministic byte-prefix rejection for every current IANA special-purpose family inside that range. Ordinary global `2606:4700:4700::1111` remains allowed.
+- Static URL inspection now parses the source with Rhino `Parser` and inspects the AST. It requires one direct configuration object, one ordinary `request` object, one ordinary string-literal `url`, and one ordinary extractor function.
+- Computed/unknown object keys, duplicate `request`/`url` properties, request accessors or `toJSON`, direct/computed URL assignments, increment/decrement/delete mutations, parse uncertainty, and placeholders in the scheme/authority region all return conservative `false`.
+- A credential placeholder used only in headers retains the existing positive static verdict.
+
+Focused GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.ScriptNetworkPolicyTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --rerun-tasks
+```
+
+Exit code: 0. Result: 16 tests passed, 0 failed; Gradle `BUILD SUCCESSFUL`, 29/29 tasks executed.
+
+Four-class Task 5 security gate:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.ScriptNetworkPolicyTest" --tests "com.balancesentinel.app.data.api.balance.RhinoScriptRunnerTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptSecurityTest" --rerun-tasks
+```
+
+Exit code: 0. Result: 26 tests passed, 0 failed, 0 errors, 0 skipped; Gradle `BUILD SUCCESSFUL`, 29/29 tasks executed.
+
+GREEN commit:
+
+- `3d0adad fix: harden script destination inspection`
+
+### Files Changed
+
+- `app/src/main/java/com/balancesentinel/app/data/api/balance/ScriptNetworkPolicy.kt`
+- `app/src/main/java/com/balancesentinel/app/data/api/balance/UsageScriptExecutor.kt`
+- `app/src/test/java/com/balancesentinel/app/data/api/balance/ScriptNetworkPolicyTest.kt`
+- `app/src/test/java/com/balancesentinel/app/data/api/balance/UsageScriptExecutorTest.kt`
+- `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/task-5-report.md`
+
+### Self-Review And Concerns
+
+- The network change rejects only `localhost` and IPv6 special-purpose destinations; ordinary authorized public IPv4 and IPv6 behavior is preserved.
+- The AST classifier intentionally favors false negatives for complex scripts. Inspection still evaluates and returns their request configuration, but does not claim the URL is statically proven.
+- Static inspection reads no source via regex and logs no source, URL, credential, response, or exception detail.
+- The scoped diff passed `git diff --check` apart from existing LF-to-CRLF conversion notices.
+- No unfiltered unit suite or connected/device test was run, per the fix prompt. Existing unrelated Kotlin/deprecation warnings remain. No scoped security concern remains.
