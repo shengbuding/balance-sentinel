@@ -1,9 +1,11 @@
 package com.balancesentinel.app.data.repository
 
+import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.balance.ScriptInspection
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.UsageScriptExecutor
 import com.balancesentinel.app.data.api.balance.WebOrigin
+import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
 
 enum class ImportMode { MERGE, REPLACE_ALL }
@@ -39,26 +41,266 @@ class BackupImportPlanner(
         config: AppConfig,
         localAccounts: List<AccountInfo>,
         mode: ImportMode
-    ): BackupImportPlan = BackupImportPlan(
-        mode = mode,
-        finalAccounts = emptyList(),
-        matchedUpdatedCount = 0,
-        retainedCredentialCount = 0,
-        createdCount = 0,
-        skippedCount = 0,
-        conflictCount = 0,
-        deletedCount = 0,
-        scriptAuthorizations = emptyList(),
-        canApply = true,
-        blockingReasons = emptyList(),
-        settings = config.settings
-    )
+    ): BackupImportPlan {
+        val hasFullCredentials = when (config.version) {
+            1 -> config.accounts.isNotEmpty() && config.accounts.all(::hasCompleteCredentials)
+            else -> config.credentialsIncluded
+        }
+        val normalized = config.accounts.map { incoming ->
+            if (hasFullCredentials) {
+                normalizeFullAccount(incoming, config.version)
+            } else {
+                normalizeSanitizedAccount(incoming, config.version, localAccounts)
+            }
+        }
+        val duplicateSourceIds = config.accounts
+            .groupingBy { it.id }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        val duplicateIds = normalized
+            .mapNotNull { it.account?.id }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+
+        val finalAccounts = if (mode == ImportMode.MERGE) {
+            localAccounts.toMutableList()
+        } else {
+            mutableListOf()
+        }
+        val scriptAuthorizations = mutableListOf<ScriptAuthorization>()
+        var matchedUpdatedCount = 0
+        var retainedCredentialCount = 0
+        var createdCount = 0
+        var skippedCount = 0
+        var conflictCount = normalized.count { it.account == null }
+
+        for (entry in normalized) {
+            val incoming = entry.account ?: continue
+            if (entry.sourceId in duplicateSourceIds || incoming.id in duplicateIds) {
+                conflictCount++
+                continue
+            }
+
+            val localIndex = localAccounts.indexOfFirst { it.id == incoming.id }
+            if (!hasFullCredentials) {
+                if (mode != ImportMode.MERGE || localIndex < 0) {
+                    skippedCount++
+                    continue
+                }
+                val local = localAccounts[localIndex]
+                if (!hasCompleteCredentials(local, incoming.providerType)) {
+                    conflictCount++
+                    continue
+                }
+                val allowedSettingKeys = ProviderConfigs.getConfigFields(incoming.providerType)
+                    .asSequence()
+                    .filter { it.storage == ConfigFieldStorage.SETTING }
+                    .map { it.key }
+                    .toSet()
+                val importedSettings = incoming.extraSettings.filterKeys { it in allowedSettingKeys }
+                finalAccounts[localIndex] = local.copy(
+                    label = incoming.label,
+                    providerType = incoming.providerType,
+                    extraSettings = local.extraSettings + importedSettings
+                )
+                matchedUpdatedCount++
+                retainedCredentialCount++
+                continue
+            }
+
+            if (!hasCompleteCredentials(incoming)) {
+                conflictCount++
+                continue
+            }
+            val prepared = incoming.copy(
+                apiKey = incoming.apiKey.trim(),
+                usageScriptEnabled = false,
+                authorizedScriptOrigins = emptySet()
+            )
+            prepared.usageScript?.takeIf { it.isNotBlank() }?.let { code ->
+                val inspection = runCatching {
+                    inspectScript(UsageScript(code = code, enabled = false), prepared)
+                }.getOrElse {
+                    ScriptInspection(
+                        request = null,
+                        requiredExtraOrigins = emptySet(),
+                        staticallyDeterminable = false
+                    )
+                }
+                scriptAuthorizations += ScriptAuthorization(
+                    accountId = prepared.id,
+                    requiredExtraOrigins = inspection.requiredExtraOrigins.toSet(),
+                    staticallyDeterminable = inspection.staticallyDeterminable
+                )
+            }
+
+            if (localIndex >= 0) {
+                if (mode == ImportMode.MERGE) {
+                    val finalIndex = finalAccounts.indexOfFirst { it.id == prepared.id }
+                    finalAccounts[finalIndex] = prepared
+                } else {
+                    finalAccounts += prepared
+                }
+                matchedUpdatedCount++
+            } else {
+                finalAccounts += prepared
+                createdCount++
+            }
+        }
+
+        val finalIds = finalAccounts.mapTo(mutableSetOf()) { it.id }
+        val deletedCount = if (mode == ImportMode.REPLACE_ALL) {
+            localAccounts.count { it.id !in finalIds }
+        } else {
+            0
+        }
+        val blockingReasons = if (mode == ImportMode.REPLACE_ALL) {
+            buildList {
+                if (!hasFullCredentials) add(BLOCK_CREDENTIALS_REQUIRED)
+                if (conflictCount > 0) add(BLOCK_CONFLICTS)
+                if (finalAccounts.any { !hasCompleteCredentials(it) }) add(BLOCK_INCOMPLETE_ACCOUNTS)
+                val authorizationsById = scriptAuthorizations.associateBy { it.accountId }
+                if (finalAccounts.any { account ->
+                        account.usageScriptEnabled &&
+                            authorizationsById[account.id]?.staticallyDeterminable != true
+                    }
+                ) {
+                    add(BLOCK_SCRIPT_INSPECTION)
+                }
+            }
+        } else {
+            emptyList()
+        }
+
+        return BackupImportPlan(
+            mode = mode,
+            finalAccounts = finalAccounts.toList(),
+            matchedUpdatedCount = matchedUpdatedCount,
+            retainedCredentialCount = retainedCredentialCount,
+            createdCount = createdCount,
+            skippedCount = skippedCount,
+            conflictCount = conflictCount,
+            deletedCount = deletedCount,
+            scriptAuthorizations = scriptAuthorizations.toList(),
+            canApply = blockingReasons.isEmpty(),
+            blockingReasons = blockingReasons,
+            settings = config.settings
+        )
+    }
 
     fun withScriptAuthorizations(
         plan: BackupImportPlan,
         enabledAccountIds: Set<String>,
         authorizedOrigins: Map<String, Set<WebOrigin>>
-    ): BackupImportPlan = plan
+    ): BackupImportPlan {
+        val authorizationById = plan.scriptAuthorizations.associateBy { it.accountId }
+        val accounts = plan.finalAccounts.map { account ->
+            val authorization = authorizationById[account.id] ?: return@map account
+            val selectedOrigins = authorizedOrigins[account.id].orEmpty()
+            val enable = account.id in enabledAccountIds &&
+                authorization.staticallyDeterminable &&
+                selectedOrigins.containsAll(authorization.requiredExtraOrigins)
+            account.copy(
+                usageScriptEnabled = enable,
+                authorizedScriptOrigins = if (enable) {
+                    authorization.requiredExtraOrigins
+                        .map(::canonicalOrigin)
+                        .toSortedSet()
+                } else {
+                    emptySet()
+                }
+            )
+        }
+        return plan.copy(finalAccounts = accounts)
+    }
 
-    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean) = Unit
+    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
+        check(plan.canApply) {
+            "Backup import is blocked: ${plan.blockingReasons.joinToString()}"
+        }
+        check(plan.mode != ImportMode.REPLACE_ALL || confirmedFullReplace) {
+            "Replacing all accounts requires explicit destructive confirmation"
+        }
+        apiKeyManager.replaceAll(plan.finalAccounts)
+        ConfigManager.applySettings(plan.settings, widgetPrefs)
+    }
+
+    private fun normalizeFullAccount(account: AccountInfo, version: Int): NormalizedAccount {
+        if (!hasCompleteCredentials(account)) return NormalizedAccount(account.id, null)
+        val fullId = apiKeyManager.computeId(account.apiKey)
+        val normalizedId = when {
+            account.id.matches(FULL_ID) && account.id == fullId -> fullId
+            version == 1 && account.id.matches(LEGACY_ID) &&
+                account.id == apiKeyManager.computeLegacyId(account.apiKey) -> fullId
+            else -> return NormalizedAccount(account.id, null)
+        }
+        return NormalizedAccount(account.id, account.copy(id = normalizedId))
+    }
+
+    private fun normalizeSanitizedAccount(
+        account: AccountInfo,
+        version: Int,
+        localAccounts: List<AccountInfo>
+    ): NormalizedAccount {
+        if (account.id.matches(FULL_ID)) return NormalizedAccount(account.id, account)
+        if (version != 1 || !account.id.matches(LEGACY_ID)) {
+            return NormalizedAccount(account.id, null)
+        }
+        val matchingLocals = localAccounts.filter { local ->
+            local.id == account.id ||
+                (local.id.matches(FULL_ID) && local.id.startsWith(account.id))
+        }
+        return if (matchingLocals.size == 1) {
+            NormalizedAccount(account.id, account.copy(id = matchingLocals.single().id))
+        } else {
+            NormalizedAccount(account.id, null)
+        }
+    }
+
+    private fun hasCompleteCredentials(account: AccountInfo): Boolean =
+        hasCompleteCredentials(account, account.providerType)
+
+    private fun hasCompleteCredentials(
+        account: AccountInfo,
+        providerType: com.balancesentinel.app.data.api.ProviderType
+    ): Boolean = ProviderConfigs.getConfigFields(providerType)
+        .asSequence()
+        .filter { it.storage != ConfigFieldStorage.SETTING && it.required }
+        .all { field ->
+            val value = when (field.storage) {
+                ConfigFieldStorage.PRIMARY_CREDENTIAL -> account.apiKey
+                ConfigFieldStorage.EXTRA_CREDENTIAL -> account.extraCredentials[field.key].orEmpty()
+                ConfigFieldStorage.SETTING -> error("Setting fields are filtered above")
+            }
+            value.isNotBlank() && !ConfigManager.isRedactedApiKey(value)
+        }
+
+    private data class NormalizedAccount(
+        val sourceId: String,
+        val account: AccountInfo?
+    )
+
+    private companion object {
+        val FULL_ID = Regex("[0-9a-f]{16}")
+        val LEGACY_ID = Regex("[0-9a-f]{8}")
+        const val BLOCK_CREDENTIALS_REQUIRED = "credentials_required"
+        const val BLOCK_CONFLICTS = "conflicts_present"
+        const val BLOCK_INCOMPLETE_ACCOUNTS = "incomplete_accounts"
+        const val BLOCK_SCRIPT_INSPECTION = "script_inspection_required"
+
+        fun canonicalOrigin(origin: WebOrigin): String {
+            val host = if (':' in origin.host) "[${origin.host}]" else origin.host
+            val defaultPort = (origin.scheme == "https" && origin.port == 443) ||
+                (origin.scheme == "http" && origin.port == 80)
+            return buildString {
+                append(origin.scheme)
+                append("://")
+                append(host)
+                if (!defaultPort) append(":${origin.port}")
+            }
+        }
+    }
 }

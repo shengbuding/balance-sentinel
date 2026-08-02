@@ -38,7 +38,8 @@ private enum class DataSubPage { HUB, CLEAR_DATA, BACKUP_RESTORE }
 @Composable
 fun DataManagementScreen(
     viewModel: DataManagementViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onConfigImported: () -> Unit = {}
 ) {
     var subPage by remember { mutableStateOf(DataSubPage.HUB) }
 
@@ -49,7 +50,8 @@ fun DataManagementScreen(
         )
         DataSubPage.BACKUP_RESTORE -> BackupRestoreScreen(
             viewModel = viewModel,
-            onBack = { subPage = DataSubPage.HUB }
+            onBack = { subPage = DataSubPage.HUB },
+            onConfigImported = onConfigImported
         )
         DataSubPage.HUB -> DataHub(
             viewModel = viewModel,

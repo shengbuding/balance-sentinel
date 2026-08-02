@@ -470,7 +470,7 @@ class DataManagementViewModelTest {
 
         assertEquals(listOf(local), manager.getAccounts())
         assertTrue(viewModel.requestApplyImport())
-        assertEquals(listOf(local, created), manager.getAccounts())
+        assertEquals(listOf(local, created.copy(usageScriptEnabled = false)), manager.getAccounts())
         assertEquals(77, prefs.refreshIntervalSeconds)
         assertNull(viewModel.uiState.value.pendingImportPlan)
         accountStorage.edit().clear().commit()
@@ -501,7 +501,7 @@ class DataManagementViewModelTest {
         assertEquals(listOf(local), manager.getAccounts())
 
         assertTrue(viewModel.confirmReplaceImport())
-        assertEquals(listOf(replacement), manager.getAccounts())
+        assertEquals(listOf(replacement.copy(usageScriptEnabled = false)), manager.getAccounts())
         assertFalse(viewModel.uiState.value.replaceConfirmationRequired)
         accountStorage.edit().clear().commit()
     }

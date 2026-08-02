@@ -23,7 +23,6 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.ApiKeyManager
-import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
@@ -118,6 +117,19 @@ class HomeViewModel @JvmOverloads constructor(
     /** 从 Widget 缓存恢复首页余额数据，避免显示误导的"查询失败" */
     fun loadCachedBalances() {
         try {
+            loadAccounts()
+            _uiState.value = _uiState.value.copy(
+                accountBalances = emptyMap(),
+                lastRefreshTime = 0L,
+                refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
+                alertEnabled = widgetPrefs.alertEnabled,
+                alertThreshold = widgetPrefs.alertThreshold,
+                changeAlertEnabled = widgetPrefs.changeAlertEnabled,
+                changeAlertThreshold = widgetPrefs.changeAlertThreshold,
+                changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
+                snoozeInfo = widgetPrefs.getSnoozeInfo(),
+                snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes
+            )
             val accounts = _uiState.value.accounts
             if (accounts.isEmpty()) {
                 Logger.i("HomeViewModel", "loadCachedBalances: no accounts")
@@ -397,30 +409,6 @@ class HomeViewModel @JvmOverloads constructor(
     /** 获取配置 JSON 字符串（供导出使用） */
     fun getConfigJson(): String {
         return ConfigManager.buildConfig(getApplication(), apiKeyManager, widgetPrefs)
-    }
-
-    /** 应用导入的配置并刷新全部 UI 状态 */
-    fun applyImportedConfig(config: AppConfig) {
-        val skipped = ConfigManager.applyConfig(config, apiKeyManager, widgetPrefs)
-        loadAccounts()
-        val importMsg = if (skipped > 0) {
-            getApplication<android.app.Application>().getString(R.string.data_config_import_skipped, skipped)
-        } else null
-        _uiState.value = _uiState.value.copy(
-            accounts = apiKeyManager.getAccounts(),
-            accountBalances = emptyMap(),
-            errorMessage = importMsg ?: _uiState.value.errorMessage,
-            refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
-            alertEnabled = widgetPrefs.alertEnabled,
-            alertThreshold = widgetPrefs.alertThreshold,
-            changeAlertEnabled = widgetPrefs.changeAlertEnabled,
-            changeAlertThreshold = widgetPrefs.changeAlertThreshold,
-            changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-            snoozeInfo = widgetPrefs.getSnoozeInfo(),
-            snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes
-        )
-        // 导入后立即刷新余额
-        if (apiKeyManager.hasAccounts()) refreshBalance()
     }
 
     // ── 刷新单个账户 ──

@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.BackupImportPlanner
+import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
@@ -89,6 +90,7 @@ class DataManagementViewModel @JvmOverloads constructor(
 
     private val _uiState = MutableStateFlow(DataManagementUiState())
     val uiState: StateFlow<DataManagementUiState> = _uiState.asStateFlow()
+    private var pendingImportConfig: AppConfig? = null
 
     init {
         loadStats()
@@ -107,7 +109,7 @@ class DataManagementViewModel @JvmOverloads constructor(
         val state = RefreshScheduler.getState(ctx)
         val crashes = CrashLogger.getCrashes(ctx)
 
-        _uiState.value = DataManagementUiState(
+        _uiState.value = _uiState.value.copy(
             rawRecordCount = raw.size,
             rawRecordDistinctDates = RawRecordStore.getDistinctDates(ctx).size,
             dailySummaryCount = summaries.size,
@@ -139,21 +141,145 @@ class DataManagementViewModel @JvmOverloads constructor(
         _uiState.value = _uiState.value.copy(resultMessage = null)
     }
 
-    suspend fun previewConfiguration(uri: Uri): Boolean = false
+    suspend fun previewConfiguration(uri: Uri): Boolean {
+        val config = withContext(Dispatchers.IO) {
+            ConfigManager.importFromUri(getApplication(), uri)
+        }
+        if (config == null) {
+            pendingImportConfig = null
+            _uiState.value = _uiState.value.copy(
+                pendingImportPlan = null,
+                replaceConfirmationRequired = false,
+                importError = true
+            )
+            return false
+        }
+        return previewConfiguration(config)
+    }
 
-    suspend fun previewConfiguration(config: AppConfig): Boolean = false
+    suspend fun previewConfiguration(config: AppConfig): Boolean {
+        val plan = importPlanner.plan(config, apiKeyManager.getAccounts(), ImportMode.MERGE)
+        pendingImportConfig = config
+        _uiState.value = _uiState.value.copy(
+            pendingImportPlan = plan,
+            importMode = ImportMode.MERGE,
+            enabledImportedScripts = emptySet(),
+            authorizedImportOrigins = emptyMap(),
+            replaceConfirmationRequired = false,
+            importError = false
+        )
+        return true
+    }
 
-    suspend fun selectImportMode(mode: ImportMode) = Unit
+    suspend fun selectImportMode(mode: ImportMode) {
+        val config = pendingImportConfig ?: return
+        val basePlan = importPlanner.plan(config, apiKeyManager.getAccounts(), mode)
+        val plan = importPlanner.withScriptAuthorizations(
+            basePlan,
+            _uiState.value.enabledImportedScripts,
+            _uiState.value.authorizedImportOrigins
+        )
+        _uiState.value = _uiState.value.copy(
+            pendingImportPlan = plan,
+            importMode = mode,
+            replaceConfirmationRequired = false,
+            importError = false
+        )
+    }
 
-    fun setImportedScriptEnabled(accountId: String, enabled: Boolean) = Unit
+    fun setImportedScriptEnabled(accountId: String, enabled: Boolean) {
+        val plan = _uiState.value.pendingImportPlan ?: return
+        val enabledAccounts = _uiState.value.enabledImportedScripts.toMutableSet().apply {
+            if (enabled) add(accountId) else remove(accountId)
+        }
+        updateScriptAuthorizations(plan, enabledAccounts, _uiState.value.authorizedImportOrigins)
+    }
 
-    fun setImportOriginAuthorized(accountId: String, origin: WebOrigin, authorized: Boolean) = Unit
+    fun setImportOriginAuthorized(accountId: String, origin: WebOrigin, authorized: Boolean) {
+        val plan = _uiState.value.pendingImportPlan ?: return
+        val origins = _uiState.value.authorizedImportOrigins
+            .mapValues { it.value.toMutableSet() }
+            .toMutableMap()
+        val accountOrigins = origins.getOrPut(accountId) { mutableSetOf() }
+        if (authorized) accountOrigins.add(origin) else accountOrigins.remove(origin)
+        if (accountOrigins.isEmpty()) origins.remove(accountId)
+        updateScriptAuthorizations(
+            plan,
+            _uiState.value.enabledImportedScripts,
+            origins.mapValues { it.value.toSet() }
+        )
+    }
 
-    fun requestApplyImport(): Boolean = false
+    fun requestApplyImport(): Boolean {
+        val plan = _uiState.value.pendingImportPlan ?: return false
+        if (!plan.canApply) return false
+        if (plan.mode == ImportMode.REPLACE_ALL) {
+            _uiState.value = _uiState.value.copy(replaceConfirmationRequired = true)
+            return false
+        }
+        return applyPendingImport(plan, confirmedFullReplace = false)
+    }
 
-    fun confirmReplaceImport(): Boolean = false
+    fun confirmReplaceImport(): Boolean {
+        val plan = _uiState.value.pendingImportPlan ?: return false
+        if (!_uiState.value.replaceConfirmationRequired || plan.mode != ImportMode.REPLACE_ALL) {
+            return false
+        }
+        return applyPendingImport(plan, confirmedFullReplace = true)
+    }
 
-    fun dismissImportPreview() = Unit
+    fun dismissImportPreview() {
+        pendingImportConfig = null
+        _uiState.value = _uiState.value.copy(
+            pendingImportPlan = null,
+            importMode = ImportMode.MERGE,
+            enabledImportedScripts = emptySet(),
+            authorizedImportOrigins = emptyMap(),
+            replaceConfirmationRequired = false,
+            importError = false
+        )
+    }
+
+    private fun updateScriptAuthorizations(
+        plan: BackupImportPlan,
+        enabledAccounts: Set<String>,
+        origins: Map<String, Set<WebOrigin>>
+    ) {
+        _uiState.value = _uiState.value.copy(
+            pendingImportPlan = importPlanner.withScriptAuthorizations(plan, enabledAccounts, origins),
+            enabledImportedScripts = enabledAccounts,
+            authorizedImportOrigins = origins,
+            replaceConfirmationRequired = false
+        )
+    }
+
+    private fun applyPendingImport(
+        plan: BackupImportPlan,
+        confirmedFullReplace: Boolean
+    ): Boolean = try {
+        importPlanner.apply(plan, confirmedFullReplace)
+        pendingImportConfig = null
+        _uiState.value = _uiState.value.copy(
+            pendingImportPlan = null,
+            importMode = ImportMode.MERGE,
+            enabledImportedScripts = emptySet(),
+            authorizedImportOrigins = emptyMap(),
+            replaceConfirmationRequired = false,
+            importError = false,
+            resultMessage = getApplication<Application>().getString(
+                R.string.data_config_import_success,
+                plan.finalAccounts.size
+            )
+        )
+        loadStats()
+        true
+    } catch (_: Exception) {
+        _uiState.value = _uiState.value.copy(
+            replaceConfirmationRequired = false,
+            importError = true
+        )
+        false
+    }
 
     // ── 执行 ──
 

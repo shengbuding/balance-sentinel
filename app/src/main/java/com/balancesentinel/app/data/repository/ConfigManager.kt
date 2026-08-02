@@ -7,6 +7,7 @@ import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,7 +22,7 @@ import java.util.Locale
 
 @Serializable
 data class AppConfig(
-    val version: Int = 1,
+    val version: Int = 2,
     val credentialsIncluded: Boolean = false,
     val exportedAt: String,
     val appVersion: String,
@@ -51,6 +52,7 @@ object ConfigManager {
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
     /**
@@ -62,14 +64,15 @@ object ConfigManager {
         return "${key.take(4)}****${key.takeLast(4)}"
     }
 
-    /** 判断是否已脱敏（导入时跳过此类账户） */
+    /** Detects the redaction markers used by schema-v1 credential-free backups. */
     fun isRedactedApiKey(key: String): Boolean {
         return key.contains("****") || key == "[REDACTED]"
     }
 
     /**
      * 将当前配置序列化为 JSON 字符串。
-     * @param includeTokens true 时保留完整 API Key（有泄露风险），false 时自动脱敏。
+     * @param includeTokens true keeps credentials and scripts; false removes credentials,
+     * scripts, enablement, and grants.
      */
     fun buildConfig(
         context: Context,
@@ -79,7 +82,13 @@ object ConfigManager {
     ): String {
         val accounts = apiKeyManager.getAccounts().map { account ->
             if (includeTokens) account
-            else account.copy(apiKey = redactApiKey(account.apiKey))
+            else account.copy(
+                apiKey = "",
+                extraCredentials = account.extraCredentials.mapValues { "" },
+                usageScript = null,
+                usageScriptEnabled = false,
+                authorizedScriptOrigins = emptySet()
+            )
         }
         val settings = ConfigSettings(
             refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
@@ -101,7 +110,8 @@ object ConfigManager {
         }
 
         val config = AppConfig(
-            version = 1,
+            version = 2,
+            credentialsIncluded = includeTokens,
             exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
             appVersion = appVersion,
             accounts = accounts,
@@ -141,32 +151,14 @@ object ConfigManager {
             val content = context.contentResolver.openInputStream(uri)?.use {
                 it.readBytes().toString(Charsets.UTF_8)
             } ?: return null
-            json.decodeFromString<AppConfig>(content)
+            decodeConfig(content)
         } catch (e: Exception) {
             Logger.w(TAG, "Failed to parse imported config: ${e.message}")
             null
         }
     }
 
-    /**
-     * 将导入的配置应用到 App：覆盖所有账户和设置。
-     * @return 跳过的账户数（API Key 已脱敏无法恢复的账户）。
-     */
-    fun applyConfig(
-        config: AppConfig,
-        apiKeyManager: ApiKeyManager,
-        widgetPrefs: WidgetPrefs
-    ): Int {
-        // 过滤已脱敏的账户（导出的 Key 带 **** 无法使用）
-        val validAccounts = config.accounts.filter { !isRedactedApiKey(it.apiKey) }
-        val skipped = config.accounts.size - validAccounts.size
-
-        // C5+H10 修复：先构建完整列表，再一次性原子写入
-        // 保留所有字段（providerType, extraSettings, usageScript, extraCredentials）
-        apiKeyManager.replaceAll(validAccounts)
-
-        // 应用全局设置
-        val s = config.settings
+    internal fun applySettings(s: ConfigSettings, widgetPrefs: WidgetPrefs) {
         widgetPrefs.refreshIntervalSeconds = s.refreshIntervalSeconds
         widgetPrefs.alertEnabled = s.alertEnabled
         widgetPrefs.alertThreshold = s.alertThreshold
@@ -178,16 +170,11 @@ object ConfigManager {
         widgetPrefs.applyPerCurrencyAlertSettings(s.perCurrencyAlertSettings)
         widgetPrefs.showTotalBalanceInNotification = s.showTotalBalance
         widgetPrefs.applyNotificationWalletSelections(s.notificationSelectedWallets)
-
-        return skipped
     }
 
-    /**
-     * 便捷方法：直接从 Context 创建依赖并应用配置。
-     * 用于没有 ViewModel 的独立页面。
-     * @return 跳过的账户数。
-     */
-    fun applyConfigDirectly(context: Context, config: AppConfig): Int {
-        return applyConfig(config, ApiKeyManager(context), WidgetPrefs(context))
+    private fun decodeConfig(content: String): AppConfig {
+        val root = json.parseToJsonElement(content).jsonObject
+        val decoded = json.decodeFromString<AppConfig>(content)
+        return if ("version" !in root) decoded.copy(version = 1) else decoded
     }
 }

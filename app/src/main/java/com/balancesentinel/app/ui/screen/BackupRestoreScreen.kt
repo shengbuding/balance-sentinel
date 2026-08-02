@@ -16,17 +16,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.ConfigManager
+import com.balancesentinel.app.data.repository.BackupImportPlan
+import com.balancesentinel.app.data.repository.ImportMode
+import com.balancesentinel.app.data.api.balance.WebOrigin
 import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.data.repository.LogExporter
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
+import com.balancesentinel.app.ui.viewmodel.DataManagementUiState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,11 +45,14 @@ import kotlinx.coroutines.withContext
 @Composable
 fun BackupRestoreScreen(
     viewModel: DataManagementViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onConfigImported: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var isImporting by remember { mutableStateOf(false) }
+    var isConfigImporting by remember { mutableStateOf(false) }
 
     // 配置导出选项
     var showConfigExportDialog by remember { mutableStateOf(false) }
@@ -124,17 +133,17 @@ fun BackupRestoreScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val config = ConfigManager.importFromUri(context, uri)
-            if (config != null) {
-                val skipped = ConfigManager.applyConfigDirectly(context, config)
-                if (skipped > 0) {
-                    Toast.makeText(context, context.getString(R.string.data_config_import_skipped, skipped), Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, context.getString(R.string.data_config_import_success, config.accounts.size), Toast.LENGTH_SHORT).show()
+            isConfigImporting = true
+            scope.launch {
+                val parsed = viewModel.previewConfiguration(uri)
+                isConfigImporting = false
+                if (!parsed) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.data_config_import_fail),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
-                viewModel.loadStats()
-            } else {
-                Toast.makeText(context, context.getString(R.string.data_config_import_fail), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -214,8 +223,13 @@ fun BackupRestoreScreen(
                 icon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
                 title = stringResource(R.string.data_import_config_title),
                 description = stringResource(R.string.data_import_config_desc),
-                buttonText = stringResource(R.string.data_import_config_btn),
-                onAction = { importConfigLauncher.launch(arrayOf("application/json", "*/*")) }
+                buttonText = if (isConfigImporting) {
+                    stringResource(R.string.data_importing)
+                } else {
+                    stringResource(R.string.data_import_config_btn)
+                },
+                onAction = { importConfigLauncher.launch(arrayOf("application/json", "*/*")) },
+                loading = isConfigImporting
             )
 
             // ── 调试 ──
@@ -291,7 +305,232 @@ fun BackupRestoreScreen(
                 }
             )
         }
+
+        uiState.pendingImportPlan
+            ?.takeUnless { uiState.replaceConfirmationRequired }
+            ?.let { plan ->
+                ConfigImportPreviewDialog(
+                    plan = plan,
+                    uiState = uiState,
+                    onModeSelected = { mode ->
+                        scope.launch { viewModel.selectImportMode(mode) }
+                    },
+                    onScriptEnabled = viewModel::setImportedScriptEnabled,
+                    onOriginAuthorized = viewModel::setImportOriginAuthorized,
+                    onDismiss = viewModel::dismissImportPreview,
+                    onApply = {
+                        val accountCount = plan.finalAccounts.size
+                        if (viewModel.requestApplyImport()) {
+                            onConfigImported()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.data_config_import_success, accountCount),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                )
+            }
+
+        if (uiState.replaceConfirmationRequired) {
+            val deletedCount = uiState.pendingImportPlan?.deletedCount ?: 0
+            AlertDialog(
+                modifier = Modifier.testTag("replace_confirm_dialog"),
+                onDismissRequest = {
+                    scope.launch { viewModel.selectImportMode(ImportMode.REPLACE_ALL) }
+                },
+                title = { Text(stringResource(R.string.data_config_import_replace_title)) },
+                text = {
+                    Text(stringResource(R.string.data_config_import_replace_message, deletedCount))
+                },
+                confirmButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("replace_confirm_apply"),
+                        onClick = {
+                            val accountCount = uiState.pendingImportPlan?.finalAccounts?.size ?: 0
+                            if (viewModel.confirmReplaceImport()) {
+                                onConfigImported()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.data_config_import_success, accountCount),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    ) {
+                        Text(
+                            stringResource(R.string.data_config_import_replace_confirm),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        scope.launch { viewModel.selectImportMode(ImportMode.REPLACE_ALL) }
+                    }) {
+                        Text(stringResource(R.string.data_cancel))
+                    }
+                }
+            )
+        }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConfigImportPreviewDialog(
+    plan: BackupImportPlan,
+    uiState: DataManagementUiState,
+    onModeSelected: (ImportMode) -> Unit,
+    onScriptEnabled: (String, Boolean) -> Unit,
+    onOriginAuthorized: (String, WebOrigin, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onApply: () -> Unit
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("config_import_preview"),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.data_config_import_preview_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    ImportMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            modifier = Modifier.testTag(
+                                if (mode == ImportMode.MERGE) "import_mode_merge" else "import_mode_replace"
+                            ),
+                            selected = plan.mode == mode,
+                            onClick = { onModeSelected(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index, ImportMode.entries.size),
+                            label = {
+                                Text(
+                                    stringResource(
+                                        if (mode == ImportMode.MERGE) {
+                                            R.string.data_config_import_mode_merge
+                                        } else {
+                                            R.string.data_config_import_mode_replace
+                                        }
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+
+                ImportStat(R.string.data_config_import_stat_matched, plan.matchedUpdatedCount)
+                ImportStat(R.string.data_config_import_stat_retained, plan.retainedCredentialCount)
+                ImportStat(R.string.data_config_import_stat_created, plan.createdCount)
+                ImportStat(R.string.data_config_import_stat_skipped, plan.skippedCount)
+                ImportStat(R.string.data_config_import_stat_conflicts, plan.conflictCount)
+                ImportStat(R.string.data_config_import_stat_deleted, plan.deletedCount)
+
+                if (plan.blockingReasons.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        stringResource(R.string.data_config_import_blocked_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    plan.blockingReasons.forEach { reason ->
+                        Text(
+                            stringResource(blockingReasonResource(reason)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                if (plan.scriptAuthorizations.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        stringResource(R.string.data_config_import_scripts_title),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    plan.scriptAuthorizations.forEach { authorization ->
+                        val accountLabel = plan.finalAccounts
+                            .firstOrNull { it.id == authorization.accountId }
+                            ?.label
+                            .orEmpty()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = authorization.accountId in uiState.enabledImportedScripts,
+                                onCheckedChange = { onScriptEnabled(authorization.accountId, it) },
+                                enabled = authorization.staticallyDeterminable
+                            )
+                            Text(
+                                stringResource(R.string.data_config_import_script_enable, accountLabel),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        if (!authorization.staticallyDeterminable) {
+                            Text(
+                                stringResource(R.string.data_config_import_script_not_static),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        authorization.requiredExtraOrigins
+                            .sortedWith(compareBy(WebOrigin::scheme, WebOrigin::host, WebOrigin::port))
+                            .forEach { origin ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = origin in uiState.authorizedImportOrigins[
+                                            authorization.accountId
+                                        ].orEmpty(),
+                                        onCheckedChange = {
+                                            onOriginAuthorized(authorization.accountId, origin, it)
+                                        },
+                                        enabled = authorization.staticallyDeterminable
+                                    )
+                                    Text(canonicalOrigin(origin), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                modifier = Modifier.testTag("import_apply"),
+                onClick = onApply,
+                enabled = plan.canApply
+            ) {
+                Text(stringResource(R.string.data_config_import_apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.data_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun ImportStat(labelResource: Int, value: Int) {
+    Text(
+        stringResource(labelResource, value),
+        style = MaterialTheme.typography.bodySmall
+    )
+}
+
+private fun blockingReasonResource(reason: String): Int = when (reason) {
+    "credentials_required" -> R.string.data_config_import_block_credentials
+    "conflicts_present" -> R.string.data_config_import_block_conflicts
+    "incomplete_accounts" -> R.string.data_config_import_block_incomplete
+    "script_inspection_required" -> R.string.data_config_import_block_script
+    else -> R.string.data_config_import_block_unknown
+}
+
+private fun canonicalOrigin(origin: WebOrigin): String {
+    val host = if (':' in origin.host) "[${origin.host}]" else origin.host
+    val defaultPort = origin.scheme == "https" && origin.port == 443
+    return "${origin.scheme}://$host${if (defaultPort) "" else ":${origin.port}"}"
 }
 
 @Composable

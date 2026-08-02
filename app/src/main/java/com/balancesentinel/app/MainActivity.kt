@@ -293,7 +293,8 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DATA_MANAGEMENT -> DataManagementScreen(
                                 viewModel = dataManagementViewModel,
-                                onBack = { currentScreen = Screen.SETTINGS }
+                                onBack = { currentScreen = Screen.SETTINGS },
+                                onConfigImported = viewModel::loadCachedBalances
                             )
                             Screen.ALERT_SETTINGS -> AlertSettingsScreen(
                                 onBack = { currentScreen = Screen.SETTINGS }
