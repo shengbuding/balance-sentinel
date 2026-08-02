@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.console
 
+import android.content.Context
 import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
 import io.mockk.mockk
@@ -13,6 +14,15 @@ class ConsoleStoreTest {
         context = mockk(relaxed = true),
         injectedPrefs = inMemorySharedPreferences()
     )
+
+    @Test
+    fun `public construction cannot inject unencrypted preferences`() {
+        val publicConstructors = ConsoleStore::class.java.constructors
+            .filterNot { it.isSynthetic }
+            .map { constructor -> constructor.parameterTypes.toList() }
+
+        assertEquals(listOf(listOf(Context::class.java)), publicConstructors)
+    }
 
     @Test
     fun `expired session is deleted on valid read`() {

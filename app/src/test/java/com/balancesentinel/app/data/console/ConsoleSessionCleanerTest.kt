@@ -66,6 +66,22 @@ class ConsoleSessionCleanerTest {
         assertTrue(completed)
     }
 
+    @Test
+    fun `logout completes runtime cleanup for invalid legacy platform origins`() {
+        store.saveSession(INVALID_LEGACY_PLATFORM.id, session())
+        var completed = false
+
+        val result = runCatching {
+            cleaner.logout(INVALID_LEGACY_PLATFORM) { completed = true }
+        }
+
+        assertNull(store.getSession(INVALID_LEGACY_PLATFORM.id))
+        assertEquals(1, cookies.removeAllCalls)
+        assertEquals(1, cookies.flushCalls)
+        assertTrue(completed)
+        assertTrue(result.isSuccess)
+    }
+
     private fun session() = ConsoleSession(
         cookies = mapOf("session" to "value"),
         loginTime = 1L,
@@ -110,6 +126,13 @@ class ConsoleSessionCleanerTest {
             loginUrl = "https://login.example.com/sign-in",
             dashboardUrl = "https://dashboard.example.com/overview",
             successUrlPatterns = listOf("/overview")
+        )
+        val INVALID_LEGACY_PLATFORM = ConsolePlatform(
+            id = "legacy",
+            name = "Legacy",
+            loginUrl = "not a url",
+            dashboardUrl = "http://legacy.example.com/dashboard",
+            successUrlPatterns = listOf("/dashboard")
         )
     }
 }
