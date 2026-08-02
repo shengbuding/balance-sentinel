@@ -42,6 +42,19 @@ class UsageScriptExecutorTest {
         assertFalse(inspection.staticallyDeterminable)
     }
 
+    // Mutation caught: treating an unrelated literal url property as the request URL declaration.
+    @Test
+    fun `unrelated literal url does not hide a dynamic request url`() = runBlocking {
+        val script = UsageScript(
+            """(function(){var metadata={url:"https://decoy.example.com"};var p="/balance";return {request:{url:"https://api.example.com"+p},extractor:function(r){return r;}};})()"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertNotNull(inspection.request)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
     // Mutation caught: allowing configuration evaluation to outlive its complete phase timeout.
     @Test(timeout = 3_000)
     fun `inspection maps configuration deadline to script timeout`() = runBlocking {
