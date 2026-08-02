@@ -19,7 +19,23 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.mozilla.javascript.Context
+import org.mozilla.javascript.Parser
 import org.mozilla.javascript.ScriptableObject
+import org.mozilla.javascript.Token
+import org.mozilla.javascript.ast.Assignment
+import org.mozilla.javascript.ast.AstNode
+import org.mozilla.javascript.ast.AstRoot
+import org.mozilla.javascript.ast.ElementGet
+import org.mozilla.javascript.ast.ExpressionStatement
+import org.mozilla.javascript.ast.FunctionNode
+import org.mozilla.javascript.ast.Name
+import org.mozilla.javascript.ast.NodeVisitor
+import org.mozilla.javascript.ast.ObjectLiteral
+import org.mozilla.javascript.ast.ObjectProperty
+import org.mozilla.javascript.ast.ParenthesizedExpression
+import org.mozilla.javascript.ast.PropertyGet
+import org.mozilla.javascript.ast.StringLiteral
+import org.mozilla.javascript.ast.UnaryExpression
 import java.net.InetAddress
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
@@ -449,7 +465,77 @@ object UsageScriptExecutor {
 
     private fun preprocessScript(source: String): String = source
 
-    private fun hasLiteralRequestUrl(source: String): Boolean = STATIC_URL_PATTERN.containsMatchIn(source)
+    private fun hasLiteralRequestUrl(source: String): Boolean {
+        val root = try {
+            Parser().parse(source, SCRIPT_SOURCE_NAME, 1)
+        } catch (_: Exception) {
+            return false
+        }
+        val statement = root.singleStatement() as? ExpressionStatement ?: return false
+        val config = statement.expression.withoutParentheses() as? ObjectLiteral ?: return false
+        if (config.elements.any { it.staticName() == null }) return false
+
+        val requestProperties = config.elements.filter { it.staticName() == "request" }
+        if (requestProperties.size != 1 || requestProperties.single().isMethod) return false
+        val request = requestProperties.single().right.withoutParentheses() as? ObjectLiteral
+            ?: return false
+        if (request.elements.any { it.staticName() == null || it.isMethod }) return false
+        if (request.elements.any { it.staticName() == "toJSON" }) return false
+
+        val urlProperties = request.elements.filter { it.staticName() == "url" }
+        if (urlProperties.size != 1) return false
+        val url = urlProperties.single().right as? StringLiteral ?: return false
+        if (url.value.hasOriginAffectingPlaceholder()) return false
+
+        val extractorProperties = config.elements.filter { it.staticName() == "extractor" }
+        if (extractorProperties.size != 1 || extractorProperties.single().isMethod) return false
+        if (extractorProperties.single().right.withoutParentheses() !is FunctionNode) return false
+        return !root.hasUrlMutation()
+    }
+
+    private fun AstRoot.singleStatement(): AstNode? =
+        iterator().asSequence().filterIsInstance<AstNode>().singleOrNull()
+
+    private tailrec fun AstNode.withoutParentheses(): AstNode =
+        if (this is ParenthesizedExpression) expression.withoutParentheses() else this
+
+    private fun ObjectProperty.staticName(): String? = when (val key = left.withoutParentheses()) {
+        is Name -> key.identifier
+        is StringLiteral -> key.value
+        else -> null
+    }
+
+    private fun AstRoot.hasUrlMutation(): Boolean {
+        var mutationFound = false
+        visit(NodeVisitor { node ->
+            mutationFound = mutationFound || when (node) {
+                is Assignment -> node.left.referencesUrlProperty()
+                is UnaryExpression -> node.operator in URL_MUTATION_UNARY_OPERATORS &&
+                    node.operand.referencesUrlProperty()
+                else -> false
+            }
+            !mutationFound
+        })
+        return mutationFound
+    }
+
+    private fun AstNode.referencesUrlProperty(): Boolean = when (val node = withoutParentheses()) {
+        is PropertyGet -> node.property.identifier == "url"
+        is ElementGet -> (node.element.withoutParentheses() as? StringLiteral)?.value == "url" ||
+            node.element.withoutParentheses() !is StringLiteral
+        else -> false
+    }
+
+    private fun String.hasOriginAffectingPlaceholder(): Boolean {
+        val authorityStart = indexOf("://").takeIf { it >= 0 }?.plus(3) ?: 0
+        val authorityEnd = listOf('/', '?', '#')
+            .map { delimiter -> indexOf(delimiter, authorityStart) }
+            .filter { it >= 0 }
+            .minOrNull()
+            ?: length
+        val origin = substring(0, authorityEnd)
+        return URL_PLACEHOLDERS.any(origin::contains)
+    }
 
     private fun inspectionFailure(failure: RefreshFailure) = ScriptInspection(
         request = null,
@@ -481,9 +567,12 @@ object UsageScriptExecutor {
     private const val MAX_TIMEOUT_MILLIS = Int.MAX_VALUE.toLong()
     private const val MAX_REDIRECTS = 5
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
-    private val STATIC_URL_PATTERN = Regex(
-        """(?s)^\s*\(\s*\{\s*(?:["']?request["']?)\s*:\s*\{\s*""" +
-            """(?:["']?url["']?)\s*:\s*["'][^"']+["']\s*(?=[,}])"""
+    private val URL_MUTATION_UNARY_OPERATORS = setOf(Token.INC, Token.DEC, Token.DELPROP)
+    private val URL_PLACEHOLDERS = listOf(
+        "{{apiKey}}",
+        "{{baseUrl}}",
+        "{{accessToken}}",
+        "{{userId}}"
     )
     private val DANGEROUS_GLOBALS = listOf(
         "Packages",

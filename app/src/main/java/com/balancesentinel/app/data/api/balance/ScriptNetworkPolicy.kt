@@ -95,6 +95,7 @@ class ScriptNetworkPolicy(
 
     private fun isCanonicalDomainName(host: String): Boolean {
         if (host.isEmpty() || host.endsWith('.') || host.contains(':')) return false
+        if (host == "localhost") return false
         if (host.all { it.isDigit() || it == '.' }) return false
         if (host.startsWith("0x", ignoreCase = true)) return false
 
@@ -140,14 +141,30 @@ private fun isGlobalIpv4(bytes: ByteArray): Boolean {
 
 private fun isGlobalIpv6(bytes: ByteArray): Boolean {
     val first = bytes[0].toInt() and 0xff
-    val second = bytes[1].toInt() and 0xff
-    val globalUnicastPrefix = first in 0x20..0x3f
-    val uniqueLocal = first and 0xfe == 0xfc
-    val linkLocal = first == 0xfe && second and 0xc0 == 0x80
-    val documentation = first == 0x20 && second == 0x01 &&
-        (bytes[2].toInt() and 0xff) == 0x0d &&
-        (bytes[3].toInt() and 0xff) == 0xb8
-    val teredo = first == 0x20 && second == 0x01 &&
-        bytes[2].toInt() == 0 && bytes[3].toInt() == 0
-    return globalUnicastPrefix && !uniqueLocal && !linkLocal && !documentation && !teredo
+    return first in 0x20..0x3f && IPV6_SPECIAL_PURPOSE_PREFIXES.none { bytes.matches(it) }
 }
+
+private fun ByteArray.matches(prefix: Ipv6Prefix): Boolean {
+    val completeBytes = prefix.bitCount / 8
+    for (index in 0 until completeBytes) {
+        if (this[index] != prefix.bytes[index]) return false
+    }
+    val remainingBits = prefix.bitCount % 8
+    if (remainingBits == 0) return true
+    val mask = (0xff shl (8 - remainingBits)) and 0xff
+    return (this[completeBytes].toInt() and mask) ==
+        (prefix.bytes[completeBytes].toInt() and mask)
+}
+
+private data class Ipv6Prefix(
+    val bytes: ByteArray,
+    val bitCount: Int
+)
+
+private val IPV6_SPECIAL_PURPOSE_PREFIXES = listOf(
+    Ipv6Prefix(byteArrayOf(0x20, 0x01, 0x00), 23),
+    Ipv6Prefix(byteArrayOf(0x20, 0x01, 0x0d, 0xb8.toByte()), 32),
+    Ipv6Prefix(byteArrayOf(0x20, 0x02), 16),
+    Ipv6Prefix(byteArrayOf(0x26, 0x20, 0x00, 0x4f, 0x80.toByte(), 0x00), 48),
+    Ipv6Prefix(byteArrayOf(0x3f, 0xff.toByte(), 0x00), 20)
+)
