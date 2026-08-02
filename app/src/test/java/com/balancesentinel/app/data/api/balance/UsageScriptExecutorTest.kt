@@ -98,7 +98,7 @@ class UsageScriptExecutorTest {
     @Test
     fun `credential placeholder in url authority cannot look static`() = runBlocking {
         val script = UsageScript(
-            """({request:{url:"https://{{apiKey}}.example.com/balance"},extractor:function(r){return r;}})"""
+            """({request:{url:"https://{{apiKey}}@api.example.com/balance"},extractor:function(r){return r;}})"""
         )
 
         val inspection = UsageScriptExecutor.inspect(script, account())
