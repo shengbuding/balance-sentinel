@@ -351,12 +351,10 @@ class MainActivity : ComponentActivity() {
                                             consoleViewModel.onLoginSuccess(cookies, localStorage, email)
                                         },
                                         onLogout = {
-                                            consoleViewModel.logout()
-                                            // 延迟导航，等待logout完成
-                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                            consoleViewModel.logout {
                                                 consoleRefreshTrigger++
                                                 currentScreen = Screen.CONSOLE_SELECT
-                                            }, 500)
+                                            }
                                         },
                                         onBack = {
                                             currentScreen = Screen.CONSOLE_SELECT

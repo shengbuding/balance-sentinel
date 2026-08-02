@@ -1,6 +1,9 @@
 package com.balancesentinel.app.ui.console
 
+import com.balancesentinel.app.data.api.balance.WebOrigin
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * 控制台平台配置
@@ -20,17 +23,42 @@ data class ConsolePlatform(
      * 判断 URL 是否表示登录成功
      */
     fun isLoginSuccess(url: String): Boolean {
-        // 如果 URL 包含登录页面模式，返回 false
-        if (loginPagePatterns.any { url.contains(it, ignoreCase = true) }) return false
+        val current = url.toHttpUrlOrNull() ?: return false
+        val dashboard = dashboardUrl.toHttpUrlOrNull() ?: return false
+        if (WebOrigin.from(current) != WebOrigin.from(dashboard)) return false
+        val location = current.pathAndFragment()
 
-        // 如果 URL 包含 successUrlPatterns 中的任何模式，返回 true
-        if (successUrlPatterns.any { url.contains(it, ignoreCase = true) }) return true
+        if (loginPagePatterns.any { location.matchesLocationPattern(it) }) return false
+        if (successUrlPatterns.any { location.matchesLocationPattern(it) }) return true
 
-        // 通用检测：如果不包含登录页面模式，且包含常见仪表盘模式，认为登录成功
         val dashboardPatterns = listOf("/dashboard", "/console", "/overview", "/home", "/serverless", "/models")
-        if (dashboardPatterns.any { url.contains(it, ignoreCase = true) }) return true
+        return dashboardPatterns.any { location.matchesLocationPattern(it) }
+    }
 
-        return false
+    fun isLoginPage(url: String): Boolean {
+        val current = url.toHttpUrlOrNull() ?: return false
+        val configuredOrigins = listOf(loginUrl, dashboardUrl)
+            .mapNotNull { it.toHttpUrlOrNull() }
+            .map(WebOrigin::from)
+            .toSet()
+        if (WebOrigin.from(current) !in configuredOrigins) return false
+        val location = current.pathAndFragment()
+        val commonLoginPatterns = listOf("/sign_in", "/login", "/register", "/oauth", "/signin", "/auth")
+        return (loginPagePatterns + commonLoginPatterns).any { location.matchesLocationPattern(it) }
+    }
+
+    private fun HttpUrl.pathAndFragment(): String = buildString {
+        append(encodedPath)
+        encodedFragment?.let {
+            append('#')
+            append(it)
+        }
+    }
+
+    private fun String.matchesLocationPattern(pattern: String): Boolean {
+        val normalizedPattern = pattern.toHttpUrlOrNull()?.pathAndFragment()
+            ?: pattern.substring(pattern.indexOf('/').takeIf { it >= 0 } ?: 0)
+        return normalizedPattern.isNotEmpty() && contains(normalizedPattern, ignoreCase = true)
     }
 }
 

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.balancesentinel.app.data.console.ConsoleOriginPolicy
 
 /**
  * 添加平台页面 - 选择预设平台或添加自定义平台
@@ -463,7 +464,7 @@ private fun CustomPlatformForm(
 }
 
 private fun isValidUrl(url: String): Boolean {
-    return url.isNotBlank() && (url.startsWith("http://") || url.startsWith("https://"))
+    return ConsoleOriginPolicy.isValidHttpsUrl(url.trim())
 }
 
 private fun isValidInput(

@@ -1,5 +1,8 @@
 package com.balancesentinel.app.ui.console
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.*
@@ -25,9 +28,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.balancesentinel.app.BuildConfig
+import com.balancesentinel.app.data.console.ConsoleCookieInjector
+import com.balancesentinel.app.data.console.ConsoleCookieSink
 import com.balancesentinel.app.data.console.DebugLogger
+import com.balancesentinel.app.data.console.ConsoleExternalNavigator
+import com.balancesentinel.app.data.console.ConsoleNavigationHandler
+import com.balancesentinel.app.data.console.ConsoleOriginPolicy
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,12 +55,14 @@ fun ConsoleScreen(
     modifier: Modifier = Modifier
 ) {
     val isLoggedIn = uiState.isLoggedIn
+    val policy = remember(platform) { ConsoleOriginPolicy(platform) }
 
     DebugLogger.log("[ConsoleScreen] Render: platform=${platform.name}, id=${platform.id}, isLoggedIn=$isLoggedIn, sessionCookies=${uiState.session?.cookies?.size ?: 0}")
 
     if (isLoggedIn) {
         ConsoleDashboard(
             platform = platform,
+            policy = policy,
             session = uiState.session,
             onLogout = onLogout,
             onBack = onBack,
@@ -60,6 +71,7 @@ fun ConsoleScreen(
     } else {
         ConsoleLogin(
             platform = platform,
+            policy = policy,
             onLoginSuccess = onLoginSuccess,
             onBack = onBack,
             modifier = modifier
@@ -75,10 +87,15 @@ fun ConsoleScreen(
 @Composable
 private fun ConsoleLogin(
     platform: ConsolePlatform,
+    policy: ConsoleOriginPolicy,
     onLoginSuccess: (cookies: Map<String, String>, localStorage: Map<String, String>, email: String?) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val navigationHandler = remember(context, policy) {
+        ConsoleNavigationHandler(policy, consoleExternalNavigator(context))
+    }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
@@ -126,6 +143,7 @@ private fun ConsoleLogin(
 
         ConsoleDashboard(
             platform = platform,
+            policy = policy,
             session = null,
             onLogout = { skipLogin = false },
             onBack = onBack,
@@ -194,15 +212,15 @@ private fun ConsoleLogin(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
-                                DebugLogger.log("[ConsoleLogin] Page finished: $url")
+                                DebugLogger.log("[ConsoleLogin] Page finished: ${redactConsoleUrl(url)}")
 
                                 if (url != null && !loginDetected) {
                                     val isSuccess = platform.isLoginSuccess(url)
-                                    DebugLogger.log("[ConsoleLogin] isLoginSuccess($url) = $isSuccess")
+                                    DebugLogger.log("[ConsoleLogin] Login success detected: $isSuccess")
 
                                     if (isSuccess) {
                                         loginDetected = true
-                                        DebugLogger.log("[${platform.name}] Login success detected: $url")
+                                        DebugLogger.log("[${platform.name}] Login success detected")
                                     }
                                 }
                             }
@@ -217,8 +235,8 @@ private fun ConsoleLogin(
                             }
 
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                val scheme = request?.url?.scheme ?: return false
-                                return scheme !in listOf("http", "https")
+                                if (request?.isForMainFrame != true) return false
+                                return navigationHandler.shouldOverride(request.url.toString())
                             }
                         }
 
@@ -327,6 +345,7 @@ private fun ConsoleLogin(
 @Composable
 private fun ConsoleDashboard(
     platform: ConsolePlatform,
+    policy: ConsoleOriginPolicy,
     session: com.balancesentinel.app.data.console.store.ConsoleSession?,
     onLogout: () -> Unit,
     onBack: () -> Unit,
@@ -345,17 +364,6 @@ private fun ConsoleDashboard(
     val cookies = session?.cookies ?: emptyMap()
     val localStorage = session?.localStorage ?: emptyMap()
 
-    // 获取自定义平台的域名（用于 API 拦截）
-    val platformDomains = remember {
-        try {
-            val dashboardHost = java.net.URL(platform.dashboardUrl).host
-            val loginHost = java.net.URL(platform.loginUrl).host
-            listOf(dashboardHost, loginHost).filter { it.isNotBlank() }.distinct()
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
     // 构建会话调试信息
     val sessionDebugInfo = remember(session, currentUrl) {
         SessionDebugInfo(
@@ -366,11 +374,13 @@ private fun ConsoleDashboard(
             cookieCount = session?.cookies?.size ?: 0,
             localStorageCount = session?.localStorage?.size ?: 0,
             email = session?.email,
-            currentUrl = currentUrl,
-            cookies = session?.cookies ?: emptyMap(),
-            localStorage = session?.localStorage ?: emptyMap(),
+            currentUrl = redactConsoleUrl(currentUrl),
+            cookies = emptyMap(),
+            localStorage = emptyMap(),
             sessionCreatedAt = session?.loginTime?.let { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it)) },
-            sessionExpiresAt = null // 当前实现没有过期时间
+            sessionExpiresAt = session?.lastActiveTime?.plus(THIRTY_DAYS_MS)?.let {
+                SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it))
+            }
         )
     }
 
@@ -379,7 +389,7 @@ private fun ConsoleDashboard(
         currentUrl?.let { url ->
             if (isLoginPage(url, platform) && !loginExpired) {
                 loginExpired = true
-                DebugLogger.log("[ConsoleDashboard] Login expired detected, current URL: $url")
+                DebugLogger.log("[ConsoleDashboard] Login expired detected")
             }
         }
     }
@@ -585,16 +595,17 @@ private fun ConsoleDashboard(
             Box(modifier = Modifier.weight(1f)) {
                 ConsoleWebView(
                     url = platform.dashboardUrl,
+                    policy = policy,
                     cookies = cookies,
                     localStorage = localStorage,
                     instanceId = platform.id,
                     onLoadingChange = { isLoading = it },
                     onApiRequest = { request ->
-                        interceptApiRequest(request, apiLogs, platform.id, platformDomains)
+                        interceptApiRequest(request, apiLogs, platform.id, policy)
                     },
                     onPageFinished = { url ->
                         currentUrl = url
-                        DebugLogger.log("[ConsoleDashboard] Page finished: $url")
+                        DebugLogger.log("[ConsoleDashboard] Page finished: ${redactConsoleUrl(url)}")
                     },
                     onReceivedError = { error ->
                         DebugLogger.log("[ConsoleDashboard] Error: $error")
@@ -630,29 +641,7 @@ private fun ConsoleDashboard(
  * 检测是否是登录页面
  */
 private fun isLoginPage(url: String, platform: ConsolePlatform): Boolean {
-    // 检查 URL 是否匹配登录页面模式
-    if (platform.loginPagePatterns.any { url.contains(it, ignoreCase = true) }) {
-        return true
-    }
-
-    // 检查是否不是成功页面
-    if (platform.successUrlPatterns.any { url.contains(it, ignoreCase = true) }) {
-        return false
-    }
-
-    // 检查通用登录页面模式
-    val loginPatterns = listOf("/sign_in", "/login", "/register", "/oauth", "/signin", "/auth")
-    return loginPatterns.any { url.contains(it, ignoreCase = true) }
-}
-
-/**
- * 检查 session 是否过期
- * 当前实现中 session 永不过期，但可以通过其他方式检测失效
- */
-private fun isSessionExpired(session: com.balancesentinel.app.data.console.store.ConsoleSession?): Boolean {
-    if (session == null) return true
-    // 当前实现中 session 永不过期
-    return false
+    return platform.isLoginPage(url)
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -662,6 +651,7 @@ private fun isSessionExpired(session: com.balancesentinel.app.data.console.store
 @Composable
 private fun ConsoleWebView(
     url: String,
+    policy: ConsoleOriginPolicy,
     cookies: Map<String, String> = emptyMap(),
     localStorage: Map<String, String> = emptyMap(),
     instanceId: String = "",
@@ -671,6 +661,10 @@ private fun ConsoleWebView(
     onReceivedError: ((String?) -> Unit)? = null,
     webView: (WebView) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val navigationHandler = remember(context, policy) {
+        ConsoleNavigationHandler(policy, consoleExternalNavigator(context))
+    }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
     DisposableEffect(Unit) {
@@ -716,26 +710,18 @@ private fun ConsoleWebView(
                 val cookiesToInject = cookies
                 val localStorageToInject = localStorage
 
-                // 获取当前域名
-                val currentDomain = try {
-                    java.net.URL(url).host
-                } catch (e: Exception) {
-                    ""
-                }
-
                 // 注入 session 中保存的 cookies（如果有的话）
                 // 注意：不再清除现有 cookies，保留 WebView 中已有的登录状态
-                if (cookiesToInject.isNotEmpty() && currentDomain.isNotBlank()) {
+                if (cookiesToInject.isNotEmpty()) {
                     try {
-                        val cookieString = cookiesToInject.entries.joinToString("; ") { "${it.key}=${it.value}" }
-                        cookieManager.setCookie(currentDomain, cookieString)
-                        cookieManager.flush()
-                        DebugLogger.log("[ConsoleWebView] Injected ${cookiesToInject.size} cookies for $currentDomain")
+                        ConsoleCookieInjector(policy, cookieManager.asConsoleCookieSink())
+                            .inject(cookiesToInject)
+                        DebugLogger.log("[ConsoleWebView] Injected ${cookiesToInject.size} cookies")
                     } catch (e: Exception) {
                         DebugLogger.log("[ConsoleWebView] Failed to inject cookies: ${e.message}")
                     }
                 } else {
-                    DebugLogger.log("[ConsoleWebView] No cookies to inject for $currentDomain")
+                    DebugLogger.log("[ConsoleWebView] No cookies to inject")
                 }
 
                 webViewClient = object : WebViewClient() {
@@ -749,25 +735,7 @@ private fun ConsoleWebView(
                         onLoadingChange(false)
                         onPageFinished?.invoke(url)
 
-                        // 页面加载完成后注入 localStorage
-                        if (localStorageToInject.isNotEmpty()) {
-                            val localStorageScript = buildString {
-                                append("(function() {")
-                                append("try {")
-                                localStorageToInject.forEach { (key, value) ->
-                                    val escapedKey = key.replace("\\", "\\\\").replace("'", "\\'")
-                                        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                                    val escapedValue = value.replace("\\", "\\\\").replace("'", "\\'")
-                                        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                                    append("localStorage.setItem('$escapedKey', '$escapedValue');")
-                                }
-                                append("} catch(e) {}")
-                                append("})()")
-                            }
-                            view?.evaluateJavascript(localStorageScript) { result ->
-                                DebugLogger.log("[ConsoleWebView] Injected ${localStorageToInject.size} localStorage items")
-                            }
-                        }
+                        injectConsoleLocalStorage(view, url, localStorageToInject, policy)
                     }
 
                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
@@ -785,6 +753,14 @@ private fun ConsoleWebView(
                     ): WebResourceResponse? {
                         return onApiRequest?.invoke(request) ?: super.shouldInterceptRequest(view, request)
                     }
+
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
+                        if (request?.isForMainFrame != true) return false
+                        return navigationHandler.shouldOverride(request.url.toString())
+                    }
                 }
 
                 webChromeClient = WebChromeClient()
@@ -796,6 +772,57 @@ private fun ConsoleWebView(
         modifier = Modifier.fillMaxSize()
     )
 }
+
+internal fun consoleExternalNavigator(context: Context): ConsoleExternalNavigator =
+    ConsoleExternalNavigator { uri ->
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+private fun CookieManager.asConsoleCookieSink(): ConsoleCookieSink = object : ConsoleCookieSink {
+    override fun setCookie(url: String, cookie: String) {
+        this@asConsoleCookieSink.setCookie(url, cookie)
+    }
+
+    override fun flush() {
+        this@asConsoleCookieSink.flush()
+    }
+}
+
+internal fun injectConsoleLocalStorage(
+    view: WebView?,
+    url: String?,
+    localStorage: Map<String, String>,
+    policy: ConsoleOriginPolicy
+) {
+    if (view == null || url == null || localStorage.isEmpty() || !policy.canInjectLocalStorage(url)) {
+        return
+    }
+    val script = buildString {
+        append("(function() {")
+        append("try {")
+        localStorage.forEach { (key, value) ->
+            append("localStorage.setItem('")
+            append(key.escapeForSingleQuotedJavaScript())
+            append("', '")
+            append(value.escapeForSingleQuotedJavaScript())
+            append("');")
+        }
+        append("} catch(e) {}")
+        append("})()")
+    }
+    view.evaluateJavascript(script) {
+        DebugLogger.log("[ConsoleWebView] Injected ${localStorage.size} localStorage items")
+    }
+}
+
+private fun String.escapeForSingleQuotedJavaScript(): String =
+    replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 
 // ═══════════════════════════════════════════════════════════
 // 工具函数
@@ -835,7 +862,7 @@ private fun extractCookies(
         return
     }
 
-    DebugLogger.log("[extractCookies] Extracting cookies from URL: $url")
+    DebugLogger.log("[extractCookies] Extracting session data")
 
     // 使用 CookieManager 提取 cookies
     val cookieManager = CookieManager.getInstance()
@@ -900,18 +927,25 @@ private fun extractCookies(
 
 const val DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
+private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
+private val SENSITIVE_HEADER_NAMES = setOf(
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "set-cookie"
+)
+
+private fun redactConsoleUrl(url: String?): String? {
+    val parsed = url?.toHttpUrlOrNull() ?: return null
+    val port = if (parsed.port == 443 || parsed.port == 80) "" else ":${parsed.port}"
+    return "${parsed.scheme}://${parsed.host}$port"
+}
+
 // ═══════════════════════════════════════════════════════════
 // API 拦截
 // ═══════════════════════════════════════════════════════════
 
 /** 允许拦截的域名白名单 */
-private val ALLOWED_DOMAINS = listOf(
-    "platform.deepseek.com",
-    "api.deepseek.com",
-    "platform.xiaomimimo.com",
-    "api.xiaomimimo.com"
-)
-
 /**
  * 拦截 API 请求并获取完整响应
  * @return WebResourceResponse 或 null（交给默认处理）
@@ -920,31 +954,25 @@ private fun interceptApiRequest(
     request: WebResourceRequest?,
     apiLogs: MutableList<ApiLogEntry>,
     tag: String,
-    additionalDomains: List<String> = emptyList()
+    policy: ConsoleOriginPolicy
 ): WebResourceResponse? {
     val reqUrl = request?.url?.toString() ?: ""
     val method = request?.method ?: "GET"
 
-    // 合并白名单域名
-    val allAllowedDomains = ALLOWED_DOMAINS + additionalDomains
-
     // 检查是否是需要拦截的请求
-    val isApiRequest = reqUrl.contains("/api/") || reqUrl.contains("/v1/") || reqUrl.contains("/v2/")
-    val isAllowedDomain = allAllowedDomains.any { reqUrl.contains(it) }
-
-    if (!isApiRequest || !isAllowedDomain) {
+    if (!policy.isAllowedApiRequest(reqUrl)) {
         return null
     }
 
     // POST/PUT/PATCH 请求体无法通过 shouldInterceptRequest 获取，直接放行
     if (request?.method != "GET") return null
 
-    DebugLogger.log("[$tag] API: $method $reqUrl")
+    val diagnosticUrl = redactConsoleUrl(reqUrl).orEmpty()
+    DebugLogger.log("[$tag] API request: $method $diagnosticUrl")
 
-    // 记录请求头
-    val requestHeaders = mutableMapOf<String, String>()
-    request?.requestHeaders?.forEach { (key, value) ->
-        requestHeaders[key] = value
+    val forwardedHeaders = request?.requestHeaders.orEmpty()
+    val diagnosticHeaders = forwardedHeaders.filterKeys { key ->
+        key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES
     }
 
     return try {
@@ -954,7 +982,7 @@ private fun interceptApiRequest(
         connection.readTimeout = 10000
 
         // 复制请求头
-        requestHeaders.forEach { (key, value) ->
+        forwardedHeaders.forEach { (key, value) ->
             connection.setRequestProperty(key, value)
         }
 
@@ -963,7 +991,6 @@ private fun interceptApiRequest(
         val cookies = cookieManager.getCookie(reqUrl)
         if (cookies != null) {
             connection.setRequestProperty("Cookie", cookies)
-            requestHeaders["Cookie"] = cookies
         }
 
         connection.connect()
@@ -990,27 +1017,27 @@ private fun interceptApiRequest(
 
         // 记录响应头
         val responseHeaders = connection.headerFields.entries
-            .filter { it.key != null }
+            .filter { it.key != null && it.key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES }
             .associate { it.key to it.value.joinToString(", ") }
 
         // 记录日志
         val entry = ApiLogEntry(
-            url = reqUrl,
+            url = diagnosticUrl,
             method = method,
             statusCode = statusCode,
-            responseBody = responseBody,
-            requestHeaders = requestHeaders,
+            responseBody = "",
+            requestHeaders = diagnosticHeaders,
             responseHeaders = responseHeaders
         )
         synchronized(apiLogs) {
-            apiLogs.removeAll { it.url == reqUrl }
+            apiLogs.removeAll { it.url == diagnosticUrl }
             apiLogs.add(entry)
             if (apiLogs.size > 100) apiLogs.removeFirst()
         }
 
         // 检测认证失败（401/403）
         if (statusCode == 401 || statusCode == 403) {
-            DebugLogger.log("[$tag] Auth failed: $statusCode $reqUrl")
+            DebugLogger.log("[$tag] Auth failed: $statusCode")
         }
 
         val contentType = connection.contentType ?: "application/json"
@@ -1025,19 +1052,19 @@ private fun interceptApiRequest(
             responseBody.byteInputStream()
         )
     } catch (e: Exception) {
-        DebugLogger.log("[$tag] Error: ${e.message}")
+        DebugLogger.log("[$tag] API request failed: ${e.javaClass.simpleName}")
 
         // 记录错误日志
         val entry = ApiLogEntry(
-            url = reqUrl,
+            url = diagnosticUrl,
             method = method,
             statusCode = 0,
             responseBody = "",
-            requestHeaders = requestHeaders,
-            error = e.message
+            requestHeaders = diagnosticHeaders,
+            error = e.javaClass.simpleName
         )
         synchronized(apiLogs) {
-            apiLogs.removeAll { it.url == reqUrl }
+            apiLogs.removeAll { it.url == diagnosticUrl }
             apiLogs.add(entry)
             if (apiLogs.size > 100) apiLogs.removeFirst()
         }

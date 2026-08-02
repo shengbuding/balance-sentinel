@@ -17,13 +17,16 @@ fun interface ConsoleExternalNavigator {
 }
 
 class ConsoleNavigationHandler(
-    @Suppress("UNUSED_PARAMETER") policy: ConsoleOriginPolicy,
-    @Suppress("UNUSED_PARAMETER") externalNavigator: ConsoleExternalNavigator
+    private val policy: ConsoleOriginPolicy,
+    private val externalNavigator: ConsoleExternalNavigator
 ) {
-    fun shouldOverride(url: String): Boolean {
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredUrl = url
-        return true
+    fun shouldOverride(url: String): Boolean = when (val decision = policy.decideNavigation(url)) {
+        NavigationDecision.AllowInWebView -> false
+        is NavigationDecision.OpenExternal -> {
+            externalNavigator.open(decision.uri)
+            true
+        }
+        NavigationDecision.Reject -> true
     }
 }
 
@@ -33,12 +36,15 @@ interface ConsoleCookieSink {
 }
 
 class ConsoleCookieInjector(
-    @Suppress("UNUSED_PARAMETER") policy: ConsoleOriginPolicy,
-    @Suppress("UNUSED_PARAMETER") sink: ConsoleCookieSink
+    private val policy: ConsoleOriginPolicy,
+    private val sink: ConsoleCookieSink
 ) {
     fun inject(cookies: Map<String, String>) {
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredCookies = cookies
+        if (cookies.isEmpty()) return
+        cookies.forEach { (name, value) ->
+            sink.setCookie(policy.cookieInjectionUrl, "$name=$value")
+        }
+        sink.flush()
     }
 }
 
@@ -85,22 +91,27 @@ class ConsoleOriginPolicy(platform: ConsolePlatform) {
         }
     }
 
-    private companion object {
+    companion object {
+        fun isValidHttpsUrl(value: String): Boolean {
+            val parsed = value.toHttpUrlOrNull()
+            return parsed != null && parsed.scheme == "https"
+        }
+
         const val HTTPS_PORT = 443
-        val DEFAULT_API_HOSTS = setOf(
+        private val DEFAULT_API_HOSTS = setOf(
             "platform.deepseek.com",
             "api.deepseek.com",
             "platform.xiaomimimo.com",
             "api.xiaomimimo.com"
         )
-        val API_PATH_MARKERS = listOf("/api/", "/v1/", "/v2/")
+        private val API_PATH_MARKERS = listOf("/api/", "/v1/", "/v2/")
 
-        fun requireHttpsUrl(value: String, fieldName: String): HttpUrl {
+        private fun requireHttpsUrl(value: String, fieldName: String): HttpUrl {
             val parsed = value.toHttpUrlOrNull()
-            require(parsed != null && parsed.scheme == "https") {
+            require(isValidHttpsUrl(value)) {
                 "$fieldName must be a valid HTTPS URL"
             }
-            return parsed
+            return requireNotNull(parsed)
         }
     }
 }
