@@ -22,6 +22,7 @@ import java.util.Locale
 @Serializable
 data class AppConfig(
     val version: Int = 1,
+    val credentialsIncluded: Boolean = false,
     val exportedAt: String,
     val appVersion: String,
     val accounts: List<AccountInfo>,

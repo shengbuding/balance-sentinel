@@ -1,16 +1,22 @@
 package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AppConfig
+import com.balancesentinel.app.data.repository.BackupImportPlan
+import com.balancesentinel.app.data.repository.BackupImportPlanner
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.UsageDataStore
+import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.api.balance.WebOrigin
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
@@ -41,7 +47,13 @@ data class DataManagementUiState(
     // 对话框控制
     val pendingAction: PendingAction? = null,
     // 操作结果 Toast 消息
-    val resultMessage: String? = null
+    val resultMessage: String? = null,
+    val pendingImportPlan: BackupImportPlan? = null,
+    val importMode: ImportMode = ImportMode.MERGE,
+    val enabledImportedScripts: Set<String> = emptySet(),
+    val authorizedImportOrigins: Map<String, Set<WebOrigin>> = emptyMap(),
+    val replaceConfirmationRequired: Boolean = false,
+    val importError: Boolean = false
 )
 
 data class AlarmCounterSnapshot(
@@ -68,7 +80,12 @@ sealed class PendingAction {
 // ViewModel
 // ═══════════════════════════════════════════════════════════
 
-class DataManagementViewModel(application: Application) : AndroidViewModel(application) {
+class DataManagementViewModel @JvmOverloads constructor(
+    application: Application,
+    private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
+    private val widgetPrefs: WidgetPrefs = WidgetPrefs(application),
+    private val importPlanner: BackupImportPlanner = BackupImportPlanner(apiKeyManager, widgetPrefs)
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DataManagementUiState())
     val uiState: StateFlow<DataManagementUiState> = _uiState.asStateFlow()
@@ -121,6 +138,22 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
     fun clearResultMessage() {
         _uiState.value = _uiState.value.copy(resultMessage = null)
     }
+
+    suspend fun previewConfiguration(uri: Uri): Boolean = false
+
+    suspend fun previewConfiguration(config: AppConfig): Boolean = false
+
+    suspend fun selectImportMode(mode: ImportMode) = Unit
+
+    fun setImportedScriptEnabled(accountId: String, enabled: Boolean) = Unit
+
+    fun setImportOriginAuthorized(accountId: String, origin: WebOrigin, authorized: Boolean) = Unit
+
+    fun requestApplyImport(): Boolean = false
+
+    fun confirmReplaceImport(): Boolean = false
+
+    fun dismissImportPreview() = Unit
 
     // ── 执行 ──
 
