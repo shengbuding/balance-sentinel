@@ -950,7 +950,7 @@ private fun redactConsoleUrl(url: String?): String? {
  * 拦截 API 请求并获取完整响应
  * @return WebResourceResponse 或 null（交给默认处理）
  */
-private fun interceptApiRequest(
+internal fun interceptApiRequest(
     request: WebResourceRequest?,
     apiLogs: MutableList<ApiLogEntry>,
     tag: String,
