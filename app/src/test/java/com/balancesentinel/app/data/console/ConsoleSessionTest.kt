@@ -1,66 +1,33 @@
 package com.balancesentinel.app.data.console
 
 import com.balancesentinel.app.data.console.store.ConsoleSession
-import org.junit.Assert.*
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConsoleSessionTest {
-
     @Test
-    fun `session is always valid`() {
-        val session = ConsoleSession(
-            cookies = mapOf("session" to "value")
-        )
+    fun `session remains valid one millisecond before thirty day boundary`() {
+        val session = session(lastActiveTime = NOW - THIRTY_DAYS_MS + 1)
 
-        assertTrue(session.isValid())
+        assertTrue(session.isValid(now = NOW))
     }
 
     @Test
-    fun `session with empty cookies is valid`() {
-        val session = ConsoleSession(
-            cookies = emptyMap()
-        )
+    fun `session expires exactly at thirty day boundary`() {
+        val session = session(lastActiveTime = NOW - THIRTY_DAYS_MS)
 
-        assertTrue(session.isValid())
+        assertFalse(session.isValid(now = NOW))
     }
 
-    @Test
-    fun `updateActiveTime updates last active time`() {
-        val session = ConsoleSession(
-            cookies = mapOf("session" to "value")
-        )
+    private fun session(lastActiveTime: Long) = ConsoleSession(
+        cookies = mapOf("session" to "value"),
+        loginTime = lastActiveTime,
+        lastActiveTime = lastActiveTime
+    )
 
-        val updated = session.updateActiveTime()
-
-        assertTrue(updated.lastActiveTime >= session.lastActiveTime)
-    }
-
-    @Test
-    fun `session has default values`() {
-        val session = ConsoleSession(
-            cookies = mapOf("session" to "value")
-        )
-
-        assertNotNull(session.loginTime)
-        assertNotNull(session.lastActiveTime)
-        assertNull(session.token)
-        assertNull(session.email)
-        assertTrue(session.localStorage.isEmpty())
-    }
-
-    @Test
-    fun `session with all fields`() {
-        val session = ConsoleSession(
-            cookies = mapOf("session" to "value"),
-            localStorage = mapOf("key" to "value"),
-            token = "test_token",
-            email = "test@example.com"
-        )
-
-        assertTrue(session.isValid())
-        assertEquals("test_token", session.token)
-        assertEquals("test@example.com", session.email)
-        assertEquals(1, session.cookies.size)
-        assertEquals(1, session.localStorage.size)
+    private companion object {
+        const val NOW = 5_000_000_000_000L
+        const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
     }
 }
