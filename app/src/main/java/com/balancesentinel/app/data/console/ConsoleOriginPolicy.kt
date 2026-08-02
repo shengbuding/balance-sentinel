@@ -12,6 +12,36 @@ sealed interface NavigationDecision {
     data object Reject : NavigationDecision
 }
 
+fun interface ConsoleExternalNavigator {
+    fun open(uri: Uri)
+}
+
+class ConsoleNavigationHandler(
+    @Suppress("UNUSED_PARAMETER") policy: ConsoleOriginPolicy,
+    @Suppress("UNUSED_PARAMETER") externalNavigator: ConsoleExternalNavigator
+) {
+    fun shouldOverride(url: String): Boolean {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredUrl = url
+        return true
+    }
+}
+
+interface ConsoleCookieSink {
+    fun setCookie(url: String, cookie: String)
+    fun flush()
+}
+
+class ConsoleCookieInjector(
+    @Suppress("UNUSED_PARAMETER") policy: ConsoleOriginPolicy,
+    @Suppress("UNUSED_PARAMETER") sink: ConsoleCookieSink
+) {
+    fun inject(cookies: Map<String, String>) {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredCookies = cookies
+    }
+}
+
 class ConsoleOriginPolicy(platform: ConsolePlatform) {
     private val loginUrl = requireHttpsUrl(platform.loginUrl, "loginUrl")
     private val dashboardUrl = requireHttpsUrl(platform.dashboardUrl, "dashboardUrl")
