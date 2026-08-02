@@ -30,10 +30,9 @@ data class ConsoleUiState(
  */
 class ConsoleViewModel(
     application: Application,
-    val platform: ConsolePlatform
+    val platform: ConsolePlatform,
+    private val store: ConsoleStore = ConsoleStore(application)
 ) : AndroidViewModel(application) {
-
-    private val store = ConsoleStore(application)
 
     private val _uiState = MutableStateFlow(ConsoleUiState())
     val uiState: StateFlow<ConsoleUiState> = _uiState.asStateFlow()
