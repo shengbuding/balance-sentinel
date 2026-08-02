@@ -54,28 +54,52 @@ fun ConsoleScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isLoggedIn = uiState.isLoggedIn
-    val policy = remember(platform) { ConsoleOriginPolicy(platform) }
+    val content = resolveConsoleScreenContent(platform, uiState)
 
-    DebugLogger.log("[ConsoleScreen] Render: platform=${platform.name}, id=${platform.id}, isLoggedIn=$isLoggedIn, sessionCookies=${uiState.session?.cookies?.size ?: 0}")
+    DebugLogger.log("[ConsoleScreen] Render: platform=${platform.name}, id=${platform.id}, isLoggedIn=${uiState.isLoggedIn}, sessionCookies=${uiState.session?.cookies?.size ?: 0}")
 
-    if (isLoggedIn) {
-        ConsoleDashboard(
-            platform = platform,
-            policy = policy,
-            session = uiState.session,
-            onLogout = onLogout,
-            onBack = onBack,
-            modifier = modifier
-        )
+    when (content) {
+        ConsoleScreenContent.Dashboard -> {
+            val policy = remember(platform) { ConsoleOriginPolicy(platform) }
+            ConsoleDashboard(
+                platform = platform,
+                policy = policy,
+                session = uiState.session,
+                onLogout = onLogout,
+                onBack = onBack,
+                modifier = modifier
+            )
+        }
+        ConsoleScreenContent.Login -> {
+            val policy = remember(platform) { ConsoleOriginPolicy(platform) }
+            ConsoleLogin(
+                platform = platform,
+                policy = policy,
+                onLoginSuccess = onLoginSuccess,
+                onBack = onBack,
+                modifier = modifier
+            )
+        }
+        ConsoleScreenContent.InvalidConfiguration,
+        ConsoleScreenContent.LogoutProgress -> error("Unsupported console content: $content")
+    }
+}
+
+internal enum class ConsoleScreenContent {
+    Login,
+    Dashboard,
+    InvalidConfiguration,
+    LogoutProgress
+}
+
+internal fun resolveConsoleScreenContent(
+    @Suppress("UNUSED_PARAMETER") platform: ConsolePlatform,
+    uiState: ConsoleUiState
+): ConsoleScreenContent {
+    return if (uiState.isLoggedIn) {
+        ConsoleScreenContent.Dashboard
     } else {
-        ConsoleLogin(
-            platform = platform,
-            policy = policy,
-            onLoginSuccess = onLoginSuccess,
-            onBack = onBack,
-            modifier = modifier
-        )
+        ConsoleScreenContent.Login
     }
 }
 
