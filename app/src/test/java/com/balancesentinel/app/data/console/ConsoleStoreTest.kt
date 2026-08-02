@@ -3,17 +3,13 @@ package com.balancesentinel.app.data.console
 import android.content.Context
 import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
-import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ConsoleStoreTest {
-    private val store = ConsoleStore(
-        context = mockk(relaxed = true),
-        injectedPrefs = inMemorySharedPreferences()
-    )
+    private val store = ConsoleStore.createForTesting(inMemorySharedPreferences())
 
     @Test
     fun `public construction cannot inject unencrypted preferences`() {

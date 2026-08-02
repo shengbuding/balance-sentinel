@@ -21,7 +21,10 @@ class ConsoleSessionCleaner(
 ) {
     fun logout(platform: ConsolePlatform, completion: () -> Unit = {}) {
         store.removeSession(platform.id)
-        ConsoleOriginPolicy(platform).webStorageOrigins().forEach(webStorage::deleteOrigin)
+        ConsoleOriginPolicy.createOrNull(platform)
+            ?.webStorageOrigins()
+            .orEmpty()
+            .forEach(webStorage::deleteOrigin)
         cookies.removeAllCookies {
             cookies.flush()
             completion()

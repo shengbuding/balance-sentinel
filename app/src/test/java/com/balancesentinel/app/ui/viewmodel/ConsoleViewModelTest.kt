@@ -35,7 +35,7 @@ class ConsoleViewModelTest {
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         application = ApplicationProvider.getApplicationContext()
-        store = ConsoleStore(application, injectedPrefs = inMemorySharedPreferences())
+        store = ConsoleStore.createForTesting(inMemorySharedPreferences())
         store.clearAll()
     }
 

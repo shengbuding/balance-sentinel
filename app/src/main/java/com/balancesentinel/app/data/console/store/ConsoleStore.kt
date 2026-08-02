@@ -13,12 +13,11 @@ import kotlinx.serialization.json.Json
  * 控制台统一存储
  * 管理平台配置和会话数据
  */
-class ConsoleStore(
-    private val context: Context,
-    private val injectedPrefs: SharedPreferences? = null
+class ConsoleStore private constructor(
+    private val preferencesProvider: () -> SharedPreferences
 ) {
-    private val prefs: SharedPreferences by lazy {
-        injectedPrefs ?: run {
+    constructor(context: Context) : this(
+        preferencesProvider = {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
@@ -30,7 +29,9 @@ class ConsoleStore(
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         }
-    }
+    )
+
+    private val prefs: SharedPreferences by lazy(preferencesProvider)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -146,6 +147,10 @@ class ConsoleStore(
     }
 
     companion object {
+        internal fun createForTesting(preferences: SharedPreferences): ConsoleStore {
+            return ConsoleStore { preferences }
+        }
+
         private const val PREFS_NAME = "console_store_v3"
         private const val KEY_PLATFORMS = "platforms"
         private const val KEY_SESSION_PREFIX = "session_"

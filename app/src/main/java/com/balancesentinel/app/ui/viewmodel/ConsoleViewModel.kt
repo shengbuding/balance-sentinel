@@ -97,6 +97,7 @@ class ConsoleViewModel(
      * 退出登录（清除 session）
      */
     fun logout(completion: () -> Unit = {}) {
+        _uiState.value = _uiState.value.copy(isLoading = true)
         viewModelScope.launch {
             try {
                 DebugLogger.log("[$TAG] Logout started for ${platform.name} (id=${platform.id})")

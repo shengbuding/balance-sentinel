@@ -80,8 +80,12 @@ fun ConsoleScreen(
                 modifier = modifier
             )
         }
-        ConsoleScreenContent.InvalidConfiguration,
-        ConsoleScreenContent.LogoutProgress -> error("Unsupported console content: $content")
+        ConsoleScreenContent.InvalidConfiguration -> ConsoleConfigurationError(
+            platform = platform,
+            onBack = onBack,
+            modifier = modifier
+        )
+        ConsoleScreenContent.LogoutProgress -> ConsoleLogoutProgress(modifier)
     }
 }
 
@@ -93,13 +97,56 @@ internal enum class ConsoleScreenContent {
 }
 
 internal fun resolveConsoleScreenContent(
-    @Suppress("UNUSED_PARAMETER") platform: ConsolePlatform,
+    platform: ConsolePlatform,
     uiState: ConsoleUiState
 ): ConsoleScreenContent {
-    return if (uiState.isLoggedIn) {
-        ConsoleScreenContent.Dashboard
-    } else {
-        ConsoleScreenContent.Login
+    return when {
+        ConsoleOriginPolicy.createOrNull(platform) == null -> ConsoleScreenContent.InvalidConfiguration
+        uiState.isLoading && uiState.isLoggedIn -> ConsoleScreenContent.LogoutProgress
+        uiState.isLoggedIn -> ConsoleScreenContent.Dashboard
+        else -> ConsoleScreenContent.Login
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConsoleConfigurationError(
+    platform: ConsolePlatform,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(platform.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.Warning, contentDescription = null)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Invalid platform configuration")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConsoleLogoutProgress(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
     }
 }
 
@@ -1040,9 +1087,12 @@ internal fun interceptApiRequest(
         }
 
         // 记录响应头
-        val responseHeaders = connection.headerFields.entries
-            .filter { it.key != null && it.key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES }
+        val transportResponseHeaders = connection.headerFields.entries
+            .filter { it.key != null }
             .associate { it.key to it.value.joinToString(", ") }
+        val diagnosticResponseHeaders = transportResponseHeaders.filterKeys { key ->
+            key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES
+        }
 
         // 记录日志
         val entry = ApiLogEntry(
@@ -1051,7 +1101,7 @@ internal fun interceptApiRequest(
             statusCode = statusCode,
             responseBody = "",
             requestHeaders = diagnosticHeaders,
-            responseHeaders = responseHeaders
+            responseHeaders = diagnosticResponseHeaders
         )
         synchronized(apiLogs) {
             apiLogs.removeAll { it.url == diagnosticUrl }
@@ -1072,7 +1122,7 @@ internal fun interceptApiRequest(
             encoding,
             statusCode,
             connection.responseMessage,
-            responseHeaders,
+            transportResponseHeaders,
             responseBody.byteInputStream()
         )
     } catch (e: Exception) {

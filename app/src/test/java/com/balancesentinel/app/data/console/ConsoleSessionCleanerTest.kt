@@ -3,7 +3,6 @@ package com.balancesentinel.app.data.console
 import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
 import com.balancesentinel.app.ui.console.ConsolePlatform
-import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -12,10 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConsoleSessionCleanerTest {
-    private val store = ConsoleStore(
-        context = mockk(relaxed = true),
-        injectedPrefs = inMemorySharedPreferences()
-    )
+    private val store = ConsoleStore.createForTesting(inMemorySharedPreferences())
     private val webStorage = RecordingWebStorage()
     private val cookies = RecordingCookieManager()
     private val cleaner = ConsoleSessionCleaner(store, webStorage, cookies)

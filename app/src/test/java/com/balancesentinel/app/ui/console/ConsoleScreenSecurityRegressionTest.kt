@@ -10,7 +10,6 @@ import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
 import com.balancesentinel.app.ui.viewmodel.ConsoleViewModel
-import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -43,10 +42,7 @@ class ConsoleScreenSecurityRegressionTest {
 
     @Test
     fun `stored invalid legacy platform opens in non-WebView configuration state`() {
-        val store = ConsoleStore(
-            context = mockk(relaxed = true),
-            injectedPrefs = inMemorySharedPreferences()
-        )
+        val store = ConsoleStore.createForTesting(inMemorySharedPreferences())
         store.addPlatform(INVALID_LEGACY_PLATFORM)
         val restoredPlatform = store.getPlatforms().single()
 
@@ -58,10 +54,7 @@ class ConsoleScreenSecurityRegressionTest {
 
     @Test
     fun `delayed logout leaves dashboard branch before completion`() {
-        val store = ConsoleStore(
-            context = application,
-            injectedPrefs = inMemorySharedPreferences()
-        )
+        val store = ConsoleStore.createForTesting(inMemorySharedPreferences())
         val cookies = DelayedCookieManager()
         val cleaner = ConsoleSessionCleaner(store, RecordingWebStorage(), cookies)
         store.saveSession(PLATFORM.id, validSession())

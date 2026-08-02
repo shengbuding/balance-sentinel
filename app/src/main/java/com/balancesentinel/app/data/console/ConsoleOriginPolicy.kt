@@ -92,6 +92,14 @@ class ConsoleOriginPolicy(platform: ConsolePlatform) {
     }
 
     companion object {
+        fun createOrNull(platform: ConsolePlatform): ConsoleOriginPolicy? {
+            return try {
+                ConsoleOriginPolicy(platform)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
+
         fun isValidHttpsUrl(value: String): Boolean {
             val parsed = value.toHttpUrlOrNull()
             return parsed != null && parsed.scheme == "https"
