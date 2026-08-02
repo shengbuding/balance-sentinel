@@ -94,6 +94,19 @@ class UsageScriptExecutorTest {
         assertFalse(inspection.staticallyDeterminable)
     }
 
+    // Mutation caught: accepting a side-effecting request value that changes inherited serialization.
+    @Test
+    fun `inherited serializer mutation cannot make a literal request url look static`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/static",method:(Object.prototype.toJSON=function(key){return key===""?{request:{url:"https://other.example.com/effective"},hasExtractor:true}:this;},"GET")},extractor:function(r){return r;}})"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertEquals("https://other.example.com/effective", inspection.request?.url)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
     // Mutation caught: treating a credential placeholder in the URL authority as static.
     @Test
     fun `credential placeholder in url authority cannot look static`() = runBlocking {
