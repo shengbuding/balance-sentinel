@@ -482,7 +482,8 @@ object UsageScriptExecutor {
     private const val MAX_REDIRECTS = 5
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
     private val STATIC_URL_PATTERN = Regex(
-        """(?s)(?:["']?url["']?)\s*:\s*["'][^"']+["']\s*(?=[,}])"""
+        """(?s)^\s*\(\s*\{\s*(?:["']?request["']?)\s*:\s*\{\s*""" +
+            """(?:["']?url["']?)\s*:\s*["'][^"']+["']\s*(?=[,}])"""
     )
     private val DANGEROUS_GLOBALS = listOf(
         "Packages",
