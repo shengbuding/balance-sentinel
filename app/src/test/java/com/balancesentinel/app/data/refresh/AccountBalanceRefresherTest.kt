@@ -7,6 +7,7 @@ import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.balance.ScriptExecutionException
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -96,6 +97,35 @@ class AccountBalanceRefresherTest {
         assertFalse(result.failure.message.contains("Cookie", ignoreCase = true))
         assertFalse(result.failure.message.contains("wallet-secret-token"))
         assertFalse(result.failure.message.contains("raw-response-body"))
+    }
+
+    // Mutation caught: flattening a typed provider script failure into a response schema failure.
+    @Test
+    fun `typed script failure survives the provider boundary`() = runTest {
+        val provider = RecordingProvider(
+            ProviderResult.Failure(
+                ProviderError.InvalidResponseError(
+                    provider = ProviderType.CUSTOM,
+                    message = "Script extractor timed out",
+                    cause = ScriptExecutionException(
+                        RefreshFailure.ScriptTimeout("Script extractor timed out")
+                    )
+                )
+            )
+        )
+        val refresher = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver { provider }
+        )
+
+        val result = refresher.fetch(
+            account(
+                providerType = ProviderType.CUSTOM,
+                usageScript = "configured script",
+                extraSettings = mapOf("baseUrl" to "https://api.example.com")
+            )
+        ) as BalanceFetchResult.Failure
+
+        assertTrue(result.failure is RefreshFailure.ScriptTimeout)
     }
 
     // Mutation caught: committing NaN or infinity as a valid monetary balance.
