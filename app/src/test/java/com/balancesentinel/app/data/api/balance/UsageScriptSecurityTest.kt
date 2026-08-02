@@ -26,6 +26,7 @@ class UsageScriptSecurityTest {
         val certificate = HeldCertificate.Builder()
             .commonName("localhost")
             .addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("127.0.0.1")
             .build()
         val serverCertificates = HandshakeCertificates.Builder()
             .heldCertificate(certificate)
@@ -208,12 +209,12 @@ class UsageScriptSecurityTest {
         .setBody("""{"remaining":12.5,"unit":"USD"}""")
 
     private fun assertSuccess(result: ScriptExecutionResult) {
-        assertTrue(result is ScriptExecutionResult.Success)
+        assertTrue("unexpected result: $result", result is ScriptExecutionResult.Success)
         assertEquals(12.5, (result as ScriptExecutionResult.Success).balances.single().remaining!!, 0.0)
     }
 
     private fun assertPolicyDenied(result: ScriptExecutionResult) {
-        assertTrue(result is ScriptExecutionResult.Failure)
+        assertTrue("unexpected result: $result", result is ScriptExecutionResult.Failure)
         assertTrue((result as ScriptExecutionResult.Failure).failure is RefreshFailure.ScriptPolicyDenied)
     }
 

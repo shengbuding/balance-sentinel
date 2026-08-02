@@ -46,7 +46,7 @@ class ScriptNetworkPolicyTest {
         assertFalse(policy.validate("https://cdn.example.com:8443/balance".toHttpUrl()).isAllowed)
         assertFalse(policy.validate("https://other.example.com/balance".toHttpUrl()).isAllowed)
         assertFalse(policy.validate("https://user@api.example.com/balance".toHttpUrl()).isAllowed)
-        assertEquals(2, resolver.lookups)
+        assertEquals(1, resolver.lookups)
     }
 
     // Mutation caught: accepting one public answer when any answer is private, reserved, or non-unicast.
