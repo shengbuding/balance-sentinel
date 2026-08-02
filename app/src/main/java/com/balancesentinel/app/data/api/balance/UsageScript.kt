@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.api.balance
 
+import com.balancesentinel.app.data.refresh.RefreshFailure
 import kotlinx.serialization.Serializable
 
 /**
@@ -24,6 +25,10 @@ data class ScriptResult(
     val data: List<BalanceData>? = null,
     val error: String? = null
 )
+
+internal class ScriptExecutionException(
+    val failure: RefreshFailure
+) : RuntimeException(failure.message)
 
 /**
  * 请求配置（从脚本中提取）
