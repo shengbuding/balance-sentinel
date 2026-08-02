@@ -4,10 +4,10 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -89,17 +89,34 @@ class ConfigManagerTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `buildConfig without tokens redacts API keys`() {
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+    fun `credential free export recursively removes credentials scripts enablement and grants`() {
+        val account = AccountInfo(
+            id = "96ed403d28356eeb",
+            label = "Local",
+            apiKey = "sk-local-secret",
+            providerType = ProviderType.ZHIPU,
+            extraCredentials = mapOf("secretKey" to "secondary-secret", "futureToken" to "future-secret"),
+            extraSettings = mapOf("baseUrl" to "https://api.example.com"),
+            usageScript = "({ request: { url: 'https://usage.example.com' } })",
+            usageScriptEnabled = true,
+            authorizedScriptOrigins = setOf("https://usage.example.com")
+        )
+        every { mockKeyMgr.getAccounts() } returns listOf(account)
 
-        // 真实 Key 应被脱敏
-        assertTrue("Should contain redacted key", json.contains("sk-a****u901"))
-        // 8 字符 Key 脱敏为 4+4
-        assertTrue("Should contain redacted short key", json.contains("sk-s****hort"))
-        // 真正短 Key（< 8 字符）应转为 [REDACTED]
-        assertTrue("Should contain [REDACTED] for very short key", json.contains("[REDACTED]"))
-        // 原始完整 Key 不应出现
-        assertFalse("Must NOT contain real API key", json.contains(realKey))
+        val exported = testJson.decodeFromString<AppConfig>(
+            ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        )
+
+        assertEquals(2, exported.version)
+        assertFalse(exported.credentialsIncluded)
+        assertEquals(1, exported.accounts.size)
+        val sanitized = exported.accounts[0]
+        assertEquals("", sanitized.apiKey)
+        assertEquals(mapOf("secretKey" to "", "futureToken" to ""), sanitized.extraCredentials)
+        assertNull(sanitized.usageScript)
+        assertFalse(sanitized.usageScriptEnabled)
+        assertEquals(emptySet<String>(), sanitized.authorizedScriptOrigins)
+        assertEquals(account.extraSettings, sanitized.extraSettings)
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -109,8 +126,10 @@ class ConfigManagerTest {
     @Test
     fun `buildConfig with tokens preserves full API keys`() {
         val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = true)
+        val exported = testJson.decodeFromString<AppConfig>(json)
 
-        // 完整 Key 应该出现（包括短 Key "abc"）
+        assertEquals(2, exported.version)
+        assertTrue(exported.credentialsIncluded)
         assertTrue("Must contain real API key", json.contains(realKey))
         assertTrue("Must contain short key as-is", json.contains("\"apiKey\": \"abc\""))
         // 脱敏标记不应出现
@@ -126,7 +145,8 @@ class ConfigManagerTest {
     fun `buildConfig produces valid JSON with expected structure`() {
         val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
 
-        // version 字段有默认值，kotlinx serialization 可能不输出
+        assertTrue("Missing version", json.contains("\"version\": 2"))
+        assertTrue("Missing credential marker", json.contains("\"credentialsIncluded\": false"))
         assertTrue("Missing exportedAt", json.contains("\"exportedAt\""))
         assertTrue("Missing appVersion", json.contains("\"appVersion\""))
         assertTrue("Missing accounts", json.contains("\"accounts\""))
@@ -187,172 +207,6 @@ class ConfigManagerTest {
         every { emptyKeyMgr.getAccounts() } returns emptyList()
         val json = ConfigManager.buildConfig(context, emptyKeyMgr, prefs, includeTokens = false)
         assertTrue(json.contains("\"accounts\": []"))
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // applyConfig — basic application (mockk for ApiKeyManager)
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `applyConfig imports accounts and settings`() {
-        prefs.resetAll()
-        var replacedAccounts: List<AccountInfo>? = null
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        every { mockMgr.replaceAll(any()) } answers {
-            replacedAccounts = firstArg()
-        }
-
-        val config = AppConfig(
-            version = 1,
-            exportedAt = "2026-07-09T12:00:00",
-            appVersion = "1.2.0",
-            accounts = listOf(
-                AccountInfo(id = "new1", label = "Imported1", apiKey = "sk-newkey12345678")
-            ),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 90, alertEnabled = true, alertThreshold = 30f,
-                changeAlertEnabled = true, changeAlertThreshold = 10f,
-                changeAlertPeriodMinutes = 60, logMaxEntries = 200,
-                snoozeDurationMinutes = 45
-            )
-        )
-
-        val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
-
-        assertEquals(0, skipped)
-        assertEquals(1, replacedAccounts!!.size)
-        assertEquals("Imported1", replacedAccounts!![0].label)
-        assertEquals(90, prefs.refreshIntervalSeconds)
-        assertTrue(prefs.alertEnabled)
-        assertEquals(200, prefs.logMaxEntries)
-        assertEquals(45, prefs.snoozeDurationMinutes)
-    }
-
-    @Test
-    fun `applyConfig skips redacted accounts`() {
-        prefs.resetAll()
-        var replacedAccounts: List<AccountInfo>? = null
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        every { mockMgr.replaceAll(any()) } answers {
-            replacedAccounts = firstArg()
-        }
-
-        val config = AppConfig(
-            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.0",
-            accounts = listOf(
-                AccountInfo(id = "r1", label = "Redacted1", apiKey = "sk-a****t901"),
-                AccountInfo(id = "r2", label = "Redacted2", apiKey = "[REDACTED]"),
-                AccountInfo(id = "v1", label = "Valid", apiKey = "sk-validkey12345")
-            ),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
-        assertEquals(2, skipped)
-        assertEquals(1, replacedAccounts!!.size)
-        assertEquals("Valid", replacedAccounts!![0].label)
-    }
-
-    @Test
-    fun `applyConfig uses replaceAll for atomic import`() {
-        prefs.resetAll()
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        val config = AppConfig(
-            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.0",
-            accounts = emptyList(),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        ConfigManager.applyConfig(config, mockMgr, prefs)
-        verify(exactly = 1) { mockMgr.replaceAll(any()) }
-        verify(exactly = 0) { mockMgr.clearAll() }
-    }
-
-    @Test
-    fun `applyConfig applies perCurrencyAlertSettings via mock`() {
-        prefs.resetAll()
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-
-        val config = AppConfig(
-            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.0",
-            accounts = emptyList(),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100,
-                perCurrencyAlertSettings = listOf(
-                    PerCurrencyAlertSetting("acc1", "CNY", true, false),
-                    PerCurrencyAlertSetting("acc1", "USD", false, true)
-                )
-            )
-        )
-
-        ConfigManager.applyConfig(config, mockMgr, prefs)
-        assertTrue(prefs.isBalanceAlertEnabled("acc1", "CNY"))
-        assertFalse(prefs.isChangeAlertEnabled("acc1", "CNY"))
-        assertFalse(prefs.isBalanceAlertEnabled("acc1", "USD"))
-        assertTrue(prefs.isChangeAlertEnabled("acc1", "USD"))
-    }
-
-    @Test
-    fun `applyConfig applies notification wallet selections via mock`() {
-        prefs.resetAll()
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-
-        val config = AppConfig(
-            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.0",
-            accounts = emptyList(),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100,
-                showTotalBalance = false,
-                notificationSelectedWallets = listOf(
-                    NotificationWalletSelection("acc1", "CNY"),
-                    NotificationWalletSelection("acc2", "USD")
-                )
-            )
-        )
-
-        ConfigManager.applyConfig(config, mockMgr, prefs)
-        assertFalse(prefs.showTotalBalanceInNotification)
-        assertTrue(prefs.isNotificationWalletSelected("acc1", "CNY"))
-        assertTrue(prefs.isNotificationWalletSelected("acc2", "USD"))
-    }
-
-    @Test
-    fun `applyConfig returns zero skipped when all accounts valid`() {
-        prefs.resetAll()
-        val mockMgr = mockk<ApiKeyManager>(relaxed = true)
-        var replacedAccounts: List<AccountInfo>? = null
-        every { mockMgr.replaceAll(any()) } answers {
-            replacedAccounts = firstArg()
-        }
-
-        val config = AppConfig(
-            version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.0",
-            accounts = listOf(
-                AccountInfo(id = "a1", label = "Acc1", apiKey = "sk-keyone111111"),
-                AccountInfo(id = "a2", label = "Acc2", apiKey = "sk-keytwo222222")
-            ),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        val skipped = ConfigManager.applyConfig(config, mockMgr, prefs)
-        assertEquals(0, skipped)
-        assertEquals(2, replacedAccounts!!.size)
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -434,6 +288,21 @@ class ConfigManagerTest {
     }
 
     @Test
+    fun `legacy config without version marker decodes as schema v1`() {
+        // Mutation caught: applying the schema-v2 default to v1 files that omitted their default version field.
+        val importFile = File(context.filesDir, "import-v1-${System.nanoTime()}.json")
+        importFile.writeText(
+            """{"exportedAt":"2026-07-09T12:00:00","appVersion":"1.0","accounts":[],"settings":{"refreshIntervalSeconds":30,"alertEnabled":false,"alertThreshold":0.0,"changeAlertEnabled":false,"changeAlertThreshold":0.0,"changeAlertPeriodMinutes":60,"logMaxEntries":100}}"""
+        )
+
+        val result = ConfigManager.importFromUri(context, Uri.fromFile(importFile))
+
+        assertNotNull(result)
+        assertEquals(1, result!!.version)
+        assertFalse(result.credentialsIncluded)
+    }
+
+    @Test
     fun `importFromUri returns null for invalid JSON`() {
         val importFile = File(context.filesDir, "import-invalid-${System.nanoTime()}.json")
         importFile.writeText("this is not valid json {{{")
@@ -470,36 +339,4 @@ class ConfigManagerTest {
         assertNull("should return null for empty content", result)
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // applyConfigDirectly — convenience wrapper
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `applyConfigDirectly method exists and is callable structure check`() {
-        // applyConfigDirectly creates a real ApiKeyManager internally,
-        // which uses EncryptedSharedPreferences. In Robolectric this either:
-        //   a) works (shadow EncryptedSharedPreferences provides real storage), or
-        //   b) throws (missing crypto provider shadows).
-        // Either outcome is valid; this test just verifies the method doesn't
-        // cause an unexpected failure. applyConfig logic is fully covered above.
-        val config = AppConfig(
-            version = 1,
-            exportedAt = "2026-07-09T12:00:00",
-            appVersion = "1.0",
-            accounts = emptyList(),
-            settings = ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        try {
-            val skipped = ConfigManager.applyConfigDirectly(context, config)
-            // Robolectric shadow EncryptedSharedPreferences may work
-            assertEquals(0, skipped)
-        } catch (_: Exception) {
-            // Expected if Robolectric shadows are incomplete for crypto
-        }
-    }
 }

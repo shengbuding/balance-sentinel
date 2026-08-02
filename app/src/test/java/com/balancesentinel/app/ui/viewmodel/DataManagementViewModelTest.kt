@@ -2,8 +2,13 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.api.balance.ScriptInspection
+import com.balancesentinel.app.data.api.balance.UsageScript
+import com.balancesentinel.app.data.api.balance.WebOrigin
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -11,6 +16,11 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AppConfig
+import com.balancesentinel.app.data.repository.BackupImportPlanner
+import com.balancesentinel.app.data.repository.ConfigSettings
+import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
@@ -19,6 +29,9 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -397,5 +410,195 @@ class DataManagementViewModelTest {
         // Reload
         viewModel.loadStats()
         assertEquals(1, viewModel.uiState.value.rawRecordCount)
+    }
+
+    @Test
+    fun `selecting a configuration file creates preview statistics with zero persistence`() = runTest {
+        // Mutation caught: applying accounts or settings in the file-picker callback before preview confirmation.
+        val accountStorage = context.getSharedPreferences("preview-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
+        manager.replaceAll(listOf(local))
+        prefs.refreshIntervalSeconds = 222
+        val incomingMatch = local.copy(label = "Updated", apiKey = "")
+        val incomingUnmatched = AccountInfo(NEW_ID, "Skipped", "")
+        val config = importConfig(
+            credentialsIncluded = false,
+            accounts = listOf(incomingMatch, incomingUnmatched),
+            settings = importSettings(refreshIntervalSeconds = 77)
+        )
+        val file = java.io.File(context.filesDir, "preview-${System.nanoTime()}.json")
+        file.writeText(Json { encodeDefaults = true }.encodeToString(config))
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection)
+        )
+
+        viewModel.previewConfiguration(Uri.fromFile(file))
+
+        assertEquals(listOf(local), manager.getAccounts())
+        assertEquals(222, prefs.refreshIntervalSeconds)
+        val plan = viewModel.uiState.value.pendingImportPlan
+        assertNotNull(plan)
+        assertEquals(1, plan!!.matchedUpdatedCount)
+        assertEquals(1, plan.retainedCredentialCount)
+        assertEquals(1, plan.skippedCount)
+        assertEquals(0, plan.createdCount)
+        assertEquals(0, plan.deletedCount)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `merge preview persists only after explicit apply`() = runTest {
+        // Mutation caught: a preview that cannot be applied, or apply that does not commit the pending plan.
+        val accountStorage = context.getSharedPreferences("merge-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
+        val created = AccountInfo(NEW_ID, "Created", NEW_KEY)
+        manager.replaceAll(listOf(local))
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection)
+        )
+        viewModel.previewConfiguration(importConfig(true, listOf(created), importSettings(77)))
+
+        assertEquals(listOf(local), manager.getAccounts())
+        assertTrue(viewModel.requestApplyImport())
+        assertEquals(listOf(local, created), manager.getAccounts())
+        assertEquals(77, prefs.refreshIntervalSeconds)
+        assertNull(viewModel.uiState.value.pendingImportPlan)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `replace apply requires preview action then destructive confirmation with deletion count`() = runTest {
+        // Mutation caught: replacing local accounts after the first apply action or losing the preview deletion count.
+        val accountStorage = context.getSharedPreferences("replace-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val local = AccountInfo(OLD_ID, "Old", OLD_KEY)
+        val replacement = AccountInfo(NEW_ID, "New", NEW_KEY)
+        manager.replaceAll(listOf(local))
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection)
+        )
+        viewModel.previewConfiguration(importConfig(true, listOf(replacement)))
+        viewModel.selectImportMode(ImportMode.REPLACE_ALL)
+
+        assertEquals(ImportMode.REPLACE_ALL, viewModel.uiState.value.importMode)
+        assertEquals(1, viewModel.uiState.value.pendingImportPlan?.deletedCount)
+        assertFalse(viewModel.requestApplyImport())
+        assertTrue(viewModel.uiState.value.replaceConfirmationRequired)
+        assertEquals(listOf(local), manager.getAccounts())
+
+        assertTrue(viewModel.confirmReplaceImport())
+        assertEquals(listOf(replacement), manager.getAccounts())
+        assertFalse(viewModel.uiState.value.replaceConfirmationRequired)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `sanitized replace exposes blocking reasons and cannot request confirmation`() = runTest {
+        // Mutation caught: surfacing an enabled destructive action for a credential-free backup.
+        val accountStorage = context.getSharedPreferences("blocked-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        manager.replaceAll(listOf(AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)))
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection)
+        )
+        viewModel.previewConfiguration(importConfig(false, emptyList()))
+        viewModel.selectImportMode(ImportMode.REPLACE_ALL)
+
+        val plan = viewModel.uiState.value.pendingImportPlan
+        assertNotNull(plan)
+        assertFalse(plan!!.canApply)
+        assertTrue(plan.blockingReasons.isNotEmpty())
+        assertFalse(viewModel.requestApplyImport())
+        assertFalse(viewModel.uiState.value.replaceConfirmationRequired)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `canonical origin checkboxes gate imported script enablement`() = runTest {
+        // Mutation caught: enabling imported script code without its inspected canonical origin grant.
+        val accountStorage = context.getSharedPreferences("origins-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val origin = WebOrigin.https("Usage.Example.com")
+        val scripted = AccountInfo(
+            id = SCRIPT_ID,
+            label = "Scripted",
+            apiKey = SCRIPT_KEY,
+            usageScript = SCRIPT
+        )
+        val planner = BackupImportPlanner(manager, prefs) { _, _ ->
+            ScriptInspection(null, setOf(origin), staticallyDeterminable = true)
+        }
+        val viewModel = DataManagementViewModel(app, manager, prefs, planner)
+        viewModel.previewConfiguration(importConfig(true, listOf(scripted)))
+
+        assertEquals(1, viewModel.uiState.value.pendingImportPlan?.scriptAuthorizations?.size)
+        viewModel.setImportedScriptEnabled(SCRIPT_ID, true)
+        assertFalse(viewModel.uiState.value.pendingImportPlan!!.finalAccounts[0].usageScriptEnabled)
+        viewModel.setImportOriginAuthorized(SCRIPT_ID, origin, true)
+        assertTrue(viewModel.uiState.value.pendingImportPlan!!.finalAccounts[0].usageScriptEnabled)
+        assertEquals(
+            setOf("https://usage.example.com"),
+            viewModel.uiState.value.pendingImportPlan!!.finalAccounts[0].authorizedScriptOrigins
+        )
+        accountStorage.edit().clear().commit()
+    }
+
+    private fun importConfig(
+        credentialsIncluded: Boolean,
+        accounts: List<AccountInfo>,
+        settings: ConfigSettings = importSettings()
+    ) = AppConfig(
+        version = 2,
+        credentialsIncluded = credentialsIncluded,
+        exportedAt = "2026-08-01T00:00:00",
+        appVersion = "2.0",
+        accounts = accounts,
+        settings = settings
+    )
+
+    private fun importSettings(refreshIntervalSeconds: Int = 30) = ConfigSettings(
+        refreshIntervalSeconds = refreshIntervalSeconds,
+        alertEnabled = false,
+        alertThreshold = 0f,
+        changeAlertEnabled = false,
+        changeAlertThreshold = 0f,
+        changeAlertPeriodMinutes = 60,
+        logMaxEntries = 100
+    )
+
+    private suspend fun staticInspection(
+        script: UsageScript,
+        account: AccountInfo
+    ): ScriptInspection = ScriptInspection(null, emptySet(), staticallyDeterminable = true)
+
+    private companion object {
+        const val LOCAL_KEY = "sk-local-secret"
+        const val LOCAL_ID = "96ed403d28356eeb"
+        const val NEW_KEY = "sk-new-complete"
+        const val NEW_ID = "7c6888f7ec01a4e6"
+        const val OLD_KEY = "sk-old-complete"
+        const val OLD_ID = "41afefea72a24e69"
+        const val SCRIPT_KEY = "sk-script-account"
+        const val SCRIPT_ID = "6bbdfb3957422e13"
+        const val SCRIPT = "({ request: { url: 'https://usage.example.com/balance' } })"
     }
 }

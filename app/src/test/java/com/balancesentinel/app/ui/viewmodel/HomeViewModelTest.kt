@@ -87,6 +87,32 @@ class HomeViewModelTest {
         assertEquals("测试账户", state.accounts[0].label)
     }
 
+    @Test
+    fun `loadCachedBalances reloads externally imported accounts and settings`() {
+        // Mutation caught: retaining activity-scoped Home state after configuration import commits storage.
+        apiKeyManager.addAccount("Old", "sk-old-complete")
+        val vm = createViewModel()
+        val imported = AccountInfo(
+            id = "7c6888f7ec01a4e6",
+            label = "Imported",
+            apiKey = "sk-new-complete",
+            usageScript = "({ request: { url: 'https://usage.example.com' } })",
+            usageScriptEnabled = false
+        )
+        apiKeyManager.replaceAll(listOf(imported))
+        val prefs = WidgetPrefs(context)
+        prefs.refreshIntervalSeconds = 77
+        prefs.alertEnabled = true
+
+        vm.loadCachedBalances()
+
+        assertEquals(listOf(imported), vm.uiState.value.accounts)
+        assertEquals(emptyMap<String, com.balancesentinel.app.data.model.BalanceResponse?>(), vm.uiState.value.accountBalances)
+        assertEquals(77, vm.uiState.value.refreshIntervalSeconds)
+        assertTrue(vm.uiState.value.alertEnabled)
+        assertFalse(vm.uiState.value.isLoading)
+    }
+
     // ═══════════════════════════════════════════════════════════
     // addAccount
     // ═══════════════════════════════════════════════════════════
@@ -493,89 +519,6 @@ class HomeViewModelTest {
         // In Robolectric, the scheduler may or may not have status
         // Just verify the method doesn't crash
         assertNotNull(vm.uiState.value)
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // applyImportedConfig — basic tests
-    // ═══════════════════════════════════════════════════════════
-
-    @Test
-    fun `applyImportedConfig updates settings from config`() {
-        apiKeyManager.addAccount("Existing", "sk-existing-key")
-        val vm = createViewModel()
-
-        val config = com.balancesentinel.app.data.repository.AppConfig(
-            version = 1,
-            exportedAt = "2026-07-09T12:00:00",
-            appVersion = "1.0.0",
-            accounts = emptyList(),
-            settings = com.balancesentinel.app.data.repository.ConfigSettings(
-                refreshIntervalSeconds = 180,
-                alertEnabled = true,
-                alertThreshold = 25f,
-                changeAlertEnabled = true,
-                changeAlertThreshold = 15f,
-                changeAlertPeriodMinutes = 45,
-                logMaxEntries = 150,
-                snoozeDurationMinutes = 90
-            )
-        )
-
-        vm.applyImportedConfig(config)
-        val state = vm.uiState.value
-        assertEquals(180, state.refreshIntervalSeconds)
-        assertTrue(state.alertEnabled)
-        assertEquals(25f, state.alertThreshold)
-        assertEquals(45, state.changeAlertPeriodMinutes)
-        assertEquals(90, state.snoozeDurationMinutes)
-    }
-
-    @Test
-    fun `applyImportedConfig updates accounts`() {
-        val vm = createViewModel()
-        val config = com.balancesentinel.app.data.repository.AppConfig(
-            version = 1,
-            exportedAt = "2026-07-09T12:00:00",
-            appVersion = "1.0.0",
-            accounts = listOf(
-                com.balancesentinel.app.data.model.AccountInfo(
-                    id = "imported1", label = "Imported", apiKey = "sk-importedkey123"
-                )
-            ),
-            settings = com.balancesentinel.app.data.repository.ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        vm.applyImportedConfig(config)
-        val accounts = vm.uiState.value.accounts
-        assertTrue(accounts.any { it.label == "Imported" })
-    }
-
-    @Test
-    fun `applyImportedConfig with redacted accounts sets error message`() {
-        val vm = createViewModel()
-        val config = com.balancesentinel.app.data.repository.AppConfig(
-            version = 1,
-            exportedAt = "2026-07-09T12:00:00",
-            appVersion = "1.0.0",
-            accounts = listOf(
-                com.balancesentinel.app.data.model.AccountInfo(
-                    id = "r1", label = "Redacted", apiKey = "sk-a****t901"
-                )
-            ),
-            settings = com.balancesentinel.app.data.repository.ConfigSettings(
-                refreshIntervalSeconds = 30, alertEnabled = false, alertThreshold = 0f,
-                changeAlertEnabled = false, changeAlertThreshold = 0f,
-                changeAlertPeriodMinutes = 0, logMaxEntries = 100
-            )
-        )
-
-        vm.applyImportedConfig(config)
-        // Redacted account should be skipped — accounts list should be empty
-        assertEquals(0, vm.uiState.value.accounts.size)
     }
 
     // ═══════════════════════════════════════════════════════════
