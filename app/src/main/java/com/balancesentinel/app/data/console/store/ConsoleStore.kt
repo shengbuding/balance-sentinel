@@ -13,18 +13,23 @@ import kotlinx.serialization.json.Json
  * 控制台统一存储
  * 管理平台配置和会话数据
  */
-class ConsoleStore(private val context: Context) {
+class ConsoleStore(
+    private val context: Context,
+    private val injectedPrefs: SharedPreferences? = null
+) {
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        injectedPrefs ?: run {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -112,6 +117,12 @@ class ConsoleStore(private val context: Context) {
         }
     }
 
+    fun getValidSession(platformId: String, now: Long = System.currentTimeMillis()): ConsoleSession? {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredNow = now
+        return getSession(platformId)
+    }
+
     /**
      * 删除会话
      */
@@ -163,6 +174,12 @@ data class ConsoleSession(
      */
     fun isValid(): Boolean {
         return System.currentTimeMillis() - lastActiveTime < SESSION_TTL_MS
+    }
+
+    fun isValid(now: Long): Boolean {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredNow = now
+        return isValid()
     }
 
     /**
