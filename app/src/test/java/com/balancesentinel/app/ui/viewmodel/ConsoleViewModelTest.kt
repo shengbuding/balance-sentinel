@@ -2,6 +2,9 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.console.ConsoleCookieManager
+import com.balancesentinel.app.data.console.ConsoleSessionCleaner
+import com.balancesentinel.app.data.console.ConsoleWebStorage
 import com.balancesentinel.app.data.console.inMemorySharedPreferences
 import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
@@ -12,7 +15,9 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -65,6 +70,30 @@ class ConsoleViewModelTest {
         assertNull(store.getSession(PLATFORM.id))
     }
 
+    @Test
+    fun `logout delegates complete cleanup and preserves other encrypted sessions`() {
+        val webStorage = RecordingWebStorage()
+        val cookies = RecordingCookieManager()
+        val cleaner = ConsoleSessionCleaner(store, webStorage, cookies)
+        store.saveSession(PLATFORM.id, validSession())
+        store.saveSession(OTHER_PLATFORM_ID, validSession())
+        val viewModel = ConsoleViewModel(application, PLATFORM, store, cleaner)
+        var completed = false
+
+        viewModel.logout { completed = true }
+
+        assertNull(store.getSession(PLATFORM.id))
+        assertNotNull(store.getSession(OTHER_PLATFORM_ID))
+        assertEquals(
+            setOf("https://platform.deepseek.com"),
+            webStorage.deletedOrigins.toSet()
+        )
+        assertEquals(1, cookies.removeAllCalls)
+        assertEquals(1, cookies.flushCalls)
+        assertTrue(completed)
+        assertFalse(viewModel.uiState.value.isLoggedIn)
+    }
+
     private fun validSession(): ConsoleSession {
         val now = System.currentTimeMillis()
         return ConsoleSession(loginTime = now, lastActiveTime = now)
@@ -75,7 +104,30 @@ class ConsoleViewModelTest {
         return ConsoleSession(loginTime = timestamp, lastActiveTime = timestamp)
     }
 
+    private class RecordingWebStorage : ConsoleWebStorage {
+        val deletedOrigins = mutableListOf<String>()
+
+        override fun deleteOrigin(origin: String) {
+            deletedOrigins += origin
+        }
+    }
+
+    private class RecordingCookieManager : ConsoleCookieManager {
+        var removeAllCalls = 0
+        var flushCalls = 0
+
+        override fun removeAllCookies(completion: (Boolean) -> Unit) {
+            removeAllCalls++
+            completion(true)
+        }
+
+        override fun flush() {
+            flushCalls++
+        }
+    }
+
     private companion object {
+        const val OTHER_PLATFORM_ID = "other"
         const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
         val PLATFORM = ConsolePlatform(
             id = "deepseek",
