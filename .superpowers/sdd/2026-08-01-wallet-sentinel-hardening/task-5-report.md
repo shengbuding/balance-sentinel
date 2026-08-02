@@ -265,3 +265,80 @@ GREEN commit:
 - Static inspection reads no source via regex and logs no source, URL, credential, response, or exception detail.
 - The scoped diff passed `git diff --check` apart from existing LF-to-CRLF conversion notices.
 - No unfiltered unit suite or connected/device test was run, per the fix prompt. Existing unrelated Kotlin/deprecation warnings remain. No scoped security concern remains.
+
+## Fix Round 2
+
+Status: DONE
+
+Baseline gate:
+
+- `git rev-parse HEAD` returned the required `0ad1d59c24123335ad4b0c70db892b03acc0da12`.
+- `git status --short --untracked-files=all` was empty.
+- Process inspection found only idle Gradle 8.11.1 and Kotlin compiler daemons, with no Gradle wrapper client or active build.
+
+### Root Cause
+
+- Configuration evaluation executes every top-level and request object-property value before `evaluateConfiguration` serializes its wrapper with `JSON.stringify`.
+- The Round 1 classifier proved the request URL literal and rejected mutations only when an assignment or unary operation targeted a direct or computed `url` property. It still accepted arbitrary expressions in ordinary request/config property values.
+- A request `method` expression could therefore assign an inherited `Object.prototype.toJSON`. The wrapper inherited that hook, so serialization exposed `https://other.example.com/effective` even though the source declared the direct literal request URL `https://api.example.com/static`; the classifier nevertheless returned `true`.
+
+### RED Evidence
+
+Command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --rerun-tasks
+```
+
+Exit code: 1. Result: 11 tests executed, 1 failure, 0 errors, 0 skipped; Gradle `BUILD FAILED`, 29/29 tasks executed.
+
+- `inherited serializer mutation cannot make a literal request url look static` compiled and executed against the real evaluator.
+- The assertion that the evaluated request URL equals `https://other.example.com/effective` passed, proving inherited serialization changed the effective request.
+- The following `assertFalse(inspection.staticallyDeterminable)` failed at `UsageScriptExecutorTest.kt:107` because the classifier returned `true`.
+
+RED commit:
+
+- `b4074f1cfdc85770705d102140bdb5d450d8b1bb test: add RED for inherited serializer mutation`
+
+### GREEN Implementation
+
+- Replaced the URL-target mutation blacklist with a conservative supported-shape proof for every configuration/request expression evaluated before serialization.
+- The top-level object must contain exactly one ordinary `request` property and one ordinary `extractor` function property. The request may contain only distinct ordinary `url`, `method`, `headers`, and `body` properties.
+- The URL must remain a string literal without an origin-affecting placeholder. Method/body and header values must be serialization-safe primitive literals; headers must be an ordinary literal object.
+- Computed or duplicate properties, accessors/method syntax, prototype/meta-object keys, assignments, calls, updates, and all unsupported or uncertain values return conservative `false`.
+- The positive inspection regression now explicitly preserves a literal `POST` method, literal body, and a credential placeholder used only in a literal header value.
+
+Focused GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --rerun-tasks
+```
+
+Exit code: 0. Result: 11 tests passed, 0 failed, 0 errors, 0 skipped; Gradle `BUILD SUCCESSFUL`, 29/29 tasks executed.
+
+Four-class Task 5 security gate:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.api.balance.ScriptNetworkPolicyTest" --tests "com.balancesentinel.app.data.api.balance.RhinoScriptRunnerTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptExecutorTest" --tests "com.balancesentinel.app.data.api.balance.UsageScriptSecurityTest" --rerun-tasks
+```
+
+Exit code: 0. Result: 27 tests passed, 0 failed, 0 errors, 0 skipped; Gradle `BUILD SUCCESSFUL`, 29/29 tasks executed.
+
+GREEN commit:
+
+- `fa8af78e9efd2a6de7d2b06284b072e59549e496 fix: require inert static script configuration`
+
+### Files Changed
+
+- `app/src/main/java/com/balancesentinel/app/data/api/balance/UsageScriptExecutor.kt`
+- `app/src/test/java/com/balancesentinel/app/data/api/balance/UsageScriptExecutorTest.kt`
+- `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/task-5-report.md`
+
+### Self-Review And Concerns
+
+- The classifier no longer relies on target-name mutation detection; accepted expressions cannot execute user code before serialization.
+- Literal URL, method, body, and header values retain the supported positive verdict, including inspection credential placeholders confined to header strings.
+- Scripts with additional or complex configuration/request properties intentionally receive a conservative false static verdict; inspection still evaluates and returns their request when valid.
+- No source, URL, credential, response body, or exception detail logging was added, and network-policy behavior was not changed.
+- The scoped diff passed `git diff --check` apart from existing LF-to-CRLF conversion notices.
+- No unfiltered unit suite or connected/device test was run, per the fix prompt. Existing unrelated Kotlin/deprecation warnings remain; no scoped security concern remains.
