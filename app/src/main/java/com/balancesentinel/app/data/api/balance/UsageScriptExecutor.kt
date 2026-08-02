@@ -22,20 +22,17 @@ import org.mozilla.javascript.Context
 import org.mozilla.javascript.Parser
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Token
-import org.mozilla.javascript.ast.Assignment
 import org.mozilla.javascript.ast.AstNode
 import org.mozilla.javascript.ast.AstRoot
-import org.mozilla.javascript.ast.ElementGet
 import org.mozilla.javascript.ast.ExpressionStatement
 import org.mozilla.javascript.ast.FunctionNode
+import org.mozilla.javascript.ast.KeywordLiteral
 import org.mozilla.javascript.ast.Name
-import org.mozilla.javascript.ast.NodeVisitor
+import org.mozilla.javascript.ast.NumberLiteral
 import org.mozilla.javascript.ast.ObjectLiteral
 import org.mozilla.javascript.ast.ObjectProperty
 import org.mozilla.javascript.ast.ParenthesizedExpression
-import org.mozilla.javascript.ast.PropertyGet
 import org.mozilla.javascript.ast.StringLiteral
-import org.mozilla.javascript.ast.UnaryExpression
 import java.net.InetAddress
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
@@ -473,24 +470,37 @@ object UsageScriptExecutor {
         }
         val statement = root.singleStatement() as? ExpressionStatement ?: return false
         val config = statement.expression.withoutParentheses() as? ObjectLiteral ?: return false
-        if (config.elements.any { it.staticName() == null }) return false
+        if (!config.hasOnlyOrdinaryProperties(CONFIGURATION_PROPERTY_NAMES)) return false
 
         val requestProperties = config.elements.filter { it.staticName() == "request" }
-        if (requestProperties.size != 1 || requestProperties.single().isMethod) return false
+        if (requestProperties.size != 1) return false
         val request = requestProperties.single().right.withoutParentheses() as? ObjectLiteral
             ?: return false
-        if (request.elements.any { it.staticName() == null || it.isMethod }) return false
-        if (request.elements.any { it.staticName() == "toJSON" }) return false
+        if (!request.hasOnlyOrdinaryProperties(REQUEST_PROPERTY_NAMES)) return false
 
         val urlProperties = request.elements.filter { it.staticName() == "url" }
         if (urlProperties.size != 1) return false
-        val url = urlProperties.single().right as? StringLiteral ?: return false
+        val url = urlProperties.single().right.withoutParentheses() as? StringLiteral ?: return false
         if (url.value.hasOriginAffectingPlaceholder()) return false
 
+        listOf("method", "body").forEach { name ->
+            val property = request.elements.singleOrNull { it.staticName() == name }
+            if (property != null && !property.right.isSerializationSafeLiteral()) return false
+        }
+        val headersProperty = request.elements.singleOrNull { it.staticName() == "headers" }
+        if (headersProperty != null) {
+            val headers = headersProperty.right.withoutParentheses() as? ObjectLiteral ?: return false
+            if (!headers.hasOnlyOrdinaryProperties() ||
+                headers.elements.any { !it.right.isSerializationSafeLiteral() }
+            ) {
+                return false
+            }
+        }
+
         val extractorProperties = config.elements.filter { it.staticName() == "extractor" }
-        if (extractorProperties.size != 1 || extractorProperties.single().isMethod) return false
+        if (extractorProperties.size != 1) return false
         if (extractorProperties.single().right.withoutParentheses() !is FunctionNode) return false
-        return !root.hasUrlMutation()
+        return true
     }
 
     private fun AstRoot.singleStatement(): AstNode? =
@@ -505,24 +515,22 @@ object UsageScriptExecutor {
         else -> null
     }
 
-    private fun AstRoot.hasUrlMutation(): Boolean {
-        var mutationFound = false
-        visit(NodeVisitor { node ->
-            mutationFound = mutationFound || when (node) {
-                is Assignment -> node.left.referencesUrlProperty()
-                is UnaryExpression -> node.operator in URL_MUTATION_UNARY_OPERATORS &&
-                    node.operand.referencesUrlProperty()
-                else -> false
-            }
-            !mutationFound
-        })
-        return mutationFound
+    private fun ObjectLiteral.hasOnlyOrdinaryProperties(
+        allowedNames: Set<String>? = null
+    ): Boolean {
+        val names = mutableSetOf<String>()
+        for (property in elements) {
+            if (property.isMethod) return false
+            val name = property.staticName() ?: return false
+            if (name in META_OBJECT_PROPERTY_NAMES || !names.add(name)) return false
+            if (allowedNames != null && name !in allowedNames) return false
+        }
+        return true
     }
 
-    private fun AstNode.referencesUrlProperty(): Boolean = when (val node = withoutParentheses()) {
-        is PropertyGet -> node.property.identifier == "url"
-        is ElementGet -> (node.element.withoutParentheses() as? StringLiteral)?.value == "url" ||
-            node.element.withoutParentheses() !is StringLiteral
+    private fun AstNode.isSerializationSafeLiteral(): Boolean = when (val node = withoutParentheses()) {
+        is StringLiteral, is NumberLiteral -> true
+        is KeywordLiteral -> node.type in SERIALIZATION_SAFE_KEYWORD_TOKENS
         else -> false
     }
 
@@ -567,7 +575,25 @@ object UsageScriptExecutor {
     private const val MAX_TIMEOUT_MILLIS = Int.MAX_VALUE.toLong()
     private const val MAX_REDIRECTS = 5
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
-    private val URL_MUTATION_UNARY_OPERATORS = setOf(Token.INC, Token.DEC, Token.DELPROP)
+    private val CONFIGURATION_PROPERTY_NAMES = setOf("request", "extractor")
+    private val REQUEST_PROPERTY_NAMES = setOf("url", "method", "headers", "body")
+    private val SERIALIZATION_SAFE_KEYWORD_TOKENS = setOf(Token.NULL, Token.TRUE, Token.FALSE)
+    private val META_OBJECT_PROPERTY_NAMES = setOf(
+        "__defineGetter__",
+        "__defineSetter__",
+        "__lookupGetter__",
+        "__lookupSetter__",
+        "__proto__",
+        "constructor",
+        "hasOwnProperty",
+        "isPrototypeOf",
+        "propertyIsEnumerable",
+        "prototype",
+        "toJSON",
+        "toLocaleString",
+        "toString",
+        "valueOf"
+    )
     private val URL_PLACEHOLDERS = listOf(
         "{{apiKey}}",
         "{{baseUrl}}",

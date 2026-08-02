@@ -17,12 +17,14 @@ class UsageScriptExecutorTest {
     @Test
     fun `inspection uses placeholders and reports a canonical extra origin`() = runBlocking {
         val script = UsageScript(
-            """({request:{url:"https://cdn.example.com/balance",headers:{Authorization:"Bearer {{apiKey}}"}},extractor:function(r){return r;}})"""
+            """({request:{url:"https://cdn.example.com/balance",method:"POST",headers:{Authorization:"Bearer {{apiKey}}"},body:"{}"},extractor:function(r){return r;}})"""
         )
 
         val inspection = UsageScriptExecutor.inspect(script, account())
 
         assertEquals("https://cdn.example.com/balance", inspection.request?.url)
+        assertEquals("POST", inspection.request?.method)
+        assertEquals("{}", inspection.request?.body)
         assertFalse(inspection.request!!.headers.getValue("Authorization").contains(API_KEY))
         assertEquals(setOf(WebOrigin.https("cdn.example.com")), inspection.requiredExtraOrigins)
         assertTrue(inspection.staticallyDeterminable)
