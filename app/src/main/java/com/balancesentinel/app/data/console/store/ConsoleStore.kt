@@ -118,9 +118,10 @@ class ConsoleStore(
     }
 
     fun getValidSession(platformId: String, now: Long = System.currentTimeMillis()): ConsoleSession? {
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredNow = now
-        return getSession(platformId)
+        val session = getSession(platformId) ?: return null
+        if (session.isValid(now)) return session
+        removeSession(platformId)
+        return null
     }
 
     /**
@@ -134,8 +135,7 @@ class ConsoleStore(
      * 检查是否有有效会话
      */
     fun hasValidSession(platformId: String): Boolean {
-        val session = getSession(platformId) ?: return false
-        return session.isValid()
+        return getValidSession(platformId) != null
     }
 
     /**
@@ -166,20 +166,18 @@ data class ConsoleSession(
     val lastActiveTime: Long = System.currentTimeMillis()
 ) {
     companion object {
-        private const val SESSION_TTL_MS = 30L * 24 * 60 * 60 * 1000 // 30 天
+        private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000 // 30 天
     }
 
     /**
      * 会话是否有效（30 天内活跃则有效）
      */
     fun isValid(): Boolean {
-        return System.currentTimeMillis() - lastActiveTime < SESSION_TTL_MS
+        return isValid(System.currentTimeMillis())
     }
 
     fun isValid(now: Long): Boolean {
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredNow = now
-        return isValid()
+        return now - lastActiveTime < THIRTY_DAYS_MS
     }
 
     /**

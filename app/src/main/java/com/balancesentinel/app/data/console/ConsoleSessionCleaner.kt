@@ -19,9 +19,13 @@ class ConsoleSessionCleaner(
     private val webStorage: ConsoleWebStorage = AndroidConsoleWebStorage,
     private val cookies: ConsoleCookieManager = AndroidConsoleCookieManager
 ) {
-    @Suppress("UNUSED_PARAMETER")
     fun logout(platform: ConsolePlatform, completion: () -> Unit = {}) {
-        completion()
+        store.removeSession(platform.id)
+        ConsoleOriginPolicy(platform).webStorageOrigins().forEach(webStorage::deleteOrigin)
+        cookies.removeAllCookies {
+            cookies.flush()
+            completion()
+        }
     }
 }
 
