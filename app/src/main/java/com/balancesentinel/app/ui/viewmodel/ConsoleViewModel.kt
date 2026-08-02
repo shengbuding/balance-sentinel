@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.data.console.DebugLogger
+import com.balancesentinel.app.data.console.ConsoleSessionCleaner
 import com.balancesentinel.app.data.console.store.ConsoleSession
 import com.balancesentinel.app.data.console.store.ConsoleStore
 import com.balancesentinel.app.ui.console.ConsolePlatform
@@ -31,7 +32,8 @@ data class ConsoleUiState(
 class ConsoleViewModel(
     application: Application,
     val platform: ConsolePlatform,
-    private val store: ConsoleStore = ConsoleStore(application)
+    private val store: ConsoleStore = ConsoleStore(application),
+    private val sessionCleaner: ConsoleSessionCleaner = ConsoleSessionCleaner(store)
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(ConsoleUiState())
@@ -94,7 +96,9 @@ class ConsoleViewModel(
     /**
      * 退出登录（清除 session）
      */
-    fun logout() {
+    fun logout(completion: () -> Unit = {}) {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredCompletion = completion
         viewModelScope.launch {
             try {
                 DebugLogger.log("[$TAG] Logout started for ${platform.name} (id=${platform.id})")
