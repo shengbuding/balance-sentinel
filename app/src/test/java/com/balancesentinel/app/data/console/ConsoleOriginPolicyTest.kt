@@ -127,6 +127,37 @@ class ConsoleOriginPolicyTest {
         assertFalse(policy.isAllowedApiRequest("https://dashboard.example.com/settings"))
     }
 
+    @Test
+    fun `navigation handler allows trusted origin dispatches external HTTP and consumes rejects`() {
+        val openedUris = mutableListOf<String>()
+        val handler = ConsoleNavigationHandler(ConsoleOriginPolicy(platform())) { uri ->
+            openedUris += uri.toString()
+        }
+
+        assertFalse(handler.shouldOverride("https://dashboard.example.com/overview"))
+        assertTrue(handler.shouldOverride("https://external.example.net/help"))
+        assertEquals(listOf("https://external.example.net/help"), openedUris)
+        assertTrue(handler.shouldOverride("javascript:alert(1)"))
+        assertEquals(1, openedUris.size)
+    }
+
+    @Test
+    fun `cookie injector writes each cookie once to login URL and flushes`() {
+        val sink = RecordingCookieSink()
+        val injector = ConsoleCookieInjector(ConsoleOriginPolicy(platform()), sink)
+
+        injector.inject(linkedMapOf("session" to "one", "region" to "two"))
+
+        assertEquals(
+            listOf(
+                "https://login.example.com/sign-in" to "session=one",
+                "https://login.example.com/sign-in" to "region=two"
+            ),
+            sink.writes
+        )
+        assertEquals(1, sink.flushCalls)
+    }
+
     private fun platform(
         loginUrl: String = "https://login.example.com/sign-in",
         dashboardUrl: String = "https://dashboard.example.com/overview"
@@ -137,4 +168,17 @@ class ConsoleOriginPolicyTest {
         dashboardUrl = dashboardUrl,
         successUrlPatterns = listOf("/overview")
     )
+
+    private class RecordingCookieSink : ConsoleCookieSink {
+        val writes = mutableListOf<Pair<String, String>>()
+        var flushCalls = 0
+
+        override fun setCookie(url: String, cookie: String) {
+            writes += url to cookie
+        }
+
+        override fun flush() {
+            flushCalls++
+        }
+    }
 }
