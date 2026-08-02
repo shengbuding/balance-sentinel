@@ -7,6 +7,7 @@ import com.balancesentinel.app.data.api.balance.UsageScriptExecutor
 import com.balancesentinel.app.data.api.balance.WebOrigin
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountInfo
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 enum class ImportMode { MERGE, REPLACE_ALL }
 
@@ -84,7 +85,12 @@ class BackupImportPlanner(
                 continue
             }
 
-            val localIndex = localAccounts.indexOfFirst { it.id == incoming.id }
+            val localIndex = findLocalIndex(
+                localAccounts,
+                incoming,
+                entry.sourceId,
+                hasFullCredentials
+            )
             if (!hasFullCredentials) {
                 if (mode != ImportMode.MERGE || localIndex < 0) {
                     skippedCount++
@@ -133,14 +139,13 @@ class BackupImportPlanner(
                 scriptAuthorizations += ScriptAuthorization(
                     accountId = prepared.id,
                     requiredExtraOrigins = inspection.requiredExtraOrigins.toSet(),
-                    staticallyDeterminable = inspection.staticallyDeterminable
+                    staticallyDeterminable = inspection.allowsImportedEnablement()
                 )
             }
 
             if (localIndex >= 0) {
                 if (mode == ImportMode.MERGE) {
-                    val finalIndex = finalAccounts.indexOfFirst { it.id == prepared.id }
-                    finalAccounts[finalIndex] = prepared
+                    finalAccounts[localIndex] = prepared
                 } else {
                     finalAccounts += prepared
                 }
@@ -227,6 +232,24 @@ class BackupImportPlanner(
         apiKeyManager.replaceAll(plan.finalAccounts)
         ConfigManager.applySettings(plan.settings, widgetPrefs)
     }
+
+    private fun findLocalIndex(
+        localAccounts: List<AccountInfo>,
+        incoming: AccountInfo,
+        sourceId: String,
+        hasFullCredentials: Boolean
+    ): Int = localAccounts.indexOfFirst { local ->
+        local.id == incoming.id ||
+            (hasFullCredentials &&
+                sourceId.matches(LEGACY_ID) &&
+                local.id == sourceId &&
+                apiKeyManager.computeId(local.apiKey) == incoming.id)
+    }
+
+    private fun ScriptInspection.allowsImportedEnablement(): Boolean =
+        staticallyDeterminable &&
+            (request == null || request.url.toHttpUrlOrNull()?.scheme == "https") &&
+            requiredExtraOrigins.all { it.scheme == "https" }
 
     private fun normalizeFullAccount(account: AccountInfo, version: Int): NormalizedAccount {
         if (!hasCompleteCredentials(account)) return NormalizedAccount(account.id, null)
