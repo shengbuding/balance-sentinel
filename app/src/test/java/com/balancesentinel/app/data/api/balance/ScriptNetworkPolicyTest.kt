@@ -9,6 +9,22 @@ import java.net.InetAddress
 
 class ScriptNetworkPolicyTest {
 
+    // Mutation caught: allowing localhost through hostname validation and consulting DNS.
+    @Test
+    fun `localhost is denied before dns even when same origin resolves publicly`() {
+        val resolver = FakeResolver("localhost" to listOf("93.184.216.34"))
+        val policy = ScriptNetworkPolicy(
+            baseUrl = "https://localhost/v1".toHttpUrl(),
+            authorizedOrigins = emptySet(),
+            resolver = resolver
+        )
+
+        val decision = policy.validate("https://localhost/balance".toHttpUrl())
+
+        assertEquals(0, resolver.lookups)
+        assertFalse(decision.isAllowed)
+    }
+
     // Mutation caught: accepting HTTP, literals, private DNS, or a different registered port.
     @Test
     fun `policy rejects unsafe destinations and dns rebinding`() {
@@ -92,6 +108,49 @@ class ScriptNetworkPolicyTest {
             assertFalse("accepted $host", policy.validate("https://$host/x".toHttpUrl()).isAllowed)
         }
         assertFalse(policy.validate("https://mixed.example.com/x".toHttpUrl()).isAllowed)
+    }
+
+    // Mutation caught: treating an IANA special-purpose IPv6 prefix as ordinary global unicast.
+    @Test
+    fun `special purpose ipv6 is denied while ordinary global ipv6 is allowed`() {
+        val deniedAddresses = listOf(
+            "64:ff9b::1",
+            "64:ff9b:1::1",
+            "100::1",
+            "100:0:0:1::1",
+            "2001::1",
+            "2001:2::1",
+            "2001:10::1",
+            "2001:20::1",
+            "2001:30::1",
+            "2001:db8::1",
+            "2002::1",
+            "2620:4f:8000::1",
+            "3fff::1",
+            "5f00::1",
+            "fc00::1",
+            "fe80::1",
+            "ff00::1"
+        )
+        val deniedHosts = deniedAddresses.mapIndexed { index, address ->
+            "special-$index.example.com" to listOf(address)
+        }
+        val globalHost = "global.example.com"
+        val resolver = FakeResolver(
+            *(deniedHosts + (globalHost to listOf("2606:4700:4700::1111"))).toTypedArray()
+        )
+        val policy = ScriptNetworkPolicy(
+            baseUrl = "https://api.example.com".toHttpUrl(),
+            authorizedOrigins = (deniedHosts.map { (host) -> WebOrigin.https(host) } +
+                WebOrigin.https(globalHost)).toSet(),
+            resolver = resolver
+        )
+
+        deniedHosts.zip(deniedAddresses).forEach { (entry, address) ->
+            val (host) = entry
+            assertFalse("accepted $address", policy.validate("https://$host/x".toHttpUrl()).isAllowed)
+        }
+        assertTrue(policy.validate("https://$globalHost/x".toHttpUrl()).isAllowed)
     }
 
     // Mutation caught: skipping IDNA and lowercase canonicalization when origins are constructed.

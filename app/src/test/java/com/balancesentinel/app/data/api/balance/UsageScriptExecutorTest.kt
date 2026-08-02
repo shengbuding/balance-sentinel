@@ -55,6 +55,58 @@ class UsageScriptExecutorTest {
         assertFalse(inspection.staticallyDeterminable)
     }
 
+    // Mutation caught: accepting the first request.url when a duplicate property overrides it.
+    @Test
+    fun `duplicate request url cannot make the overridden value look static`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/static",url:"https://api.example.com/"+(1+1)},extractor:function(r){return r;}})"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertEquals("https://api.example.com/2", inspection.request?.url)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
+    // Mutation caught: ignoring a later direct assignment that changes request.url during evaluation.
+    @Test
+    fun `later request url assignment cannot look static`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/static",toJSON:function(){this.url="https://api.example.com/"+(1+1);return this;}},extractor:function(r){return r;}})"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertEquals("https://api.example.com/2", inspection.request?.url)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
+    // Mutation caught: ignoring a computed-property mutation of request.url during evaluation.
+    @Test
+    fun `computed request url mutation cannot look static`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/static",toJSON:function(){this["url"]="https://api.example.com/"+(1+1);return this;}},extractor:function(r){return r;}})"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertEquals("https://api.example.com/2", inspection.request?.url)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
+    // Mutation caught: treating a credential placeholder in the URL authority as static.
+    @Test
+    fun `credential placeholder in url authority cannot look static`() = runBlocking {
+        val script = UsageScript(
+            """({request:{url:"https://{{apiKey}}.example.com/balance"},extractor:function(r){return r;}})"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertNotNull(inspection.request)
+        assertFalse(inspection.staticallyDeterminable)
+    }
+
     // Mutation caught: allowing configuration evaluation to outlive its complete phase timeout.
     @Test(timeout = 3_000)
     fun `inspection maps configuration deadline to script timeout`() = runBlocking {
