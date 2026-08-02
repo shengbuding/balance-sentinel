@@ -20,12 +20,6 @@ data class UsageScript(
 /**
  * 脚本执行结果
  */
-data class ScriptResult(
-    val success: Boolean,
-    val data: List<BalanceData>? = null,
-    val error: String? = null
-)
-
 internal class ScriptExecutionException(
     val failure: RefreshFailure
 ) : RuntimeException(failure.message)

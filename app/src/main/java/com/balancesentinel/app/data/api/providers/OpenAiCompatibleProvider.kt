@@ -13,8 +13,12 @@ import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.UnifiedUsage
 import com.balancesentinel.app.data.api.balance.BalanceData
 import com.balancesentinel.app.data.api.balance.BalanceQueryService
+import com.balancesentinel.app.data.api.balance.ScriptExecutionException
+import com.balancesentinel.app.data.api.balance.ScriptExecutionResult
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.UsageScriptExecutor
+import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.util.Logger
 
 class OpenAiCompatibleProvider(
@@ -36,23 +40,20 @@ class OpenAiCompatibleProvider(
 
         Logger.i(
             "OpenAiCompatibleProvider",
-            "getBalance called: baseUrl=${effectiveConfig.baseUrl}, " +
-                "hasCustomScript=${!customScript.isNullOrBlank()}"
+            "getBalance called: hasCustomScript=${!customScript.isNullOrBlank()}"
         )
 
         if (!customScript.isNullOrBlank()) {
-            val scripted = executeCustomScript(effectiveConfig, customScript)
-            return if (scripted != null) {
-                ProviderResult.Success(
-                    scripted.toUnifiedBalance(providerType, accountId)
-                )
-            } else {
-                ProviderResult.Failure(
-                    ProviderError.ApiUnavailableError(
-                        providerType,
-                        "自定义余额脚本执行失败"
-                    )
-                )
+            return when (val result = executeCustomScript(effectiveConfig, customScript)) {
+                is ScriptExecutionResult.Success -> {
+                    val balance = result.balances.firstOrNull()
+                        ?: return scriptFailure(
+                            RefreshFailure.ResponseSchemaFailure("Script returned no balance data")
+                        )
+                    Logger.i("OpenAiCompatibleProvider", "Custom script succeeded")
+                    ProviderResult.Success(balance.toUnifiedBalance(providerType, accountId))
+                }
+                is ScriptExecutionResult.Failure -> scriptFailure(result.failure)
             }
         }
 
@@ -62,27 +63,46 @@ class OpenAiCompatibleProvider(
     private suspend fun executeCustomScript(
         config: ProviderConfig,
         source: String
-    ): BalanceData? = try {
+    ): ScriptExecutionResult {
         Logger.i("OpenAiCompatibleProvider", "Using custom script")
-        val result = UsageScriptExecutor.execute(
-            script = UsageScript(code = source),
+        val enabledSetting = config.settings["usageScriptEnabled"]
+        val enabled = enabledSetting?.toBooleanStrictOrNull() ?: (enabledSetting == null)
+        val authorizedOrigins = config.settings["authorizedScriptOrigins"]
+            .orEmpty()
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+        val account = AccountInfo(
+            id = config.credentials["accountId"].orEmpty(),
+            label = config.credentials["accountLabel"].orEmpty(),
             apiKey = config.apiKey,
-            baseUrl = checkNotNull(config.baseUrl),
-            accountId = config.credentials["accountId"],
-            accountLabel = config.credentials["accountLabel"],
-            providerType = providerType.displayName
+            providerType = providerType,
+            extraSettings = config.settings,
+            usageScript = source,
+            usageScriptEnabled = enabled,
+            authorizedScriptOrigins = authorizedOrigins
         )
-        result.data?.firstOrNull().also { balance ->
-            if (result.success && balance != null) {
-                Logger.i("OpenAiCompatibleProvider", "Custom script succeeded")
-            } else {
-                Logger.w("OpenAiCompatibleProvider", "Custom script returned no data")
-            }
-        }?.takeIf { result.success }
-    } catch (_: Exception) {
-        Logger.e("OpenAiCompatibleProvider", "Custom script failed")
-        null
+        return UsageScriptExecutor.execute(
+            script = UsageScript(
+                code = source,
+                enabled = enabled,
+                baseUrl = config.baseUrl,
+                accessToken = config.credentials["accessToken"],
+                userId = config.credentials["userId"]
+            ),
+            account = account
+        )
     }
+
+    private fun scriptFailure(failure: RefreshFailure): ProviderResult.Failure =
+        ProviderResult.Failure(
+            ProviderError.InvalidResponseError(
+                provider = providerType,
+                message = "Custom script execution failed",
+                cause = ScriptExecutionException(failure)
+            )
+        )
 
     private fun BalanceData.toUnifiedBalance(
         providerType: ProviderType,
@@ -96,7 +116,7 @@ class OpenAiCompatibleProvider(
             balances = listOf(
                 BalanceEntry(
                     currency = currency,
-                    totalBalance = remaining ?: 0.0,
+                    totalBalance = checkNotNull(remaining),
                     unit = currency
                 )
             ),

@@ -1,6 +1,5 @@
 package com.balancesentinel.app.data.api.balance
 
-import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import kotlinx.coroutines.CancellationException
@@ -170,33 +169,6 @@ object UsageScriptExecutor {
             userId = script.userId
         )
         extract(source, responseBody, timeoutMillis)
-    }
-
-    @Suppress("LongParameterList")
-    suspend fun execute(
-        script: UsageScript,
-        apiKey: String,
-        baseUrl: String,
-        accountId: String? = null,
-        accountLabel: String? = null,
-        providerType: String? = null
-    ): ScriptResult {
-        val account = AccountInfo(
-            id = accountId.orEmpty(),
-            label = accountLabel.orEmpty(),
-            apiKey = apiKey,
-            providerType = ProviderType.CUSTOM,
-            extraSettings = mapOf("baseUrl" to baseUrl),
-            usageScript = script.code,
-            usageScriptEnabled = script.enabled
-        )
-        return when (val result = execute(script, account)) {
-            is ScriptExecutionResult.Success -> ScriptResult(success = true, data = result.balances)
-            is ScriptExecutionResult.Failure -> ScriptResult(
-                success = false,
-                error = result.failure.message
-            )
-        }
     }
 
     fun validateScript(script: String): String? = try {

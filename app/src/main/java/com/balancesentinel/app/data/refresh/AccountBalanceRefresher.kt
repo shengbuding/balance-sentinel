@@ -6,6 +6,7 @@ import com.balancesentinel.app.data.api.ProviderFactory
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.balance.ScriptExecutionException
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.CancellationException
 
@@ -79,7 +80,8 @@ class AccountBalanceRefresher(
         is ProviderError.QuotaExceededError ->
             RefreshFailure.RateLimited("Provider quota is exhausted")
         is ProviderError.InvalidResponseError ->
-            RefreshFailure.ResponseSchemaFailure("Balance response schema is invalid")
+            (error.cause as? ScriptExecutionException)?.failure
+                ?: RefreshFailure.ResponseSchemaFailure("Balance response schema is invalid")
         is ProviderError.ApiUnavailableError ->
             RefreshFailure.ResponseSchemaFailure("Balance is unavailable for this provider")
     }
