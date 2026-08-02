@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.balance.RequestConfig
 import com.balancesentinel.app.data.api.balance.ScriptInspection
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.WebOrigin
@@ -179,6 +180,27 @@ class BackupImportPlannerTest {
     }
 
     @Test
+    fun `full schema v1 merge replaces a matching legacy local ID with its normalized ID`() = runTest {
+        // Mutation caught: exact-ID-only matching that appends a normalized v1 account beside its legacy local account.
+        val localLegacy = account(id = NEW_LEGACY_ID, apiKey = NEW_KEY, label = "Local legacy")
+        val incoming = account(id = NEW_LEGACY_ID, apiKey = NEW_KEY, label = "Imported")
+
+        val plan = planner().plan(
+            config(credentialsIncluded = false, accounts = listOf(incoming), version = 1),
+            listOf(localLegacy),
+            ImportMode.MERGE
+        )
+
+        assertEquals(1, plan.finalAccounts.size)
+        assertEquals(
+            incoming.copy(id = NEW_ID, usageScriptEnabled = false, authorizedScriptOrigins = emptySet()),
+            plan.finalAccounts.single()
+        )
+        assertEquals(1, plan.matchedUpdatedCount)
+        assertEquals(0, plan.createdCount)
+    }
+
+    @Test
     fun `full imports disable scripts clear grants and expose static canonical origins`() = runTest {
         // Mutation caught: preserving imported script enablement/grants or omitting static-origin preview data.
         val origin = WebOrigin.https("Usage.Example.com")
@@ -239,6 +261,59 @@ class BackupImportPlannerTest {
             setOf("https://audit.example.com", "https://usage.example.com"),
             complete.finalAccounts[0].authorizedScriptOrigins
         )
+    }
+
+    @Test
+    fun `HTTP inspected base requests remain disabled after authorization`() = runTest {
+        // Mutation caught: allowing an authorization attempt to enable a script whose inspected base request is HTTP.
+        val incoming = account(id = SCRIPT_ID, apiKey = SCRIPT_KEY, usageScript = SCRIPT)
+        val p = planner(
+            inspector = {
+                    _, _ ->
+                ScriptInspection(
+                    request = RequestConfig("http://usage.example.com/balance"),
+                    requiredExtraOrigins = emptySet(),
+                    staticallyDeterminable = true
+                )
+            }
+        )
+        val basePlan = p.plan(config(true, listOf(incoming)), emptyList(), ImportMode.MERGE)
+
+        val authorized = p.withScriptAuthorizations(
+            basePlan,
+            enabledAccountIds = setOf(SCRIPT_ID),
+            authorizedOrigins = emptyMap()
+        )
+
+        assertFalse(authorized.finalAccounts.single().usageScriptEnabled)
+        assertEquals(emptySet<String>(), authorized.finalAccounts.single().authorizedScriptOrigins)
+    }
+
+    @Test
+    fun `HTTP required extra origins remain disabled after authorization`() = runTest {
+        // Mutation caught: persisting an HTTP script grant once a user checks the inspected extra origin.
+        val httpOrigin = WebOrigin("http", "audit.example.com", 80)
+        val incoming = account(id = SCRIPT_ID, apiKey = SCRIPT_KEY, usageScript = SCRIPT)
+        val p = planner(
+            inspector = {
+                    _, _ ->
+                ScriptInspection(
+                    request = RequestConfig("https://usage.example.com/balance"),
+                    requiredExtraOrigins = setOf(httpOrigin),
+                    staticallyDeterminable = true
+                )
+            }
+        )
+        val basePlan = p.plan(config(true, listOf(incoming)), emptyList(), ImportMode.MERGE)
+
+        val authorized = p.withScriptAuthorizations(
+            basePlan,
+            enabledAccountIds = setOf(SCRIPT_ID),
+            authorizedOrigins = mapOf(SCRIPT_ID to setOf(httpOrigin))
+        )
+
+        assertFalse(authorized.finalAccounts.single().usageScriptEnabled)
+        assertEquals(emptySet<String>(), authorized.finalAccounts.single().authorizedScriptOrigins)
     }
 
     @Test
