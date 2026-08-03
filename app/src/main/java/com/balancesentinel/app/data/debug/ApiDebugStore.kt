@@ -1,9 +1,8 @@
 package com.balancesentinel.app.data.debug
 
-/**
- * API调试条目数据模型
- * 记录完整的请求和响应信息
- */
+import java.security.MessageDigest
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 data class ApiDebugEntry(
     val accountId: String,
     val url: String,
@@ -14,17 +13,16 @@ data class ApiDebugEntry(
     val responseHeaders: Map<String, String>,
     val responseBody: String,
     val timestamp: Long,
-    val duration: Long, // 请求耗时（毫秒）
-    val error: String? = null, // 错误信息（如果有）
-    // 新增字段
-    val accountLabel: String? = null, // 账户标签
-    val providerType: String? = null, // 供应商类型
-    val baseUrl: String? = null, // 基础URL
-    val endpoint: String? = null, // API端点
-    val isCustomScript: Boolean = false, // 是否使用自定义脚本
-    val scriptPreview: String? = null, // 脚本预览（前100字符）
-    val exceptionType: String? = null, // 异常类型
-    val exceptionStack: String? = null, // 异常堆栈（前500字符）
+    val duration: Long,
+    val error: String? = null,
+    val accountLabel: String? = null,
+    val providerType: String? = null,
+    val baseUrl: String? = null,
+    val endpoint: String? = null,
+    val isCustomScript: Boolean = false,
+    val scriptPreview: String? = null,
+    val exceptionType: String? = null,
+    val exceptionStack: String? = null,
     val requestBodyTruncated: Boolean = false,
     val responseBodyTruncated: Boolean = false,
     val errorTruncated: Boolean = false,
@@ -34,59 +32,128 @@ data class ApiDebugEntry(
     val scriptSha256: String? = null
 )
 
-/**
- * API调试数据存储（单例）
- * 按账户ID分组存储调试条目
- */
 object ApiDebugStore {
-    private val entries = mutableMapOf<String, MutableList<ApiDebugEntry>>()
+    private val entries = LinkedHashMap<Long, ApiDebugEntry>(16, 0.75f, true)
+    private val accountEntries = mutableMapOf<String, MutableList<Long>>()
+    private var nextId = 0L
+    private var retainedBytes = 0L
 
     val currentBytes: Long
-        @Synchronized get() = 0
+        @Synchronized get() = retainedBytes
 
-    /**
-     * 添加调试条目
-     */
     @Synchronized
     fun addEntry(entry: ApiDebugEntry) {
-        val accountEntries = entries.getOrPut(entry.accountId) { mutableListOf() }
-        accountEntries.add(entry)
+        val sanitized = sanitize(entry)
+        val id = nextId++
+        entries[id] = sanitized
+        accountEntries.getOrPut(sanitized.accountId) { mutableListOf() }.add(id)
+        retainedBytes += sizeOf(sanitized)
 
-        // 限制每个账户最多保留50条记录
-        if (accountEntries.size > 50) {
-            accountEntries.removeAt(0)
+        while (retainedBytes > MAX_DEBUG_STORE_BYTES && entries.isNotEmpty()) {
+            remove(entries.entries.first().key)
+        }
+        val ids = accountEntries[sanitized.accountId]
+        while (ids != null && ids.size > MAX_ENTRIES_PER_ACCOUNT) {
+            remove(ids.first())
         }
     }
 
-    /**
-     * 获取指定账户的调试条目
-     */
     @Synchronized
     fun getEntries(accountId: String): List<ApiDebugEntry> {
-        return entries[accountId]?.toList() ?: emptyList()
+        val ids = accountEntries[accountId]?.toList().orEmpty()
+        return ids.mapNotNull { entries[it] }
     }
 
-    /**
-     * 清空指定账户的调试条目
-     */
     @Synchronized
     fun clearEntries(accountId: String) {
-        entries.remove(accountId)
+        accountEntries[accountId]?.toList().orEmpty().forEach(::remove)
     }
 
-    /**
-     * 清空所有调试条目
-     */
     @Synchronized
     fun clearAll() {
         entries.clear()
+        accountEntries.clear()
+        retainedBytes = 0
+        nextId = 0
     }
 
-    /**
-     * 获取所有账户ID
-     */
     @Synchronized
-    fun getAccountIds(): Set<String> {
-        return entries.keys.toSet()
+    fun getAccountIds(): Set<String> = accountEntries.keys.toSet()
+
+    internal fun sanitizedEntry(entry: ApiDebugEntry): ApiDebugEntry = sanitize(entry)
+
+    private fun remove(id: Long) {
+        val removed = entries.remove(id) ?: return
+        retainedBytes -= sizeOf(removed)
+        accountEntries[removed.accountId]?.let { ids ->
+            ids.remove(id)
+            if (ids.isEmpty()) accountEntries.remove(removed.accountId)
+        }
     }
+
+    private fun sanitize(entry: ApiDebugEntry): ApiDebugEntry {
+        val requestBody = entry.requestBody?.let(SensitiveDataRedactor::redactCaptured)
+        val responseBody = SensitiveDataRedactor.redactCaptured(entry.responseBody)
+        val error = entry.error?.let(SensitiveDataRedactor::redactCaptured)
+        val stack = entry.exceptionStack?.let(SensitiveDataRedactor::redactCaptured)
+        val script = entry.scriptPreview
+        return entry.copy(
+            url = redactUrlOrText(entry.url),
+            method = SensitiveDataRedactor.redactText(entry.method),
+            requestHeaders = SensitiveDataRedactor.redactHeaders(entry.requestHeaders),
+            requestBody = requestBody?.text,
+            responseHeaders = SensitiveDataRedactor.redactHeaders(entry.responseHeaders),
+            responseBody = responseBody.text,
+            error = error?.text,
+            accountLabel = entry.accountLabel?.let(SensitiveDataRedactor::redactText),
+            providerType = entry.providerType?.let(SensitiveDataRedactor::redactText),
+            baseUrl = entry.baseUrl?.let(::redactUrlOrText),
+            endpoint = entry.endpoint?.let(SensitiveDataRedactor::redactText),
+            scriptPreview = null,
+            exceptionType = entry.exceptionType?.let(SensitiveDataRedactor::redactText),
+            exceptionStack = stack?.text,
+            requestBodyTruncated = entry.requestBodyTruncated || requestBody?.truncated == true,
+            responseBodyTruncated = entry.responseBodyTruncated || responseBody.truncated,
+            errorTruncated = entry.errorTruncated || error?.truncated == true,
+            exceptionStackTruncated = entry.exceptionStackTruncated || stack?.truncated == true,
+            scriptCharacterCount = entry.scriptCharacterCount ?: script?.length,
+            scriptByteCount = entry.scriptByteCount ?: script?.toByteArray(Charsets.UTF_8)?.size,
+            scriptSha256 = script?.let(::sha256)
+                ?: entry.scriptSha256?.let(SensitiveDataRedactor::redactText)
+        )
+    }
+
+    private fun redactUrlOrText(value: String): String =
+        value.toHttpUrlOrNull()?.let(SensitiveDataRedactor::redactUrl)
+            ?: SensitiveDataRedactor.redactText(value)
+
+    private fun sizeOf(entry: ApiDebugEntry): Long {
+        var bytes = listOfNotNull(
+            entry.accountId,
+            entry.url,
+            entry.method,
+            entry.requestBody,
+            entry.responseBody,
+            entry.error,
+            entry.accountLabel,
+            entry.providerType,
+            entry.baseUrl,
+            entry.endpoint,
+            entry.scriptPreview,
+            entry.exceptionType,
+            entry.exceptionStack,
+            entry.scriptSha256
+        ).sumOf(::utf8Size)
+        entry.requestHeaders.forEach { (name, value) -> bytes += utf8Size(name) + utf8Size(value) }
+        entry.responseHeaders.forEach { (name, value) -> bytes += utf8Size(name) + utf8Size(value) }
+        return bytes
+    }
+
+    private fun utf8Size(value: String): Long = value.toByteArray(Charsets.UTF_8).size.toLong()
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+    private const val MAX_ENTRIES_PER_ACCOUNT = 50
 }
