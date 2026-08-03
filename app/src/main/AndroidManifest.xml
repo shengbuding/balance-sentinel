@@ -38,12 +38,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".ui.console.ConsoleWebViewActivity"
-            android:exported="false"
-            android:process=":console_webview"
-            android:theme="@style/Theme.DeepSeekBalance" />
-
         <receiver android:name=".widget.StaticWidgetProvider_2x1" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

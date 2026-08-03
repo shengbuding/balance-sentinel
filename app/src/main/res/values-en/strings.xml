@@ -335,6 +335,10 @@
 
     <!-- ===== New Sub-pages ===== -->
     <string name="data_clear_title">Clear Data</string>
+    <string name="data_clear_console_title">Console Data</string>
+    <string name="data_clear_console_desc">Clear all console instances and login sessions</string>
+    <string name="data_clear_console_btn">Clear Console Data</string>
+    <string name="data_confirm_clear_console">Are you sure you want to clear all console data? This will delete all console instances and login sessions.</string>
     <string name="data_backup_title">Backup &amp; Migration</string>
     <string name="data_nav_clear_title">Clear Data</string>
     <string name="data_nav_clear_desc">Clear raw records, daily summaries, usage snapshots, refresh logs, etc.</string>
