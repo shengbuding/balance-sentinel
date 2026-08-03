@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
+import java.util.Locale
+
+data class AlertIdentity(val accountId: String, val currency: String) {
+    val normalizedCurrency: String = currency.uppercase(Locale.ROOT)
+    val storageSuffix: String = "${accountId}_${normalizedCurrency}"
+}
 
 /**
  * 小组件偏好设置（多账户版）。
@@ -74,36 +80,71 @@ class WidgetPrefs(context: Context) {
     fun getLastAlertedBalance(accountId: String): Float =
         prefs.getFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", -1f)
 
+    fun getLastAlertedBalance(accountId: String, currency: String): Float =
+        getLastAlertedBalance(accountId)
+
     fun setLastAlertedBalance(accountId: String, value: Float) {
         commitAccountState { putFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", value) }
+    }
+
+    fun setLastAlertedBalance(accountId: String, currency: String, value: Float) {
+        setLastAlertedBalance(accountId, value)
     }
 
     fun getPreviousBalance(accountId: String): Float =
         prefs.getFloat("${KEY_PREVIOUS_BALANCE}_$accountId", -1f)
 
+    fun getPreviousBalance(accountId: String, currency: String): Float =
+        getPreviousBalance(accountId)
+
     fun setPreviousBalance(accountId: String, value: Float) {
         commitAccountState { putFloat("${KEY_PREVIOUS_BALANCE}_$accountId", value) }
+    }
+
+    fun setPreviousBalance(accountId: String, currency: String, value: Float) {
+        setPreviousBalance(accountId, value)
     }
 
     fun getPreviousBalanceTime(accountId: String): Long =
         prefs.getLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", 0L)
 
+    fun getPreviousBalanceTime(accountId: String, currency: String): Long =
+        getPreviousBalanceTime(accountId)
+
     fun setPreviousBalanceTime(accountId: String, value: Long) {
         commitAccountState { putLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", value) }
+    }
+
+    fun setPreviousBalanceTime(accountId: String, currency: String, value: Long) {
+        setPreviousBalanceTime(accountId, value)
     }
 
     fun getLastChangeAlertedBalance(accountId: String): Float =
         prefs.getFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", -1f)
 
+    fun getLastChangeAlertedBalance(accountId: String, currency: String): Float =
+        getLastChangeAlertedBalance(accountId)
+
     fun setLastChangeAlertedBalance(accountId: String, value: Float) {
         commitAccountState { putFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", value) }
+    }
+
+    fun setLastChangeAlertedBalance(accountId: String, currency: String, value: Float) {
+        setLastChangeAlertedBalance(accountId, value)
     }
 
     fun getLastChangeAlertedTime(accountId: String): Long =
         prefs.getLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", 0L)
 
+    fun getLastChangeAlertedTime(accountId: String, currency: String): Long =
+        getLastChangeAlertedTime(accountId)
+
     fun setLastChangeAlertedTime(accountId: String, value: Long) {
         commitAccountState { putLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", value) }
+    }
+
+    fun setLastChangeAlertedTime(accountId: String, currency: String, value: Long) {
+        setLastChangeAlertedTime(accountId, value)
     }
 
     // ── Snooze 标记（按账户隔离）──

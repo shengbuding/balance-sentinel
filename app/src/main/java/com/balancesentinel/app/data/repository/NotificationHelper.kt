@@ -29,9 +29,19 @@ class NotificationHelper(private val context: Context) {
     fun alertNotificationId(accountId: String): Int =
         10000 + (accountId.hashCode() and 0xFFFF)
 
+    fun alertNotificationId(accountId: String, currency: String): Int =
+        alertNotificationId(accountId)
+
     /** 每账户 change 通知 ID：20000 + hash，范围 [20000, 85535] */
     fun changeNotificationId(accountId: String): Int =
         20000 + (accountId.hashCode() and 0xFFFF)
+
+    fun changeNotificationId(accountId: String, currency: String): Int =
+        changeNotificationId(accountId)
+
+    fun deepLinkRequestCode(accountId: String, currency: String): Int = accountId.hashCode()
+
+    fun snoozeRequestCode(accountId: String, currency: String): Int = accountId.hashCode() + 1
 
     // ── PendingIntent 工厂 ──
 
@@ -50,7 +60,7 @@ class NotificationHelper(private val context: Context) {
             putExtra("deep_link_currency", currency)
         }
         return PendingIntent.getActivity(
-            context, accountId.hashCode(),
+            context, deepLinkRequestCode(accountId, currency),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -66,6 +76,9 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
+
+    fun createSnoozeIntent(accountId: String, currency: String): PendingIntent =
+        createSnoozeIntent(accountId)
 
     // ── 高级通知 API ──
 
