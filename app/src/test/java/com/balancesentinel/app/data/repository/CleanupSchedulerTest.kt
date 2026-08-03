@@ -210,6 +210,54 @@ class CleanupSchedulerTest {
         })
     }
 
+    // Mutation caught: matching a post-snapshot arrival against the pre-delete multiplicity.
+    @Test
+    fun `applied failed deletion preserves an identical arrival as an excess copy`() = runTest {
+        val source = record("acct", "CNY", at("2026-08-01T10:00:00Z"), 12f)
+        RawRecordStore.addRecords(context, listOf(source))
+        var inserted = false
+        val fault = FaultPrefsContext(
+            context,
+            applyThenFailCommit = { name, count -> name == RAW_PREFS && count == 1 },
+            afterCommit = { name, count ->
+                if (!inserted && name == RAW_PREFS && count == 1) {
+                    inserted = true
+                    RawRecordStore.addRecords(context, listOf(source))
+                }
+            }
+        )
+
+        val report = CleanupScheduler.runCleanup(fault, NOW, ZoneOffset.UTC)
+
+        assertEquals(listOf(source, source), RawRecordStore.getAllRecords(context))
+        assertEquals(0, report.deletedRecordCount)
+        assertEquals(2, report.retainedRecordCount)
+        assertTrue(report.failures.any {
+            it.date == "2026-08-01" && it.stage == CleanupStage.DELETE_SOURCE
+        })
+    }
+
+    // Mutation caught: discarding the recovery commit result after an ambiguous applied deletion.
+    @Test
+    fun `permanent compensation failure keeps the deleted snapshot recoverable`() = runTest {
+        val source = record("acct", "CNY", at("2026-08-01T10:00:00Z"), 12f)
+        RawRecordStore.addRecords(context, listOf(source))
+        val fault = FaultPrefsContext(
+            context,
+            applyThenFailCommit = { name, count -> name == RAW_PREFS && count == 1 },
+            failCommit = { name, count -> name == RAW_PREFS && count >= 2 }
+        )
+
+        val report = CleanupScheduler.runCleanup(fault, NOW, ZoneOffset.UTC)
+
+        assertEquals(listOf(source), RawRecordStore.getAllRecords(context))
+        assertEquals(0, report.deletedRecordCount)
+        assertEquals(1, report.retainedRecordCount)
+        assertTrue(report.failures.any {
+            it.date == "2026-08-01" && it.stage == CleanupStage.DELETE_SOURCE
+        })
+    }
+
     // Mutation caught: deleting only the old members of a mixed-age snapshot.
     @Test
     fun `deletion waits until every record in the snapshot is older than 24 hours`() = runTest {
