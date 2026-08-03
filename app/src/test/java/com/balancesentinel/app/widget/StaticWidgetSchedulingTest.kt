@@ -11,9 +11,13 @@ import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -144,6 +148,78 @@ class StaticWidgetSchedulingTest {
         assertEquals(1, starter.calls)
     }
 
+    @Test
+    fun `watchdog execution restarts exactly once and rethrows refresh failure`() = runTest {
+        val events = mutableListOf<String>()
+        val expectedFailure = IllegalStateException("watchdog refresh failed")
+        val starter = RecordingStarter(events)
+        val execution = WidgetRefreshExecution(
+            FailingGateway(events, expectedFailure),
+            starter
+        )
+
+        val observedFailure = try {
+            execution.execute(context, WidgetRefreshDecision.Refresh(watchdog = true))
+            null
+        } catch (failure: IllegalStateException) {
+            failure
+        }
+
+        assertSame(expectedFailure, observedFailure)
+        assertEquals(listOf("refresh:WATCHDOG", "start"), events)
+        assertEquals(1, starter.calls)
+        assertEquals(1, RefreshScheduler.getRestartCount(context))
+    }
+
+    @Test
+    fun `watchdog execution restarts exactly once and preserves cancellation`() = runTest {
+        val events = mutableListOf<String>()
+        val starter = RecordingStarter(events)
+        val execution = WidgetRefreshExecution(CancellingGateway(events), starter)
+        val cancellation = CancellationException("watchdog refresh cancelled")
+        val executionResult = async {
+            execution.execute(context, WidgetRefreshDecision.Refresh(watchdog = true))
+        }
+
+        testScheduler.advanceUntilIdle()
+        executionResult.cancel(cancellation)
+        val observedCancellation = try {
+            executionResult.await()
+            null
+        } catch (failure: CancellationException) {
+            failure
+        }
+
+        assertEquals(cancellation.message, observedCancellation?.message)
+        assertTrue(executionResult.isCancelled)
+        assertEquals(listOf("refresh:WATCHDOG", "start"), events)
+        assertEquals(1, starter.calls)
+        assertEquals(1, RefreshScheduler.getRestartCount(context))
+    }
+
+    @Test
+    fun `manual execution rethrows refresh failure without starting service`() = runTest {
+        val events = mutableListOf<String>()
+        val expectedFailure = IllegalStateException("manual refresh failed")
+        val starter = RecordingStarter(events)
+        val execution = WidgetRefreshExecution(
+            FailingGateway(events, expectedFailure),
+            starter
+        )
+
+        val observedFailure = try {
+            execution.execute(context, WidgetRefreshDecision.Refresh(watchdog = false))
+            null
+        } catch (failure: IllegalStateException) {
+            failure
+        }
+
+        assertSame(expectedFailure, observedFailure)
+        assertEquals(listOf("refresh:WIDGET"), events)
+        assertEquals(0, starter.calls)
+        assertEquals(0, RefreshScheduler.getRestartCount(context))
+    }
+
     private fun schedulerPrefs() =
         context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
 
@@ -153,6 +229,35 @@ class StaticWidgetSchedulingTest {
         override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
             events += "refresh:${trigger.name}"
             return emptyList()
+        }
+
+        override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
+            error("not used")
+
+        override fun invalidate(accountId: String) = Unit
+    }
+
+    private class FailingGateway(
+        private val events: MutableList<String>,
+        private val failure: RuntimeException
+    ) : RefreshGateway {
+        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+            events += "refresh:${trigger.name}"
+            throw failure
+        }
+
+        override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
+            error("not used")
+
+        override fun invalidate(accountId: String) = Unit
+    }
+
+    private class CancellingGateway(
+        private val events: MutableList<String>
+    ) : RefreshGateway {
+        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+            events += "refresh:${trigger.name}"
+            awaitCancellation()
         }
 
         override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
