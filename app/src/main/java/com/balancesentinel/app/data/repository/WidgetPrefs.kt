@@ -329,7 +329,8 @@ class WidgetPrefs(context: Context) {
                     }
 
                     PAIR_STATE_PREFIXES.any { prefix ->
-                        key.startsWith("${prefix}_${oldAccountId}_")
+                        key.startsWith("${prefix}_${oldAccountId}_") ||
+                            key.startsWith("${prefix}_${newAccountId}_")
                     } -> editor.remove(key)
 
                     key.startsWith("${KEY_NOTIFICATION_SELECTED}_${oldAccountId}_") -> {
@@ -351,7 +352,7 @@ class WidgetPrefs(context: Context) {
                     }
 
                     LEGACY_ALERT_STATE_PREFIXES.any { prefix ->
-                        key == "${prefix}_$oldAccountId"
+                        key == "${prefix}_$oldAccountId" || key == "${prefix}_$newAccountId"
                     } -> editor.remove(key)
                 }
             }

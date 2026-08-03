@@ -51,14 +51,15 @@ class NotificationHelper(private val context: Context) {
         )
 
     fun createDeepLinkIntent(accountId: String, currency: String): PendingIntent {
+        val identity = AlertIdentity(accountId, currency)
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("deep_link_target", "insights")
             putExtra("deep_link_account_id", accountId)
-            putExtra("deep_link_currency", currency)
+            putExtra("deep_link_currency", identity.normalizedCurrency)
         }
         return PendingIntent.getActivity(
-            context, deepLinkRequestCode(accountId, currency),
+            context, deepLinkRequestCode(accountId, identity.normalizedCurrency),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -82,7 +83,8 @@ class NotificationHelper(private val context: Context) {
 
     /** 低余额预警通知，含 "查看详情" + "暂停预警" 操作按钮 */
     fun sendLowBalanceAlert(accountId: String, balance: Float, threshold: Float, currency: String, label: String) {
-        val symbol = FormatUtils.currencySymbol(currency)
+        val normalizedCurrency = AlertIdentity(accountId, currency).normalizedCurrency
+        val symbol = FormatUtils.currencySymbol(normalizedCurrency)
         val accountLabel = if (label.isNotEmpty()) "[$label] " else ""
         val title = context.getString(R.string.alert_low_title)
         val content = context.getString(
@@ -101,17 +103,17 @@ class NotificationHelper(private val context: Context) {
             .addAction(
                 android.R.drawable.ic_menu_view,
                 context.getString(R.string.alert_action_view),
-                createDeepLinkIntent(accountId, currency)
+                createDeepLinkIntent(accountId, normalizedCurrency)
             )
             .addAction(
                 android.R.drawable.ic_media_pause,
                 context.getString(R.string.alert_action_snooze),
-                createSnoozeIntent(accountId, currency)
+                createSnoozeIntent(accountId, normalizedCurrency)
             )
             .build()
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(alertNotificationId(accountId, currency), notification)
+        nm.notify(alertNotificationId(accountId, normalizedCurrency), notification)
     }
 
     /** 余额异动通知，含 "查看详情" + "暂停预警" 操作按钮 */
@@ -119,7 +121,8 @@ class NotificationHelper(private val context: Context) {
         accountId: String, current: Float, previous: Float, diff: Float,
         periodMin: Int, currency: String, label: String
     ) {
-        val symbol = FormatUtils.currencySymbol(currency)
+        val normalizedCurrency = AlertIdentity(accountId, currency).normalizedCurrency
+        val symbol = FormatUtils.currencySymbol(normalizedCurrency)
         val direction = if (current < previous)
             context.getString(R.string.alert_change_decreased)
         else
@@ -144,17 +147,17 @@ class NotificationHelper(private val context: Context) {
             .addAction(
                 android.R.drawable.ic_menu_view,
                 context.getString(R.string.alert_action_view),
-                createDeepLinkIntent(accountId, currency)
+                createDeepLinkIntent(accountId, normalizedCurrency)
             )
             .addAction(
                 android.R.drawable.ic_media_pause,
                 context.getString(R.string.alert_action_snooze),
-                createSnoozeIntent(accountId, currency)
+                createSnoozeIntent(accountId, normalizedCurrency)
             )
             .build()
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(changeNotificationId(accountId, currency), notification)
+        nm.notify(changeNotificationId(accountId, normalizedCurrency), notification)
     }
 
     /** 构建前台 Service 通知（返回 Notification 对象，用于 startForeground） */
