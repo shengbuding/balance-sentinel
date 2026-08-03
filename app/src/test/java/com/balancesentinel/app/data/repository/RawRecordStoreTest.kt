@@ -290,7 +290,67 @@ class RawRecordStoreTest {
         val failingContext = FailingPrefsContext(context, "raw_records")
 
         // Legacy callers should not receive a persistence exception
-        RawRecordStore.addRecords(failingContext, records)
+        val result = RawRecordStore.addRecords(failingContext, records)
+
+        assertTrue(result is StoreWriteResult.Failed)
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+    }
+
+    // Mutation caught: reducing exact deletion identity to accountId + timestamp or a set.
+    @Test
+    fun `removeExact removes only snapshot multiplicity using every record field`() {
+        val target = RawRecord("acc", 10L, "CNY", 100f, 20f, 80f)
+        val otherCurrency = target.copy(currency = "USD")
+        val otherValue = target.copy(totalBalance = 99f)
+        val outsideSnapshot = target.copy(timestamp = 11L)
+        RawRecordStore.addRecords(
+            context,
+            listOf(target, target, target, otherCurrency, otherValue, outsideSnapshot)
+        )
+
+        val result = RawRecordStore.removeExact(context, listOf(target, target))
+
+        assertEquals(StoreWriteResult.Written(2), result)
+        assertEquals(
+            listOf(target, otherCurrency, otherValue, outsideSnapshot),
+            RawRecordStore.getAllRecords(context)
+        )
+    }
+
+    // Mutation caught: publishing a successful exact deletion after commit returned false.
+    @Test
+    fun `removeExact reports commit failure and preserves the stored snapshot`() {
+        val target = RawRecord("acc", 10L, "CNY", 100f, 20f, 80f)
+        RawRecordStore.addRecords(context, listOf(target))
+
+        val result = RawRecordStore.removeExact(
+            FailingPrefsContext(context, "raw_records"),
+            listOf(target)
+        )
+
+        assertTrue(result is StoreWriteResult.Failed)
+        assertEquals(listOf(target), RawRecordStore.getAllRecords(context))
+    }
+
+    // Mutation caught: restoring asynchronous apply() in a legacy single-record mutator.
+    @Test
+    fun `addRecord is synchronously durable before returning`() {
+        val target = RawRecord("acc", now, "CNY", 100f, 20f, 80f)
+
+        RawRecordStore.addRecord(NoApplyPrefsContext(context, "raw_records"), target)
+
+        assertEquals(listOf(target), RawRecordStore.getAllRecords(context))
+    }
+
+    // Mutation caught: restoring asynchronous apply() in legacy removal.
+    @Test
+    fun `removeRecords is synchronously durable before returning`() {
+        val target = RawRecord("acc", now, "CNY", 100f, 20f, 80f)
+        RawRecordStore.addRecords(context, listOf(target))
+
+        RawRecordStore.removeRecords(NoApplyPrefsContext(context, "raw_records"), listOf(target))
+
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
     }
 
     private class FailingPrefsContext(
@@ -323,9 +383,44 @@ class RawRecordStoreTest {
                         }
 
                         override fun commit(): Boolean {
-                            editor.commit()
                             return false
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    private class NoApplyPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun apply() = Unit
                     }
                 }
             }

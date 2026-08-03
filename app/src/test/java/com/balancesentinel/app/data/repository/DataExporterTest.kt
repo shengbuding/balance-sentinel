@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.*
@@ -516,5 +518,110 @@ class DataExporterTest {
         val result = DataExporter.applyImport(context, importedData)
         assertEquals(2, result.logsInFile)
         assertEquals(1, result.logsImported)
+    }
+
+    // Mutation caught: deduplicating raw imports by account and timestamp without currency.
+    @Test
+    fun `applyImport preserves same-account same-timestamp records in different currencies`() {
+        val cny = RawRecord("acct", 100L, "CNY", 10f, 0f, 10f)
+        val usd = RawRecord("acct", 100L, "USD", 2f, 0f, 2f)
+        RawRecordStore.addRecords(context, listOf(cny))
+        val imported = DataExport(
+            exportedAt = "2026-08-03T00:00:00",
+            appVersion = "1.0",
+            dailySummaries = emptyList(),
+            rawRecords = listOf(usd)
+        )
+
+        val result = DataExporter.applyImport(context, imported)
+
+        assertEquals(1, result.recordsImported)
+        assertEquals(listOf(cny, usd), RawRecordStore.getAllRecords(context))
+    }
+
+    // Mutation caught: reporting intended raw items after durable storage rejected the batch.
+    @Test
+    fun `applyImport reports zero raw imports after failed store write`() {
+        val incoming = RawRecord("acct", 100L, "USD", 2f, 0f, 2f)
+        val imported = DataExport(
+            exportedAt = "2026-08-03T00:00:00",
+            appVersion = "1.0",
+            dailySummaries = emptyList(),
+            rawRecords = listOf(incoming)
+        )
+
+        val result = DataExporter.applyImport(
+            FailingPrefsContext(context, "raw_records"),
+            imported
+        )
+
+        assertEquals(0, result.recordsImported)
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+    }
+
+    // Mutation caught: reporting intended summaries after durable storage rejected the batch.
+    @Test
+    fun `applyImport reports zero summary imports after failed store write`() {
+        val incoming = DailySummary(
+            accountId = "acct",
+            date = "2026-08-01",
+            currency = "USD",
+            open = 2f,
+            close = 2f,
+            consumed = 0f,
+            toppedUp = 0f,
+            avgBalance = 2f,
+            sampleCount = 1
+        )
+        val imported = DataExport(
+            exportedAt = "2026-08-03T00:00:00",
+            appVersion = "1.0",
+            dailySummaries = listOf(incoming),
+            rawRecords = emptyList()
+        )
+
+        val result = DataExporter.applyImport(
+            FailingPrefsContext(context, "daily_summaries"),
+            imported
+        )
+
+        assertEquals(0, result.summariesImported)
+        assertTrue(DailySummaryStore.getSummaries(context).isEmpty())
+    }
+
+    private class FailingPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun commit(): Boolean = false
+                    }
+                }
+            }
+        }
     }
 }

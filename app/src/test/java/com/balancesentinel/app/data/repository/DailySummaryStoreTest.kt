@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
@@ -576,5 +578,227 @@ class DailySummaryStoreTest {
 
         val all = DailySummaryStore.getSummaries(context)
         assertFalse(all.any { it.date == today && it.sampleCount == 0 })
+    }
+
+    // Mutation caught: cleanup replacement reverting to insert-only or case-sensitive keys.
+    @Test
+    fun `replaceForDate replaces canonical incoming keys in one write and preserves unrelated summaries`() {
+        val replaced = summary("2026-07-31", "usd", "acct", close = 10f)
+        val otherCurrency = summary("2026-07-31", "EUR", "acct", close = 20f)
+        val otherDate = summary("2026-07-30", "USD", "acct", close = 30f)
+        val otherAccount = summary("2026-07-31", "USD", "other", close = 40f)
+        DailySummaryStore.addSummaries(
+            context,
+            listOf(replaced, otherCurrency, otherDate, otherAccount)
+        )
+        val countingContext = CountingPrefsContext(context, "daily_summaries")
+        val incoming = summary("2026-07-31", "USD", "acct", close = 7f, sampleCount = 2)
+
+        val result = DailySummaryStore.replaceForDate(
+            countingContext,
+            "2026-07-31",
+            listOf(incoming)
+        )
+
+        assertEquals(StoreWriteResult.Written(1), result)
+        assertEquals(1, countingContext.commitCount)
+        assertEquals(
+            setOf(incoming, otherCurrency, otherDate, otherAccount),
+            DailySummaryStore.getSummaries(context).toSet()
+        )
+    }
+
+    // Mutation caught: returning Written when replacement was not durably committed.
+    @Test
+    fun `replaceForDate reports commit failure without publishing replacement`() {
+        val existing = summary("2026-07-31", "USD", "acct", close = 10f)
+        DailySummaryStore.addSummaries(context, listOf(existing))
+        val incoming = existing.copy(close = 7f, sampleCount = 2)
+
+        val result = DailySummaryStore.replaceForDate(
+            FailingPrefsContext(context, "daily_summaries"),
+            "2026-07-31",
+            listOf(incoming)
+        )
+
+        assertTrue(result is StoreWriteResult.Failed)
+        assertEquals(listOf(existing), DailySummaryStore.getSummaries(context))
+    }
+
+    // Mutation caught: restoring apply() in legacy insert-only writes.
+    @Test
+    fun `addSummary is synchronously durable before returning`() {
+        val incoming = summary("2026-07-31", "USD", "acct", close = 7f)
+
+        DailySummaryStore.addSummary(
+            NoApplyPrefsContext(context, "daily_summaries"),
+            incoming
+        )
+
+        assertEquals(listOf(incoming), DailySummaryStore.getSummaries(context))
+    }
+
+    // Mutation caught: reporting intended import writes after a failed summary commit.
+    @Test
+    fun `addSummaries reports failed durable write`() {
+        val incoming = summary("2026-07-31", "USD", "acct", close = 7f)
+
+        val result = DailySummaryStore.addSummaries(
+            FailingPrefsContext(context, "daily_summaries"),
+            listOf(incoming)
+        )
+
+        assertTrue(result is StoreWriteResult.Failed)
+        assertTrue(DailySummaryStore.getSummaries(context).isEmpty())
+    }
+
+    // Mutation caught: swallowing a continuity commit failure.
+    @Test
+    fun `ensureContinuity reports failed durable write`() {
+        val existing = summary("2026-07-01", "USD", "acct", close = 10f)
+        DailySummaryStore.addSummaries(context, listOf(existing))
+
+        val result = DailySummaryStore.ensureContinuity(
+            FailingPrefsContext(context, "daily_summaries"),
+            "2026-07-01",
+            "2026-07-02"
+        )
+
+        assertTrue(result is StoreWriteResult.Failed)
+        assertEquals(listOf(existing), DailySummaryStore.getSummaries(context))
+    }
+
+    private fun summary(
+        date: String,
+        currency: String,
+        accountId: String,
+        close: Float,
+        sampleCount: Int = 1
+    ) = DailySummary(
+        accountId = accountId,
+        date = date,
+        currency = currency,
+        open = close,
+        close = close,
+        consumed = 0f,
+        toppedUp = 0f,
+        avgBalance = close,
+        sampleCount = sampleCount
+    )
+
+    private class CountingPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        var commitCount: Int = 0
+            private set
+
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor =
+                    wrappingEditor(delegate.edit()) { commitCount += 1 }
+            }
+        }
+    }
+
+    private class FailingPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun commit(): Boolean = false
+                    }
+                }
+            }
+        }
+    }
+
+    private class NoApplyPrefsContext(
+        base: Context,
+        private val targetPrefsName: String
+    ) : ContextWrapper(base) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != targetPrefsName) return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(
+                            key: String?,
+                            value: String?
+                        ): SharedPreferences.Editor {
+                            editor.putString(key, value)
+                            return this
+                        }
+
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun clear(): SharedPreferences.Editor {
+                            editor.clear()
+                            return this
+                        }
+
+                        override fun apply() = Unit
+                    }
+                }
+            }
+        }
+    }
+
+    private companion object {
+        fun wrappingEditor(
+            editor: SharedPreferences.Editor,
+            beforeCommit: () -> Unit
+        ): SharedPreferences.Editor = object : SharedPreferences.Editor by editor {
+            override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                editor.putString(key, value)
+                return this
+            }
+
+            override fun remove(key: String?): SharedPreferences.Editor {
+                editor.remove(key)
+                return this
+            }
+
+            override fun clear(): SharedPreferences.Editor {
+                editor.clear()
+                return this
+            }
+
+            override fun commit(): Boolean {
+                beforeCommit()
+                return editor.commit()
+            }
+        }
     }
 }

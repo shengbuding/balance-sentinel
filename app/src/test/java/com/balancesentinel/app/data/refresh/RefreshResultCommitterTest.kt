@@ -15,6 +15,7 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.StoreWriteResult
 import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import org.junit.After
@@ -116,6 +117,99 @@ class RefreshResultCommitterTest {
             UsageDataStore.getAllSnapshots(context).filter { it.accountId == ACCOUNT_ID }
                 .map { it.timestamp }
         )
+    }
+
+    // Mutation caught: using fetched.completedAt, request.startedAt, or one clock read per currency.
+    @Test
+    fun `raw batch reads wall clock once immediately before construction and keeps other timestamps`() {
+        val events = mutableListOf<String>()
+        val recordingContext = RecordingPrefsContext(context, events)
+        var clockReads = 0
+        val committer = RefreshResultCommitter(
+            context = recordingContext,
+            accountStore = MutableAccountStore(listOf(account(revision = 2))),
+            providerCache = ProviderCache(recordingContext),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier {},
+            wallClock = {
+                clockReads += 1
+                events += "raw-wall-clock"
+                9_000L
+            }
+        )
+
+        val result = committer.commit(
+            request(revision = 2),
+            success(20.0, 7.0, completedAt = 5_000L),
+            isLatest = { true }
+        )
+
+        assertTrue(result is AccountRefreshResult.Committed)
+        assertEquals(1, clockReads)
+        assertEquals(
+            listOf(
+                "provider_cache",
+                "widget_balance_cache",
+                "raw-wall-clock",
+                "raw_records",
+                "refresh_log_store",
+                "usage_snapshots"
+            ),
+            events
+        )
+        assertTrue(RawRecordStore.getAllRecords(context).all { it.timestamp == 9_000L })
+        assertTrue(BalanceWidgetDataStore.getAllBalances(context).all { it.lastUpdated == 5_000L })
+        assertTrue(RefreshLogStore.getEntries(context).all { it.timestamp == 5_000L })
+        assertEquals(listOf(5_000L), UsageDataStore.getAllSnapshots(context).map { it.timestamp })
+    }
+
+    // Mutation caught: treating a returned raw write failure as success because no exception was thrown.
+    @Test
+    fun `reported raw write failure rolls back earlier state and stops later side effects`() {
+        val priorBalance = balance(5.0)
+        ProviderCache(context).put(ProviderType.DEEPSEEK, ACCOUNT_ID, priorBalance)
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, ACCOUNT_ID, "Prior", "5.0", "OLD", true, "", ""
+        )
+        val priorRecord = RawRecord("other", 1L, "EUR", 3f, 0f, 0f)
+        RawRecordStore.addRecords(context, listOf(priorRecord))
+        val events = mutableListOf<String>()
+        val recordingContext = RecordingPrefsContext(context, events)
+        val committer = RefreshResultCommitter(
+            context = recordingContext,
+            accountStore = MutableAccountStore(listOf(account(revision = 2))),
+            providerCache = ProviderCache(recordingContext),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> events += "alerts" },
+            widgetRedrawNotifier = WidgetRedrawNotifier { events += "widget-redraw" },
+            wallClock = { 9_000L },
+            rawRecordWriter = { _, _ ->
+                events += "raw-writer-failed"
+                StoreWriteResult.Failed("ADD_RECORDS", "Raw record write failed")
+            }
+        )
+
+        val result = committer.commit(
+            request(revision = 2),
+            success(99.0, completedAt = 5_000L),
+            isLatest = { true }
+        )
+
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertTrue((result as AccountRefreshResult.Failed).failure is RefreshFailure.PersistenceFailure)
+        assertEquals(
+            5.0,
+            ProviderCache(context).get(ProviderType.DEEPSEEK, ACCOUNT_ID)!!
+                .balances.single().totalBalance,
+            0.0
+        )
+        assertEquals(listOf("OLD"), BalanceWidgetDataStore.getAllBalances(context)
+            .filter { it.accountId == ACCOUNT_ID }.map { it.currency })
+        assertEquals(listOf(priorRecord), RawRecordStore.getAllRecords(context))
+        assertTrue(RefreshLogStore.getEntries(context).isEmpty())
+        assertTrue(UsageDataStore.getAllSnapshots(context).isEmpty())
+        assertTrue("raw-writer-failed" in events)
+        assertTrue("alerts" !in events)
+        assertTrue("widget-redraw" !in events)
     }
 
     // Mutation caught: checking only account ID and allowing a result from an older revision to write.
