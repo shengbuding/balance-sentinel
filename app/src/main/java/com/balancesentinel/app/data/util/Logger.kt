@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.util
 
 import android.util.Log
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 
 /**
  * 安全日志封装 — 自动脱敏 API Key，绝不传递原始异常对象给 Log。
@@ -11,10 +12,6 @@ import android.util.Log
  * - 所有消息经过 sanitize() 脱敏后再输出
  */
 object Logger {
-
-    private val API_KEY_REGEX = Regex("""sk-[a-zA-Z0-9]{10,}""")
-    private val USAGE_SCRIPT_REGEX = Regex("""(?i)(usageScript=)([^,\n]+)""")
-    private const val REDACTED = "sk-***"
 
     fun d(tag: String, msg: String) {
         Log.d(tag, sanitize(msg))
@@ -47,9 +44,7 @@ object Logger {
     /**
      * 脱敏：替换 API Key 为 sk-***
      */
-    private fun sanitize(text: String): String {
-        return USAGE_SCRIPT_REGEX.replace(API_KEY_REGEX.replace(text, REDACTED), "$1[redacted]")
-    }
+    private fun sanitize(text: String): String = SensitiveDataRedactor.redactText(text)
 
     /**
      * 安全提取异常信息 — 不调用 throwable.toString()（OkHttp 异常可能打印完整 header）

@@ -4,6 +4,7 @@ import android.content.Context
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -100,7 +101,7 @@ object LogExporter {
             val dir = context.getExternalFilesDir(null) ?: context.filesDir
             val fileName = "debug_report_${fileDateFmt.format(Date(now))}.txt"
             val file = File(dir, fileName)
-            file.writeText(sb.toString())
+            file.writeText(SensitiveDataRedactor.redactText(sb.toString()))
 
             file.absolutePath
         } catch (e: Exception) {

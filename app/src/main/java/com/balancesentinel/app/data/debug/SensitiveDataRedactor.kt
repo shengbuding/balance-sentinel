@@ -24,6 +24,7 @@ object SensitiveDataRedactor {
     private val quotedKeyValue = Regex(
         """(?i)([\"'](?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|password|passwd|access[-_]?token|refresh[-_]?token|token|authorization)[\"']\s*:\s*[\"'])([^\"']*)([\"'])"""
     )
+    private val usageScript = Regex("""(?im)(\busageScript\s*=\s*)([^\r\n,]+)""")
     private val cookieLine = Regex("""(?im)(\b(?:cookie|set-cookie)\s*[:=]\s*)([^\r\n]+)""")
     private val bearer = Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+""")
     private val skKey = Regex("""\bsk-[A-Za-z0-9_-]{6,}\b""")
@@ -56,6 +57,7 @@ object SensitiveDataRedactor {
     internal fun redactCaptured(text: String): CapturedText {
         val structured = redactJson(text)
         val sanitized = redactUrls(structured)
+            .let { usageScript.replace(it, "$1$REDACTED") }
             .let { cookieLine.replace(it, "$1$REDACTED") }
             .let { bearer.replace(it, "Bearer $REDACTED") }
             .let { quotedKeyValue.replace(it, "$1$REDACTED$3") }

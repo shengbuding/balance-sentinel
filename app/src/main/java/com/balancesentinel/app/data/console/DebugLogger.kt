@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.console
 
 import com.balancesentinel.app.BuildConfig
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 
 /**
  * 全局调试日志收集器
@@ -17,7 +18,7 @@ object DebugLogger {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
             .format(java.util.Date())
         synchronized(logs) {
-            logs.add("[$timestamp] $message")
+            logs.add(SensitiveDataRedactor.redactText("[$timestamp] $message"))
             while (logs.size > MAX_LOGS) {
                 logs.removeFirst()
             }

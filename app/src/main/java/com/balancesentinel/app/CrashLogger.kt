@@ -2,10 +2,11 @@ package com.balancesentinel.app
 
 import android.app.Application
 import android.os.Build
+import com.balancesentinel.app.data.debug.DebugReportFormatter
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import com.balancesentinel.app.data.util.Logger
 import java.io.File
 import java.io.FileOutputStream
-import java.io.PrintWriter
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -23,7 +24,8 @@ object CrashLogger {
     private const val LOG_FILE = "crash.log"
     private const val MAX_ENTRIES = 10
     private const val MAX_BREADCRUMBS = 30
-    private var originalHandler: Thread.UncaughtExceptionHandler? = null
+    private var trueOriginalHandler: Thread.UncaughtExceptionHandler? = null
+    private var installed = false
     private var appRef: Application? = null
 
     // ── 面包屑（环形缓冲区） ──
@@ -33,7 +35,7 @@ object CrashLogger {
     @Synchronized
     fun breadcrumb(tag: String, message: String) {
         val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        breadcrumbs.addLast("[$ts] $tag: $message")
+        breadcrumbs.addLast(SensitiveDataRedactor.redactText("[$ts] $tag: $message"))
         if (breadcrumbs.size > MAX_BREADCRUMBS) breadcrumbs.removeFirst()
     }
 
@@ -43,19 +45,32 @@ object CrashLogger {
 
     // ── 安装 ──
 
+    @Synchronized
     fun install(app: Application) {
         appRef = app
-        originalHandler = Thread.getDefaultUncaughtExceptionHandler()
+        val predecessor = Thread.getDefaultUncaughtExceptionHandler()
+        if (!installed) {
+            trueOriginalHandler = predecessor
+            installed = true
+        }
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             writeCrash(thread, throwable)
             Logger.e("CrashLogger", "FATAL", throwable)
-            originalHandler?.uncaughtException(thread, throwable)
+            predecessor?.uncaughtException(thread, throwable)
         }
         breadcrumb("CrashLogger", "Crash handler installed; app version=${appVersion()}")
     }
 
     @Synchronized
-    internal fun resetForTests() = Unit
+    internal fun resetForTests() {
+        if (installed) {
+            Thread.setDefaultUncaughtExceptionHandler(trueOriginalHandler)
+        }
+        trueOriginalHandler = null
+        installed = false
+        appRef = null
+        breadcrumbs.clear()
+    }
 
     // ── 非致命错误报告 ──
 
@@ -79,12 +94,13 @@ object CrashLogger {
 
     // ── 写入 ──
 
-    /** API Key 脱敏正则（与 Logger 保持一致） */
-    private val API_KEY_REGEX = Regex("""sk-[a-zA-Z0-9]{10,}""")
-    private const val REDACTED = "sk-***"
-
     private fun sanitize(text: String): String {
-        return API_KEY_REGEX.replace(text, REDACTED)
+        val captured = SensitiveDataRedactor.redactCaptured(text)
+        return if (captured.truncated) {
+            "${captured.text} ${DebugReportFormatter.TRUNCATED_MARKER}"
+        } else {
+            captured.text
+        }
     }
 
     private fun writeCrash(thread: Thread, throwable: Throwable) {
@@ -112,13 +128,13 @@ object CrashLogger {
         timestamp: String,
         isFatal: Boolean
     ): String {
-        val sw = java.io.StringWriter()
-        throwable.printStackTrace(PrintWriter(sw))
+        val message = SensitiveDataRedactor.redactText(throwable.message ?: "(no message)")
+        val stack = sanitize(throwable.stackTraceToString())
 
         val level = if (isFatal) "FATAL" else "NON-FATAL"
 
         return buildString {
-            appendLine("[$timestamp] [$level] ${throwable.javaClass.name}: ${throwable.message ?: "(no message)"}")
+            appendLine("[$timestamp] [$level] ${throwable.javaClass.name}: $message")
             appendLine()
             appendLine("── 设备信息 ──")
             appendLine("  制造商     : ${Build.MANUFACTURER}")
@@ -129,7 +145,7 @@ object CrashLogger {
             appendLine("  线程       : $threadName")
             appendLine()
             appendLine("── 堆栈 ──")
-            appendLine(sw.toString().trimEnd())
+            appendLine(stack.trimEnd())
             appendLine()
             appendLine("── 面包屑 ──")
             val crumbs = getBreadcrumbs()
@@ -145,7 +161,7 @@ object CrashLogger {
     }
 
     private fun appendCrash(file: File, entry: String) {
-        val existing = if (file.exists()) file.readText() else ""
+        val existing = if (file.exists()) SensitiveDataRedactor.redactText(file.readText()) else ""
         val parts = listOf(entry) + existing.split("\n══════════════════════════════════\n").filter { it.isNotBlank() }
         val kept = parts.take(MAX_ENTRIES).joinToString("\n══════════════════════════════════\n")
 
@@ -165,7 +181,8 @@ object CrashLogger {
             return file.readText()
                 .split("\n══════════════════════════════════\n")
                 .filter { it.isNotBlank() }
-                .map { entry ->
+                .map { rawEntry ->
+                    val entry = sanitize(rawEntry)
                     val firstLineEnd = entry.indexOf('\n')
                     val headerLine = if (firstLineEnd > 0) entry.substring(0, firstLineEnd) else entry.take(80)
                     CrashEntry(
