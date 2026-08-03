@@ -277,4 +277,110 @@ class RefreshSchedulerTest {
         val missed = RefreshScheduler.checkMissedRefresh(context)
         assertTrue(missed.isEmpty())
     }
+
+    @Test
+    fun `stale heartbeat does not restart before next refresh is overdue`() {
+        val now = 1_000_000L
+        val state = ServiceHealthState(
+            expectedNextAt = now + 20 * 60_000L,
+            lastHeartbeat = now - 5 * 60_000L,
+            startRequestedAt = 0L,
+            refreshDeadlineAt = 0L
+        )
+
+        assertFalse(ServiceHealthEvaluator.shouldRestart(state, now))
+    }
+
+    @Test
+    fun `overdue schedule and stale heartbeat restart outside grace windows`() {
+        val now = 1_000_000L
+        val state = ServiceHealthState(
+            expectedNextAt = now - SCHEDULE_GRACE_MS - 1L,
+            lastHeartbeat = now - HEARTBEAT_GRACE_MS - 1L,
+            startRequestedAt = now - STARTUP_GRACE_MS - 1L,
+            refreshDeadlineAt = now - 1L
+        )
+
+        assertTrue(ServiceHealthEvaluator.shouldRestart(state, now))
+    }
+
+    @Test
+    fun `missing schedule never requests restart from heartbeat state alone`() {
+        val now = 1_000_000L
+        val state = ServiceHealthState(
+            expectedNextAt = 0L,
+            lastHeartbeat = 0L,
+            startRequestedAt = 0L,
+            refreshDeadlineAt = 0L
+        )
+
+        assertFalse(ServiceHealthEvaluator.shouldRestart(state, now))
+    }
+
+    @Test
+    fun `startup grace suppresses restart for an overdue stale service`() {
+        val now = 1_000_000L
+        val state = ServiceHealthState(
+            expectedNextAt = now - SCHEDULE_GRACE_MS - 1L,
+            lastHeartbeat = now - HEARTBEAT_GRACE_MS - 1L,
+            startRequestedAt = now - STARTUP_GRACE_MS,
+            refreshDeadlineAt = 0L
+        )
+
+        assertFalse(ServiceHealthEvaluator.shouldRestart(state, now))
+    }
+
+    @Test
+    fun `active refresh deadline suppresses restart for an overdue stale service`() {
+        val now = 1_000_000L
+        val state = ServiceHealthState(
+            expectedNextAt = now - SCHEDULE_GRACE_MS - 1L,
+            lastHeartbeat = now - HEARTBEAT_GRACE_MS - 1L,
+            startRequestedAt = 0L,
+            refreshDeadlineAt = now
+        )
+
+        assertFalse(ServiceHealthEvaluator.shouldRestart(state, now))
+    }
+
+    @Test
+    fun `markRefreshStarted persists exact account scaled deadline`() {
+        val now = 2_000_000L
+
+        val deadline = RefreshScheduler.markRefreshStarted(context, accountCount = 3, now = now)
+
+        assertEquals(2_090_000L, deadline)
+        assertEquals(2_090_000L, RefreshScheduler.getServiceHealthState(context).refreshDeadlineAt)
+    }
+
+    @Test
+    fun `heartbeat preserves schedule and active refresh deadline`() {
+        val expectedNext = 3_000_000L
+        RefreshScheduler.recordSchedule(context, 1800, expectedNext, "alarm")
+        RefreshScheduler.markRefreshStarted(context, accountCount = 2, now = 2_000_000L)
+
+        RefreshScheduler.heartbeat(context)
+
+        val schedule = RefreshScheduler.getState(context)
+        val health = RefreshScheduler.getServiceHealthState(context)
+        assertEquals(expectedNext, schedule.expectedNextAt)
+        assertEquals(2_070_000L, health.refreshDeadlineAt)
+        assertTrue(health.lastHeartbeat > 0L)
+    }
+
+    @Test
+    fun `clearing refresh deadline preserves schedule and heartbeat`() {
+        val expectedNext = 3_000_000L
+        RefreshScheduler.recordSchedule(context, 1800, expectedNext, "alarm")
+        RefreshScheduler.heartbeat(context)
+        val heartbeat = RefreshScheduler.getServiceHealthState(context).lastHeartbeat
+        RefreshScheduler.markRefreshStarted(context, accountCount = 1, now = 2_000_000L)
+
+        RefreshScheduler.clearRefreshDeadline(context)
+
+        val health = RefreshScheduler.getServiceHealthState(context)
+        assertEquals(expectedNext, health.expectedNextAt)
+        assertEquals(heartbeat, health.lastHeartbeat)
+        assertEquals(0L, health.refreshDeadlineAt)
+    }
 }

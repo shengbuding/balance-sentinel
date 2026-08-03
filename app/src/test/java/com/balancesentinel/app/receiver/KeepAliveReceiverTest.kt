@@ -1,10 +1,16 @@
 package com.balancesentinel.app.receiver
 
 import android.app.AlarmManager
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.HEARTBEAT_GRACE_MS
+import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
+import com.balancesentinel.app.service.ServiceStartResult
+import com.balancesentinel.app.service.ServiceStarter
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -24,6 +30,10 @@ class KeepAliveReceiverTest {
         // Ensure clean refresh scheduler state
         val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
+        val shadowApplication = Shadows.shadowOf(context as Application)
+        while (shadowApplication.nextStartedService != null) {
+            // Drain starts left by a prior test in the same Robolectric sandbox.
+        }
     }
 
     @Test
@@ -113,5 +123,73 @@ class KeepAliveReceiverTest {
         val intent = Intent(KeepAliveReceiver.ACTION_KEEPALIVE)
         // Should not throw — service is considered starting, not dead
         receiver.onReceive(context, intent)
+    }
+
+    @Test
+    fun `stale heartbeat with future refresh neither starts helper nor OS service`() {
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(context, 1800, now + 1_800_000L, "alarm")
+        context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE).edit()
+            .putLong("last_heartbeat", now - HEARTBEAT_GRACE_MS - 1L)
+            .putLong("service_start_requested_at", 0L)
+            .apply()
+        val starter = RecordingStarter()
+
+        KeepAliveReceiver(starter).onReceive(context, Intent(KeepAliveReceiver.ACTION_KEEPALIVE))
+
+        assertEquals(0, starter.calls)
+        assertNull(Shadows.shadowOf(context as Application).nextStartedService)
+    }
+
+    @Test
+    fun `overdue schedule and stale heartbeat delegate one restart to starter`() {
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(
+            context,
+            30,
+            now - SCHEDULE_GRACE_MS - 1L,
+            "alarm"
+        )
+        context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE).edit()
+            .putLong("last_heartbeat", now - HEARTBEAT_GRACE_MS - 1L)
+            .putLong("service_start_requested_at", 0L)
+            .apply()
+        val starter = RecordingStarter()
+
+        KeepAliveReceiver(starter).onReceive(context, Intent(KeepAliveReceiver.ACTION_KEEPALIVE))
+
+        assertEquals(1, starter.calls)
+        assertNull(Shadows.shadowOf(context as Application).nextStartedService)
+    }
+
+    @Test
+    fun `active refresh deadline suppresses keepalive restart`() {
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(
+            context,
+            30,
+            now - SCHEDULE_GRACE_MS - 1L,
+            "alarm"
+        )
+        context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE).edit()
+            .putLong("last_heartbeat", now - HEARTBEAT_GRACE_MS - 1L)
+            .putLong("service_start_requested_at", 0L)
+            .putLong("refresh_deadline_at", now + 20_000L)
+            .apply()
+        val starter = RecordingStarter()
+
+        KeepAliveReceiver(starter).onReceive(context, Intent(KeepAliveReceiver.ACTION_KEEPALIVE))
+
+        assertEquals(0, starter.calls)
+        assertNull(Shadows.shadowOf(context as Application).nextStartedService)
+    }
+
+    private class RecordingStarter : ServiceStarter {
+        var calls = 0
+
+        override fun start(context: Context): ServiceStartResult {
+            calls += 1
+            return ServiceStartResult.Started
+        }
     }
 }
