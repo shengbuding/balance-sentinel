@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.api
 
 import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
+import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.util.Logger
@@ -23,7 +24,7 @@ import javax.net.ssl.SSLException
 class DeepSeekApiService(
     private val baseUrl: String = "https://api.deepseek.com",
     private val accountId: String? = null,
-    @Suppress("unused") private val debuggable: Boolean = DebugCapturePolicy.enabled()
+    private val debuggable: Boolean = DebugCapturePolicy.enabled()
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -82,18 +83,16 @@ class DeepSeekApiService(
         }
     }
 
-    private val client = OkHttpClient.Builder()
+    private val client = DebugClientInstaller.install(
+        OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .addInterceptor(RetryInterceptor())
-        .apply {
-            // 如果有accountId，添加调试拦截器
-            if (accountId != null) {
-                addInterceptor(DebugInterceptor(accountId))
-            }
-        }
-        .build()
+        .build(),
+        debuggable = debuggable,
+        interceptor = accountId?.let(::DebugInterceptor)
+    )
 
     internal fun debugClient(): OkHttpClient = client
 

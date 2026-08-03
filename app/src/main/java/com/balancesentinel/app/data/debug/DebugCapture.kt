@@ -7,6 +7,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import okhttp3.RequestBody
 import okhttp3.Response
+import okhttp3.OkHttpClient
 import okio.Buffer
 import okio.BufferedSink
 import okio.Sink
@@ -114,4 +115,19 @@ object DebugCapture {
 
 object DebugCapturePolicy {
     fun enabled(debuggable: Boolean = BuildConfig.DEBUG): Boolean = debuggable
+}
+
+object DebugClientInstaller {
+    fun install(
+        client: OkHttpClient,
+        debuggable: Boolean,
+        interceptor: DebugInterceptor?
+    ): OkHttpClient {
+        val builder = client.newBuilder()
+        builder.interceptors().removeAll { it is DebugInterceptor }
+        if (DebugCapturePolicy.enabled(debuggable) && interceptor != null) {
+            builder.addInterceptor(interceptor)
+        }
+        return builder.build()
+    }
 }

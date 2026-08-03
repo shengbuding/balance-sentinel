@@ -3,6 +3,8 @@ package com.balancesentinel.app.data.api.balance
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
+import com.balancesentinel.app.data.debug.DebugClientInstaller
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -103,7 +105,7 @@ object UsageScriptExecutor {
         resolver: HostResolver,
         client: OkHttpClient,
         connectionUrlOverride: ((HttpUrl) -> HttpUrl)?,
-        @Suppress("UNUSED_PARAMETER") debuggable: Boolean = DebugCapturePolicy.enabled()
+        debuggable: Boolean = DebugCapturePolicy.enabled()
     ): ScriptExecutionResult = withContext(Dispatchers.IO) {
         if (!script.enabled || !account.usageScriptEnabled) {
             return@withContext failure(
@@ -148,13 +150,27 @@ object UsageScriptExecutor {
             authorizedOrigins = account.authorizedScriptOrigins.mapNotNull(::parseAuthorizedOrigin).toSet(),
             resolver = resolver
         )
+        val diagnosticClient = DebugClientInstaller.install(
+            client = client,
+            debuggable = debuggable,
+            interceptor = account.id.takeIf(String::isNotBlank)?.let { accountId ->
+                DebugInterceptor(
+                    accountId = accountId,
+                    accountLabel = account.label,
+                    providerType = account.providerType.displayName,
+                    baseUrl = baseUrl.toString(),
+                    isCustomScript = true,
+                    scriptPreview = script.code
+                )
+            }
+        )
         when (
             val response = sendHttpRequest(
                 config = requestConfig,
                 initialUrl = requestUrl,
                 timeoutMillis = timeoutMillis,
                 policy = policy,
-                baseClient = client,
+                baseClient = diagnosticClient,
                 connectionUrlOverride = connectionUrlOverride
             )
         ) {
