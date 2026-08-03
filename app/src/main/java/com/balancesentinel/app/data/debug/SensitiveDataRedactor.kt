@@ -59,11 +59,17 @@ object SensitiveDataRedactor {
     fun redactForClipboard(text: String): String = redactText(text)
 
     internal fun redactCaptured(text: String): CapturedText {
+        val sourceTruncated = text.toByteArray(Charsets.UTF_8).size > MAX_CAPTURE_BYTES
         val sanitized = sanitize(text)
-        return DebugCapture.captureUtf8(
+        val captured = DebugCapture.captureUtf8(
             ByteArrayInputStream(sanitized.toByteArray(Charsets.UTF_8)),
             MAX_CAPTURE_BYTES
         )
+        return if (sourceTruncated && !captured.truncated) {
+            captured.copy(truncated = true)
+        } else {
+            captured
+        }
     }
 
     internal fun redactAggregate(text: String): String = sanitize(text)
