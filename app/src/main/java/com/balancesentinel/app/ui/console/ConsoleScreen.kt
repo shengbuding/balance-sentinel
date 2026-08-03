@@ -1025,7 +1025,8 @@ internal fun interceptApiRequest(
     request: WebResourceRequest?,
     apiLogs: MutableList<ApiLogEntry>,
     tag: String,
-    policy: ConsoleOriginPolicy
+    policy: ConsoleOriginPolicy,
+    @Suppress("UNUSED_PARAMETER") responseCookieSink: ConsoleCookieSink? = null
 ): WebResourceResponse? {
     val reqUrl = request?.url?.toString() ?: ""
     val method = request?.method ?: "GET"
