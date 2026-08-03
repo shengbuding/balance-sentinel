@@ -47,7 +47,8 @@
         <receiver android:name=".widget.StaticWidgetProvider_2x1" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.balancesentinel.app.WIDGET_REFRESH" />
+                <action android:name="com.balancesentinel.app.WIDGET_REFRESH_NOW" />
+                <action android:name="com.balancesentinel.app.WIDGET_WATCHDOG" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/static_widget_info_2x1" />
@@ -56,7 +57,8 @@
         <receiver android:name=".widget.StaticWidgetProvider_2x2" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.balancesentinel.app.WIDGET_REFRESH" />
+                <action android:name="com.balancesentinel.app.WIDGET_REFRESH_NOW" />
+                <action android:name="com.balancesentinel.app.WIDGET_WATCHDOG" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/static_widget_info_2x2" />
@@ -65,7 +67,8 @@
         <receiver android:name=".widget.StaticWidgetProvider_3x1" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.balancesentinel.app.WIDGET_REFRESH" />
+                <action android:name="com.balancesentinel.app.WIDGET_REFRESH_NOW" />
+                <action android:name="com.balancesentinel.app.WIDGET_WATCHDOG" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/static_widget_info_3x1" />
@@ -74,7 +77,8 @@
         <receiver android:name=".widget.StaticWidgetProvider_4x2" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.balancesentinel.app.WIDGET_REFRESH" />
+                <action android:name="com.balancesentinel.app.WIDGET_REFRESH_NOW" />
+                <action android:name="com.balancesentinel.app.WIDGET_WATCHDOG" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/static_widget_info_4x2" />
@@ -83,7 +87,8 @@
         <receiver android:name=".widget.StaticWidgetProvider_5x1" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.balancesentinel.app.WIDGET_REFRESH" />
+                <action android:name="com.balancesentinel.app.WIDGET_REFRESH_NOW" />
+                <action android:name="com.balancesentinel.app.WIDGET_WATCHDOG" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/static_widget_info_5x1" />
@@ -108,6 +113,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.balancesentinel.app.KEEPALIVE_PING" />
+                <action android:name="com.balancesentinel.app.SERVICE_START_RETRY" />
             </intent-filter>
         </receiver>
 

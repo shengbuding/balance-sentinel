@@ -33,7 +33,12 @@ class BalanceRefreshRunner(
      * then read committed Widget storage for notification derivation.
      */
     suspend fun refreshAndReadCommitted(): List<AccountBalance> {
-        gateway.refreshAll(RefreshTrigger.SERVICE)
-        return committedBalanceReader()
+        refreshDeadline.markStarted()
+        return try {
+            gateway.refreshAll(RefreshTrigger.SERVICE)
+            committedBalanceReader()
+        } finally {
+            refreshDeadline.clear()
+        }
     }
 }

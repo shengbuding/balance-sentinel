@@ -23,11 +23,12 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.data.repository.WidgetPrefs
-import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
 import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshRuntime
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,26 +40,40 @@ sealed interface WidgetRefreshDecision {
 }
 
 class WidgetRefreshActionHandler {
-    fun decide(context: Context, action: String?, now: Long): WidgetRefreshDecision =
-        WidgetRefreshDecision.Ignored
+    fun decide(context: Context, action: String?, now: Long): WidgetRefreshDecision = when (action) {
+        StaticWidgetProvider.ACTION_REFRESH_NOW -> WidgetRefreshDecision.Refresh(watchdog = false)
+        StaticWidgetProvider.ACTION_WATCHDOG -> {
+            if (RefreshScheduler.shouldRestart(context, now)) {
+                WidgetRefreshDecision.Refresh(watchdog = true)
+            } else {
+                WidgetRefreshDecision.Ignored
+            }
+        }
+        else -> WidgetRefreshDecision.Ignored
+    }
 }
 
 class WidgetRefreshExecution(
     private val gateway: RefreshGateway,
     private val serviceStarter: ServiceStarter
 ) {
-    suspend fun execute(context: Context, decision: WidgetRefreshDecision.Refresh) = Unit
+    suspend fun execute(context: Context, decision: WidgetRefreshDecision.Refresh) {
+        WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
+        if (decision.watchdog) {
+            RefreshScheduler.recordRestart(context)
+            serviceStarter.start(context)
+        }
+    }
 }
 
 object WidgetRefreshIntents {
     fun manual(context: Context, receiver: Class<out StaticWidgetProvider>): Intent =
         Intent(context, receiver).apply {
-            action = StaticWidgetProvider.ACTION_REFRESH
-            putExtra(StaticWidgetProvider.EXTRA_FROM_BUTTON, true)
+            action = StaticWidgetProvider.ACTION_REFRESH_NOW
         }
 
     fun watchdog(context: Context): Intent =
-        Intent(StaticWidgetProvider.ACTION_REFRESH).apply { setPackage(context.packageName) }
+        Intent(StaticWidgetProvider.ACTION_WATCHDOG).apply { setPackage(context.packageName) }
 }
 
 open class StaticWidgetProvider(
@@ -93,11 +108,16 @@ open class StaticWidgetProvider(
 
     override fun onReceive(context: Context, intent: Intent) {
         try {
-            if (intent.action == ACTION_REFRESH) {
-                if (!processingRefresh.compareAndSet(false, true)) return
-                val fromButton = intent.getBooleanExtra(EXTRA_FROM_BUTTON, false)
-                handleRefresh(context, fromButton)
-            } else {
+            val decision = WidgetRefreshActionHandler().decide(
+                context,
+                intent.action,
+                System.currentTimeMillis()
+            )
+            if (decision is WidgetRefreshDecision.Refresh) {
+                if (processingRefresh.compareAndSet(false, true)) {
+                    handleRefresh(context, decision)
+                }
+            } else if (intent.action != ACTION_REFRESH_NOW && intent.action != ACTION_WATCHDOG) {
                 super.onReceive(context, intent)
             }
         } catch (e: Exception) {
@@ -106,7 +126,7 @@ open class StaticWidgetProvider(
         }
     }
 
-    private fun handleRefresh(context: Context, fromButton: Boolean = false) {
+    private fun handleRefresh(context: Context, decision: WidgetRefreshDecision.Refresh) {
         val manager = AppWidgetManager.getInstance(context)
         val allClasses = listOf(
             StaticWidgetProvider_2x1::class.java, StaticWidgetProvider_2x2::class.java,
@@ -123,17 +143,10 @@ open class StaticWidgetProvider(
         // 显示刷新进度条
         setRefreshProgress(context, manager, allIds, visible = true)
 
-        RefreshScheduler.markFired(context)
-        onUpdate(context, manager, widgetIds)
-
-        val svcDead = RefreshScheduler.isServiceDead(context)
-
-        // 用户手动点击刷新按钮 → 无论如何都执行
-        // 闹钟自动触发 → 仅当 Service 死亡时才接管刷新，否则 Service 自己会刷新
-        if (!fromButton && !svcDead) {
-            processingRefresh.set(false)
-            return  // Service 健在，闹钟仅做备份，不重复刷新
+        if (decision.watchdog) {
+            RefreshScheduler.markFired(context)
         }
+        onUpdate(context, manager, widgetIds)
 
         val pendingResult = goAsync()
 
@@ -147,9 +160,10 @@ open class StaticWidgetProvider(
             WidgetRefreshDispatcher(
                 action = {
                     kotlinx.coroutines.runBlocking {
-                        WidgetRefreshRunner(
-                            com.balancesentinel.app.data.refresh.RefreshRuntime.from(context)
-                        ).refreshNow(watchdog = !fromButton)
+                        WidgetRefreshExecution(
+                            RefreshRuntime.from(context),
+                            serviceStarter
+                        ).execute(context, decision)
                     }
                     setRefreshProgress(context, manager, allIds, visible = false)
                     onUpdate(context, manager, widgetIds)
@@ -157,9 +171,6 @@ open class StaticWidgetProvider(
                 finish = {
                     pendingResult.finish()
                     processingRefresh.set(false)
-                    if (svcDead) {
-                        restartServiceNow(context)
-                    }
                     // 释放 WakeLock
                     try { if (wl?.isHeld == true) wl.release() } catch (_: Exception) {}
                 }
@@ -310,13 +321,7 @@ open class StaticWidgetProvider(
         views.setOnClickPendingIntent(R.id.widget_balance, appPending)
         views.setOnClickPendingIntent(R.id.widget_title, appPending)
 
-        // 点击刷新按钮 → 立即触发看门狗刷新（不打开 App）
-        // 使用显式 Intent 指定接收者，避免和闹钟的隐式 PendingIntent 冲突去重
-        // 携带 EXTRA_FROM_BUTTON 标记以区分真手动点击和自动闹钟
-        val refreshIntent = Intent(context, StaticWidgetProvider_2x1::class.java).apply {
-            action = ACTION_REFRESH
-            putExtra(EXTRA_FROM_BUTTON, true)
-        }
+        val refreshIntent = WidgetRefreshIntents.manual(context, StaticWidgetProvider_2x1::class.java)
         val refreshPending = PendingIntent.getBroadcast(
             context, widgetId + 1000, refreshIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -326,27 +331,6 @@ open class StaticWidgetProvider(
         views.setViewVisibility(R.id.widget_refresh_progress, android.view.View.GONE)
 
         manager.updateAppWidget(widgetId, views)
-    }
-
-    private fun restartServiceNow(context: Context) {
-        try {
-            Logger.w("StaticWidget", "Watchdog restarting Foreground Service")
-            RefreshScheduler.recordRestart(context)
-            val svcIntent = Intent(context, BalanceRefreshService::class.java)
-            val now = System.currentTimeMillis()
-            try {
-                context.startService(svcIntent)
-                RefreshLogStore.addEntry(context, RefreshLogEntry(
-                    id = now, type = RefreshLogType.WATCHDOG, timestamp = now,
-                    message = "看门狗：服务已死，已强制重启"
-                ))
-            } catch (e: Exception) {
-                RefreshLogStore.addEntry(context, RefreshLogEntry(
-                    id = now, type = RefreshLogType.WATCHDOG, timestamp = now,
-                    message = "看门狗：重启失败（系统阻止: ${e.message?.take(40)}）"
-                ))
-            }
-        } catch (_: Exception) {}
     }
 
     private fun scheduleRefresh(context: Context) {
@@ -366,14 +350,15 @@ open class StaticWidgetProvider(
         val oldState = RefreshScheduler.getState(context)
         if (oldState.expectedNextAt > 0) RefreshScheduler.markCancelled(context)
 
-        val intent = Intent(ACTION_REFRESH).apply { setPackage(context.packageName) }
+        val intent = WidgetRefreshIntents.watchdog(context)
         val pending = PendingIntent.getBroadcast(
             context, 100, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarm.cancel(pending)
 
-        val triggerTime = now + intervalSec * 1000L
+        val expectedRefreshTime = now + intervalSec * 1000L
+        val triggerTime = expectedRefreshTime + SCHEDULE_GRACE_MS + 1L
         var method = "alarm_clock"
         var message = ""
 
@@ -401,8 +386,8 @@ open class StaticWidgetProvider(
             method = "failed"
         }
 
-        RefreshScheduler.recordSchedule(context, intervalSec, triggerTime, method)
-        logSchedule(context, intervalSec, triggerTime, method, message)
+        RefreshScheduler.recordSchedule(context, intervalSec, expectedRefreshTime, method)
+        logSchedule(context, intervalSec, expectedRefreshTime, method, message)
     }
 
     private fun logSchedule(context: Context, intervalSec: Int, triggerTime: Long, method: String, message: String) {
@@ -471,10 +456,8 @@ open class StaticWidgetProvider(
         when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
 
     companion object {
-        const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"
         const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
         const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
-        const val EXTRA_FROM_BUTTON = "from_button"
         private val processingRefresh = AtomicBoolean(false)
         @Volatile private var lastScheduleTime: Long = 0L
     }

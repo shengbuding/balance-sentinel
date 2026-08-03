@@ -5,7 +5,6 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
-import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.HEARTBEAT_GRACE_MS
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
@@ -81,48 +80,54 @@ class KeepAliveReceiverTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `onReceive with no heartbeat restarts service`() {
-        // Simulate: no heartbeat ever, not in start grace period → svcDead = true
+    fun `onReceive with no schedule does not restart for missing heartbeat`() {
         val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
         prefs.edit()
             .putLong("last_heartbeat", 0)
             .putLong("service_start_requested_at", 0)
             .apply()
+        val starter = RecordingStarter()
 
-        val receiver = KeepAliveReceiver()
+        val receiver = KeepAliveReceiver(starter)
         val intent = Intent(KeepAliveReceiver.ACTION_KEEPALIVE)
-        // Should not throw — tries to start foreground service, handled gracefully
         receiver.onReceive(context, intent)
+
+        assertEquals(0, starter.calls)
     }
 
     @Test
-    fun `onReceive with old heartbeat restarts service`() {
-        // Simulate: heartbeat is older than timeout (90s) → svcDead = true
+    fun `onReceive with no schedule does not restart for old heartbeat`() {
         val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
-        val oldHeartbeat = System.currentTimeMillis() - 120_000L // 2 minutes ago
+        val oldHeartbeat = System.currentTimeMillis() - HEARTBEAT_GRACE_MS - 1L
         prefs.edit()
             .putLong("last_heartbeat", oldHeartbeat)
             .putLong("service_start_requested_at", 0)
             .apply()
+        val starter = RecordingStarter()
 
-        val receiver = KeepAliveReceiver()
+        val receiver = KeepAliveReceiver(starter)
         val intent = Intent(KeepAliveReceiver.ACTION_KEEPALIVE)
         receiver.onReceive(context, intent)
+
+        assertEquals(0, starter.calls)
     }
 
     @Test
-    fun `onReceive during start grace period does not restart`() {
-        // Simulate: no heartbeat, but within 5s start grace period → svcDead = false
+    fun `onReceive during start grace period does not restart overdue schedule`() {
+        val now = System.currentTimeMillis()
+        RefreshScheduler.recordSchedule(context, 30, now - SCHEDULE_GRACE_MS - 1L, "alarm")
         val prefs = context.getSharedPreferences("refresh_scheduler_state", Context.MODE_PRIVATE)
         prefs.edit()
-            .putLong("last_heartbeat", 0)
-            .putLong("service_start_requested_at", System.currentTimeMillis()) // just requested
+            .putLong("last_heartbeat", now - HEARTBEAT_GRACE_MS - 1L)
+            .putLong("service_start_requested_at", now)
             .apply()
+        val starter = RecordingStarter()
 
-        val receiver = KeepAliveReceiver()
+        val receiver = KeepAliveReceiver(starter)
         val intent = Intent(KeepAliveReceiver.ACTION_KEEPALIVE)
-        // Should not throw — service is considered starting, not dead
         receiver.onReceive(context, intent)
+
+        assertEquals(0, starter.calls)
     }
 
     @Test

@@ -90,8 +90,8 @@ class RefreshSchedulerTest {
     }
 
     @Test
-    fun `isServiceDead returns true when no heartbeat ever`() {
-        assertTrue(RefreshScheduler.isServiceDead(context))
+    fun `isServiceDead returns false when no schedule exists`() {
+        assertFalse(RefreshScheduler.isServiceDead(context))
     }
 
     @Test
@@ -101,14 +101,9 @@ class RefreshSchedulerTest {
     }
 
     @Test
-    fun `isServiceDead returns true after timeout`() {
-        // We can't easily simulate time passing in Robolectric for this,
-        // but we can verify the default state is correct
-        val dead = RefreshScheduler.isServiceDead(context, timeoutMs = 0L)
-        // With timeout=0, any heartbeat would be considered expired immediately
+    fun `isServiceDead ignores heartbeat timeout without an overdue schedule`() {
         RefreshScheduler.heartbeat(context)
-        // Even with timeout=0, the heartbeat should be recorded
-        assertNotNull(RefreshScheduler.getStatusSummary(context))
+        assertFalse(RefreshScheduler.isServiceDead(context, timeoutMs = 0L))
     }
 
     @Test
@@ -219,10 +214,9 @@ class RefreshSchedulerTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `isServiceDead with zero timeout returns true immediately after heartbeat`() {
+    fun `isServiceDead with zero timeout still requires an overdue schedule`() {
         RefreshScheduler.heartbeat(context)
-        // timeoutMs=0 means any heartbeat is immediately expired
-        assertTrue(RefreshScheduler.isServiceDead(context, timeoutMs = 0L))
+        assertFalse(RefreshScheduler.isServiceDead(context, timeoutMs = 0L))
     }
 
     @Test

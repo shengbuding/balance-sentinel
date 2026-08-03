@@ -24,7 +24,11 @@ data class ServiceHealthState(
 
 object ServiceHealthEvaluator {
     fun shouldRestart(state: ServiceHealthState, now: Long): Boolean =
-        state.lastHeartbeat <= 0 || now > state.lastHeartbeat + HEARTBEAT_GRACE_MS
+        state.expectedNextAt > 0 &&
+            now > state.expectedNextAt + SCHEDULE_GRACE_MS &&
+            (state.lastHeartbeat <= 0 || now > state.lastHeartbeat + HEARTBEAT_GRACE_MS) &&
+            (state.startRequestedAt <= 0 || now > state.startRequestedAt + STARTUP_GRACE_MS) &&
+            (state.refreshDeadlineAt <= 0 || now > state.refreshDeadlineAt)
 }
 
 /**
@@ -143,8 +147,9 @@ object RefreshScheduler {
         accountCount: Int,
         now: Long = System.currentTimeMillis()
     ): Long {
-        getPrefs(context).edit().putLong(KEY_REFRESH_DEADLINE_AT, 0L).apply()
-        return 0L
+        val deadlineAt = now + REFRESH_BASE_DEADLINE_MS + accountCount * REFRESH_ACCOUNT_DEADLINE_MS
+        getPrefs(context).edit().putLong(KEY_REFRESH_DEADLINE_AT, deadlineAt).apply()
+        return deadlineAt
     }
 
     fun clearRefreshDeadline(context: Context) {
@@ -197,7 +202,7 @@ object RefreshScheduler {
     /** 获取首页状态摘要 */
     fun getStatusSummary(context: Context): StatusSummary {
         val state = getState(context)
-        val svcDead = isServiceDead(context)
+        val svcDead = shouldRestart(context)
         val delay = if (state.expectedNextAt > 0) {
             (System.currentTimeMillis() - state.expectedNextAt) / 1000
         } else 0
@@ -325,32 +330,19 @@ object RefreshScheduler {
 
     /**
      * Service 是否处于"启动中"宽限期（startForegroundService 已调用但心跳尚未到达）。
-     * 宽限期 5 秒——onStartCommand 中立即写心跳，正常 1-2 秒内到达，5 秒已是兜底。
+     * 宽限期由 [STARTUP_GRACE_MS] 定义；onStartCommand 会立即写入心跳。
      */
     fun isServiceStarting(context: Context): Boolean {
         val lastHb = getPrefs(context).getLong(KEY_LAST_HEARTBEAT, 0)
         if (lastHb > 0) return false // 已有心跳，不属于启动中
         val startRequested = getPrefs(context).getLong(KEY_SERVICE_START_REQUESTED_AT, 0)
-        return startRequested > 0 && System.currentTimeMillis() - startRequested < 5_000L
+        return startRequested > 0 && System.currentTimeMillis() - startRequested < STARTUP_GRACE_MS
     }
 
-    /**
-     * 检测 Service 是否还活着。
-     * 如果最后心跳超过 [timeoutMs] 毫秒前，认为 Service 已死亡。
-     *
-     * 默认超时 120 秒（2 分钟），原因：
-     * - 10 分钟太长：Service 死后看门狗长时间走错分支，等同于失效
-     * - 2 分钟对 30 秒间隔 = 4 个周期，对 30 分钟间隔也足够敏感
-     * - OnePlus 自动冻结通常 1-2 分钟内就能冻结进程，2 分钟能及时检测
-     */
-    fun isServiceDead(context: Context, timeoutMs: Long = 120_000L): Boolean {
-        // 启动宽限期：startForegroundService 已调用但心跳尚未写入
-        if (isServiceStarting(context)) return false
-
-        val lastHb = getPrefs(context).getLong(KEY_LAST_HEARTBEAT, 0)
-        if (lastHb <= 0) return true // 从未有心跳且不在启动宽限期内
-        return System.currentTimeMillis() - lastHb >= timeoutMs
-    }
+    /** Compatibility entry point for consumers that still use the legacy name. */
+    @Suppress("UNUSED_PARAMETER")
+    fun isServiceDead(context: Context, timeoutMs: Long = HEARTBEAT_GRACE_MS): Boolean =
+        shouldRestart(context)
 
     /** 记录 Service 重启次数（诊断用） */
     fun recordRestart(context: Context) {

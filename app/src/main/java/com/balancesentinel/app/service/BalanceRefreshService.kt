@@ -1,9 +1,7 @@
 package com.balancesentinel.app.service
 
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -121,24 +119,13 @@ class BalanceRefreshService : Service() {
         super.onDestroy()
     }
 
-    // 用户从最近任务滑动清除 → 1 秒后通过 AlarmManager 重启
+    // A task-removal restart uses the same compliant foreground-service boundary.
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        try {
-            val alarm = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-            val restartIntent = Intent(this, BalanceRefreshService::class.java)
-            val pending = PendingIntent.getForegroundService(
-                this, 0, restartIntent,
-                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarm.setExactAndAllowWhileIdle(
-                AlarmManager.RTC,
-                System.currentTimeMillis() + 1000L, // 1 秒后重启
-                pending
-            )
-            Logger.i(TAG, "onTaskRemoved — scheduled restart via AlarmManager in 1s")
-        } catch (e: Exception) {
-            Logger.e(TAG, "onTaskRemoved — failed to schedule restart", e)
+        when (serviceStarter.start(this)) {
+            ServiceStartResult.Started -> Logger.i(TAG, "task_removal_service_started")
+            is ServiceStartResult.Deferred -> Logger.w(TAG, "task_removal_service_start_deferred")
+            is ServiceStartResult.Failed -> Logger.w(TAG, "task_removal_service_start_failed")
         }
     }
 
@@ -204,7 +191,19 @@ class BalanceRefreshService : Service() {
                     return@launch
                 }
 
-                val runner = BalanceRefreshRunner(refreshGateway) {
+                val deadlineLifecycle = object : RefreshDeadlineLifecycle {
+                    override fun markStarted() {
+                        RefreshScheduler.markRefreshStarted(
+                            this@BalanceRefreshService,
+                            accounts.size
+                        )
+                    }
+
+                    override fun clear() {
+                        RefreshScheduler.clearRefreshDeadline(this@BalanceRefreshService)
+                    }
+                }
+                val runner = BalanceRefreshRunner(refreshGateway, deadlineLifecycle) {
                     BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
                 }
                 val committedBalances = runner.refreshAndReadCommitted()
