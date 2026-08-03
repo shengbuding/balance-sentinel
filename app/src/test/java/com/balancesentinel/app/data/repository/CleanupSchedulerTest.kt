@@ -182,6 +182,34 @@ class CleanupSchedulerTest {
         assertEquals(1, report.retainedRecordCount)
     }
 
+    // Mutation caught: assuming commit=false means an exact deletion was not applied.
+    @Test
+    fun `applied deletion reported as failed restores snapshot without losing a late arrival`() = runTest {
+        val source = record("acct", "CNY", at("2026-08-01T10:00:00Z"), 12f)
+        val arriving = record("acct", "CNY", at("2026-08-01T10:00:01Z"), 11f)
+        RawRecordStore.addRecords(context, listOf(source))
+        var inserted = false
+        val fault = FaultPrefsContext(
+            context,
+            applyThenFailCommit = { name, count -> name == RAW_PREFS && count == 1 },
+            afterCommit = { name, count ->
+                if (!inserted && name == RAW_PREFS && count == 1) {
+                    inserted = true
+                    RawRecordStore.addRecords(context, listOf(arriving))
+                }
+            }
+        )
+
+        val report = CleanupScheduler.runCleanup(fault, NOW, ZoneOffset.UTC)
+
+        assertEquals(listOf(source, arriving), RawRecordStore.getAllRecords(context))
+        assertEquals(0, report.deletedRecordCount)
+        assertEquals(2, report.retainedRecordCount)
+        assertTrue(report.failures.any {
+            it.date == "2026-08-01" && it.stage == CleanupStage.DELETE_SOURCE
+        })
+    }
+
     // Mutation caught: deleting only the old members of a mixed-age snapshot.
     @Test
     fun `deletion waits until every record in the snapshot is older than 24 hours`() = runTest {
@@ -284,6 +312,7 @@ class CleanupSchedulerTest {
         base: Context,
         private val events: MutableList<String> = mutableListOf(),
         private val failCommit: (String, Int) -> Boolean = { _, _ -> false },
+        private val applyThenFailCommit: (String, Int) -> Boolean = { _, _ -> false },
         private val failRead: (String, Int) -> Throwable? = { _, _ -> null },
         private val transformRead: (String, Int, String?) -> String? = { _, _, raw -> raw },
         private val transformReadsAfterCommitOnly: Boolean = false,
@@ -331,6 +360,11 @@ class CleanupSchedulerTest {
                             commitCounts[name] = count
                             events += "commit:$name"
                             if (failCommit(name, count)) return false
+                            if (applyThenFailCommit(name, count)) {
+                                val committed = editor.commit()
+                                if (committed) afterCommit(name, count)
+                                return false
+                            }
                             val committed = editor.commit()
                             if (committed) afterCommit(name, count)
                             return committed
