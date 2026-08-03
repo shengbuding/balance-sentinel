@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.util.Logger
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.time.Instant
@@ -21,6 +22,7 @@ object RawRecordStore {
     private val storeLock = Any()
     private val json = Json { ignoreUnknownKeys = true }
     private val serializer = ListSerializer(RawRecord.serializer())
+    private val pendingRemovalSerializer = PendingRemoval.serializer()
 
     fun addRecords(context: Context, records: List<RawRecord>): StoreWriteResult {
         if (records.isEmpty()) return StoreWriteResult.Written(0)
@@ -79,8 +81,14 @@ object RawRecordStore {
         if (snapshot.isEmpty()) return StoreWriteResult.Written(0)
         return synchronized(storeLock) {
             try {
+                val initialState = getRecordsState(context)
+                if (initialState.pendingRemoval != null) {
+                    if (!persistRecords(context, initialState.records)) {
+                        return@synchronized failed("REMOVE_EXACT")
+                    }
+                }
                 val remainingCounts = snapshot.groupingBy { it }.eachCount().toMutableMap()
-                val existing = getRecordsInternal(context)
+                val existing = initialState.records
                 var removed = 0
                 val remaining = existing.filter { record ->
                     val count = remainingCounts[record] ?: 0
@@ -94,9 +102,33 @@ object RawRecordStore {
                     }
                 }
                 if (removed == 0) return@synchronized StoreWriteResult.Written(0)
-                if (!persistRecords(context, remaining)) {
-                    compensateFailedDeletion(context, existing)
+
+                val deletionCommitted = persistPendingRemoval(context, existing, remaining)
+                val stateAfterDeletion = getRecordsState(context)
+                if (!deletionCommitted) {
+                    if (stateAfterDeletion.pendingRemoval != null) {
+                        persistRecords(context, stateAfterDeletion.records)
+                    }
                     return@synchronized failed("REMOVE_EXACT")
+                }
+
+                if (stateAfterDeletion.pendingRemoval == null) {
+                    return@synchronized if (stateAfterDeletion.records == remaining) {
+                        StoreWriteResult.Written(removed)
+                    } else {
+                        failed("REMOVE_EXACT")
+                    }
+                }
+
+                if (!persistRecords(context, remaining)) {
+                    val finalState = getRecordsState(context)
+                    return@synchronized if (
+                        finalState.pendingRemoval == null && finalState.records == remaining
+                    ) {
+                        StoreWriteResult.Written(removed)
+                    } else {
+                        failed("REMOVE_EXACT")
+                    }
                 }
                 StoreWriteResult.Written(removed)
             } catch (_: Exception) {
@@ -209,8 +241,17 @@ object RawRecordStore {
     }
 
     private fun getRecordsInternal(context: Context): List<RawRecord> {
-        val raw = getPrefs(context).getString(KEY_RECORDS, null) ?: return emptyList()
-        return json.decodeFromString(serializer, raw)
+        return getRecordsState(context).records
+    }
+
+    private fun getRecordsState(context: Context): RecordsState {
+        val raw = getPrefs(context).getString(KEY_RECORDS, null)
+            ?: return RecordsState(emptyList())
+        if (raw.trimStart().startsWith("[")) {
+            return RecordsState(json.decodeFromString(serializer, raw))
+        }
+        val pending = json.decodeFromString(pendingRemovalSerializer, raw)
+        return RecordsState(records = pending.before, pendingRemoval = pending)
     }
 
     private fun persistRecords(context: Context, records: List<RawRecord>): Boolean {
@@ -218,32 +259,28 @@ object RawRecordStore {
         return getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit()
     }
 
-    private fun compensateFailedDeletion(context: Context, before: List<RawRecord>) {
-        val current = getRecordsInternal(context)
-        val unmatchedBefore = before.groupingBy { it }.eachCount().toMutableMap()
-        val additions = current.filter { record ->
-            val count = unmatchedBefore[record] ?: 0
-            if (count > 0) {
-                if (count == 1) unmatchedBefore.remove(record)
-                else unmatchedBefore[record] = count - 1
-                false
-            } else {
-                true
-            }
-        }
-        val compensated = before + additions
-        if (compensated != current) persistRecords(context, compensated)
-        if (!getRecordsInternal(context).containsAtLeast(compensated)) {
-            Logger.w(TAG, "REMOVE_EXACT compensation could not be verified")
-        }
+    private fun persistPendingRemoval(
+        context: Context,
+        before: List<RawRecord>,
+        after: List<RawRecord>
+    ): Boolean {
+        val serialized = json.encodeToString(
+            pendingRemovalSerializer,
+            PendingRemoval(before = before, after = after)
+        )
+        return getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit()
     }
 
-    private fun List<RawRecord>.containsAtLeast(required: List<RawRecord>): Boolean {
-        val actualCounts = groupingBy { it }.eachCount()
-        return required.groupingBy { it }.eachCount().all { (record, count) ->
-            actualCounts.getOrDefault(record, 0) >= count
-        }
-    }
+    private data class RecordsState(
+        val records: List<RawRecord>,
+        val pendingRemoval: PendingRemoval? = null
+    )
+
+    @Serializable
+    private data class PendingRemoval(
+        val before: List<RawRecord>,
+        val after: List<RawRecord>
+    )
 
     private fun getPrefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

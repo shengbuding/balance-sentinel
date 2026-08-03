@@ -318,7 +318,12 @@ class CleanupSchedulerTest {
         val report = CleanupScheduler.runCleanup(fault, NOW, ZoneOffset.UTC)
 
         assertEquals(
-            listOf("commit:$DAILY_PREFS", "commit:$RAW_PREFS", "commit:$DAILY_PREFS"),
+            listOf(
+                "commit:$DAILY_PREFS",
+                "commit:$RAW_PREFS",
+                "commit:$RAW_PREFS",
+                "commit:$DAILY_PREFS"
+            ),
             events
         )
         assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
