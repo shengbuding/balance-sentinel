@@ -30,22 +30,35 @@ object DailySummaryStore {
      * 批量添加日摘要。一次读、一次写，避免逐条 O(n²) 序列化。
      * 用于数据导入等大量写入场景。
      */
-    fun addSummaries(context: Context, summaries: List<DailySummary>) {
-        if (summaries.isEmpty()) return
-        synchronized(writeLock) {
+    fun addSummaries(context: Context, summaries: List<DailySummary>): StoreWriteResult {
+        if (summaries.isEmpty()) return StoreWriteResult.Written(0)
+        return synchronized(writeLock) {
             try {
                 val existing = getSummaries(context).toMutableList()
                 val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
                 val toAdd = summaries.filter {
                     Triple(it.date, it.currency, it.accountId) !in existingKeys
                 }
-                if (toAdd.isEmpty()) return
+                if (toAdd.isEmpty()) return@synchronized StoreWriteResult.Written(0)
                 existing.addAll(toAdd)
                 existing.sortBy { it.date }
                 val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), existing)
                 getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-            } catch (e: Exception) { Logger.w(TAG, "addSummaries failed", e) }
+                StoreWriteResult.Written(toAdd.size)
+            } catch (e: Exception) {
+                Logger.w(TAG, "addSummaries failed", e)
+                StoreWriteResult.Failed("ADD_SUMMARIES", "Daily summary write failed")
+            }
         }
+    }
+
+    /** Cleanup-specific support seam. Task 10 replacement behavior is implemented after RED. */
+    fun replaceForDate(
+        context: Context,
+        date: String,
+        summaries: List<DailySummary>
+    ): StoreWriteResult {
+        return addSummaries(context, summaries)
     }
 
     /**
@@ -152,10 +165,15 @@ object DailySummaryStore {
      *   consumed/toppedUp/granted = 0
      *   sampleCount = 0（标记为无数据日）
      */
-    fun ensureContinuity(context: Context, fromDate: String, toDate: String) {
-        synchronized(writeLock) {
+    fun ensureContinuity(
+        context: Context,
+        fromDate: String,
+        toDate: String
+    ): StoreWriteResult {
+        return synchronized(writeLock) {
             try {
                 val summaries = getSummaries(context).toMutableList()
+                val initialSize = summaries.size
                 val today = dateFormat.format(Date())
 
                 // 按 (accountId, currency) 分组
@@ -215,8 +233,10 @@ object DailySummaryStore {
                 val serialized =
                     json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
                 getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+                StoreWriteResult.Written(summaries.size - initialSize)
             } catch (e: Exception) {
                 Logger.w(TAG, "Failed to ensure continuity: ${e.message}")
+                StoreWriteResult.Failed("ENSURE_CONTINUITY", "Continuity write failed")
             }
         }
     }

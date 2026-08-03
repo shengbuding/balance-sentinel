@@ -4,8 +4,29 @@ import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+data class CleanupReport(
+    val archivedDates: Set<String>,
+    val deletedRecordCount: Int,
+    val retainedRecordCount: Int,
+    val failures: List<CleanupFailure>
+)
+
+data class CleanupFailure(
+    val date: String,
+    val stage: CleanupStage,
+    val reason: String
+)
+
+enum class CleanupStage {
+    READ_SOURCE,
+    WRITE_SUMMARY,
+    VERIFY_SUMMARY,
+    DELETE_SOURCE
+}
 
 /**
  * 清理调度器：聚合旧原始记录 → 日摘要 → 补零 → 删除。
@@ -21,10 +42,21 @@ object CleanupScheduler {
      * 2. 补零间隙
      * 3. 删除超过 24 小时的旧记录（已聚合 + 安全延迟）
      */
-    suspend fun runCleanup(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun runCleanup(context: Context): CleanupReport = withContext(Dispatchers.IO) {
+        runCleanup(
+            context = context,
+            now = System.currentTimeMillis(),
+            zoneId = ZoneId.systemDefault()
+        )
+    }
+
+    suspend fun runCleanup(
+        context: Context,
+        now: Long,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): CleanupReport = withContext(Dispatchers.IO) {
         try {
-            val today = LocalDate.now().format(dateFormat)
-            val now = System.currentTimeMillis()
+            val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate().format(dateFormat)
 
             // 缓存已有摘要，避免循环内重复反序列化
             val existingSummaries = DailySummaryStore.getSummaries(context)
@@ -58,7 +90,8 @@ object CleanupScheduler {
             val allSummaries = DailySummaryStore.getSummaries(context).sortedBy { it.date }
             if (allSummaries.isNotEmpty()) {
                 val earliestDate = allSummaries.first().date
-                val yesterday = LocalDate.now().minusDays(1).format(dateFormat)
+                val yesterday = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
+                    .minusDays(1).format(dateFormat)
 
                 DailySummaryStore.ensureContinuity(context, earliestDate, yesterday)
             }
@@ -71,8 +104,20 @@ object CleanupScheduler {
                     RawRecordStore.removeByDate(context, date)
                 }
             }
+            CleanupReport(
+                archivedDates = emptySet(),
+                deletedRecordCount = 0,
+                retainedRecordCount = RawRecordStore.getAllRecords(context).size,
+                failures = emptyList()
+            )
         } catch (_: Exception) {
             // 清理失败不应影响 App 正常运行
+            CleanupReport(
+                archivedDates = emptySet(),
+                deletedRecordCount = 0,
+                retainedRecordCount = RawRecordStore.getAllRecords(context).size,
+                failures = emptyList()
+            )
         }
     }
 }

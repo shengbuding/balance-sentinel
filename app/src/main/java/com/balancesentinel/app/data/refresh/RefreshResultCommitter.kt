@@ -14,6 +14,7 @@ import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.AlertChecker
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.StoreWriteResult
 import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.widget.AccountBalance
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
@@ -37,7 +38,10 @@ class RefreshResultCommitter(
     private val accountStore: RefreshAccountStore,
     private val providerCache: ProviderCache = ProviderCache(context),
     private val alertDispatcher: RefreshAlertDispatcher = AndroidRefreshAlertDispatcher(context),
-    private val widgetRedrawNotifier: WidgetRedrawNotifier = AndroidWidgetRedrawNotifier(context)
+    private val widgetRedrawNotifier: WidgetRedrawNotifier = AndroidWidgetRedrawNotifier(context),
+    private val wallClock: () -> Long = System::currentTimeMillis,
+    private val rawRecordWriter: (Context, List<RawRecord>) -> StoreWriteResult =
+        RawRecordStore::addRecords
 ) : RefreshCommitter {
 
     override fun commit(

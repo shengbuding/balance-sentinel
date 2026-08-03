@@ -35,11 +35,13 @@ object RawRecordStore {
      * 用于数据导入等大量写入场景。
      * 公共方法：写入失败时不抛出异常，兼容旧调用方。
      */
-    fun addRecords(context: Context, records: List<RawRecord>) {
-        try {
+    fun addRecords(context: Context, records: List<RawRecord>): StoreWriteResult {
+        return try {
             addRecordsStrict(context, records)
+            StoreWriteResult.Written(records.size)
         } catch (e: Exception) {
             Logger.w(TAG, "addRecords failed: ${e.message}")
+            StoreWriteResult.Failed("ADD_RECORDS", "Raw record write failed")
         }
     }
 
@@ -164,6 +166,12 @@ object RawRecordStore {
                 }
             } catch (e: Exception) { Logger.w(TAG, "removeRecords failed", e) }
         }
+    }
+
+    /** Cleanup-specific support seam. Task 10 behavior is implemented after RED. */
+    fun removeExact(context: Context, snapshot: List<RawRecord>): StoreWriteResult {
+        removeRecords(context, snapshot)
+        return StoreWriteResult.Written(snapshot.size)
     }
 
     /**
