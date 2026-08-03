@@ -91,12 +91,26 @@ class RefreshResultCommitter(
                 )
 
                 attemptedStage = 3
-                RawRecordStore.addRecordsStrict(
-                    context,
-                    fetched.balance.balances.map { entry ->
-                        entry.toRawRecord(account.id, fetched.completedAt)
-                    }
-                )
+                val rawTimestamp = wallClock()
+                val rawBatch = fetched.balance.balances.map { entry ->
+                    entry.toRawRecord(account.id, rawTimestamp)
+                }
+                val rawWrite = rawRecordWriter(context, rawBatch)
+                if (
+                    rawWrite is StoreWriteResult.Failed ||
+                    rawWrite is StoreWriteResult.Written && rawWrite.itemCount != rawBatch.size
+                ) {
+                    rollback(
+                        attemptedStage = attemptedStage,
+                        account = account,
+                        providerBefore = providerBefore,
+                        widgetBefore = widgetBefore,
+                        recordsBefore = recordsBefore,
+                        logsBefore = logsBefore,
+                        usageBefore = usageBefore
+                    )
+                    return@synchronized persistenceFailure(request.accountId)
+                }
 
                 attemptedStage = 4
                 RefreshLogStore.addEntriesStrict(
@@ -171,9 +185,9 @@ class RefreshResultCommitter(
         lastUpdated = completedAt
     )
 
-    private fun BalanceEntry.toRawRecord(accountId: String, completedAt: Long) = RawRecord(
+    private fun BalanceEntry.toRawRecord(accountId: String, timestamp: Long) = RawRecord(
         accountId = accountId,
-        timestamp = completedAt,
+        timestamp = timestamp,
         currency = currency,
         totalBalance = totalBalance.toFloat(),
         grantedBalance = grantedBalance?.toFloat() ?: 0f,

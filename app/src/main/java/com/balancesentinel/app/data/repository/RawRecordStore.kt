@@ -1,298 +1,236 @@
 package com.balancesentinel.app.data.repository
 
-import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.ZoneId
 
-/**
- * 原始刷新记录存储（保留 >=24 小时数据）。
- * 每条刷新写入一条，上限 90000。跨天不再自动清空，改为由 CleanupScheduler 批量删除。
- * 使用普通 SharedPreferences + JSON，Widget 进程也能写入。
- */
 object RawRecordStore {
 
     private const val TAG = "RawRecordStore"
     private const val PREFS_NAME = "raw_records"
     private const val KEY_RECORDS = "records"
+    private const val DAY_MS = 24 * 3_600_000L
 
-    /** 当日最大记录数（90000 条兜底） */
     const val MAX_RECORDS = 90_000
 
-    /** H9 修复：读-改-写操作的共享锁 */
-    private val writeLock = Any()
-
+    private val storeLock = Any()
     private val json = Json { ignoreUnknownKeys = true }
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val serializer = ListSerializer(RawRecord.serializer())
 
-    /**
-     * 批量追加原始记录。一次读、一次写，避免逐条 O(n²) 序列化。
-     * 用于数据导入等大量写入场景。
-     * 公共方法：写入失败时不抛出异常，兼容旧调用方。
-     */
     fun addRecords(context: Context, records: List<RawRecord>): StoreWriteResult {
-        return try {
-            addRecordsStrict(context, records)
-            StoreWriteResult.Written(records.size)
-        } catch (e: Exception) {
-            Logger.w(TAG, "addRecords failed: ${e.message}")
-            StoreWriteResult.Failed("ADD_RECORDS", "Raw record write failed")
-        }
-    }
-
-    /**
-     * 批量追加原始记录（严格模式）。
-     * 内部方法：写入失败时抛出异常，用于 RefreshResultCommitter 的持久化失败检测。
-     */
-    internal fun addRecordsStrict(context: Context, records: List<RawRecord>) {
-        if (records.isEmpty()) return
-        synchronized(writeLock) {
-            val existing = getRecordsInternal(context).toMutableList()
-            existing.addAll(records)
-            if (existing.size > MAX_RECORDS) {
-                existing.subList(0, existing.size - MAX_RECORDS).clear()
-            }
-            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), existing)
-            check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
-        }
-    }
-
-    /**
-     * 追加一条原始记录。
-     * 跨天不再自动清空，旧数据由 CleanupScheduler 批量删除。
-     */
-    fun addRecord(context: Context, record: RawRecord) {
-        synchronized(writeLock) {
+        if (records.isEmpty()) return StoreWriteResult.Written(0)
+        return synchronized(storeLock) {
             try {
-                val records = getRecordsInternal(context).toMutableList()
-                records.add(record)
-
-                // 上限兜底：保留最新 MAX_RECORDS 条
-                if (records.size > MAX_RECORDS) {
-                    records.subList(0, records.size - MAX_RECORDS).clear()
-                }
-
-                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), records)
-                getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+                addRecordsLocked(context, records)
             } catch (_: Exception) {
-                // 记录写入失败不应影响刷新主流程
+                Logger.w(TAG, "ADD_RECORDS failed")
+                failed("ADD_RECORDS")
             }
         }
     }
 
-    /**
-     * 读取今日所有原始记录。
-     */
+    fun addRecord(context: Context, record: RawRecord) {
+        addRecords(context, listOf(record))
+    }
+
     fun getTodayRecords(context: Context): List<RawRecord> {
-        return try {
-            val today = dateFormat.format(Date())
-            getRecordsInternal(context).filter {
-                dateFormat.format(Date(it.timestamp)) == today
-            }
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get today records: ${e.message}")
-            emptyList()
+        val zoneId = ZoneId.systemDefault()
+        val today = Instant.now().atZone(zoneId).toLocalDate().toString()
+        return readOrEmpty("READ_TODAY") {
+            getRecordsInternal(context).filter { dateOf(it.timestamp, zoneId) == today }
         }
     }
 
-    /**
-     * 读取全部原始记录（含跨天旧数据，用于启动检测补汇）。
-     */
-    fun getAllRecords(context: Context): List<RawRecord> {
-        return try {
-            getRecordsInternal(context)
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get all records: ${e.message}")
-            emptyList()
-        }
+    fun getAllRecords(context: Context): List<RawRecord> = readOrEmpty("READ_ALL") {
+        getRecordsInternal(context)
     }
 
-    /**
-     * 读取指定账户的今日原始记录。
-     */
     fun getTodayRecordsForAccount(context: Context, accountId: String): List<RawRecord> {
-        return try {
-            val today = dateFormat.format(Date())
+        val zoneId = ZoneId.systemDefault()
+        val today = Instant.now().atZone(zoneId).toLocalDate().toString()
+        return readOrEmpty("READ_TODAY_ACCOUNT") {
             getRecordsInternal(context).filter {
-                dateFormat.format(Date(it.timestamp)) == today && it.accountId == accountId
+                it.accountId == accountId && dateOf(it.timestamp, zoneId) == today
             }
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get today records for account: ${e.message}")
-            emptyList()
         }
     }
 
-    /**
-     * 读取指定账户的全部原始记录。
-     */
-    fun getAllRecordsForAccount(context: Context, accountId: String): List<RawRecord> {
-        return try {
+    fun getAllRecordsForAccount(context: Context, accountId: String): List<RawRecord> =
+        readOrEmpty("READ_ACCOUNT") {
             getRecordsInternal(context).filter { it.accountId == accountId }
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get all records for account: ${e.message}")
-            emptyList()
         }
-    }
 
-    /**
-     * 清除全部原始记录。
-     */
     fun clear(context: Context) {
-        synchronized(writeLock) {
+        synchronized(storeLock) {
             check(getPrefs(context).edit().remove(KEY_RECORDS).commit())
         }
     }
 
-    /**
-     * 精确删除指定的记录（按 accountId + timestamp 匹配）。
-     * 不会影响未匹配的记录。用于午夜聚合后只删除已归档的旧数据。
-     */
     fun removeRecords(context: Context, recordsToRemove: List<RawRecord>) {
-        synchronized(writeLock) {
-            try {
-                val toRemove = recordsToRemove.map { it.accountId to it.timestamp }.toSet()
-                val allRecords = getRecordsInternal(context)
-                val remaining = allRecords.filter {
-                    (it.accountId to it.timestamp) !in toRemove
-                }
-                if (remaining.size < allRecords.size) {
-                    val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
-                    getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
-                }
-            } catch (e: Exception) { Logger.w(TAG, "removeRecords failed", e) }
-        }
+        removeExact(context, recordsToRemove)
     }
 
-    /** Cleanup-specific support seam. Task 10 behavior is implemented after RED. */
     fun removeExact(context: Context, snapshot: List<RawRecord>): StoreWriteResult {
-        removeRecords(context, snapshot)
-        return StoreWriteResult.Written(snapshot.size)
-    }
-
-    /**
-     * 删除指定账户的所有记录（按 accountId 匹配）。
-     * 用于删除账户时清理关联数据。
-     */
-    fun removeByAccountId(context: Context, accountId: String) {
-        synchronized(writeLock) {
-            val remaining = getRecordsInternal(context).filter { it.accountId != accountId }
-            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
-            check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
-        }
-    }
-
-    /** 内部读取，不做日期过滤 */
-    private fun getRecordsInternal(context: Context): List<RawRecord> {
-        val raw = getPrefs(context).getString(KEY_RECORDS, null) ?: return emptyList()
-        return json.decodeFromString(ListSerializer(RawRecord.serializer()), raw)
-    }
-
-    /**
-     * 读取指定时间戳之后的所有记录（24h 滑动窗口）。
-     */
-    fun getRecordsSince(context: Context, timestamp: Long): List<RawRecord> {
-        return try {
-            getRecordsInternal(context).filter { it.timestamp >= timestamp }
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get records since: ${e.message}")
-            emptyList()
-        }
-    }
-
-    /**
-     * 读取指定日期的所有记录。
-     */
-    fun getRecordsForDate(context: Context, date: String): List<RawRecord> {
-        return try {
-            getRecordsInternal(context).filter {
-                dateFormat.format(Date(it.timestamp)) == date
+        if (snapshot.isEmpty()) return StoreWriteResult.Written(0)
+        return synchronized(storeLock) {
+            try {
+                val remainingCounts = snapshot.groupingBy { it }.eachCount().toMutableMap()
+                val existing = getRecordsInternal(context)
+                var removed = 0
+                val remaining = existing.filter { record ->
+                    val count = remainingCounts[record] ?: 0
+                    if (count > 0) {
+                        if (count == 1) remainingCounts.remove(record)
+                        else remainingCounts[record] = count - 1
+                        removed += 1
+                        false
+                    } else {
+                        true
+                    }
+                }
+                if (removed == 0) return@synchronized StoreWriteResult.Written(0)
+                if (!persistRecords(context, remaining)) return@synchronized failed("REMOVE_EXACT")
+                StoreWriteResult.Written(removed)
+            } catch (_: Exception) {
+                Logger.w(TAG, "REMOVE_EXACT failed")
+                failed("REMOVE_EXACT")
             }
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get records for date: ${e.message}")
-            emptyList()
         }
     }
 
-    /**
-     * 返回存储中所有不同的日期（yyyy-MM-dd）。
-     */
-    fun getDistinctDates(context: Context): List<String> {
-        return try {
-            getRecordsInternal(context)
-                .map { dateFormat.format(Date(it.timestamp)) }
-                .distinct()
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to get distinct dates: ${e.message}")
-            emptyList()
+    fun removeByAccountId(context: Context, accountId: String) {
+        synchronized(storeLock) {
+            val remaining = getRecordsInternal(context).filter { it.accountId != accountId }
+            check(persistRecords(context, remaining))
         }
     }
 
-    /**
-     * 批量删除指定日期中年龄超过 minAgeMs 的记录。
-     * 只删除旧记录，保留 < minAgeMs 的记录以维持 24h 滑动窗口完整性。
-     */
-    fun removeByDate(context: Context, date: String, minAgeMs: Long = 24 * 3600_000L) {
-        synchronized(writeLock) {
+    fun getRecordsSince(context: Context, timestamp: Long): List<RawRecord> =
+        readOrEmpty("READ_SINCE") {
+            getRecordsInternal(context).filter { it.timestamp >= timestamp }
+        }
+
+    fun getRecordsForDate(context: Context, date: String): List<RawRecord> =
+        getRecordsForDate(context, date, ZoneId.systemDefault())
+
+    fun getRecordsForDate(
+        context: Context,
+        date: String,
+        zoneId: ZoneId
+    ): List<RawRecord> = readOrEmpty("READ_DATE") {
+        getRecordsInternal(context).filter { dateOf(it.timestamp, zoneId) == date }
+    }
+
+    fun getDistinctDates(context: Context): List<String> =
+        getDistinctDates(context, ZoneId.systemDefault())
+
+    fun getDistinctDates(context: Context, zoneId: ZoneId): List<String> =
+        readOrEmpty("READ_DATES") {
+            getRecordsInternal(context).map { dateOf(it.timestamp, zoneId) }.distinct()
+        }
+
+    internal fun getRecordsForDateForCleanup(
+        context: Context,
+        date: String,
+        zoneId: ZoneId
+    ): List<RawRecord> = synchronized(storeLock) {
+        getRecordsInternal(context).filter { dateOf(it.timestamp, zoneId) == date }.toList()
+    }
+
+    internal fun getDistinctDatesForCleanup(context: Context, zoneId: ZoneId): List<String> =
+        synchronized(storeLock) {
+            getRecordsInternal(context).map { dateOf(it.timestamp, zoneId) }.distinct()
+        }
+
+    internal fun getAllRecordsForCleanup(context: Context): List<RawRecord> =
+        synchronized(storeLock) { getRecordsInternal(context).toList() }
+
+    fun removeByDate(context: Context, date: String, minAgeMs: Long = DAY_MS) {
+        synchronized(storeLock) {
             try {
                 val now = System.currentTimeMillis()
-                val allRecords = getRecordsInternal(context)
-                val remaining = allRecords.filter {
-                    dateFormat.format(Date(it.timestamp)) != date ||
-                        (now - it.timestamp) < minAgeMs
+                val zoneId = ZoneId.systemDefault()
+                val existing = getRecordsInternal(context)
+                val remaining = existing.filter { record ->
+                    dateOf(record.timestamp, zoneId) != date || now - record.timestamp < minAgeMs
                 }
-                if (remaining.size < allRecords.size) {
-                    val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), remaining)
-                    getPrefs(context).edit().putString(KEY_RECORDS, serialized).apply()
+                if (remaining.size != existing.size && !persistRecords(context, remaining)) {
+                    Logger.w(TAG, "REMOVE_DATE failed")
                 }
-            } catch (e: Exception) { Logger.w(TAG, "removeByDate failed", e) }
+            } catch (_: Exception) {
+                Logger.w(TAG, "REMOVE_DATE failed")
+            }
         }
     }
 
-    internal fun snapshotRecords(context: Context): List<RawRecord> = synchronized(writeLock) {
+    internal fun snapshotRecords(context: Context): List<RawRecord> = synchronized(storeLock) {
         getRecordsInternal(context).toList()
     }
 
     internal fun restoreRecords(context: Context, snapshot: List<RawRecord>) {
-        synchronized(writeLock) {
-            val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), snapshot)
-            check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
+        synchronized(storeLock) {
+            check(persistRecords(context, snapshot))
         }
     }
 
-    private fun getPrefs(context: Context): SharedPreferences {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-
-    /**
-     * 迁移账户ID
-     * @param migrationMap 旧ID -> 新ID 的映射表
-     */
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-
-        synchronized(writeLock) {
-            val records = getRecordsInternal(context).toMutableList()
-            var migrated = false
-
-            for (i in records.indices) {
-                val record = records[i]
-                val newId = migrationMap[record.accountId]
-                if (newId != null) {
-                    records[i] = record.copy(accountId = newId)
-                    migrated = true
-                }
+        synchronized(storeLock) {
+            val existing = getRecordsInternal(context)
+            val migrated = existing.map { record ->
+                migrationMap[record.accountId]?.let { record.copy(accountId = it) } ?: record
             }
-
-            if (migrated) {
-                val serialized = json.encodeToString(ListSerializer(RawRecord.serializer()), records)
-                check(getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit())
+            if (migrated != existing) {
+                check(persistRecords(context, migrated))
                 Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in RawRecordStore")
             }
         }
     }
+
+    private fun addRecordsLocked(
+        context: Context,
+        records: List<RawRecord>
+    ): StoreWriteResult {
+        val existing = getRecordsInternal(context).toMutableList()
+        existing.addAll(records)
+        if (existing.size > MAX_RECORDS) {
+            existing.subList(0, existing.size - MAX_RECORDS).clear()
+        }
+        if (!persistRecords(context, existing)) return failed("ADD_RECORDS")
+        return StoreWriteResult.Written(minOf(records.size, MAX_RECORDS))
+    }
+
+    private fun getRecordsInternal(context: Context): List<RawRecord> {
+        val raw = getPrefs(context).getString(KEY_RECORDS, null) ?: return emptyList()
+        return json.decodeFromString(serializer, raw)
+    }
+
+    private fun persistRecords(context: Context, records: List<RawRecord>): Boolean {
+        val serialized = json.encodeToString(serializer, records)
+        return getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit()
+    }
+
+    private fun getPrefs(context: Context): SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun dateOf(timestamp: Long, zoneId: ZoneId): String =
+        Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().toString()
+
+    private inline fun <T> readOrEmpty(operation: String, read: () -> List<T>): List<T> =
+        try {
+            read()
+        } catch (_: Exception) {
+            Logger.w(TAG, "$operation failed")
+            emptyList()
+        }
+
+    private fun failed(operation: String) = StoreWriteResult.Failed(
+        operation = operation,
+        reason = "SharedPreferences commit failed"
+    )
 }

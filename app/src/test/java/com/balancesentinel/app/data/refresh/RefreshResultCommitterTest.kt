@@ -79,7 +79,8 @@ class RefreshResultCommitterTest {
             alertDispatcher = RefreshAlertDispatcher { current, entry ->
                 events += "alerts:${current.id}:${entry.currency}"
             },
-            widgetRedrawNotifier = WidgetRedrawNotifier { events += "widget-redraw" }
+            widgetRedrawNotifier = WidgetRedrawNotifier { events += "widget-redraw" },
+            wallClock = { 5_000L }
         )
 
         val result = committer.commit(

@@ -140,37 +140,39 @@ object DataExporter {
     }
 
     /**
-     * 合并日摘要：按 (date + currency + accountId) 去重，批量写入。
-     * 已存在的不覆盖（本地可能有更新的快照数据）。
+     * Merge summaries by canonical (date, currency, accountId) without overwriting local history.
      */
     private fun mergeSummaries(context: Context, imported: List<DailySummary>): Int {
         if (imported.isEmpty()) return 0
         val existing = DailySummaryStore.getSummaries(context)
-        val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
-        val newSummaries = imported.filter {
-            Triple(it.date, it.currency, it.accountId) !in existingKeys
+        val seenKeys = existing.mapTo(mutableSetOf()) {
+            Triple(it.date, it.currency.uppercase(Locale.ROOT), it.accountId)
         }
-        if (newSummaries.isNotEmpty()) {
-            DailySummaryStore.addSummaries(context, newSummaries)
+        val newSummaries = imported.filter { summary ->
+            seenKeys.add(
+                Triple(summary.date, summary.currency.uppercase(Locale.ROOT), summary.accountId)
+            )
         }
-        return newSummaries.size
+        return when (val result = DailySummaryStore.addSummaries(context, newSummaries)) {
+            is StoreWriteResult.Written -> result.itemCount
+            is StoreWriteResult.Failed -> 0
+        }
     }
 
     /**
-     * 合并原始记录：按 (accountId + timestamp) 去重，批量写入。
-     * 已存在的时间戳跳过（同一时刻同账户只可能有一条记录）。
+     * Merge raw records by full value so same-timestamp currencies remain distinct.
      */
     private fun mergeRecords(context: Context, imported: List<RawRecord>): Int {
         if (imported.isEmpty()) return 0
         val existing = RawRecordStore.getAllRecords(context)
-        val existingKeys = existing.map { it.accountId to it.timestamp }.toSet()
-        val newRecords = imported.filter {
-            (it.accountId to it.timestamp) !in existingKeys
+        val seen = existing.toMutableSet()
+        val newRecords = imported.filter { record ->
+            seen.add(record)
         }
-        if (newRecords.isNotEmpty()) {
-            RawRecordStore.addRecords(context, newRecords)
+        return when (val result = RawRecordStore.addRecords(context, newRecords)) {
+            is StoreWriteResult.Written -> result.itemCount
+            is StoreWriteResult.Failed -> 0
         }
-        return newRecords.size
     }
 
     /**

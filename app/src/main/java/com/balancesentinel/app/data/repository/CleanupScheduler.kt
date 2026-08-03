@@ -2,11 +2,13 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
+import com.balancesentinel.app.data.model.DailySummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class CleanupReport(
     val archivedDates: Set<String>,
@@ -28,22 +30,13 @@ enum class CleanupStage {
     DELETE_SOURCE
 }
 
-/**
- * 清理调度器：聚合旧原始记录 → 日摘要 → 补零 → 删除。
- * 在午夜闹钟和 App 启动时调用，两者执行相同逻辑互为冗余。
- */
 object CleanupScheduler {
 
-    private val dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    private const val RETENTION_MS = 24 * 3_600_000L
+    private const val MAX_REASON_LENGTH = 160
 
-    /**
-     * 执行一轮完整清理：
-     * 1. 非今日的日期立即聚合 → 写入 DailySummaryStore
-     * 2. 补零间隙
-     * 3. 删除超过 24 小时的旧记录（已聚合 + 安全延迟）
-     */
     suspend fun runCleanup(context: Context): CleanupReport = withContext(Dispatchers.IO) {
-        runCleanup(
+        runCleanupInternal(
             context = context,
             now = System.currentTimeMillis(),
             zoneId = ZoneId.systemDefault()
@@ -55,69 +48,188 @@ object CleanupScheduler {
         now: Long,
         zoneId: ZoneId = ZoneId.systemDefault()
     ): CleanupReport = withContext(Dispatchers.IO) {
-        try {
-            val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate().format(dateFormat)
+        runCleanupInternal(context, now, zoneId)
+    }
 
-            // 缓存已有摘要，避免循环内重复反序列化
-            val existingSummaries = DailySummaryStore.getSummaries(context)
+    private fun runCleanupInternal(
+        context: Context,
+        now: Long,
+        zoneId: ZoneId
+    ): CleanupReport {
+        val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
+        val archivedDates = linkedSetOf<String>()
+        val failures = mutableListOf<CleanupFailure>()
+        var deletedRecordCount = 0
 
-            // Step 1: 非今日的日期立即聚合（不延迟）
-            val pastDates = RawRecordStore.getDistinctDates(context)
-                .filter { it != today }
-
-            if (pastDates.isNotEmpty()) {
-                for (date in pastDates.sorted()) {
-                    val records = RawRecordStore.getRecordsForDate(context, date)
-                    if (records.isEmpty()) continue
-
-                    // 已有摘要的 (currency, accountId) 跳过（日摘要不可覆盖）
-                    val existingKeys = existingSummaries
-                        .filter { it.date == date }
-                        .map { it.currency to it.accountId }
-                        .toSet()
-
-                    val summaries = RecordAggregator.aggregate(records, date)
-                    for (summary in summaries) {
-                        val key = summary.currency to summary.accountId
-                        if (key !in existingKeys) {
-                            DailySummaryStore.upsert(context, summary)
-                        }
-                    }
-                }
-            }
-
-            // Step 2: 补零 — 从最早日期到昨天
-            val allSummaries = DailySummaryStore.getSummaries(context).sortedBy { it.date }
-            if (allSummaries.isNotEmpty()) {
-                val earliestDate = allSummaries.first().date
-                val yesterday = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
-                    .minusDays(1).format(dateFormat)
-
-                DailySummaryStore.ensureContinuity(context, earliestDate, yesterday)
-            }
-
-            // Step 3: 只删除 >24h 的旧记录（保留至少一天原始数据）
-            for (date in pastDates) {
-                val records = RawRecordStore.getRecordsForDate(context, date)
-                val allAged = records.isNotEmpty() && records.all { now - it.timestamp > 24 * 3600_000L }
-                if (allAged) {
-                    RawRecordStore.removeByDate(context, date)
-                }
-            }
-            CleanupReport(
-                archivedDates = emptySet(),
-                deletedRecordCount = 0,
-                retainedRecordCount = RawRecordStore.getAllRecords(context).size,
-                failures = emptyList()
-            )
+        val sourceDates = try {
+            RawRecordStore.getDistinctDatesForCleanup(context, zoneId)
         } catch (_: Exception) {
-            // 清理失败不应影响 App 正常运行
-            CleanupReport(
-                archivedDates = emptySet(),
-                deletedRecordCount = 0,
-                retainedRecordCount = RawRecordStore.getAllRecords(context).size,
-                failures = emptyList()
+            failures += failure(
+                date = today.toString(),
+                stage = CleanupStage.READ_SOURCE,
+                reason = "LIST_DATES: source read failed"
+            )
+            emptyList()
+        }
+
+        sourceDates.filter { it != today.toString() }.sorted().forEach { date ->
+            val snapshot = try {
+                RawRecordStore.getRecordsForDateForCleanup(context, date, zoneId)
+            } catch (_: Exception) {
+                failures += failure(
+                    date = date,
+                    stage = CleanupStage.READ_SOURCE,
+                    reason = "READ_DATE: source read failed"
+                )
+                return@forEach
+            }
+            if (snapshot.isEmpty()) return@forEach
+
+            val normalizedSource = snapshot.map { record ->
+                val canonical = canonicalCurrency(record.currency)
+                if (record.currency == canonical) record else record.copy(currency = canonical)
+            }
+            val recomputed = RecordAggregator.aggregate(normalizedSource, date)
+                .map { it.canonicalized() }
+
+            when (val write = DailySummaryStore.replaceForDate(context, date, recomputed)) {
+                is StoreWriteResult.Failed -> {
+                    failures += failure(
+                        date = date,
+                        stage = CleanupStage.WRITE_SUMMARY,
+                        reason = writeReason(write)
+                    )
+                    return@forEach
+                }
+
+                is StoreWriteResult.Written -> Unit
+            }
+
+            val readback = try {
+                DailySummaryStore.getSummariesForCleanup(context)
+            } catch (_: Exception) {
+                failures += failure(
+                    date = date,
+                    stage = CleanupStage.VERIFY_SUMMARY,
+                    reason = "READBACK: summary read failed"
+                )
+                return@forEach
+            }
+            if (!matchesRecomputation(recomputed, readback)) {
+                failures += failure(
+                    date = date,
+                    stage = CleanupStage.VERIFY_SUMMARY,
+                    reason = "READBACK_MISMATCH: persisted summary did not match recomputation"
+                )
+                return@forEach
+            }
+
+            archivedDates += date
+            val retentionBoundary = now - RETENTION_MS
+            if (!snapshot.all { it.timestamp < retentionBoundary }) return@forEach
+
+            when (val deletion = RawRecordStore.removeExact(context, snapshot)) {
+                is StoreWriteResult.Written -> deletedRecordCount += deletion.itemCount
+                is StoreWriteResult.Failed -> failures += failure(
+                    date = date,
+                    stage = CleanupStage.DELETE_SOURCE,
+                    reason = writeReason(deletion)
+                )
+            }
+        }
+
+        fillContinuity(context, today, failures)
+
+        val retainedRecordCount = try {
+            RawRecordStore.getAllRecordsForCleanup(context).size
+        } catch (_: Exception) {
+            failures += failure(
+                date = today.toString(),
+                stage = CleanupStage.READ_SOURCE,
+                reason = "COUNT_RETAINED: source read failed"
+            )
+            0
+        }
+        return CleanupReport(
+            archivedDates = archivedDates,
+            deletedRecordCount = deletedRecordCount,
+            retainedRecordCount = retainedRecordCount,
+            failures = failures
+        )
+    }
+
+    private fun fillContinuity(
+        context: Context,
+        today: LocalDate,
+        failures: MutableList<CleanupFailure>
+    ) {
+        val targetDate = today.minusDays(1)
+        val summaries = try {
+            DailySummaryStore.getSummariesForCleanup(context)
+        } catch (_: Exception) {
+            failures += failure(
+                date = targetDate.toString(),
+                stage = CleanupStage.WRITE_SUMMARY,
+                reason = "ENSURE_CONTINUITY: summary read failed"
+            )
+            return
+        }
+        val earliestDate = summaries.minOfOrNull { it.date } ?: return
+        when (
+            val result = DailySummaryStore.ensureContinuity(
+                context = context,
+                fromDate = earliestDate,
+                toDate = targetDate.toString(),
+                today = today
+            )
+        ) {
+            is StoreWriteResult.Written -> Unit
+            is StoreWriteResult.Failed -> failures += failure(
+                date = targetDate.toString(),
+                stage = CleanupStage.WRITE_SUMMARY,
+                reason = "ENSURE_CONTINUITY: ${result.reason}"
             )
         }
     }
+
+    private fun matchesRecomputation(
+        expected: List<DailySummary>,
+        persisted: List<DailySummary>
+    ): Boolean {
+        val expectedKeys = expected.mapTo(mutableSetOf()) { it.key() }
+        val actualForKeys = persisted.filter { it.key() in expectedKeys }
+        return expected.normalizedForVerification() == actualForKeys.normalizedForVerification()
+    }
+
+    private fun List<DailySummary>.normalizedForVerification(): List<DailySummary> =
+        map { it.canonicalized().copy(generatedAt = 0L) }
+            .sortedWith(compareBy({ it.date }, { it.accountId }, { it.currency }))
+
+    private fun DailySummary.canonicalized(): DailySummary {
+        val canonical = canonicalCurrency(currency)
+        return if (currency == canonical) this else copy(currency = canonical)
+    }
+
+    private fun DailySummary.key() = SummaryKey(
+        date = date,
+        accountId = accountId,
+        currency = canonicalCurrency(currency)
+    )
+
+    private fun canonicalCurrency(currency: String): String = currency.uppercase(Locale.ROOT)
+
+    private fun writeReason(result: StoreWriteResult.Failed): String =
+        "${result.operation}: ${result.reason}".take(MAX_REASON_LENGTH)
+
+    private fun failure(
+        date: String,
+        stage: CleanupStage,
+        reason: String
+    ) = CleanupFailure(date, stage, reason.take(MAX_REASON_LENGTH))
+
+    private data class SummaryKey(
+        val date: String,
+        val accountId: String,
+        val currency: String
+    )
 }

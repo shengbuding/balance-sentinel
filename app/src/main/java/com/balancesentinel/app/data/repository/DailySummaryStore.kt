@@ -1,296 +1,280 @@
 package com.balancesentinel.app.data.repository
 
-import com.balancesentinel.app.data.util.Logger
 import android.content.Context
 import android.content.SharedPreferences
 import com.balancesentinel.app.data.model.DailySummary
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 
-/**
- * 每日余额摘要存储（长期保留）。
- * 每天每条币种一条摘要，由午夜闹钟或启动检测触发聚合。
- */
 object DailySummaryStore {
 
     private const val TAG = "DailySummaryStore"
     private const val PREFS_NAME = "daily_summaries"
     private const val KEY_SUMMARIES = "summaries"
 
+    private val storeLock = Any()
     private val json = Json { ignoreUnknownKeys = true }
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val serializer = ListSerializer(DailySummary.serializer())
 
-    /** H9 修复：读-改-写操作的共享锁 */
-    private val writeLock = Any()
-
-    /**
-     * 批量添加日摘要。一次读、一次写，避免逐条 O(n²) 序列化。
-     * 用于数据导入等大量写入场景。
-     */
     fun addSummaries(context: Context, summaries: List<DailySummary>): StoreWriteResult {
         if (summaries.isEmpty()) return StoreWriteResult.Written(0)
-        return synchronized(writeLock) {
+        return synchronized(storeLock) {
             try {
-                val existing = getSummaries(context).toMutableList()
-                val existingKeys = existing.map { Triple(it.date, it.currency, it.accountId) }.toSet()
-                val toAdd = summaries.filter {
-                    Triple(it.date, it.currency, it.accountId) !in existingKeys
+                val existing = getSummariesInternal(context).toMutableList()
+                val existingKeys = existing.mapTo(mutableSetOf()) { it.key() }
+                val toAdd = buildList {
+                    summaries.forEach { candidate ->
+                        val normalized = candidate.canonicalized()
+                        if (existingKeys.add(normalized.key())) add(normalized)
+                    }
                 }
                 if (toAdd.isEmpty()) return@synchronized StoreWriteResult.Written(0)
                 existing.addAll(toAdd)
-                existing.sortBy { it.date }
-                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), existing)
-                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
+                existing.sortSummaries()
+                if (!persistSummaries(context, existing)) return@synchronized failed("ADD_SUMMARIES")
                 StoreWriteResult.Written(toAdd.size)
-            } catch (e: Exception) {
-                Logger.w(TAG, "addSummaries failed", e)
-                StoreWriteResult.Failed("ADD_SUMMARIES", "Daily summary write failed")
+            } catch (_: Exception) {
+                Logger.w(TAG, "ADD_SUMMARIES failed")
+                failed("ADD_SUMMARIES")
             }
         }
     }
 
-    /** Cleanup-specific support seam. Task 10 replacement behavior is implemented after RED. */
     fun replaceForDate(
         context: Context,
         date: String,
         summaries: List<DailySummary>
     ): StoreWriteResult {
-        return addSummaries(context, summaries)
-    }
-
-    /**
-     * 添加一条日摘要（只插不覆盖）。
-     *
-     * 日摘要一旦写入即不可变。若 (date, currency, accountId) 已有摘要则静默跳过。
-     */
-    fun addSummary(context: Context, summary: DailySummary) {
-        synchronized(writeLock) {
+        if (summaries.isEmpty()) return StoreWriteResult.Written(0)
+        if (summaries.any { it.date != date }) {
+            return StoreWriteResult.Failed("REPLACE_DATE", "Summary date mismatch")
+        }
+        return synchronized(storeLock) {
             try {
-                val summaries = getSummaries(context).toMutableList()
-                val alreadyExists = summaries.any {
-                    it.date == summary.date && it.currency == summary.currency && it.accountId == summary.accountId
+                val incomingByKey = linkedMapOf<SummaryKey, DailySummary>()
+                summaries.forEach { candidate ->
+                    val normalized = candidate.canonicalized()
+                    incomingByKey[normalized.key()] = normalized
                 }
-                if (alreadyExists) return  // 不可覆盖
-                summaries.add(summary)
-                summaries.sortBy { it.date }
-                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-            } catch (e: Exception) { Logger.w(TAG, "saveSummary failed", e) }
+                val incomingKeys = incomingByKey.keys
+                val replacement = getSummariesInternal(context)
+                    .filterNot { it.key() in incomingKeys }
+                    .toMutableList()
+                replacement.addAll(incomingByKey.values)
+                replacement.sortSummaries()
+                if (!persistSummaries(context, replacement)) {
+                    return@synchronized failed("REPLACE_DATE")
+                }
+                StoreWriteResult.Written(incomingByKey.size)
+            } catch (_: Exception) {
+                Logger.w(TAG, "REPLACE_DATE failed")
+                failed("REPLACE_DATE")
+            }
         }
     }
 
-    /**
-     * 读取全部日摘要（按日期 ASC）。
-     */
-    fun getSummaries(context: Context): List<DailySummary> {
-        return try {
-            val raw = getPrefs(context).getString(KEY_SUMMARIES, null) ?: return emptyList()
-            json.decodeFromString(ListSerializer(DailySummary.serializer()), raw)
-        } catch (e: Exception) {
-            Logger.w(TAG, "Failed to parse daily summaries: ${e.message}")
-            emptyList()
-        }
+    fun addSummary(context: Context, summary: DailySummary) {
+        addSummaries(context, listOf(summary))
     }
 
-    /**
-     * 读取指定币种的日摘要。
-     */
-    fun getSummariesForCurrency(context: Context, currency: String): List<DailySummary> {
-        return getSummaries(context).filter { it.currency == currency }
-    }
-
-    /**
-     * 获取所有有数据的币种列表。
-     */
-    fun getAvailableCurrencies(context: Context): List<String> {
-        return getSummaries(context).map { it.currency }.distinct()
-    }
-
-    /**
-     * 读取指定账户的日摘要。
-     */
-    fun getSummariesForAccount(context: Context, accountId: String): List<DailySummary> {
-        return getSummaries(context).filter { it.accountId == accountId }
-    }
-
-    /**
-     * 读取指定币种+账户的日摘要。
-     */
-    fun getSummariesForCurrencyAndAccount(context: Context, currency: String, accountId: String): List<DailySummary> {
-        return getSummaries(context).filter { it.currency == currency && it.accountId == accountId }
-    }
-
-    /**
-     * 获取所有有数据的账户 ID 列表。
-     */
-    fun getAllAccountIds(context: Context): List<String> {
-        return getSummaries(context).map { it.accountId }.filter { it.isNotEmpty() }.distinct()
-    }
-
-    /**
-     * 与 addSummary 一致：只插不覆盖（日摘要不可变）。
-     * 注：函数名为 upsert 仅为兼容旧调用方，实际行为是 insert-only。
-     */
     fun upsert(context: Context, summary: DailySummary) {
         addSummary(context, summary)
     }
 
-    /**
-     * 按日期范围查询日摘要（含两端）。
-     */
-    fun getSummariesInRange(context: Context, from: String, to: String): List<DailySummary> {
-        return getSummaries(context).filter { it.date >= from && it.date <= to }
+    fun getSummaries(context: Context): List<DailySummary> = try {
+        getSummariesInternal(context)
+    } catch (_: Exception) {
+        Logger.w(TAG, "READ_SUMMARIES failed")
+        emptyList()
     }
 
-    /**
-     * 判断指定日期+币种+账户是否已有日摘要。
-     */
-    fun hasSummaryForDate(context: Context, date: String, currency: String, accountId: String): Boolean {
-        return getSummaries(context).any {
-            it.date == date && it.currency == currency && it.accountId == accountId
+    internal fun getSummariesForCleanup(context: Context): List<DailySummary> =
+        synchronized(storeLock) { getSummariesInternal(context).toList() }
+
+    fun getSummariesForCurrency(context: Context, currency: String): List<DailySummary> {
+        val canonical = canonicalCurrency(currency)
+        return getSummaries(context).filter { canonicalCurrency(it.currency) == canonical }
+    }
+
+    fun getAvailableCurrencies(context: Context): List<String> =
+        getSummaries(context).map { canonicalCurrency(it.currency) }.distinct()
+
+    fun getSummariesForAccount(context: Context, accountId: String): List<DailySummary> =
+        getSummaries(context).filter { it.accountId == accountId }
+
+    fun getSummariesForCurrencyAndAccount(
+        context: Context,
+        currency: String,
+        accountId: String
+    ): List<DailySummary> {
+        val canonical = canonicalCurrency(currency)
+        return getSummaries(context).filter {
+            it.accountId == accountId && canonicalCurrency(it.currency) == canonical
         }
     }
 
-    /**
-     * 确保日期连续性。从 fromDate 到 toDate（不含今日）之间缺失的日期自动补零。
-     *
-     * 按 (accountId, currency) 分组独立处理，每组有各自的 carryBalance，
-     * 避免多账户场景下余额串号和补零遗漏。
-     *
-     * 补零日特征:
-     *   open/close = 前一个有效日的收盘值
-     *   consumed/toppedUp/granted = 0
-     *   sampleCount = 0（标记为无数据日）
-     */
+    fun getAllAccountIds(context: Context): List<String> =
+        getSummaries(context).map { it.accountId }.filter { it.isNotEmpty() }.distinct()
+
+    fun getSummariesInRange(context: Context, from: String, to: String): List<DailySummary> =
+        getSummaries(context).filter { it.date >= from && it.date <= to }
+
+    fun hasSummaryForDate(
+        context: Context,
+        date: String,
+        currency: String,
+        accountId: String
+    ): Boolean {
+        val canonical = canonicalCurrency(currency)
+        return getSummaries(context).any {
+            it.date == date &&
+                it.accountId == accountId &&
+                canonicalCurrency(it.currency) == canonical
+        }
+    }
+
     fun ensureContinuity(
         context: Context,
         fromDate: String,
         toDate: String
-    ): StoreWriteResult {
-        return synchronized(writeLock) {
-            try {
-                val summaries = getSummaries(context).toMutableList()
-                val initialSize = summaries.size
-                val today = dateFormat.format(Date())
+    ): StoreWriteResult = ensureContinuity(
+        context,
+        fromDate,
+        toDate,
+        LocalDate.now(ZoneId.systemDefault())
+    )
 
-                // 按 (accountId, currency) 分组
-                val groups = summaries.groupBy { it.accountId to it.currency }
+    fun ensureContinuity(
+        context: Context,
+        fromDate: String,
+        toDate: String,
+        today: LocalDate
+    ): StoreWriteResult = synchronized(storeLock) {
+        try {
+            val from = LocalDate.parse(fromDate)
+            val requestedEnd = LocalDate.parse(toDate)
+            val end = minOf(requestedEnd, today.minusDays(1))
+            if (end < from) return@synchronized StoreWriteResult.Written(0)
 
-                for ((_, groupSummaries) in groups) {
-                    // 找到该组在 fromDate 范围内的最早日期
-                    val groupEarliest = groupSummaries
-                        .filter { it.date >= fromDate }
-                        .minByOrNull { it.date } ?: continue
-
-                    var carryBalance = groupEarliest.close
-                    val accountId = groupEarliest.accountId
-                    val currency = groupEarliest.currency
-
-                    // 该组已有日期的快速查找集合
-                    val existingDates = groupSummaries.map { it.date }.toSet()
-
-                    val cal = java.util.Calendar.getInstance()
-                    dateFormat.parse(groupEarliest.date)?.let { cal.time = it }
-                    cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
-
-                    val toCal = java.util.Calendar.getInstance()
-                    dateFormat.parse(toDate)?.let { toCal.time = it }
-
-                    while (!cal.after(toCal)) {
-                        val date = dateFormat.format(cal.time)
-                        if (date >= today) break
-
-                        if (date !in existingDates) {
-                            summaries.add(
-                                DailySummary(
-                                    accountId = accountId,
-                                    date = date,
-                                    currency = currency,
-                                    open = carryBalance,
-                                    close = carryBalance,
-                                    consumed = 0f,
-                                    toppedUp = 0f,
-                                    granted = 0f,
-                                    avgBalance = carryBalance,
-                                    sampleCount = 0,
-                                    toppedUpBalanceClose = 0f,
-                                    grantedBalanceClose = 0f,
-                                    generatedAt = System.currentTimeMillis()
-                                )
-                            )
-                        } else {
-                            // 该日存在时，用该组的 close 推进 carryBalance
-                            groupSummaries.find { it.date == date }?.let { carryBalance = it.close }
-                        }
-                        cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
-                    }
-                }
-
-                summaries.sortBy { it.date }
-                val serialized =
-                    json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-                getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).apply()
-                StoreWriteResult.Written(summaries.size - initialSize)
-            } catch (e: Exception) {
-                Logger.w(TAG, "Failed to ensure continuity: ${e.message}")
-                StoreWriteResult.Failed("ENSURE_CONTINUITY", "Continuity write failed")
+            val summaries = getSummariesInternal(context).toMutableList()
+            val generated = mutableListOf<DailySummary>()
+            val groups = summaries.groupBy {
+                it.accountId to canonicalCurrency(it.currency)
             }
+            groups.values.forEach { group ->
+                val byDate = group.associateBy { LocalDate.parse(it.date) }
+                val earliest = group
+                    .filter { LocalDate.parse(it.date) >= from }
+                    .minByOrNull { it.date }
+                    ?: return@forEach
+                var carryBalance = earliest.close
+                var cursor = LocalDate.parse(earliest.date).plusDays(1)
+                while (cursor <= end) {
+                    val existing = byDate[cursor]
+                    if (existing != null) {
+                        carryBalance = existing.close
+                    } else {
+                        generated += DailySummary(
+                            accountId = earliest.accountId,
+                            date = cursor.toString(),
+                            currency = canonicalCurrency(earliest.currency),
+                            open = carryBalance,
+                            close = carryBalance,
+                            consumed = 0f,
+                            toppedUp = 0f,
+                            granted = 0f,
+                            avgBalance = carryBalance,
+                            sampleCount = 0,
+                            toppedUpBalanceClose = 0f,
+                            grantedBalanceClose = 0f,
+                            generatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    cursor = cursor.plusDays(1)
+                }
+            }
+            if (generated.isEmpty()) return@synchronized StoreWriteResult.Written(0)
+            summaries.addAll(generated)
+            summaries.sortSummaries()
+            if (!persistSummaries(context, summaries)) {
+                return@synchronized failed("ENSURE_CONTINUITY")
+            }
+            StoreWriteResult.Written(generated.size)
+        } catch (_: Exception) {
+            Logger.w(TAG, "ENSURE_CONTINUITY failed")
+            failed("ENSURE_CONTINUITY")
         }
     }
 
-    /**
-     * 清除全部日摘要。
-     */
     fun clear(context: Context) {
-        synchronized(writeLock) {
+        synchronized(storeLock) {
             check(getPrefs(context).edit().remove(KEY_SUMMARIES).commit())
         }
     }
 
-    /**
-     * 删除指定账户的所有日摘要（按 accountId 匹配）。
-     * 用于删除账户时清理关联数据。
-     */
     fun removeByAccountId(context: Context, accountId: String) {
-        synchronized(writeLock) {
-            val remaining = getSummaries(context).filter { it.accountId != accountId }
-            val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), remaining)
-            check(getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).commit())
+        synchronized(storeLock) {
+            val remaining = getSummariesInternal(context).filter { it.accountId != accountId }
+            check(persistSummaries(context, remaining))
         }
     }
 
-    private fun getPrefs(context: Context): SharedPreferences {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-
-    /**
-     * 迁移账户ID
-     * @param migrationMap 旧ID -> 新ID 的映射表
-     */
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-
-        synchronized(writeLock) {
-            val summaries = getSummaries(context).toMutableList()
-            var migrated = false
-
-            for (i in summaries.indices) {
-                val summary = summaries[i]
-                val newId = migrationMap[summary.accountId]
-                if (newId != null) {
-                    summaries[i] = summary.copy(accountId = newId)
-                    migrated = true
-                }
+        synchronized(storeLock) {
+            val existing = getSummariesInternal(context)
+            val migrated = existing.map { summary ->
+                migrationMap[summary.accountId]?.let { summary.copy(accountId = it) } ?: summary
             }
-
-            if (migrated) {
-                val serialized = json.encodeToString(ListSerializer(DailySummary.serializer()), summaries)
-                check(getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).commit())
+            if (migrated != existing) {
+                check(persistSummaries(context, migrated))
                 Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in DailySummaryStore")
             }
         }
     }
+
+    private fun getSummariesInternal(context: Context): List<DailySummary> {
+        val raw = getPrefs(context).getString(KEY_SUMMARIES, null) ?: return emptyList()
+        return json.decodeFromString(serializer, raw)
+    }
+
+    private fun persistSummaries(context: Context, summaries: List<DailySummary>): Boolean {
+        val serialized = json.encodeToString(serializer, summaries)
+        return getPrefs(context).edit().putString(KEY_SUMMARIES, serialized).commit()
+    }
+
+    private fun getPrefs(context: Context): SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun DailySummary.canonicalized(): DailySummary {
+        val canonical = canonicalCurrency(currency)
+        return if (currency == canonical) this else copy(currency = canonical)
+    }
+
+    private fun DailySummary.key() = SummaryKey(
+        date = date,
+        accountId = accountId,
+        currency = canonicalCurrency(currency)
+    )
+
+    private fun MutableList<DailySummary>.sortSummaries() {
+        sortWith(compareBy<DailySummary>({ it.date }, { it.accountId }, { canonicalCurrency(it.currency) }))
+    }
+
+    private fun canonicalCurrency(currency: String): String = currency.uppercase(Locale.ROOT)
+
+    private fun failed(operation: String) = StoreWriteResult.Failed(
+        operation = operation,
+        reason = "SharedPreferences commit failed"
+    )
+
+    private data class SummaryKey(
+        val date: String,
+        val accountId: String,
+        val currency: String
+    )
 }
