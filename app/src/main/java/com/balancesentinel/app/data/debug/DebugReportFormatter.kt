@@ -7,11 +7,25 @@ object DebugReportFormatter {
         appendLine("${entry.method} ${entry.url}")
         appendLine("Status: ${entry.statusCode}")
         appendLine("Request headers: ${entry.requestHeaders}")
-        entry.requestBody?.let { appendLine("Request body: $it") }
+        entry.requestBody?.let {
+            append("Request body: $it")
+            if (entry.requestBodyTruncated) append(" $TRUNCATED_MARKER")
+            appendLine()
+        }
         appendLine("Response headers: ${entry.responseHeaders}")
-        appendLine("Response body: ${entry.responseBody}")
-        entry.error?.let { appendLine("Error: $it") }
-        entry.exceptionStack?.let { appendLine("Stack: $it") }
+        append("Response body: ${entry.responseBody}")
+        if (entry.responseBodyTruncated) append(" $TRUNCATED_MARKER")
+        appendLine()
+        entry.error?.let {
+            append("Error: $it")
+            if (entry.errorTruncated) append(" $TRUNCATED_MARKER")
+            appendLine()
+        }
+        entry.exceptionStack?.let {
+            append("Stack: $it")
+            if (entry.exceptionStackTruncated) append(" $TRUNCATED_MARKER")
+            appendLine()
+        }
     }
 
     fun formatEntries(entries: Iterable<ApiDebugEntry>): String =

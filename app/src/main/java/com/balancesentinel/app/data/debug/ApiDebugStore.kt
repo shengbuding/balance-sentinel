@@ -24,7 +24,14 @@ data class ApiDebugEntry(
     val isCustomScript: Boolean = false, // 是否使用自定义脚本
     val scriptPreview: String? = null, // 脚本预览（前100字符）
     val exceptionType: String? = null, // 异常类型
-    val exceptionStack: String? = null // 异常堆栈（前500字符）
+    val exceptionStack: String? = null, // 异常堆栈（前500字符）
+    val requestBodyTruncated: Boolean = false,
+    val responseBodyTruncated: Boolean = false,
+    val errorTruncated: Boolean = false,
+    val exceptionStackTruncated: Boolean = false,
+    val scriptCharacterCount: Int? = null,
+    val scriptByteCount: Int? = null,
+    val scriptSha256: String? = null
 )
 
 /**
