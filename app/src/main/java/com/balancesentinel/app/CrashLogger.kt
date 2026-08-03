@@ -54,6 +54,9 @@ object CrashLogger {
         breadcrumb("CrashLogger", "Crash handler installed; app version=${appVersion()}")
     }
 
+    @Synchronized
+    internal fun resetForTests() = Unit
+
     // ── 非致命错误报告 ──
 
     /** 记录非致命异常（不会崩溃，但值得一提） */

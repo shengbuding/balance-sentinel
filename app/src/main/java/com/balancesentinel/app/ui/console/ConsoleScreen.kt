@@ -34,6 +34,7 @@ import com.balancesentinel.app.data.console.DebugLogger
 import com.balancesentinel.app.data.console.ConsoleExternalNavigator
 import com.balancesentinel.app.data.console.ConsoleNavigationHandler
 import com.balancesentinel.app.data.console.ConsoleOriginPolicy
+import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -1157,3 +1158,19 @@ internal fun interceptApiRequest(
         null
     }
 }
+
+@Suppress("UNUSED_PARAMETER")
+internal fun interceptApiRequest(
+    request: WebResourceRequest?,
+    tag: String,
+    policy: ConsoleOriginPolicy,
+    debuggable: Boolean,
+    entrySink: (ApiDebugEntry) -> Unit,
+    responseCookieSink: ConsoleCookieSink? = null
+): WebResourceResponse? = interceptApiRequest(
+    request = request,
+    apiLogs = mutableListOf(),
+    tag = tag,
+    policy = policy,
+    responseCookieSink = responseCookieSink
+)

@@ -54,7 +54,7 @@ object ApiDebugStore {
 
         // 限制每个账户最多保留50条记录
         if (accountEntries.size > 50) {
-            accountEntries.removeFirst()
+            accountEntries.removeAt(0)
         }
     }
 
