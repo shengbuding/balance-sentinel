@@ -27,10 +27,39 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
+import com.balancesentinel.app.data.refresh.RefreshGateway
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+
+sealed interface WidgetRefreshDecision {
+    data object Ignored : WidgetRefreshDecision
+    data class Refresh(val watchdog: Boolean) : WidgetRefreshDecision
+}
+
+class WidgetRefreshActionHandler {
+    fun decide(context: Context, action: String?, now: Long): WidgetRefreshDecision =
+        WidgetRefreshDecision.Ignored
+}
+
+class WidgetRefreshExecution(
+    private val gateway: RefreshGateway,
+    private val serviceStarter: ServiceStarter
+) {
+    suspend fun execute(context: Context, decision: WidgetRefreshDecision.Refresh) = Unit
+}
+
+object WidgetRefreshIntents {
+    fun manual(context: Context, receiver: Class<out StaticWidgetProvider>): Intent =
+        Intent(context, receiver).apply {
+            action = StaticWidgetProvider.ACTION_REFRESH
+            putExtra(StaticWidgetProvider.EXTRA_FROM_BUTTON, true)
+        }
+
+    fun watchdog(context: Context): Intent =
+        Intent(StaticWidgetProvider.ACTION_REFRESH).apply { setPackage(context.packageName) }
+}
 
 open class StaticWidgetProvider(
     private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
@@ -443,6 +472,8 @@ open class StaticWidgetProvider(
 
     companion object {
         const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"
+        const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
+        const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
         const val EXTRA_FROM_BUTTON = "from_button"
         private val processingRefresh = AtomicBoolean(false)
         @Volatile private var lastScheduleTime: Long = 0L
