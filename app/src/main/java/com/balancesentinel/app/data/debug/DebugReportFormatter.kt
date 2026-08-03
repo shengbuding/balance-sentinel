@@ -1,9 +1,35 @@
 package com.balancesentinel.app.data.debug
 
+data class DebugReportLabels(
+    val status: String = "Status",
+    val timestamp: String = "Timestamp",
+    val duration: String = "Duration",
+    val account: String = "Account",
+    val provider: String = "Provider",
+    val baseUrl: String = "Base URL",
+    val endpoint: String = "Endpoint",
+    val customScript: String = "Custom script",
+    val yes: String = "yes",
+    val requestHeaders: String = "Request headers",
+    val requestBody: String = "Request body",
+    val responseHeaders: String = "Response headers",
+    val responseBody: String = "Response body",
+    val error: String = "Error",
+    val exceptionType: String = "Exception type",
+    val stack: String = "Stack",
+    val scriptCharacters: String = "Script characters",
+    val scriptBytes: String = "Script bytes",
+    val scriptSha256: String = "Script SHA-256"
+)
+
 object DebugReportFormatter {
     const val TRUNCATED_MARKER = "[TRUNCATED]"
 
-    fun formatEntry(entry: ApiDebugEntry): String = SensitiveDataRedactor.redactText(
+    @Suppress("UNUSED_PARAMETER")
+    fun formatEntry(
+        entry: ApiDebugEntry,
+        labels: DebugReportLabels = DebugReportLabels()
+    ): String = SensitiveDataRedactor.redactText(
         buildString {
             appendLine("${entry.method} ${entry.url}")
             appendLine("Status: ${entry.statusCode}")
@@ -41,7 +67,11 @@ object DebugReportFormatter {
         }
     )
 
-    fun formatEntries(entries: Iterable<ApiDebugEntry>): String =
+    @Suppress("UNUSED_PARAMETER")
+    fun formatEntries(
+        entries: Iterable<ApiDebugEntry>,
+        labels: DebugReportLabels = DebugReportLabels()
+    ): String =
         SensitiveDataRedactor.redactText(entries.joinToString("\n") { formatEntry(it) })
 
     fun formatText(text: String): String = SensitiveDataRedactor.redactText(text)

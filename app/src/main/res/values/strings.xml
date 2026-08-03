@@ -562,4 +562,24 @@
     <string name="settings_up_to_date">已是最新版本</string>
     <string name="settings_update_available">发现新版本 v%1$s</string>
     <string name="update_release_date">发布日期：%1$s</string>
+    <!-- Debug report labels -->
+    <string name="debug_report_status">状态</string>
+    <string name="debug_report_timestamp">时间戳</string>
+    <string name="debug_report_duration">耗时</string>
+    <string name="debug_report_account">账户</string>
+    <string name="debug_report_provider">供应商</string>
+    <string name="debug_report_base_url">基础 URL</string>
+    <string name="debug_report_endpoint">端点</string>
+    <string name="debug_report_custom_script">自定义脚本</string>
+    <string name="debug_report_yes">是</string>
+    <string name="debug_report_request_headers">请求头</string>
+    <string name="debug_report_request_body">请求正文</string>
+    <string name="debug_report_response_headers">响应头</string>
+    <string name="debug_report_response_body">响应正文</string>
+    <string name="debug_report_error">错误</string>
+    <string name="debug_report_exception_type">异常类型</string>
+    <string name="debug_report_stack">堆栈</string>
+    <string name="debug_report_script_characters">脚本字符数</string>
+    <string name="debug_report_script_bytes">脚本字节数</string>
+    <string name="debug_report_script_sha256">脚本 SHA-256</string>
 </resources>

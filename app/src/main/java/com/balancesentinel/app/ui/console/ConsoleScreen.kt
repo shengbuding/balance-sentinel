@@ -445,21 +445,23 @@ private fun ConsoleDashboard(
     val localStorage = session?.localStorage ?: emptyMap()
 
     // 构建会话调试信息
-    val sessionDebugInfo = remember(session, currentUrl) {
-        SessionDebugInfo(
-            platformId = platform.id,
-            platformName = platform.name,
-            isLoggedIn = session != null,
-            isSessionValid = session != null,
-            cookieCount = session?.cookies?.size ?: 0,
-            localStorageCount = session?.localStorage?.size ?: 0,
-            email = session?.email,
-            currentUrl = redactConsoleUrl(currentUrl),
-            sessionCreatedAt = session?.loginTime?.let { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it)) },
-            sessionExpiresAt = session?.lastActiveTime?.plus(THIRTY_DAYS_MS)?.let {
-                SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it))
-            }
-        )
+    val sessionDebugInfo = remember(session, currentUrl, captureEnabled) {
+        consoleDebugProjection(captureEnabled) {
+            SessionDebugInfo(
+                platformId = platform.id,
+                platformName = platform.name,
+                isLoggedIn = session != null,
+                isSessionValid = session != null,
+                cookieCount = session?.cookies?.size ?: 0,
+                localStorageCount = session?.localStorage?.size ?: 0,
+                email = session?.email,
+                currentUrl = redactConsoleUrl(currentUrl),
+                sessionCreatedAt = session?.loginTime?.let { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it)) },
+                sessionExpiresAt = session?.lastActiveTime?.plus(THIRTY_DAYS_MS)?.let {
+                    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it))
+                }
+            )
+        }
     }
 
     // 检测登录失效
@@ -1026,6 +1028,12 @@ private fun redactConsoleUrl(url: String?): String? {
     val port = if (parsed.port == 443 || parsed.port == 80) "" else ":${parsed.port}"
     return "${parsed.scheme}://${parsed.host}$port"
 }
+
+@Suppress("UNUSED_PARAMETER")
+internal fun <T> consoleDebugProjection(
+    captureEnabled: Boolean,
+    factory: () -> T
+): T? = factory()
 
 // ═══════════════════════════════════════════════════════════
 // API 拦截

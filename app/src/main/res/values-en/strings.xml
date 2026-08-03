@@ -562,4 +562,24 @@
     <string name="settings_up_to_date">Up to date</string>
     <string name="settings_update_available">New version v%1$s available</string>
     <string name="update_release_date">Release date: %1$s</string>
+    <!-- Debug report labels -->
+    <string name="debug_report_status">Status</string>
+    <string name="debug_report_timestamp">Timestamp</string>
+    <string name="debug_report_duration">Duration</string>
+    <string name="debug_report_account">Account</string>
+    <string name="debug_report_provider">Provider</string>
+    <string name="debug_report_base_url">Base URL</string>
+    <string name="debug_report_endpoint">Endpoint</string>
+    <string name="debug_report_custom_script">Custom script</string>
+    <string name="debug_report_yes">yes</string>
+    <string name="debug_report_request_headers">Request headers</string>
+    <string name="debug_report_request_body">Request body</string>
+    <string name="debug_report_response_headers">Response headers</string>
+    <string name="debug_report_response_body">Response body</string>
+    <string name="debug_report_error">Error</string>
+    <string name="debug_report_exception_type">Exception type</string>
+    <string name="debug_report_stack">Stack</string>
+    <string name="debug_report_script_characters">Script characters</string>
+    <string name="debug_report_script_bytes">Script bytes</string>
+    <string name="debug_report_script_sha256">Script SHA-256</string>
 </resources>
