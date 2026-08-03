@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.api.balance
 
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import kotlinx.coroutines.runBlocking
@@ -45,7 +46,48 @@ class UsageScriptSecurityTest {
 
     @After
     fun tearDown() {
+        ApiDebugStore.clearAll()
         server.shutdown()
+    }
+
+    // Mutation caught: omitting custom-script diagnostics, duplicating capture, or retaining source text.
+    @Test
+    fun `custom script emits exactly one source free diagnostic only when enabled`() = runBlocking {
+        val source = """({request:{url:"https://api.example.com/balance"},extractor:function(r){return r;}})"""
+        val script = UsageScript(source, timeout = 1)
+        server.enqueue(successResponse())
+
+        val debugResult = UsageScriptExecutor.execute(
+            script = script,
+            account = account("https://api.example.com"),
+            resolver = PUBLIC_RESOLVER,
+            client = client,
+            connectionUrlOverride = ::routeToTestServer,
+            debuggable = true
+        )
+
+        assertSuccess(debugResult)
+        val entries = ApiDebugStore.getEntries("account-id")
+        assertEquals(1, entries.size)
+        val entry = entries.single()
+        assertTrue(entry.isCustomScript)
+        assertEquals(source.length, entry.scriptCharacterCount)
+        assertTrue(entry.scriptSha256?.matches(Regex("[0-9a-f]{64}")) == true)
+        assertTrue(!entry.toString().contains(source))
+
+        ApiDebugStore.clearAll()
+        server.enqueue(successResponse())
+        val releaseResult = UsageScriptExecutor.execute(
+            script = script,
+            account = account("https://api.example.com"),
+            resolver = PUBLIC_RESOLVER,
+            client = client,
+            connectionUrlOverride = ::routeToTestServer,
+            debuggable = false
+        )
+
+        assertSuccess(releaseResult)
+        assertTrue(ApiDebugStore.getEntries("account-id").isEmpty())
     }
 
     // Mutation caught: denying the full same origin, including its registered non-default port.

@@ -4,6 +4,7 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import com.balancesentinel.app.data.console.ConsoleCookieSink
 import com.balancesentinel.app.data.console.ConsoleOriginPolicy
+import com.balancesentinel.app.data.debug.ApiDebugEntry
 import io.mockk.every
 import io.mockk.mockk
 import java.net.HttpURLConnection
@@ -65,14 +66,15 @@ class ConsoleResponseInterceptionTest {
             every { request.url } returns Uri.parse(requestUrl)
             every { request.method } returns "GET"
             every { request.requestHeaders } returns emptyMap()
-            val logs = mutableListOf<ApiLogEntry>()
+            val entries = mutableListOf<ApiDebugEntry>()
             val responseCookies = RecordingCookieSink()
 
             val response = interceptApiRequest(
                 request = request,
-                apiLogs = logs,
                 tag = platform.id,
                 policy = ConsoleOriginPolicy(platform),
+                debuggable = true,
+                entrySink = entries::add,
                 responseCookieSink = responseCookies
             )
 
@@ -87,15 +89,46 @@ class ConsoleResponseInterceptionTest {
             assertEquals(2, responseCookies.writes.size)
             assertEquals(1, responseCookies.flushCalls)
             assertFalse(response!!.responseHeaders.keys.any { it.equals("Set-Cookie", ignoreCase = true) })
-            assertTrue(logs.single().responseHeaders["X-Trace"] == "trace-value")
-            assertFalse(logs.single().responseHeaders.keys.any { it.equals("Set-Cookie", ignoreCase = true) })
-            assertFalse(logs.single().responseHeaders.values.any { it.contains("alpha-secret") })
-            assertFalse(logs.single().responseHeaders.values.any { it.contains("beta-secret") })
+            assertEquals(1, entries.size)
+            val entry = entries.single()
+            assertEquals("console:${platform.id}", entry.accountId)
+            assertTrue(entry.responseHeaders["X-Trace"] == "trace-value")
+            assertFalse(entry.responseHeaders.keys.any { it.equals("Set-Cookie", ignoreCase = true) })
+            assertFalse(entry.toString().contains("alpha-secret"))
+            assertFalse(entry.toString().contains("beta-secret"))
         } finally {
             HttpsURLConnection.setDefaultSSLSocketFactory(originalSocketFactory)
             HttpsURLConnection.setDefaultHostnameVerifier(originalHostnameVerifier)
             server.shutdown()
         }
+    }
+
+    // Mutation caught: installing a Release callback that replaces WebView default networking.
+    @Test
+    fun `policy false leaves console request to default WebView networking`() {
+        val request = mockk<WebResourceRequest>()
+        every { request.url } returns Uri.parse("https://platform.deepseek.com/api/usage")
+        every { request.method } returns "GET"
+        every { request.requestHeaders } returns emptyMap()
+        val platform = ConsolePlatform(
+            id = "deepseek",
+            name = "DeepSeek",
+            loginUrl = "https://platform.deepseek.com/sign_in",
+            dashboardUrl = "https://platform.deepseek.com/overview",
+            successUrlPatterns = listOf("/overview")
+        )
+        val entries = mutableListOf<ApiDebugEntry>()
+
+        val response = interceptApiRequest(
+            request = request,
+            tag = platform.id,
+            policy = ConsoleOriginPolicy(platform),
+            debuggable = false,
+            entrySink = entries::add
+        )
+
+        assertEquals(null, response)
+        assertTrue(entries.isEmpty())
     }
 
     private class RecordingCookieSink : ConsoleCookieSink {

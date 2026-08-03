@@ -2,6 +2,8 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import android.app.Application
+import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import org.junit.After
@@ -26,6 +28,8 @@ class LogExporterTest {
     @After
     fun tearDown() {
         RefreshLogStore.clear(context)
+        CrashLogger.clear(context.applicationContext as Application)
+        CrashLogger.resetForTests()
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -267,5 +271,30 @@ class LogExporterTest {
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
         assertTrue(content.contains("延迟") || content.contains("delay"))
+    }
+
+    // Mutation caught: writing refresh/crash fields without a final shared redaction pass.
+    @Test
+    fun `exported file contains markers and no seeded secrets`() {
+        val refreshSecret = "refresh-message-secret"
+        val crashSecret = "legacy-crash-secret"
+        RefreshLogStore.addEntry(
+            context,
+            RefreshLogEntry(
+                id = 99,
+                type = RefreshLogType.MANUAL,
+                timestamp = 1,
+                message = "token=$refreshSecret"
+            )
+        )
+        File(context.filesDir, "crash.log").writeText(
+            "[legacy] RuntimeException: Cookie: sid=$crashSecret"
+        )
+
+        val content = File(checkNotNull(LogExporter.export(context))).readText()
+
+        assertFalse(content.contains(refreshSecret))
+        assertFalse(content.contains(crashSecret))
+        assertTrue(content.contains("[REDACTED]"))
     }
 }

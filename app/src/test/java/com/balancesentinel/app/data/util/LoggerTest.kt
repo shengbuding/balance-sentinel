@@ -1,5 +1,8 @@
 package com.balancesentinel.app.data.util
 
+import com.balancesentinel.app.data.console.DebugLogger
+import com.balancesentinel.app.data.debug.MAX_CAPTURE_BYTES
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -8,6 +11,12 @@ import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 class LoggerTest {
+
+    @After
+    fun tearDown() {
+        DebugLogger.clear()
+        ShadowLog.clear()
+    }
 
     @Test
     fun `custom script contents are not emitted to logcat`() {
@@ -54,5 +63,33 @@ class LoggerTest {
         // All public methods go through sanitize — testing d covers the path
         Logger.d("Test", "key1=sk-abcdefghijklmn key2=sk-zxcvbnmasdfghj")
         // No crash, API keys redacted
+    }
+
+    // Mutation caught: redacting only sk-prefixed keys while preserving cookies and bearer tokens.
+    @Test
+    fun `logger output shares comprehensive redaction`() {
+        val secrets = listOf("plain-api-key", "cookie-secret", "bearer-secret", "body-token")
+        ShadowLog.clear()
+
+        Logger.e(
+            "Boundary",
+            "apiKey=${secrets[0]} Cookie: sid=${secrets[1]}",
+            IllegalStateException("Bearer ${secrets[2]} refresh_token=${secrets[3]}")
+        )
+
+        val output = ShadowLog.getLogsForTag("Boundary").joinToString("\n") { it.msg }
+        secrets.forEach { assertFalse(output.contains(it)) }
+        assertTrue(output.contains("[REDACTED]"))
+    }
+
+    // Mutation caught: storing raw/unbounded Console exception text in DebugLogger.
+    @Test
+    fun `debug logger bounds and redacts retained messages`() {
+        DebugLogger.log("token=debug-secret " + "凭".repeat(30_000))
+
+        val retained = DebugLogger.getLogs().single()
+        assertFalse(retained.contains("debug-secret"))
+        assertTrue(retained.toByteArray().size <= MAX_CAPTURE_BYTES + 16)
+        assertTrue(retained.contains("[REDACTED]"))
     }
 }

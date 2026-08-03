@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.api
 
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.UsageResponse
@@ -33,6 +34,23 @@ class DeepSeekApiServiceTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    @Test
+    fun `explicit debug and release construction installs exactly one or zero capture interceptors`() {
+        val debugClient = DeepSeekApiService(
+            baseUrl = server.url("/").toString(),
+            accountId = "acct",
+            debuggable = true
+        ).debugClient()
+        val releaseClient = DeepSeekApiService(
+            baseUrl = server.url("/").toString(),
+            accountId = "acct",
+            debuggable = false
+        ).debugClient()
+
+        assertEquals(1, debugClient.interceptors.count { it is DebugInterceptor })
+        assertEquals(0, releaseClient.interceptors.count { it is DebugInterceptor })
     }
 
     @Test

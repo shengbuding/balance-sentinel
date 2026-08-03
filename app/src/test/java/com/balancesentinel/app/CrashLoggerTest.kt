@@ -2,6 +2,7 @@ package com.balancesentinel.app
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.debug.MAX_CAPTURE_BYTES
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -14,9 +15,12 @@ import java.io.File
 class CrashLoggerTest {
 
     private lateinit var app: Application
+    private var originalHandler: Thread.UncaughtExceptionHandler? = null
 
     @Before
     fun setUp() {
+        originalHandler = Thread.getDefaultUncaughtExceptionHandler()
+        CrashLogger.resetForTests()
         app = ApplicationProvider.getApplicationContext() as Application
         CrashLogger.clear(app)
     }
@@ -24,6 +28,10 @@ class CrashLoggerTest {
     @After
     fun tearDown() {
         CrashLogger.clear(app)
+        CrashLogger.resetForTests()
+        val restored = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler(originalHandler)
+        assertSame(originalHandler, restored)
     }
 
     // ── breadcrumb ──
@@ -85,6 +93,40 @@ class CrashLoggerTest {
         val last = crumbs.last()
         assertTrue(last.contains("Crash handler installed"))
         assertTrue(last.contains("app version="))
+    }
+
+    // Mutation caught: overwriting the true predecessor on repeated install and restoring a wrapper.
+    @Test
+    fun `repeated install preserves and reset restores the true original handler`() {
+        val sentinel = Thread.UncaughtExceptionHandler { _, _ -> }
+        Thread.setDefaultUncaughtExceptionHandler(sentinel)
+
+        try {
+            CrashLogger.install(app)
+            val firstWrapper = Thread.getDefaultUncaughtExceptionHandler()
+            CrashLogger.install(app)
+            val secondWrapper = Thread.getDefaultUncaughtExceptionHandler()
+
+            assertNotSame(sentinel, firstWrapper)
+            assertNotSame(firstWrapper, secondWrapper)
+            CrashLogger.resetForTests()
+            assertSame(sentinel, Thread.getDefaultUncaughtExceptionHandler())
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(originalHandler)
+        }
+    }
+
+    // Mutation caught: reset leaving application or breadcrumb singleton state behind.
+    @Test
+    fun `reset clears breadcrumbs and installed application state`() {
+        CrashLogger.install(app)
+        CrashLogger.breadcrumb("Secret", "token=breadcrumb-secret")
+
+        CrashLogger.resetForTests()
+        CrashLogger.logNonFatal("AfterReset", RuntimeException("must-not-write"))
+
+        assertTrue(CrashLogger.getBreadcrumbs().isEmpty())
+        assertTrue(CrashLogger.getCrashes(app).isEmpty())
     }
 
     // ── clear ──
@@ -230,6 +272,38 @@ class CrashLoggerTest {
         // API key should be redacted
         assertFalse(entry.contains("sk-abcdefghij12345"))
         assertTrue(entry.contains("sk-***"))
+    }
+
+    // Mutation caught: exposing secrets already present in a legacy crash file on readback.
+    @Test
+    fun `legacy crash file is redacted when read`() {
+        File(app.filesDir, "crash.log").writeText(
+            "[legacy] RuntimeException: Cookie: sid=legacy-cookie-secret token=legacy-token-secret"
+        )
+
+        val entry = CrashLogger.getCrashes(app).single().fullStack
+
+        assertFalse(entry.contains("legacy-cookie-secret"))
+        assertFalse(entry.contains("legacy-token-secret"))
+        assertTrue(entry.contains("[REDACTED]"))
+    }
+
+    // Mutation caught: retaining unbounded exception and breadcrumb payloads in crash output.
+    @Test
+    fun `crash output bounds and redacts exception and breadcrumb payloads`() {
+        CrashLogger.install(app)
+        CrashLogger.breadcrumb("Request", "Authorization: Bearer breadcrumb-secret")
+        CrashLogger.logNonFatal(
+            "Boundary",
+            RuntimeException("apiKey=exception-secret " + "凭".repeat(30_000))
+        )
+
+        val entry = CrashLogger.getCrashes(app).single().fullStack
+
+        assertFalse(entry.contains("breadcrumb-secret"))
+        assertFalse(entry.contains("exception-secret"))
+        assertTrue(entry.toByteArray().size <= MAX_CAPTURE_BYTES + 4_096)
+        assertTrue(entry.contains("[REDACTED]"))
     }
 
     // ── logNonFatal multiple entries cap at 10 ──

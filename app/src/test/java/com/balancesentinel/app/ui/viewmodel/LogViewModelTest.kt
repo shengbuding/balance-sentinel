@@ -21,9 +21,12 @@ class LogViewModelTest {
     private lateinit var application: Application
     private lateinit var viewModel: LogViewModel
     private lateinit var context: Context
+    private var originalHandler: Thread.UncaughtExceptionHandler? = null
 
     @Before
     fun setUp() {
+        originalHandler = Thread.getDefaultUncaughtExceptionHandler()
+        CrashLogger.resetForTests()
         context = ApplicationProvider.getApplicationContext()
         application = context as Application
         RefreshLogStore.clear(context)
@@ -36,6 +39,10 @@ class LogViewModelTest {
     fun tearDown() {
         RefreshLogStore.clear(context)
         CrashLogger.clear(application)
+        CrashLogger.resetForTests()
+        val restored = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler(originalHandler)
+        assertSame(originalHandler, restored)
     }
 
     @Test

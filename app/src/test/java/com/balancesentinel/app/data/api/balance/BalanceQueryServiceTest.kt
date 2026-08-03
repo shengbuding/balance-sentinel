@@ -5,6 +5,7 @@ import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
+import com.balancesentinel.app.data.debug.DebugInterceptor
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl
@@ -21,6 +22,33 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class BalanceQueryServiceTest {
+
+    // Mutation caught: ignoring an explicit Release policy in strict/shared balance construction.
+    @Test
+    fun `strict balance client installs one debug interceptor and zero in release`() {
+        val config = config(ProviderType.DEEPSEEK, "https://api.deepseek.com")
+        val contract = checkNotNull(BuiltInBalanceContracts.resolve(ProviderType.DEEPSEEK, config.baseUrl))
+        val debug = BalanceQueryService(OkHttpClient(), debuggable = true)
+            .callFactoryFor(config, contract) as OkHttpClient
+        val release = BalanceQueryService(OkHttpClient(), debuggable = false)
+            .callFactoryFor(config, contract) as OkHttpClient
+
+        assertEquals(1, debug.interceptors.count { it is DebugInterceptor })
+        assertEquals(0, release.interceptors.count { it is DebugInterceptor })
+    }
+
+    // Mutation caught: adding a second capture interceptor to an already instrumented shared client.
+    @Test
+    fun `strict balance never duplicates an existing capture interceptor`() {
+        val config = config(ProviderType.DEEPSEEK, "https://api.deepseek.com")
+        val contract = checkNotNull(BuiltInBalanceContracts.resolve(ProviderType.DEEPSEEK, config.baseUrl))
+        val base = OkHttpClient.Builder().addInterceptor(DebugInterceptor("shared")).build()
+
+        val client = BalanceQueryService(base, debuggable = true)
+            .callFactoryFor(config, contract) as OkHttpClient
+
+        assertEquals(1, client.interceptors.count { it is DebugInterceptor })
+    }
 
     @Test
     fun `server errors never retain raw response bodies`() {
