@@ -94,7 +94,10 @@ object RawRecordStore {
                     }
                 }
                 if (removed == 0) return@synchronized StoreWriteResult.Written(0)
-                if (!persistRecords(context, remaining)) return@synchronized failed("REMOVE_EXACT")
+                if (!persistRecords(context, remaining)) {
+                    compensateFailedDeletion(context, existing)
+                    return@synchronized failed("REMOVE_EXACT")
+                }
                 StoreWriteResult.Written(removed)
             } catch (_: Exception) {
                 Logger.w(TAG, "REMOVE_EXACT failed")
@@ -213,6 +216,33 @@ object RawRecordStore {
     private fun persistRecords(context: Context, records: List<RawRecord>): Boolean {
         val serialized = json.encodeToString(serializer, records)
         return getPrefs(context).edit().putString(KEY_RECORDS, serialized).commit()
+    }
+
+    private fun compensateFailedDeletion(context: Context, before: List<RawRecord>) {
+        val current = getRecordsInternal(context)
+        val unmatchedBefore = before.groupingBy { it }.eachCount().toMutableMap()
+        val additions = current.filter { record ->
+            val count = unmatchedBefore[record] ?: 0
+            if (count > 0) {
+                if (count == 1) unmatchedBefore.remove(record)
+                else unmatchedBefore[record] = count - 1
+                false
+            } else {
+                true
+            }
+        }
+        val compensated = before + additions
+        if (compensated != current) persistRecords(context, compensated)
+        if (!getRecordsInternal(context).containsAtLeast(compensated)) {
+            Logger.w(TAG, "REMOVE_EXACT compensation could not be verified")
+        }
+    }
+
+    private fun List<RawRecord>.containsAtLeast(required: List<RawRecord>): Boolean {
+        val actualCounts = groupingBy { it }.eachCount()
+        return required.groupingBy { it }.eachCount().all { (record, count) ->
+            actualCounts.getOrDefault(record, 0) >= count
+        }
     }
 
     private fun getPrefs(context: Context): SharedPreferences =
