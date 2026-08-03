@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.widget.AccountBalance
 import org.junit.After
 import org.junit.Assert.*
@@ -162,6 +163,52 @@ class NotificationHelperTest {
         assertEquals("CNY", deepLinkIntent.getStringExtra("deep_link_currency"))
         val snoozeIntent = Shadows.shadowOf(cnySnooze).savedIntent
         assertEquals("acct", snoozeIntent.getStringExtra("account_id"))
+    }
+
+    @Test
+    fun `low balance notification canonicalizes lowercase currency context`() {
+        helper.sendLowBalanceAlert(
+            accountId = "acct-low",
+            balance = 1f,
+            threshold = 10f,
+            currency = "cny",
+            label = "Low"
+        )
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = Shadows.shadowOf(nm)
+            .getNotification(helper.alertNotificationId("acct-low", "CNY"))
+        val content = notification.extras
+            .getCharSequence(android.app.Notification.EXTRA_TEXT)
+            .toString()
+        val deepLink = Shadows.shadowOf(notification.actions[0].actionIntent).savedIntent
+
+        assertTrue(content.contains(FormatUtils.currencySymbol("CNY")))
+        assertEquals("CNY", deepLink.getStringExtra("deep_link_currency"))
+    }
+
+    @Test
+    fun `change notification canonicalizes mixed case currency context`() {
+        helper.sendChangeAlert(
+            accountId = "acct-change",
+            current = 5f,
+            previous = 10f,
+            diff = 5f,
+            periodMin = 15,
+            currency = "uSd",
+            label = "Change"
+        )
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = Shadows.shadowOf(nm)
+            .getNotification(helper.changeNotificationId("acct-change", "USD"))
+        val content = notification.extras
+            .getCharSequence(android.app.Notification.EXTRA_TEXT)
+            .toString()
+        val deepLink = Shadows.shadowOf(notification.actions[0].actionIntent).savedIntent
+
+        assertTrue(content.contains(FormatUtils.currencySymbol("USD")))
+        assertEquals("USD", deepLink.getStringExtra("deep_link_currency"))
     }
 
     // ═══════════════════════════════════════════════════════════

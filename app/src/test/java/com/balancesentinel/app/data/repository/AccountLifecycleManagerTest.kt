@@ -101,6 +101,47 @@ class AccountLifecycleManagerTest {
     }
 
     @Test
+    fun `key replacement resets source and orphaned destination alert state only`() {
+        val before = accountManager.addAccount("Before", "sk-alert-state-before")
+        val survivor = accountManager.addAccount("Survivor", "sk-alert-state-survivor")
+        val replacementKey = "sk-alert-state-after"
+        val afterId = accountManager.computeId(replacementKey)
+        seedOwnedState(before)
+        seedOwnedState(survivor)
+        seedAlertState(afterId, CURRENCY, 20f)
+        seedAlertState(afterId, SECOND_CURRENCY, 30f)
+        seedLegacyAlertState(before.id, 40f)
+        seedLegacyAlertState(afterId, 50f)
+        seedLegacyAlertState(survivor.id, 60f)
+
+        val result = lifecycleManager.save(
+            before.id,
+            AccountDraft(
+                label = "After",
+                apiKey = replacementKey,
+                providerType = before.providerType
+            )
+        )
+
+        assertTrue(result is AccountSaveResult.Replaced)
+        assertAlertStateCleared(before.id, CURRENCY)
+        assertAlertStateCleared(before.id, SECOND_CURRENCY)
+        assertAlertStateCleared(afterId, CURRENCY)
+        assertAlertStateCleared(afterId, SECOND_CURRENCY)
+        assertLegacyAlertStateCleared(before.id)
+        assertLegacyAlertStateCleared(afterId)
+        assertTrue(widgetPrefs.isBalanceAlertEnabled(afterId, CURRENCY))
+        assertTrue(widgetPrefs.isChangeAlertEnabled(afterId, CURRENCY))
+        assertTrue(widgetPrefs.isBalanceAlertEnabled(afterId, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isChangeAlertEnabled(afterId, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isNotificationWalletSelected(afterId, CURRENCY))
+        assertEquals(2f, widgetPrefs.getLastAlertedBalance(survivor.id, CURRENCY))
+        assertEquals(16L, widgetPrefs.getLastChangeAlertedTime(survivor.id, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isNotificationWalletSelected(survivor.id, CURRENCY))
+        assertLegacyAlertStatePresent(survivor.id)
+    }
+
+    @Test
     fun `delete removes only the target account owned state`() {
         val target = accountManager.addAccount("Target", "sk-target-key")
         val survivor = accountManager.addAccount("Survivor", "sk-survivor-key")
@@ -318,6 +359,51 @@ class AccountLifecycleManagerTest {
             "0"
         )
         providerCache.put(account.providerType, account.id, cachedBalance(account))
+    }
+
+    private fun seedAlertState(accountId: String, currency: String, base: Float) {
+        widgetPrefs.setLastAlertedBalance(accountId, currency, base)
+        widgetPrefs.setPreviousBalance(accountId, currency, base + 1f)
+        widgetPrefs.setPreviousBalanceTime(accountId, currency, base.toLong() + 2L)
+        widgetPrefs.setLastChangeAlertedBalance(accountId, currency, base + 3f)
+        widgetPrefs.setLastChangeAlertedTime(accountId, currency, base.toLong() + 4L)
+    }
+
+    private fun seedLegacyAlertState(accountId: String, base: Float) {
+        context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("${WidgetPrefs.KEY_LAST_ALERTED_BALANCE}_$accountId", base)
+            .putFloat("${WidgetPrefs.KEY_PREVIOUS_BALANCE}_$accountId", base + 1f)
+            .putLong("${WidgetPrefs.KEY_PREVIOUS_BALANCE_TIME}_$accountId", base.toLong() + 2L)
+            .putFloat("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", base + 3f)
+            .putLong("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", base.toLong() + 4L)
+            .commit()
+    }
+
+    private fun assertAlertStateCleared(accountId: String, currency: String) {
+        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(accountId, currency))
+        assertEquals(-1f, widgetPrefs.getPreviousBalance(accountId, currency))
+        assertEquals(0L, widgetPrefs.getPreviousBalanceTime(accountId, currency))
+        assertEquals(-1f, widgetPrefs.getLastChangeAlertedBalance(accountId, currency))
+        assertEquals(0L, widgetPrefs.getLastChangeAlertedTime(accountId, currency))
+    }
+
+    private fun assertLegacyAlertStateCleared(accountId: String) {
+        val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+        assertFalse(prefs.contains("${WidgetPrefs.KEY_LAST_ALERTED_BALANCE}_$accountId"))
+        assertFalse(prefs.contains("${WidgetPrefs.KEY_PREVIOUS_BALANCE}_$accountId"))
+        assertFalse(prefs.contains("${WidgetPrefs.KEY_PREVIOUS_BALANCE_TIME}_$accountId"))
+        assertFalse(prefs.contains("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId"))
+        assertFalse(prefs.contains("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_TIME}_$accountId"))
+    }
+
+    private fun assertLegacyAlertStatePresent(accountId: String) {
+        val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+        assertTrue(prefs.contains("${WidgetPrefs.KEY_LAST_ALERTED_BALANCE}_$accountId"))
+        assertTrue(prefs.contains("${WidgetPrefs.KEY_PREVIOUS_BALANCE}_$accountId"))
+        assertTrue(prefs.contains("${WidgetPrefs.KEY_PREVIOUS_BALANCE_TIME}_$accountId"))
+        assertTrue(prefs.contains("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId"))
+        assertTrue(prefs.contains("${WidgetPrefs.KEY_LAST_CHANGE_ALERTED_TIME}_$accountId"))
     }
 
     private fun summary(accountId: String) = DailySummary(
