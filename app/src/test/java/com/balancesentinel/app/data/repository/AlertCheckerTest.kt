@@ -23,6 +23,7 @@ class AlertCheckerTest {
         prefs = WidgetPrefs(context)
 
         // Reset all prefs to clean state
+        prefs.resetAll()
         prefs.alertEnabled = false
         prefs.alertThreshold = 0f
         prefs.changeAlertEnabled = false
@@ -151,6 +152,31 @@ class AlertCheckerTest {
     }
 
     @Test
+    fun `same account currencies do not share low balance dedup state`() {
+        prefs.alertThreshold = 50f
+        prefs.setBalanceAlertEnabled("acct", "CNY", true)
+        prefs.setBalanceAlertEnabled("acct", "USD", true)
+
+        assertTrue(AlertChecker.check(context, "acct", "30", "CNY", "A"))
+        assertTrue(AlertChecker.check(context, "acct", "30", "USD", "A"))
+        assertEquals(30f, prefs.getLastAlertedBalance("acct", "CNY"))
+        assertEquals(30f, prefs.getLastAlertedBalance("acct", "USD"))
+    }
+
+    @Test
+    fun `account snooze suppresses every currency without becoming pair state`() {
+        prefs.alertThreshold = 50f
+        prefs.setBalanceAlertEnabled("acct", "CNY", true)
+        prefs.setBalanceAlertEnabled("acct", "USD", true)
+        prefs.setSnoozeUntil("acct", System.currentTimeMillis() + 60_000L)
+
+        assertFalse(AlertChecker.check(context, "acct", "30", "CNY", "A"))
+        assertFalse(AlertChecker.check(context, "acct", "30", "USD", "A"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acct", "CNY"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acct", "USD"))
+    }
+
+    @Test
     fun `check handles invalid balance string gracefully`() {
         prefs.alertEnabled = true
         prefs.alertThreshold = 50f
@@ -183,6 +209,23 @@ class AlertCheckerTest {
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
         assertEquals(0, notificationCount())
         assertEquals(100f, prefs.getPreviousBalance("acc1"))
+    }
+
+    @Test
+    fun `same account currencies establish independent change anchors`() {
+        prefs.changeAlertThreshold = 10f
+        prefs.changeAlertPeriodMinutes = 60
+        prefs.setChangeAlertEnabled("acct", "CNY", true)
+        prefs.setChangeAlertEnabled("acct", "USD", true)
+
+        assertFalse(AlertChecker.checkChange(context, "acct", "100", "CNY", "A"))
+        assertFalse(AlertChecker.checkChange(context, "acct", "200", "USD", "A"))
+        assertEquals(100f, prefs.getPreviousBalance("acct", "CNY"))
+        assertEquals(200f, prefs.getPreviousBalance("acct", "USD"))
+        assertEquals(-1f, prefs.getLastChangeAlertedBalance("acct", "CNY"))
+        assertEquals(-1f, prefs.getLastChangeAlertedBalance("acct", "USD"))
+        assertEquals(0L, prefs.getLastChangeAlertedTime("acct", "CNY"))
+        assertEquals(0L, prefs.getLastChangeAlertedTime("acct", "USD"))
     }
 
     @Test

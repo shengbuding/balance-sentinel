@@ -37,6 +37,55 @@ class NotificationHelperTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
+    fun `all action identities match stable pair SHA literals without cross kind overlap`() {
+        val actual = listOf(
+            helper.alertNotificationId("acct", "CNY"),
+            helper.alertNotificationId("acct", "USD"),
+            helper.changeNotificationId("acct", "CNY"),
+            helper.changeNotificationId("acct", "USD"),
+            helper.deepLinkRequestCode("acct", "CNY"),
+            helper.deepLinkRequestCode("acct", "USD"),
+            helper.snoozeRequestCode("acct", "CNY"),
+            helper.snoozeRequestCode("acct", "USD")
+        )
+
+        assertEquals(
+            listOf(
+                177_564_457,
+                1_436_152_706,
+                442_697_817,
+                1_028_599_329,
+                703_950_075,
+                1_411_803_297,
+                492_874_957,
+                740_343_814
+            ),
+            actual
+        )
+        assertEquals(8, actual.toSet().size)
+    }
+
+    @Test
+    fun `action identities normalize currency before hashing`() {
+        assertEquals(
+            helper.alertNotificationId("acct", "USD"),
+            helper.alertNotificationId("acct", "usd")
+        )
+        assertEquals(
+            helper.changeNotificationId("acct", "USD"),
+            helper.changeNotificationId("acct", "usd")
+        )
+        assertEquals(
+            helper.deepLinkRequestCode("acct", "USD"),
+            helper.deepLinkRequestCode("acct", "usd")
+        )
+        assertEquals(
+            helper.snoozeRequestCode("acct", "USD"),
+            helper.snoozeRequestCode("acct", "usd")
+        )
+    }
+
+    @Test
     fun `alertNotificationId returns value in expected range`() {
         val id = helper.alertNotificationId("test-acc")
         assertTrue(id >= 1002)
@@ -101,13 +150,30 @@ class NotificationHelperTest {
         assertNotNull(intent)
     }
 
+    @Test
+    fun `deep link and snooze pending intents remain currency distinct with correct extras`() {
+        val cnyDeepLink = helper.createDeepLinkIntent("acct", "CNY")
+        val usdDeepLink = helper.createDeepLinkIntent("acct", "USD")
+        val cnySnooze = helper.createSnoozeIntent("acct", "CNY")
+        val usdSnooze = helper.createSnoozeIntent("acct", "USD")
+
+        assertNotEquals(cnyDeepLink, usdDeepLink)
+        assertNotEquals(cnySnooze, usdSnooze)
+        val deepLinkIntent = Shadows.shadowOf(cnyDeepLink).savedIntent
+        assertEquals("insights", deepLinkIntent.getStringExtra("deep_link_target"))
+        assertEquals("acct", deepLinkIntent.getStringExtra("deep_link_account_id"))
+        assertEquals("CNY", deepLinkIntent.getStringExtra("deep_link_currency"))
+        val snoozeIntent = Shadows.shadowOf(cnySnooze).savedIntent
+        assertEquals("acct", snoozeIntent.getStringExtra("account_id"))
+    }
+
     // ═══════════════════════════════════════════════════════════
     // createSnoozeIntent
     // ═══════════════════════════════════════════════════════════
 
     @Test
     fun `createSnoozeIntent returns non-null PendingIntent`() {
-        val intent = helper.createSnoozeIntent("acc1")
+        val intent = helper.createSnoozeIntent("acc1", "CNY")
         assertNotNull(intent)
     }
 

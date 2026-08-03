@@ -83,13 +83,17 @@ class AccountLifecycleManagerTest {
         assertEquals(listOf(afterId), RawRecordStore.getAllRecords(context).map { it.accountId })
         assertEquals(listOf(afterId), DailySummaryStore.getSummaries(context).map { it.accountId })
         assertEquals(listOf(afterId), UsageDataStore.getAllSnapshots(context).map { it.accountId })
-        assertEquals(2f, widgetPrefs.getLastAlertedBalance(afterId))
-        assertEquals(3f, widgetPrefs.getPreviousBalance(afterId))
-        assertEquals(4L, widgetPrefs.getPreviousBalanceTime(afterId))
-        assertEquals(5f, widgetPrefs.getLastChangeAlertedBalance(afterId))
-        assertEquals(6L, widgetPrefs.getLastChangeAlertedTime(afterId))
+        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(afterId, CURRENCY))
+        assertEquals(-1f, widgetPrefs.getPreviousBalance(afterId, CURRENCY))
+        assertEquals(0L, widgetPrefs.getPreviousBalanceTime(afterId, CURRENCY))
+        assertEquals(-1f, widgetPrefs.getLastChangeAlertedBalance(afterId, CURRENCY))
+        assertEquals(0L, widgetPrefs.getLastChangeAlertedTime(afterId, CURRENCY))
         assertTrue(widgetPrefs.isBalanceAlertEnabled(afterId, CURRENCY))
         assertTrue(widgetPrefs.isChangeAlertEnabled(afterId, CURRENCY))
+        assertTrue(widgetPrefs.isBalanceAlertEnabled(afterId, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isChangeAlertEnabled(afterId, SECOND_CURRENCY))
+        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(afterId, SECOND_CURRENCY))
+        assertEquals(-1f, widgetPrefs.getPreviousBalance(afterId, SECOND_CURRENCY))
         assertTrue(widgetPrefs.isNotificationWalletSelected(afterId, CURRENCY))
         assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${before.id}_$CURRENCY"))
         assertTrue(BalanceWidgetDataStore.getAllBalances(context).isEmpty())
@@ -111,9 +115,14 @@ class AccountLifecycleManagerTest {
         assertEquals(listOf(survivor.id), RawRecordStore.getAllRecords(context).map { it.accountId })
         assertEquals(listOf(survivor.id), DailySummaryStore.getSummaries(context).map { it.accountId })
         assertEquals(listOf(survivor.id), UsageDataStore.getAllSnapshots(context).map { it.accountId })
-        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(target.id))
+        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(target.id, CURRENCY))
+        assertEquals(-1f, widgetPrefs.getLastAlertedBalance(target.id, SECOND_CURRENCY))
         assertFalse(widgetPrefs.isBalanceAlertEnabled(target.id, CURRENCY))
         assertFalse(widgetPrefs.isChangeAlertEnabled(target.id, CURRENCY))
+        assertFalse(widgetPrefs.isBalanceAlertEnabled(target.id, SECOND_CURRENCY))
+        assertFalse(widgetPrefs.isChangeAlertEnabled(target.id, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isBalanceAlertEnabled(survivor.id, SECOND_CURRENCY))
+        assertTrue(widgetPrefs.isChangeAlertEnabled(survivor.id, SECOND_CURRENCY))
         assertFalse(widgetPrefs.isNotificationWalletSelected(target.id, CURRENCY))
         assertTrue(widgetPrefs.getNotificationWalletOrder().contains("${survivor.id}_$CURRENCY"))
         assertEquals(listOf(survivor.id), BalanceWidgetDataStore.getAllBalances(context).map { it.accountId })
@@ -217,6 +226,46 @@ class AccountLifecycleManagerTest {
         )
     }
 
+    @Test
+    fun `key replacement keeps old account retryable when alert migration persistence fails`() {
+        val before = accountManager.addAccount("Before", "sk-widget-retry-key")
+        seedOwnedState(before)
+        val replacementKey = "sk-widget-after-retry-key"
+        context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("alert_pair_state_migrated_v1", true)
+            .commit()
+        val failingContext = FailingPrefsContext(context, "widget_prefs")
+        val failingLifecycle = AccountLifecycleManager(failingContext, accountManager)
+
+        val failure = runCatching {
+            failingLifecycle.save(
+                before.id,
+                AccountDraft(
+                    label = "After",
+                    apiKey = replacementKey,
+                    providerType = before.providerType
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failingContext.failed)
+        assertNotNull(failure)
+        assertEquals(before, accountManager.getAccount(before.id))
+        assertNull(accountManager.getAccount(accountManager.computeId(replacementKey)))
+
+        lifecycleManager.save(
+            before.id,
+            AccountDraft(
+                label = "After",
+                apiKey = replacementKey,
+                providerType = before.providerType
+            )
+        )
+        assertNull(accountManager.getAccount(before.id))
+        assertNotNull(accountManager.getAccount(accountManager.computeId(replacementKey)))
+    }
+
     private fun assertDeleteFailureKeepsAccount(failingPrefsName: String) {
         val account = accountManager.addAccount("Retryable", "sk-retryable-$failingPrefsName")
         seedOwnedState(account)
@@ -243,13 +292,20 @@ class AccountLifecycleManagerTest {
         )
         DailySummaryStore.addSummary(context, summary(account.id))
         UsageDataStore.saveSnapshot(context, UsageSnapshot(account.id, 1L))
-        widgetPrefs.setLastAlertedBalance(account.id, 2f)
-        widgetPrefs.setPreviousBalance(account.id, 3f)
-        widgetPrefs.setPreviousBalanceTime(account.id, 4L)
-        widgetPrefs.setLastChangeAlertedBalance(account.id, 5f)
-        widgetPrefs.setLastChangeAlertedTime(account.id, 6L)
+        widgetPrefs.setLastAlertedBalance(account.id, CURRENCY, 2f)
+        widgetPrefs.setPreviousBalance(account.id, CURRENCY, 3f)
+        widgetPrefs.setPreviousBalanceTime(account.id, CURRENCY, 4L)
+        widgetPrefs.setLastChangeAlertedBalance(account.id, CURRENCY, 5f)
+        widgetPrefs.setLastChangeAlertedTime(account.id, CURRENCY, 6L)
         widgetPrefs.setBalanceAlertEnabled(account.id, CURRENCY, true)
         widgetPrefs.setChangeAlertEnabled(account.id, CURRENCY, true)
+        widgetPrefs.setLastAlertedBalance(account.id, SECOND_CURRENCY, 12f)
+        widgetPrefs.setPreviousBalance(account.id, SECOND_CURRENCY, 13f)
+        widgetPrefs.setPreviousBalanceTime(account.id, SECOND_CURRENCY, 14L)
+        widgetPrefs.setLastChangeAlertedBalance(account.id, SECOND_CURRENCY, 15f)
+        widgetPrefs.setLastChangeAlertedTime(account.id, SECOND_CURRENCY, 16L)
+        widgetPrefs.setBalanceAlertEnabled(account.id, SECOND_CURRENCY, true)
+        widgetPrefs.setChangeAlertEnabled(account.id, SECOND_CURRENCY, true)
         widgetPrefs.setNotificationWalletSelected(account.id, CURRENCY, true)
         BalanceWidgetDataStore.saveAccountBalance(
             context,
@@ -440,5 +496,6 @@ class AccountLifecycleManagerTest {
 
     private companion object {
         const val CURRENCY = "USD"
+        const val SECOND_CURRENCY = "CNY"
     }
 }

@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -126,6 +127,148 @@ class WidgetPrefsTest {
 
         assertEquals(50f, prefs.getLastAlertedBalance("acc1"))
         assertEquals(100f, prefs.getLastAlertedBalance("acc2"))
+    }
+
+    @Test
+    fun `same account currencies keep independent alert anchors and dedup timestamps`() {
+        prefs.resetAll()
+
+        prefs.setLastAlertedBalance("acct", "CNY", 11f)
+        prefs.setLastAlertedBalance("acct", "USD", 12f)
+        prefs.setPreviousBalance("acct", "CNY", 21f)
+        prefs.setPreviousBalance("acct", "USD", 22f)
+        prefs.setPreviousBalanceTime("acct", "CNY", 31L)
+        prefs.setPreviousBalanceTime("acct", "USD", 32L)
+        prefs.setLastChangeAlertedBalance("acct", "CNY", 41f)
+        prefs.setLastChangeAlertedBalance("acct", "USD", 42f)
+        prefs.setLastChangeAlertedTime("acct", "CNY", 51L)
+        prefs.setLastChangeAlertedTime("acct", "USD", 52L)
+
+        assertEquals(11f, prefs.getLastAlertedBalance("acct", "CNY"))
+        assertEquals(12f, prefs.getLastAlertedBalance("acct", "USD"))
+        assertEquals(21f, prefs.getPreviousBalance("acct", "CNY"))
+        assertEquals(22f, prefs.getPreviousBalance("acct", "USD"))
+        assertEquals(31L, prefs.getPreviousBalanceTime("acct", "CNY"))
+        assertEquals(32L, prefs.getPreviousBalanceTime("acct", "USD"))
+        assertEquals(41f, prefs.getLastChangeAlertedBalance("acct", "CNY"))
+        assertEquals(42f, prefs.getLastChangeAlertedBalance("acct", "USD"))
+        assertEquals(51L, prefs.getLastChangeAlertedTime("acct", "CNY"))
+        assertEquals(52L, prefs.getLastChangeAlertedTime("acct", "USD"))
+    }
+
+    @Test
+    fun `currency normalization is locale independent across pair storage and enables`() {
+        prefs.resetAll()
+        val originalLocale = Locale.getDefault()
+        Locale.setDefault(Locale("tr", "TR"))
+        try {
+            prefs.setLastAlertedBalance("acct", "usd", 7f)
+            prefs.setBalanceAlertEnabled("acct", "usd", true)
+            prefs.setChangeAlertEnabled("acct", "usd", true)
+
+            assertEquals("USD", AlertIdentity("acct", "usd").normalizedCurrency)
+            assertEquals("acct_USD", AlertIdentity("acct", "usd").storageSuffix)
+            assertEquals(7f, prefs.getLastAlertedBalance("acct", "USD"))
+            assertTrue(prefs.isBalanceAlertEnabled("acct", "USD"))
+            assertTrue(prefs.isChangeAlertEnabled("acct", "USD"))
+            val raw = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+            assertTrue(raw.contains("last_alerted_balance_acct_USD"))
+            assertTrue(raw.contains("alert_enabled_acct_USD"))
+            assertTrue(raw.contains("change_alert_enabled_acct_USD"))
+        } finally {
+            Locale.setDefault(originalLocale)
+        }
+    }
+
+    @Test
+    fun `pair migration preserves enables removes legacy anchors and runs only once`() {
+        prefs.resetAll()
+        val raw = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+        assertTrue(
+            raw.edit()
+                .putBoolean("alert_enabled_acct_CNY", true)
+                .putBoolean("change_alert_enabled_acct_CNY", false)
+                .putBoolean("alert_enabled_acct_USD", false)
+                .putBoolean("change_alert_enabled_acct_USD", true)
+                .putFloat("last_alerted_balance_acct", 11f)
+                .putFloat("previous_balance_acct", 21f)
+                .putLong("previous_balance_time_acct", 31L)
+                .putFloat("last_change_alerted_balance_acct", 41f)
+                .putLong("last_change_alerted_time_acct", 51L)
+                .commit()
+        )
+
+        val migrated = WidgetPrefs(context)
+
+        assertTrue(migrated.isBalanceAlertEnabled("acct", "CNY"))
+        assertFalse(migrated.isChangeAlertEnabled("acct", "CNY"))
+        assertFalse(migrated.isBalanceAlertEnabled("acct", "USD"))
+        assertTrue(migrated.isChangeAlertEnabled("acct", "USD"))
+        assertFalse(raw.contains("last_alerted_balance_acct"))
+        assertFalse(raw.contains("previous_balance_acct"))
+        assertFalse(raw.contains("previous_balance_time_acct"))
+        assertFalse(raw.contains("last_change_alerted_balance_acct"))
+        assertFalse(raw.contains("last_change_alerted_time_acct"))
+        assertEquals(-1f, migrated.getLastAlertedBalance("acct", "CNY"))
+        assertEquals(-1f, migrated.getPreviousBalance("acct", "CNY"))
+        assertTrue(raw.getBoolean("alert_pair_state_migrated_v1", false))
+
+        assertTrue(raw.edit().putFloat("previous_balance_legacy-after-marker", 99f).commit())
+        WidgetPrefs(context)
+        assertTrue(raw.contains("previous_balance_legacy-after-marker"))
+    }
+
+    @Test
+    fun `pair migration marker is absent when its state commit fails`() {
+        prefs.resetAll()
+        val raw = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+        assertTrue(raw.edit().putFloat("previous_balance_acct", 21f).commit())
+        val failingContext = FailFirstWidgetCommitContext(context)
+
+        val failure = runCatching { WidgetPrefs(failingContext) }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertTrue(raw.contains("previous_balance_acct"))
+        assertFalse(raw.getBoolean("alert_pair_state_migrated_v1", false))
+
+        WidgetPrefs(failingContext)
+        assertFalse(raw.contains("previous_balance_acct"))
+        assertTrue(raw.getBoolean("alert_pair_state_migrated_v1", false))
+    }
+
+    @Test
+    fun `removeAccountAlertState removes every pair selection and state for only that account`() {
+        prefs.resetAll()
+        prefs.showTotalBalanceInNotification = false
+        for (currency in listOf("CNY", "USD")) {
+            prefs.setLastAlertedBalance("target", currency, 10f)
+            prefs.setPreviousBalance("target", currency, 20f)
+            prefs.setPreviousBalanceTime("target", currency, 30L)
+            prefs.setLastChangeAlertedBalance("target", currency, 40f)
+            prefs.setLastChangeAlertedTime("target", currency, 50L)
+            prefs.setBalanceAlertEnabled("target", currency, true)
+            prefs.setChangeAlertEnabled("target", currency, true)
+            prefs.setNotificationWalletSelected("target", currency, true)
+        }
+        prefs.setLastAlertedBalance("survivor", "USD", 70f)
+        prefs.setBalanceAlertEnabled("survivor", "USD", true)
+        prefs.setNotificationWalletSelected("survivor", "USD", true)
+
+        prefs.removeAccountAlertState("target")
+
+        for (currency in listOf("CNY", "USD")) {
+            assertEquals(-1f, prefs.getLastAlertedBalance("target", currency))
+            assertEquals(-1f, prefs.getPreviousBalance("target", currency))
+            assertEquals(0L, prefs.getPreviousBalanceTime("target", currency))
+            assertEquals(-1f, prefs.getLastChangeAlertedBalance("target", currency))
+            assertEquals(0L, prefs.getLastChangeAlertedTime("target", currency))
+            assertFalse(prefs.isBalanceAlertEnabled("target", currency))
+            assertFalse(prefs.isChangeAlertEnabled("target", currency))
+            assertFalse(prefs.isNotificationWalletSelected("target", currency))
+        }
+        assertEquals(70f, prefs.getLastAlertedBalance("survivor", "USD"))
+        assertTrue(prefs.isBalanceAlertEnabled("survivor", "USD"))
+        assertTrue(prefs.isNotificationWalletSelected("survivor", "USD"))
     }
 
     @Test
@@ -460,9 +603,13 @@ class WidgetPrefsTest {
     fun `removeAccountCurrencyAlertState only affects specified currency`() {
         prefs.setBalanceAlertEnabled("acc1", "CNY", true)
         prefs.setBalanceAlertEnabled("acc1", "USD", true)
+        prefs.setLastAlertedBalance("acc1", "CNY", 10f)
+        prefs.setLastAlertedBalance("acc1", "USD", 20f)
         prefs.removeAccountCurrencyAlertState("acc1", "CNY")
         assertFalse(prefs.isBalanceAlertEnabled("acc1", "CNY"))
         assertTrue(prefs.isBalanceAlertEnabled("acc1", "USD"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acc1", "CNY"))
+        assertEquals(20f, prefs.getLastAlertedBalance("acc1", "USD"))
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -826,6 +973,39 @@ class WidgetPrefsTest {
             Thread.yield()
         }
         return false
+    }
+
+    private class FailFirstWidgetCommitContext(base: Context) : ContextWrapper(base) {
+        private var failed = false
+
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val delegate = baseContext.getSharedPreferences(name, mode)
+            if (name != "widget_prefs") return delegate
+            return object : SharedPreferences by delegate {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = delegate.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun remove(key: String?): SharedPreferences.Editor {
+                            editor.remove(key)
+                            return this
+                        }
+
+                        override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor {
+                            editor.putBoolean(key, value)
+                            return this
+                        }
+
+                        override fun commit(): Boolean {
+                            if (!failed) {
+                                failed = true
+                                return false
+                            }
+                            return editor.commit()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private class BlockingNotificationOrderContext(
