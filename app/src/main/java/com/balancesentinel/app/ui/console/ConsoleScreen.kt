@@ -1088,8 +1088,18 @@ internal fun interceptApiRequest(
         }
 
         // 记录响应头
-        val transportResponseHeaders = connection.headerFields.entries
+        val responseHeaderFields = connection.headerFields.entries
             .filter { it.key != null }
+        val responseSetCookies = responseHeaderFields
+            .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+            .flatMap { it.value }
+        if (responseSetCookies.isNotEmpty()) {
+            val cookieSink = responseCookieSink ?: cookieManager.asConsoleCookieSink()
+            responseSetCookies.forEach { cookie -> cookieSink.setCookie(reqUrl, cookie) }
+            cookieSink.flush()
+        }
+        val transportResponseHeaders = responseHeaderFields
+            .filterNot { it.key.equals("Set-Cookie", ignoreCase = true) }
             .associate { it.key to it.value.joinToString(", ") }
         val diagnosticResponseHeaders = transportResponseHeaders.filterKeys { key ->
             key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES
