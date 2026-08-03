@@ -2,6 +2,7 @@ package com.balancesentinel.app.ui.console
 
 import android.net.Uri
 import android.webkit.WebResourceRequest
+import com.balancesentinel.app.data.console.ConsoleCookieSink
 import com.balancesentinel.app.data.console.ConsoleOriginPolicy
 import io.mockk.every
 import io.mockk.mockk
@@ -11,6 +12,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -21,7 +23,7 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class ConsoleResponseInterceptionTest {
     @Test
-    fun `interception preserves Set-Cookie for transport and redacts diagnostics`() {
+    fun `interception forwards repeated Set-Cookie fields independently and redacts diagnostics`() {
         val certificate = HeldCertificate.Builder()
             .commonName("localhost")
             .addSubjectAlternativeName("localhost")
@@ -42,7 +44,8 @@ class ConsoleResponseInterceptionTest {
                 MockResponse()
                     .setResponseCode(HttpURLConnection.HTTP_OK)
                     .setHeader("Content-Type", "application/json")
-                    .addHeader("Set-Cookie", "session=transport-secret; Path=/; HttpOnly")
+                    .addHeader("Set-Cookie", COOKIE_WITH_EXPIRES)
+                    .addHeader("Set-Cookie", SECOND_COOKIE)
                     .addHeader("X-Trace", "trace-value")
                     .setBody("{}")
             )
@@ -63,28 +66,54 @@ class ConsoleResponseInterceptionTest {
             every { request.method } returns "GET"
             every { request.requestHeaders } returns emptyMap()
             val logs = mutableListOf<ApiLogEntry>()
+            val responseCookies = RecordingCookieSink()
 
             val response = interceptApiRequest(
                 request = request,
                 apiLogs = logs,
                 tag = platform.id,
-                policy = ConsoleOriginPolicy(platform)
+                policy = ConsoleOriginPolicy(platform),
+                responseCookieSink = responseCookies
             )
 
             assertNotNull(response)
-            assertTrue(
-                response!!.responseHeaders.entries.any { (name, value) ->
-                    name.equals("Set-Cookie", ignoreCase = true) &&
-                        value.contains("session=transport-secret")
-                }
+            assertEquals(
+                setOf(
+                    requestUrl to COOKIE_WITH_EXPIRES,
+                    requestUrl to SECOND_COOKIE
+                ),
+                responseCookies.writes.toSet()
             )
+            assertEquals(2, responseCookies.writes.size)
+            assertEquals(1, responseCookies.flushCalls)
+            assertFalse(response!!.responseHeaders.keys.any { it.equals("Set-Cookie", ignoreCase = true) })
             assertTrue(logs.single().responseHeaders["X-Trace"] == "trace-value")
             assertFalse(logs.single().responseHeaders.keys.any { it.equals("Set-Cookie", ignoreCase = true) })
-            assertFalse(logs.single().responseHeaders.values.any { it.contains("transport-secret") })
+            assertFalse(logs.single().responseHeaders.values.any { it.contains("alpha-secret") })
+            assertFalse(logs.single().responseHeaders.values.any { it.contains("beta-secret") })
         } finally {
             HttpsURLConnection.setDefaultSSLSocketFactory(originalSocketFactory)
             HttpsURLConnection.setDefaultHostnameVerifier(originalHostnameVerifier)
             server.shutdown()
         }
+    }
+
+    private class RecordingCookieSink : ConsoleCookieSink {
+        val writes = mutableListOf<Pair<String, String>>()
+        var flushCalls = 0
+
+        override fun setCookie(url: String, cookie: String) {
+            writes += url to cookie
+        }
+
+        override fun flush() {
+            flushCalls++
+        }
+    }
+
+    private companion object {
+        const val COOKIE_WITH_EXPIRES =
+            "session=alpha-secret; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/; Secure; HttpOnly"
+        const val SECOND_COOKIE = "csrf=beta-secret; Path=/; Secure; SameSite=Lax"
     }
 }
