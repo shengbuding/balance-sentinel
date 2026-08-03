@@ -34,6 +34,9 @@ data class ApiDebugEntry(
 object ApiDebugStore {
     private val entries = mutableMapOf<String, MutableList<ApiDebugEntry>>()
 
+    val currentBytes: Long
+        @Synchronized get() = 0
+
     /**
      * 添加调试条目
      */

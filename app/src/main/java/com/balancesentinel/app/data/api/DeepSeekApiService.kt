@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.api
 
 import com.balancesentinel.app.data.debug.DebugInterceptor
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.util.Logger
@@ -21,7 +22,8 @@ import javax.net.ssl.SSLException
  */
 class DeepSeekApiService(
     private val baseUrl: String = "https://api.deepseek.com",
-    private val accountId: String? = null
+    private val accountId: String? = null,
+    @Suppress("unused") private val debuggable: Boolean = DebugCapturePolicy.enabled()
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -92,6 +94,8 @@ class DeepSeekApiService(
             }
         }
         .build()
+
+    internal fun debugClient(): OkHttpClient = client
 
     /**
      * 查询用户余额。

@@ -15,13 +15,15 @@ class DebugInterceptor(
     private val providerType: String? = null,
     private val baseUrl: String? = null,
     private val isCustomScript: Boolean = false,
-    private val scriptPreview: String? = null
+    private val scriptPreview: String? = null,
+    private val entrySink: (ApiDebugEntry) -> Unit = ApiDebugStore::addEntry,
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) : Interceptor {
 
     @Throws(IOException::class)
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val startTime = System.currentTimeMillis()
+        val startTime = nowMillis()
         val url = request.url.toString()
 
         // 提取端点（去掉baseUrl部分）
@@ -66,7 +68,7 @@ class DebugInterceptor(
         try {
             response = chain.proceed(request)
         } catch (e: Exception) {
-            val endTime = System.currentTimeMillis()
+            val endTime = nowMillis()
             // 提供更详细的错误信息
             val errorMessage = when (e) {
                 is java.net.ConnectException -> "连接失败: ${e.message}"
@@ -103,11 +105,11 @@ class DebugInterceptor(
                 exceptionType = exceptionType,
                 exceptionStack = exceptionStack
             )
-            ApiDebugStore.addEntry(entry)
+            entrySink(entry)
             throw e
         }
 
-        val endTime = System.currentTimeMillis()
+        val endTime = nowMillis()
 
         // 记录响应头信息
         val responseHeaders = mutableMapOf<String, String>()
@@ -139,7 +141,7 @@ class DebugInterceptor(
             scriptPreview = scriptPreview
         )
 
-        ApiDebugStore.addEntry(entry)
+        entrySink(entry)
 
         // 重新构建响应（因为body已被读取）
         return response.newBuilder()

@@ -5,6 +5,7 @@ import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.debug.DebugInterceptor
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +16,8 @@ import okhttp3.OkHttpClient
 
 class BalanceQueryService(
     private val callFactory: Call.Factory = defaultClient(),
-    private val endpointOverride: ((BalanceContract) -> HttpUrl)? = null
+    private val endpointOverride: ((BalanceContract) -> HttpUrl)? = null,
+    @Suppress("unused") private val debuggable: Boolean = DebugCapturePolicy.enabled()
 ) {
     suspend fun queryBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> =
         withContext(Dispatchers.IO) {
@@ -84,7 +86,7 @@ class BalanceQueryService(
             }
         }
 
-    private fun callFactoryFor(
+    internal fun callFactoryFor(
         config: ProviderConfig,
         contract: BalanceContract
     ): Call.Factory {

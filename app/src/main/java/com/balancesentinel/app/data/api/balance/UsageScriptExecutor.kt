@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.api.balance
 
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshFailure
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,7 +102,8 @@ object UsageScriptExecutor {
         account: AccountInfo,
         resolver: HostResolver,
         client: OkHttpClient,
-        connectionUrlOverride: ((HttpUrl) -> HttpUrl)?
+        connectionUrlOverride: ((HttpUrl) -> HttpUrl)?,
+        @Suppress("UNUSED_PARAMETER") debuggable: Boolean = DebugCapturePolicy.enabled()
     ): ScriptExecutionResult = withContext(Dispatchers.IO) {
         if (!script.enabled || !account.usageScriptEnabled) {
             return@withContext failure(

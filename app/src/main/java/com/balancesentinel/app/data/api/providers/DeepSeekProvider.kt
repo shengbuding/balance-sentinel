@@ -10,6 +10,7 @@ import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.api.UnifiedUsage
 import com.balancesentinel.app.data.api.balance.BalanceQueryService
 import com.balancesentinel.app.data.debug.DebugInterceptor
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.model.UsageResponse
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -18,7 +19,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class DeepSeekProvider(
-    private val balanceQueryService: BalanceQueryService = BalanceQueryService()
+    private val balanceQueryService: BalanceQueryService = BalanceQueryService(),
+    @Suppress("unused") private val debuggable: Boolean = DebugCapturePolicy.enabled()
 ) : AiProvider {
     override val providerType = ProviderType.DEEPSEEK
     override val displayName = "DeepSeek"
@@ -34,7 +36,7 @@ class DeepSeekProvider(
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    private fun getClientWithDebug(accountId: String?): OkHttpClient =
+    internal fun getClientWithDebug(accountId: String?): OkHttpClient =
         if (accountId != null) {
             client.newBuilder().addInterceptor(DebugInterceptor(accountId)).build()
         } else {
