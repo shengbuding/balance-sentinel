@@ -30,16 +30,16 @@ class AlertCheckerTest {
         prefs.changeAlertThreshold = 0f
         prefs.changeAlertPeriodMinutes = 0
         // Clear any lingering per-account state
-        prefs.setLastAlertedBalance("acc1", -1f)
-        prefs.setLastAlertedBalance("acc2", -1f)
-        prefs.setPreviousBalance("acc1", -1f)
-        prefs.setPreviousBalance("acc2", -1f)
-        prefs.setPreviousBalanceTime("acc1", 0L)
-        prefs.setPreviousBalanceTime("acc2", 0L)
-        prefs.setLastChangeAlertedBalance("acc1", -1f)
-        prefs.setLastChangeAlertedBalance("acc2", -1f)
-        prefs.setLastChangeAlertedTime("acc1", 0L)
-        prefs.setLastChangeAlertedTime("acc2", 0L)
+        prefs.setLastAlertedBalance("acc1", "CNY", -1f)
+        prefs.setLastAlertedBalance("acc2", "CNY", -1f)
+        prefs.setPreviousBalance("acc1", "CNY", -1f)
+        prefs.setPreviousBalance("acc2", "CNY", -1f)
+        prefs.setPreviousBalanceTime("acc1", "CNY", 0L)
+        prefs.setPreviousBalanceTime("acc2", "CNY", 0L)
+        prefs.setLastChangeAlertedBalance("acc1", "CNY", -1f)
+        prefs.setLastChangeAlertedBalance("acc2", "CNY", -1f)
+        prefs.setLastChangeAlertedTime("acc1", "CNY", 0L)
+        prefs.setLastChangeAlertedTime("acc2", "CNY", 0L)
     }
 
     @After
@@ -193,8 +193,8 @@ class AlertCheckerTest {
         prefs.changeAlertEnabled = false
         prefs.changeAlertThreshold = 10f
         prefs.changeAlertPeriodMinutes = 60
-        prefs.setPreviousBalance("acc1", 100f)
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 60_000)
+        prefs.setPreviousBalance("acc1", "CNY", 100f)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 60_000)
 
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
         assertEquals(0, notificationCount())
@@ -208,7 +208,7 @@ class AlertCheckerTest {
 
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
         assertEquals(0, notificationCount())
-        assertEquals(100f, prefs.getPreviousBalance("acc1"))
+        assertEquals(100f, prefs.getPreviousBalance("acc1", "CNY"))
     }
 
     @Test
@@ -239,7 +239,7 @@ class AlertCheckerTest {
         assertEquals(0, notificationCount())
 
         // Set previous time to simulate elapsed time within period
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 30_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 30_000)
 
         // Second call with different balance
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
@@ -255,7 +255,7 @@ class AlertCheckerTest {
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
         assertEquals(0, notificationCount())
 
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 30_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 30_000)
         AlertChecker.checkChange(context, "acc1", "95", "CNY", "Test")
         assertEquals(0, notificationCount())
     }
@@ -270,12 +270,12 @@ class AlertCheckerTest {
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
 
         // First change triggers alert
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 30_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 30_000)
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
         assertEquals(1, notificationCount())
 
         // Same balance again within period — dedup
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 15_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 15_000)
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
         assertEquals(1, notificationCount())
     }
@@ -302,7 +302,7 @@ class AlertCheckerTest {
         assertEquals(0, notificationCount())
 
         // 5 minutes later — outside the 1-minute period
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 300_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 300_000)
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
 
         // Should not alert because elapsed time exceeds period (anchor resets)
@@ -318,24 +318,24 @@ class AlertCheckerTest {
         // Step 1: First call stores anchor at 100
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
         assertEquals(0, notificationCount())
-        assertEquals(100f, prefs.getPreviousBalance("acc1"))
+        assertEquals(100f, prefs.getPreviousBalance("acc1", "CNY"))
 
         // Step 2: Small drop — diff=3, below threshold
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 10_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 10_000)
         AlertChecker.checkChange(context, "acc1", "97", "CNY", "Test")
         assertEquals(0, notificationCount())
         // Anchor stays at original value (100), not updated to 97
-        assertEquals(100f, prefs.getPreviousBalance("acc1"))
+        assertEquals(100f, prefs.getPreviousBalance("acc1", "CNY"))
 
         // Step 3: Another small drop — cumulative diff=7, still below threshold
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 20_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 20_000)
         AlertChecker.checkChange(context, "acc1", "93", "CNY", "Test")
         assertEquals(0, notificationCount())
         // Anchor STILL at 100
-        assertEquals(100f, prefs.getPreviousBalance("acc1"))
+        assertEquals(100f, prefs.getPreviousBalance("acc1", "CNY"))
 
         // Step 4: Third drop — cumulative diff=12 >= 10 → ALERT
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 30_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 30_000)
         AlertChecker.checkChange(context, "acc1", "88", "CNY", "Test")
         assertEquals(1, notificationCount())
     }
@@ -350,15 +350,15 @@ class AlertCheckerTest {
         AlertChecker.checkChange(context, "acc1", "100", "CNY", "Test")
 
         // Trigger alert: diff=20 >= 10
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 30_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 30_000)
         AlertChecker.checkChange(context, "acc1", "80", "CNY", "Test")
         assertEquals(1, notificationCount())
 
         // After alert, anchor should be reset to 80
-        assertEquals(80f, prefs.getPreviousBalance("acc1"))
+        assertEquals(80f, prefs.getPreviousBalance("acc1", "CNY"))
 
         // Small further drop from new anchor (80→77, diff=3 < 10): no alert
-        prefs.setPreviousBalanceTime("acc1", System.currentTimeMillis() - 10_000)
+        prefs.setPreviousBalanceTime("acc1", "CNY", System.currentTimeMillis() - 10_000)
         AlertChecker.checkChange(context, "acc1", "77", "CNY", "Test")
         assertEquals(1, notificationCount())  // still just 1, no new alert
     }

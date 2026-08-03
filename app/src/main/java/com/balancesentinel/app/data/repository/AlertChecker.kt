@@ -32,18 +32,18 @@ object AlertChecker {
         if (isSnoozed(prefs, accountId)) return false
 
         val balance = totalBalance.toFloatOrNull() ?: return false
-        val lastAlerted = prefs.getLastAlertedBalance(accountId)
+        val lastAlerted = prefs.getLastAlertedBalance(accountId, currency)
 
         if (balance < threshold) {
             if (kotlin.math.abs(balance - lastAlerted) > 0.001f) {
                 val helper = NotificationHelper(context)
                 helper.sendLowBalanceAlert(accountId, balance, threshold, currency, label)
-                prefs.setLastAlertedBalance(accountId, balance)
+                prefs.setLastAlertedBalance(accountId, currency, balance)
                 return true
             }
         } else {
             if (lastAlerted >= 0f) {
-                prefs.setLastAlertedBalance(accountId, -1f)
+                prefs.setLastAlertedBalance(accountId, currency, -1f)
             }
         }
         return false
@@ -73,15 +73,15 @@ object AlertChecker {
         if (isSnoozed(prefs, accountId)) return false
 
         val current = totalBalance.toFloatOrNull() ?: return false
-        val anchor = prefs.getPreviousBalance(accountId)       // 窗口锚点余额
-        val anchorTime = prefs.getPreviousBalanceTime(accountId)
+        val anchor = prefs.getPreviousBalance(accountId, currency)       // 窗口锚点余额
+        val anchorTime = prefs.getPreviousBalanceTime(accountId, currency)
         val now = System.currentTimeMillis()
         val periodMs = periodMinutes * 60_000L
 
         // 首次调用或窗口过期 → 重置锚点
         if (anchor < 0f || anchorTime <= 0L || (now - anchorTime) > periodMs) {
-            prefs.setPreviousBalance(accountId, current)
-            prefs.setPreviousBalanceTime(accountId, now)
+            prefs.setPreviousBalance(accountId, currency, current)
+            prefs.setPreviousBalanceTime(accountId, currency, now)
             return false
         }
 
@@ -89,17 +89,17 @@ object AlertChecker {
 
         if (diff >= threshold) {
             // 去重：时间窗口内相同余额不重复提醒
-            val lastTriggered = prefs.getLastChangeAlertedBalance(accountId)
-            val lastTriggeredTime = prefs.getLastChangeAlertedTime(accountId)
+            val lastTriggered = prefs.getLastChangeAlertedBalance(accountId, currency)
+            val lastTriggeredTime = prefs.getLastChangeAlertedTime(accountId, currency)
             if (kotlin.math.abs(current - lastTriggered) <= 0.001f && (now - lastTriggeredTime) < periodMs) return false
 
             val helper = NotificationHelper(context)
             helper.sendChangeAlert(accountId, current, anchor, diff, periodMinutes, currency, label)
-            prefs.setLastChangeAlertedBalance(accountId, current)
-            prefs.setLastChangeAlertedTime(accountId, now)
+            prefs.setLastChangeAlertedBalance(accountId, currency, current)
+            prefs.setLastChangeAlertedTime(accountId, currency, now)
             // 提醒后重置锚点，避免连续重复触发
-            prefs.setPreviousBalance(accountId, current)
-            prefs.setPreviousBalanceTime(accountId, now)
+            prefs.setPreviousBalance(accountId, currency, current)
+            prefs.setPreviousBalanceTime(accountId, currency, now)
             return true
         }
         // 关键：锚点保持不变，累积对比直到触发或窗口过期

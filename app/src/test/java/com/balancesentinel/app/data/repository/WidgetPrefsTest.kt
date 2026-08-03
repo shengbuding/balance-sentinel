@@ -122,11 +122,11 @@ class WidgetPrefsTest {
 
     @Test
     fun `per-account keys are isolated`() {
-        prefs.setLastAlertedBalance("acc1", 50f)
-        prefs.setLastAlertedBalance("acc2", 100f)
+        prefs.setLastAlertedBalance("acc1", "CNY", 50f)
+        prefs.setLastAlertedBalance("acc2", "CNY", 100f)
 
-        assertEquals(50f, prefs.getLastAlertedBalance("acc1"))
-        assertEquals(100f, prefs.getLastAlertedBalance("acc2"))
+        assertEquals(50f, prefs.getLastAlertedBalance("acc1", "CNY"))
+        assertEquals(100f, prefs.getLastAlertedBalance("acc2", "CNY"))
     }
 
     @Test
@@ -273,57 +273,57 @@ class WidgetPrefsTest {
 
     @Test
     fun `per-account initial values are defaults`() {
-        assertEquals(-1f, prefs.getLastAlertedBalance("unknown"))
-        assertEquals(-1f, prefs.getPreviousBalance("unknown"))
-        assertEquals(0L, prefs.getPreviousBalanceTime("unknown"))
-        assertEquals(-1f, prefs.getLastChangeAlertedBalance("unknown"))
-        assertEquals(0L, prefs.getLastChangeAlertedTime("unknown"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("unknown", "CNY"))
+        assertEquals(-1f, prefs.getPreviousBalance("unknown", "CNY"))
+        assertEquals(0L, prefs.getPreviousBalanceTime("unknown", "CNY"))
+        assertEquals(-1f, prefs.getLastChangeAlertedBalance("unknown", "CNY"))
+        assertEquals(0L, prefs.getLastChangeAlertedTime("unknown", "CNY"))
     }
 
     @Test
     fun `previous balance set and get per account`() {
-        prefs.setPreviousBalance("acc1", 200f)
-        prefs.setPreviousBalanceTime("acc1", 5000L)
+        prefs.setPreviousBalance("acc1", "CNY", 200f)
+        prefs.setPreviousBalanceTime("acc1", "CNY", 5000L)
 
-        assertEquals(200f, prefs.getPreviousBalance("acc1"))
-        assertEquals(5000L, prefs.getPreviousBalanceTime("acc1"))
+        assertEquals(200f, prefs.getPreviousBalance("acc1", "CNY"))
+        assertEquals(5000L, prefs.getPreviousBalanceTime("acc1", "CNY"))
     }
 
     @Test
     fun `change alerted state set and get per account`() {
-        prefs.setLastChangeAlertedBalance("acc1", 75f)
-        prefs.setLastChangeAlertedTime("acc1", 9999L)
+        prefs.setLastChangeAlertedBalance("acc1", "CNY", 75f)
+        prefs.setLastChangeAlertedTime("acc1", "CNY", 9999L)
 
-        assertEquals(75f, prefs.getLastChangeAlertedBalance("acc1"))
-        assertEquals(9999L, prefs.getLastChangeAlertedTime("acc1"))
+        assertEquals(75f, prefs.getLastChangeAlertedBalance("acc1", "CNY"))
+        assertEquals(9999L, prefs.getLastChangeAlertedTime("acc1", "CNY"))
     }
 
     @Test
     fun `removeAccountAlertState clears all per-account keys`() {
-        prefs.setLastAlertedBalance("acc1", 50f)
-        prefs.setPreviousBalance("acc1", 200f)
-        prefs.setPreviousBalanceTime("acc1", 5000L)
-        prefs.setLastChangeAlertedBalance("acc1", 75f)
-        prefs.setLastChangeAlertedTime("acc1", 9999L)
+        prefs.setLastAlertedBalance("acc1", "CNY", 50f)
+        prefs.setPreviousBalance("acc1", "CNY", 200f)
+        prefs.setPreviousBalanceTime("acc1", "CNY", 5000L)
+        prefs.setLastChangeAlertedBalance("acc1", "CNY", 75f)
+        prefs.setLastChangeAlertedTime("acc1", "CNY", 9999L)
 
         prefs.removeAccountAlertState("acc1")
 
-        assertEquals(-1f, prefs.getLastAlertedBalance("acc1"))
-        assertEquals(-1f, prefs.getPreviousBalance("acc1"))
-        assertEquals(0L, prefs.getPreviousBalanceTime("acc1"))
-        assertEquals(-1f, prefs.getLastChangeAlertedBalance("acc1"))
-        assertEquals(0L, prefs.getLastChangeAlertedTime("acc1"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acc1", "CNY"))
+        assertEquals(-1f, prefs.getPreviousBalance("acc1", "CNY"))
+        assertEquals(0L, prefs.getPreviousBalanceTime("acc1", "CNY"))
+        assertEquals(-1f, prefs.getLastChangeAlertedBalance("acc1", "CNY"))
+        assertEquals(0L, prefs.getLastChangeAlertedTime("acc1", "CNY"))
     }
 
     @Test
     fun `removeAccountAlertState does not affect other accounts`() {
-        prefs.setLastAlertedBalance("acc1", 50f)
-        prefs.setLastAlertedBalance("acc2", 100f)
+        prefs.setLastAlertedBalance("acc1", "CNY", 50f)
+        prefs.setLastAlertedBalance("acc2", "CNY", 100f)
 
         prefs.removeAccountAlertState("acc1")
 
-        assertEquals(-1f, prefs.getLastAlertedBalance("acc1"))
-        assertEquals(100f, prefs.getLastAlertedBalance("acc2"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acc1", "CNY"))
+        assertEquals(100f, prefs.getLastAlertedBalance("acc2", "CNY"))
     }
 
     // ── resetAll ──
@@ -338,8 +338,8 @@ class WidgetPrefsTest {
         prefs.changeAlertEnabled = true
         prefs.changeAlertThreshold = 25f
         prefs.changeAlertPeriodMinutes = 60
-        prefs.setLastAlertedBalance("acc1", 50f)
-        prefs.setPreviousBalance("acc1", 200f)
+        prefs.setLastAlertedBalance("acc1", "CNY", 50f)
+        prefs.setPreviousBalance("acc1", "CNY", 200f)
 
         prefs.resetAll()
 
@@ -353,8 +353,8 @@ class WidgetPrefsTest {
         assertEquals(0, prefs.changeAlertPeriodMinutes)
 
         // Per-account state cleared
-        assertEquals(-1f, prefs.getLastAlertedBalance("acc1"))
-        assertEquals(-1f, prefs.getPreviousBalance("acc1"))
+        assertEquals(-1f, prefs.getLastAlertedBalance("acc1", "CNY"))
+        assertEquals(-1f, prefs.getPreviousBalance("acc1", "CNY"))
     }
 
     @Test

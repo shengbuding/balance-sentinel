@@ -87,45 +87,42 @@ class NotificationHelperTest {
 
     @Test
     fun `alertNotificationId returns value in expected range`() {
-        val id = helper.alertNotificationId("test-acc")
-        assertTrue(id >= 1002)
-        assertTrue(id <= 66537)
+        val id = helper.alertNotificationId("test-acc", "CNY")
+        assertTrue(id > 0)
     }
 
     @Test
     fun `alertNotificationId is deterministic`() {
-        val id1 = helper.alertNotificationId("test-acc")
-        val id2 = helper.alertNotificationId("test-acc")
+        val id1 = helper.alertNotificationId("test-acc", "CNY")
+        val id2 = helper.alertNotificationId("test-acc", "CNY")
         assertEquals(id1, id2)
     }
 
     @Test
     fun `alertNotificationId differs for different accounts`() {
-        val id1 = helper.alertNotificationId("acc1")
-        val id2 = helper.alertNotificationId("acc2")
+        val id1 = helper.alertNotificationId("acc1", "CNY")
+        val id2 = helper.alertNotificationId("acc2", "CNY")
         // Different hashCode can still collide — but verify it's plausible
-        assertNotNull(id1)
-        assertNotNull(id2)
+        assertNotEquals(id1, id2)
     }
 
     @Test
     fun `changeNotificationId returns value in expected range`() {
-        val id = helper.changeNotificationId("test-acc")
-        assertTrue(id >= 2002)
-        assertTrue(id <= 67537)
+        val id = helper.changeNotificationId("test-acc", "CNY")
+        assertTrue(id > 0)
     }
 
     @Test
     fun `changeNotificationId is deterministic`() {
-        val id1 = helper.changeNotificationId("test-acc")
-        val id2 = helper.changeNotificationId("test-acc")
+        val id1 = helper.changeNotificationId("test-acc", "CNY")
+        val id2 = helper.changeNotificationId("test-acc", "CNY")
         assertEquals(id1, id2)
     }
 
     @Test
     fun `alert and change notification IDs use different bases`() {
-        val alertId = helper.alertNotificationId("test")
-        val changeId = helper.changeNotificationId("test")
+        val alertId = helper.alertNotificationId("test", "CNY")
+        val changeId = helper.changeNotificationId("test", "CNY")
         // Different base offsets: 1002 vs 2002
         assertNotEquals(alertId, changeId)
     }

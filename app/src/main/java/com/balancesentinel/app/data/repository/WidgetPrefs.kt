@@ -14,17 +14,55 @@ data class AlertIdentity(val accountId: String, val currency: String) {
 /**
  * 小组件偏好设置（多账户版）。
  * 全局设置（刷新间隔、日志上限、预警阈值）不变。
- * 预警/异动的去重状态（lastAlertedBalance、previousBalance 等）按 accountId 隔离。
+ * 预警/异动的去重状态按 accountId + currency 隔离。
  */
 class WidgetPrefs(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
 
+    init {
+        migrateLegacyAlertState()
+    }
+
     private fun commitAccountState(block: SharedPreferences.Editor.() -> Unit) {
         synchronized(WIDGET_PREFS_LOCK) {
             val editor = prefs.edit()
             editor.block()
+            check(editor.commit())
+        }
+    }
+
+    private fun pairKey(prefix: String, accountId: String, currency: String): String =
+        "${prefix}_${AlertIdentity(accountId, currency).storageSuffix}"
+
+    private fun migrateLegacyAlertState() {
+        synchronized(WIDGET_PREFS_LOCK) {
+            if (prefs.getBoolean(KEY_ALERT_PAIR_STATE_MIGRATED, false)) return
+
+            val editor = prefs.edit()
+            for (key in prefs.all.keys) {
+                val legacyPrefix = LEGACY_ALERT_STATE_PREFIXES.firstOrNull { prefix ->
+                    key.startsWith("${prefix}_")
+                }
+                if (legacyPrefix != null) {
+                    val suffix = key.removePrefix("${legacyPrefix}_")
+                    if ('_' !in suffix) editor.remove(key)
+                }
+
+                for (prefix in PAIR_ENABLE_PREFIXES) {
+                    if (!key.startsWith("${prefix}_")) continue
+                    val suffix = key.removePrefix("${prefix}_")
+                    val parts = suffix.split("_", limit = 2)
+                    if (parts.size != 2) continue
+                    val normalizedKey = pairKey(prefix, parts[0], parts[1])
+                    if (normalizedKey != key) {
+                        editor.putBoolean(normalizedKey, prefs.getBoolean(key, false))
+                        editor.remove(key)
+                    }
+                }
+            }
+            editor.putBoolean(KEY_ALERT_PAIR_STATE_MIGRATED, true)
             check(editor.commit())
         }
     }
@@ -75,76 +113,51 @@ class WidgetPrefs(context: Context) {
             }
         }
 
-    // ── 按账户隔离的去重状态 ──
-
-    fun getLastAlertedBalance(accountId: String): Float =
-        prefs.getFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", -1f)
+    // ── 按账户+币种隔离的去重状态 ──
 
     fun getLastAlertedBalance(accountId: String, currency: String): Float =
-        getLastAlertedBalance(accountId)
-
-    fun setLastAlertedBalance(accountId: String, value: Float) {
-        commitAccountState { putFloat("${KEY_LAST_ALERTED_BALANCE}_$accountId", value) }
-    }
+        prefs.getFloat(pairKey(KEY_LAST_ALERTED_BALANCE, accountId, currency), -1f)
 
     fun setLastAlertedBalance(accountId: String, currency: String, value: Float) {
-        setLastAlertedBalance(accountId, value)
+        commitAccountState {
+            putFloat(pairKey(KEY_LAST_ALERTED_BALANCE, accountId, currency), value)
+        }
     }
-
-    fun getPreviousBalance(accountId: String): Float =
-        prefs.getFloat("${KEY_PREVIOUS_BALANCE}_$accountId", -1f)
 
     fun getPreviousBalance(accountId: String, currency: String): Float =
-        getPreviousBalance(accountId)
-
-    fun setPreviousBalance(accountId: String, value: Float) {
-        commitAccountState { putFloat("${KEY_PREVIOUS_BALANCE}_$accountId", value) }
-    }
+        prefs.getFloat(pairKey(KEY_PREVIOUS_BALANCE, accountId, currency), -1f)
 
     fun setPreviousBalance(accountId: String, currency: String, value: Float) {
-        setPreviousBalance(accountId, value)
+        commitAccountState {
+            putFloat(pairKey(KEY_PREVIOUS_BALANCE, accountId, currency), value)
+        }
     }
-
-    fun getPreviousBalanceTime(accountId: String): Long =
-        prefs.getLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", 0L)
 
     fun getPreviousBalanceTime(accountId: String, currency: String): Long =
-        getPreviousBalanceTime(accountId)
-
-    fun setPreviousBalanceTime(accountId: String, value: Long) {
-        commitAccountState { putLong("${KEY_PREVIOUS_BALANCE_TIME}_$accountId", value) }
-    }
+        prefs.getLong(pairKey(KEY_PREVIOUS_BALANCE_TIME, accountId, currency), 0L)
 
     fun setPreviousBalanceTime(accountId: String, currency: String, value: Long) {
-        setPreviousBalanceTime(accountId, value)
+        commitAccountState {
+            putLong(pairKey(KEY_PREVIOUS_BALANCE_TIME, accountId, currency), value)
+        }
     }
-
-    fun getLastChangeAlertedBalance(accountId: String): Float =
-        prefs.getFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", -1f)
 
     fun getLastChangeAlertedBalance(accountId: String, currency: String): Float =
-        getLastChangeAlertedBalance(accountId)
-
-    fun setLastChangeAlertedBalance(accountId: String, value: Float) {
-        commitAccountState { putFloat("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId", value) }
-    }
+        prefs.getFloat(pairKey(KEY_LAST_CHANGE_ALERTED_BALANCE, accountId, currency), -1f)
 
     fun setLastChangeAlertedBalance(accountId: String, currency: String, value: Float) {
-        setLastChangeAlertedBalance(accountId, value)
+        commitAccountState {
+            putFloat(pairKey(KEY_LAST_CHANGE_ALERTED_BALANCE, accountId, currency), value)
+        }
     }
-
-    fun getLastChangeAlertedTime(accountId: String): Long =
-        prefs.getLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", 0L)
 
     fun getLastChangeAlertedTime(accountId: String, currency: String): Long =
-        getLastChangeAlertedTime(accountId)
-
-    fun setLastChangeAlertedTime(accountId: String, value: Long) {
-        commitAccountState { putLong("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId", value) }
-    }
+        prefs.getLong(pairKey(KEY_LAST_CHANGE_ALERTED_TIME, accountId, currency), 0L)
 
     fun setLastChangeAlertedTime(accountId: String, currency: String, value: Long) {
-        setLastChangeAlertedTime(accountId, value)
+        commitAccountState {
+            putLong(pairKey(KEY_LAST_CHANGE_ALERTED_TIME, accountId, currency), value)
+        }
     }
 
     // ── Snooze 标记（按账户隔离）──
@@ -211,13 +224,15 @@ class WidgetPrefs(context: Context) {
      * 如果尚未设置 per-account+currency 值，回退到旧版全局 [alertEnabled]。
      */
     fun isBalanceAlertEnabled(accountId: String, currency: String): Boolean {
-        val key = "${KEY_ALERT_ENABLED}_${accountId}_$currency"
+        val key = pairKey(KEY_ALERT_ENABLED, accountId, currency)
         return if (prefs.contains(key)) prefs.getBoolean(key, false)
         else alertEnabled
     }
 
     fun setBalanceAlertEnabled(accountId: String, currency: String, enabled: Boolean) {
-        commitAccountState { putBoolean("${KEY_ALERT_ENABLED}_${accountId}_$currency", enabled) }
+        commitAccountState {
+            putBoolean(pairKey(KEY_ALERT_ENABLED, accountId, currency), enabled)
+        }
     }
 
     /**
@@ -225,33 +240,51 @@ class WidgetPrefs(context: Context) {
      * 如果尚未设置 per-account+currency 值，回退到旧版全局 [changeAlertEnabled]。
      */
     fun isChangeAlertEnabled(accountId: String, currency: String): Boolean {
-        val key = "${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency"
+        val key = pairKey(KEY_CHANGE_ALERT_ENABLED, accountId, currency)
         return if (prefs.contains(key)) prefs.getBoolean(key, false)
         else changeAlertEnabled
     }
 
     fun setChangeAlertEnabled(accountId: String, currency: String, enabled: Boolean) {
-        commitAccountState { putBoolean("${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency", enabled) }
+        commitAccountState {
+            putBoolean(pairKey(KEY_CHANGE_ALERT_ENABLED, accountId, currency), enabled)
+        }
     }
 
     // ── 清理 ──
 
     /** 删除指定账户的所有预警状态 */
     fun removeAccountAlertState(accountId: String) {
-        commitAccountState {
-            remove("${KEY_LAST_ALERTED_BALANCE}_$accountId")
-            remove("${KEY_PREVIOUS_BALANCE}_$accountId")
-            remove("${KEY_PREVIOUS_BALANCE_TIME}_$accountId")
-            remove("${KEY_LAST_CHANGE_ALERTED_BALANCE}_$accountId")
-            remove("${KEY_LAST_CHANGE_ALERTED_TIME}_$accountId")
+        synchronized(WIDGET_PREFS_LOCK) {
+            val order = getRawNotificationWalletOrder()
+                .filterNot { it.startsWith("${accountId}_") }
+            val editor = prefs.edit()
+            prefs.all.keys
+                .filter { key ->
+                    PAIR_ALERT_PREFIXES.any { prefix ->
+                        key.startsWith("${prefix}_${accountId}_")
+                    } || LEGACY_ALERT_STATE_PREFIXES.any { prefix ->
+                        key == "${prefix}_$accountId"
+                    }
+                }
+                .forEach(editor::remove)
+            editor.putNotificationWalletOrder(order)
+            check(editor.commit())
         }
     }
 
     /** 删除指定账户+币种的所有预警状态（含 per-currency 启用开关） */
     fun removeAccountCurrencyAlertState(accountId: String, currency: String) {
-        commitAccountState {
-            remove("${KEY_ALERT_ENABLED}_${accountId}_$currency")
-            remove("${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency")
+        synchronized(WIDGET_PREFS_LOCK) {
+            val identity = AlertIdentity(accountId, currency)
+            val order = getRawNotificationWalletOrder()
+                .filterNot { it == identity.storageSuffix }
+            val editor = prefs.edit()
+            PAIR_ALERT_PREFIXES.forEach { prefix ->
+                editor.remove("${prefix}_${identity.storageSuffix}")
+            }
+            editor.putNotificationWalletOrder(order)
+            check(editor.commit())
         }
     }
 
@@ -281,21 +314,46 @@ class WidgetPrefs(context: Context) {
             }
             val editor = prefs.edit()
             prefs.all.forEach { (key, value) ->
-                val newKey = when {
-                    key.endsWith("_$oldAccountId") -> key.removeSuffix(oldAccountId) + newAccountId
-                    key.contains("_${oldAccountId}_") -> key.replace("_${oldAccountId}_", "_${newAccountId}_")
-                    else -> null
-                } ?: return@forEach
+                when {
+                    PAIR_ENABLE_PREFIXES.any { prefix ->
+                        key.startsWith("${prefix}_${oldAccountId}_")
+                    } -> {
+                        val prefix = PAIR_ENABLE_PREFIXES.first { candidate ->
+                            key.startsWith("${candidate}_${oldAccountId}_")
+                        }
+                        val currency = key.removePrefix("${prefix}_${oldAccountId}_")
+                        if (value is Boolean) {
+                            editor.putBoolean(pairKey(prefix, newAccountId, currency), value)
+                        }
+                        editor.remove(key)
+                    }
 
-                when (value) {
-                    is Boolean -> editor.putBoolean(newKey, value)
-                    is Float -> editor.putFloat(newKey, value)
-                    is Int -> editor.putInt(newKey, value)
-                    is Long -> editor.putLong(newKey, value)
-                    is String -> editor.putString(newKey, value)
-                    is Set<*> -> editor.putStringSet(newKey, value.filterIsInstance<String>().toSet())
+                    PAIR_STATE_PREFIXES.any { prefix ->
+                        key.startsWith("${prefix}_${oldAccountId}_")
+                    } -> editor.remove(key)
+
+                    key.startsWith("${KEY_NOTIFICATION_SELECTED}_${oldAccountId}_") -> {
+                        val currency = key.removePrefix("${KEY_NOTIFICATION_SELECTED}_${oldAccountId}_")
+                        if (value is Boolean) {
+                            editor.putBoolean(
+                                pairKey(KEY_NOTIFICATION_SELECTED, newAccountId, currency),
+                                value
+                            )
+                        }
+                        editor.remove(key)
+                    }
+
+                    key == "${KEY_SNOOZE_UNTIL}_$oldAccountId" -> {
+                        if (value is Long) {
+                            editor.putLong("${KEY_SNOOZE_UNTIL}_$newAccountId", value)
+                        }
+                        editor.remove(key)
+                    }
+
+                    LEGACY_ALERT_STATE_PREFIXES.any { prefix ->
+                        key == "${prefix}_$oldAccountId"
+                    } -> editor.remove(key)
                 }
-                editor.remove(key)
             }
             editor.putNotificationWalletOrder(order)
             check(editor.commit())
@@ -318,9 +376,17 @@ class WidgetPrefs(context: Context) {
                     if (parts.size == 2) {
                         val (accountId, currency) = parts
                         val balanceOn = prefs.getBoolean(key, false)
-                        val changeKey = "${KEY_CHANGE_ALERT_ENABLED}_${accountId}_$currency"
+                        val normalizedCurrency = AlertIdentity(accountId, currency).normalizedCurrency
+                        val changeKey = pairKey(KEY_CHANGE_ALERT_ENABLED, accountId, normalizedCurrency)
                         val changeOn = prefs.getBoolean(changeKey, false)
-                        result.add(PerCurrencyAlertSetting(accountId, currency, balanceOn, changeOn))
+                        result.add(
+                            PerCurrencyAlertSetting(
+                                accountId,
+                                normalizedCurrency,
+                                balanceOn,
+                                changeOn
+                            )
+                        )
                     }
                 }
             }
@@ -333,11 +399,11 @@ class WidgetPrefs(context: Context) {
         commitAccountState {
             for (setting in settings) {
                 putBoolean(
-                    "${KEY_ALERT_ENABLED}_${setting.accountId}_${setting.currency}",
+                    pairKey(KEY_ALERT_ENABLED, setting.accountId, setting.currency),
                     setting.balanceAlertEnabled
                 )
                 putBoolean(
-                    "${KEY_CHANGE_ALERT_ENABLED}_${setting.accountId}_${setting.currency}",
+                    pairKey(KEY_CHANGE_ALERT_ENABLED, setting.accountId, setting.currency),
                     setting.changeAlertEnabled
                 )
             }
@@ -431,13 +497,14 @@ class WidgetPrefs(context: Context) {
 
     /** 检查指定账户+币种是否在通知栏展示列表中。 */
     fun isNotificationWalletSelected(accountId: String, currency: String): Boolean {
-        return "${accountId}_$currency" in getNotificationWalletOrder()
+        return AlertIdentity(accountId, currency).storageSuffix in getNotificationWalletOrder()
     }
 
     /** 设置指定账户+币种的通知栏展示。true=加入末尾，false=移除。 */
     fun setNotificationWalletSelected(accountId: String, currency: String, selected: Boolean) {
         synchronized(WIDGET_PREFS_LOCK) {
-            val key = "${accountId}_$currency"
+            val identity = AlertIdentity(accountId, currency)
+            val key = identity.storageSuffix
             val order = getRawNotificationWalletOrder().toMutableList()
             if (selected && key !in order) {
                 order.add(key)
@@ -447,7 +514,7 @@ class WidgetPrefs(context: Context) {
             check(
                 prefs.edit()
                     .putNotificationWalletOrder(order)
-                    .putBoolean("${KEY_NOTIFICATION_SELECTED}_${accountId}_$currency", selected)
+                    .putBoolean("${KEY_NOTIFICATION_SELECTED}_${identity.storageSuffix}", selected)
                     .commit()
             )
         }
@@ -540,13 +607,21 @@ class WidgetPrefs(context: Context) {
 
     /** 将指定条目在排序中上移一位（accountId=TOTAL_KEY 表示总余额）。 */
     fun moveNotificationWalletUp(accountId: String, currency: String) {
-        val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
+        val key = if (accountId == KEY_NOTIFICATION_TOTAL) {
+            KEY_NOTIFICATION_TOTAL
+        } else {
+            AlertIdentity(accountId, currency).storageSuffix
+        }
         moveEntryUp(key)
     }
 
     /** 将指定条目在排序中下移一位。 */
     fun moveNotificationWalletDown(accountId: String, currency: String) {
-        val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
+        val key = if (accountId == KEY_NOTIFICATION_TOTAL) {
+            KEY_NOTIFICATION_TOTAL
+        } else {
+            AlertIdentity(accountId, currency).storageSuffix
+        }
         moveEntryDown(key)
     }
 
@@ -576,13 +651,21 @@ class WidgetPrefs(context: Context) {
 
     /** 获取指定条目在排序中的位置（0-based），未选中返回 -1。accountId=TOTAL_KEY 查总余额。 */
     fun getNotificationWalletPosition(accountId: String, currency: String): Int {
-        val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
+        val key = if (accountId == KEY_NOTIFICATION_TOTAL) {
+            KEY_NOTIFICATION_TOTAL
+        } else {
+            AlertIdentity(accountId, currency).storageSuffix
+        }
         return getNotificationWalletOrder().indexOf(key)
     }
 
     /** 获取指定条目在选中钱包列表中的位置（0-based），未选中返回 -1。 */
     fun getSelectedWalletPosition(accountId: String, currency: String): Int {
-        val key = if (accountId == KEY_NOTIFICATION_TOTAL) KEY_NOTIFICATION_TOTAL else "${accountId}_$currency"
+        val key = if (accountId == KEY_NOTIFICATION_TOTAL) {
+            KEY_NOTIFICATION_TOTAL
+        } else {
+            AlertIdentity(accountId, currency).storageSuffix
+        }
         return getNotificationWalletOrder().indexOf(key)
     }
 
@@ -605,10 +688,15 @@ class WidgetPrefs(context: Context) {
     /** 批量导入通知栏钱包选择（覆盖排序列表）。 */
     fun applyNotificationWalletSelections(selections: List<NotificationWalletSelection>) {
         synchronized(WIDGET_PREFS_LOCK) {
-            val order = selections.map { "${it.accountId}_${it.currency}" }
+            val order = selections.map {
+                AlertIdentity(it.accountId, it.currency).storageSuffix
+            }
             val editor = prefs.edit().putNotificationWalletOrder(order)
             for (s in selections) {
-                editor.putBoolean("${KEY_NOTIFICATION_SELECTED}_${s.accountId}_${s.currency}", true)
+                editor.putBoolean(
+                    "${KEY_NOTIFICATION_SELECTED}_${AlertIdentity(s.accountId, s.currency).storageSuffix}",
+                    true
+                )
             }
             check(editor.commit())
         }
@@ -631,6 +719,7 @@ class WidgetPrefs(context: Context) {
         const val KEY_PREVIOUS_BALANCE_TIME = "previous_balance_time"
         const val KEY_LAST_CHANGE_ALERTED_BALANCE = "last_change_alerted_balance"
         const val KEY_LAST_CHANGE_ALERTED_TIME = "last_change_alerted_time"
+        const val KEY_ALERT_PAIR_STATE_MIGRATED = "alert_pair_state_migrated_v1"
         const val KEY_SNOOZE_UNTIL = "snooze_until"
         const val KEY_SNOOZE_DURATION_MINUTES = "snooze_duration_minutes"
         const val DEFAULT_SNOOZE_MINUTES = 60
@@ -639,6 +728,22 @@ class WidgetPrefs(context: Context) {
         const val KEY_NOTIFICATION_WALLET_ORDER = "notification_wallet_order"
         const val KEY_NOTIFICATION_TOTAL = "__total__"
         const val KEY_LANGUAGE = "pref_language"
+
+        private val PAIR_STATE_PREFIXES = listOf(
+            KEY_LAST_ALERTED_BALANCE,
+            KEY_PREVIOUS_BALANCE,
+            KEY_PREVIOUS_BALANCE_TIME,
+            KEY_LAST_CHANGE_ALERTED_BALANCE,
+            KEY_LAST_CHANGE_ALERTED_TIME
+        )
+        private val LEGACY_ALERT_STATE_PREFIXES = PAIR_STATE_PREFIXES
+            .sortedByDescending(String::length)
+        private val PAIR_ENABLE_PREFIXES = listOf(
+            KEY_ALERT_ENABLED,
+            KEY_CHANGE_ALERT_ENABLED
+        )
+        private val PAIR_ALERT_PREFIXES =
+            PAIR_STATE_PREFIXES + PAIR_ENABLE_PREFIXES + KEY_NOTIFICATION_SELECTED
     }
 }
 
