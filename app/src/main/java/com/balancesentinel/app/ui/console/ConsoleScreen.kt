@@ -27,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.balancesentinel.app.BuildConfig
 import com.balancesentinel.app.data.console.ConsoleCookieInjector
 import com.balancesentinel.app.data.console.ConsoleCookieSink
 import com.balancesentinel.app.data.console.DebugLogger
@@ -35,6 +34,10 @@ import com.balancesentinel.app.data.console.ConsoleExternalNavigator
 import com.balancesentinel.app.data.console.ConsoleNavigationHandler
 import com.balancesentinel.app.data.console.ConsoleOriginPolicy
 import com.balancesentinel.app.data.debug.ApiDebugEntry
+import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.debug.DebugCapture
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -430,7 +433,12 @@ private fun ConsoleDashboard(
     var loginExpired by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showClearSessionDialog by remember { mutableStateOf(false) }
-    val apiLogs = remember { mutableStateListOf<ApiLogEntry>() }
+    val captureEnabled = DebugCapturePolicy.enabled()
+    val debugAccountId = "console:${platform.id}"
+    var debugRevision by remember { mutableIntStateOf(0) }
+    val apiLogs = remember(debugRevision, captureEnabled) {
+        if (captureEnabled) ApiDebugStore.getEntries(debugAccountId) else emptyList()
+    }
     val context = LocalContext.current
 
     val cookies = session?.cookies ?: emptyMap()
@@ -447,8 +455,6 @@ private fun ConsoleDashboard(
             localStorageCount = session?.localStorage?.size ?: 0,
             email = session?.email,
             currentUrl = redactConsoleUrl(currentUrl),
-            cookies = emptyMap(),
-            localStorage = emptyMap(),
             sessionCreatedAt = session?.loginTime?.let { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it)) },
             sessionExpiresAt = session?.lastActiveTime?.plus(THIRTY_DAYS_MS)?.let {
                 SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(it))
@@ -622,7 +628,8 @@ private fun ConsoleDashboard(
                                 onClick = {
                                     showMenu = false
                                     webView?.reload()
-                                    apiLogs.clear()
+                                    ApiDebugStore.clearEntries(debugAccountId)
+                                    debugRevision++
                                 }
                             )
                             HorizontalDivider()
@@ -672,8 +679,21 @@ private fun ConsoleDashboard(
                     localStorage = localStorage,
                     instanceId = platform.id,
                     onLoadingChange = { isLoading = it },
-                    onApiRequest = { request ->
-                        interceptApiRequest(request, apiLogs, platform.id, policy)
+                    onApiRequest = if (captureEnabled) {
+                        { request ->
+                            interceptApiRequest(
+                                request = request,
+                                tag = platform.id,
+                                policy = policy,
+                                debuggable = true,
+                                entrySink = { entry ->
+                                    ApiDebugStore.addEntry(entry)
+                                    debugRevision++
+                                }
+                            )
+                        }
+                    } else {
+                        null
                     },
                     onPageFinished = { url ->
                         currentUrl = url
@@ -694,11 +714,12 @@ private fun ConsoleDashboard(
 
                 if (showDebugPanel) {
                     ApiDebugPanel(
-                        apiLogs = apiLogs.toList(),
+                        apiLogs = apiLogs,
                         sessionInfo = sessionDebugInfo,
                         onDismiss = { showDebugPanel = false },
                         onClear = {
-                            apiLogs.clear()
+                            ApiDebugStore.clearEntries(debugAccountId)
+                            debugRevision++
                             DebugLogger.clear()
                         },
                         onLogout = { showClearSessionDialog = true }
@@ -1000,13 +1021,6 @@ private fun extractCookies(
 const val DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 
 private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
-private val SENSITIVE_HEADER_NAMES = setOf(
-    "authorization",
-    "cookie",
-    "proxy-authorization",
-    "set-cookie"
-)
-
 private fun redactConsoleUrl(url: String?): String? {
     val parsed = url?.toHttpUrlOrNull() ?: return null
     val port = if (parsed.port == 443 || parsed.port == 80) "" else ":${parsed.port}"
@@ -1024,13 +1038,16 @@ private fun redactConsoleUrl(url: String?): String? {
  */
 internal fun interceptApiRequest(
     request: WebResourceRequest?,
-    apiLogs: MutableList<ApiLogEntry>,
     tag: String,
     policy: ConsoleOriginPolicy,
-    @Suppress("UNUSED_PARAMETER") responseCookieSink: ConsoleCookieSink? = null
+    debuggable: Boolean,
+    entrySink: (ApiDebugEntry) -> Unit,
+    responseCookieSink: ConsoleCookieSink? = null
 ): WebResourceResponse? {
+    if (!DebugCapturePolicy.enabled(debuggable)) return null
     val reqUrl = request?.url?.toString() ?: ""
     val method = request?.method ?: "GET"
+    val startTime = System.currentTimeMillis()
 
     // 检查是否是需要拦截的请求
     if (!policy.isAllowedApiRequest(reqUrl)) {
@@ -1040,13 +1057,11 @@ internal fun interceptApiRequest(
     // POST/PUT/PATCH 请求体无法通过 shouldInterceptRequest 获取，直接放行
     if (request?.method != "GET") return null
 
-    val diagnosticUrl = redactConsoleUrl(reqUrl).orEmpty()
+    val diagnosticUrl = reqUrl.toHttpUrlOrNull()?.let(SensitiveDataRedactor::redactUrl).orEmpty()
     DebugLogger.log("[$tag] API request: $method $diagnosticUrl")
 
     val forwardedHeaders = request?.requestHeaders.orEmpty()
-    val diagnosticHeaders = forwardedHeaders.filterKeys { key ->
-        key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES
-    }
+    val diagnosticHeaders = SensitiveDataRedactor.redactHeaders(forwardedHeaders)
 
     return try {
         val connection = java.net.URL(reqUrl).openConnection() as java.net.HttpURLConnection
@@ -1076,17 +1091,18 @@ internal fun interceptApiRequest(
         }
 
         // 读取完整响应（处理 gzip）
-        val responseBody = try {
+        val responseBytes = try {
             val encoding = connection.contentEncoding
-            val bytes = if (encoding != null && encoding.contains("gzip", ignoreCase = true)) {
+            if (encoding != null && encoding.contains("gzip", ignoreCase = true)) {
                 java.util.zip.GZIPInputStream(inputStream).readBytes()
             } else {
                 inputStream?.readBytes() ?: ByteArray(0)
             }
-            String(bytes, Charsets.UTF_8)
         } catch (e: Exception) {
-            inputStream?.readBytes()?.let { String(it, Charsets.UTF_8) } ?: ""
+            inputStream?.readBytes() ?: ByteArray(0)
         }
+        val responseBody = String(responseBytes, Charsets.UTF_8)
+        val capturedResponse = DebugCapture.captureUtf8(responseBytes.inputStream())
 
         // 记录响应头
         val responseHeaderFields = connection.headerFields.entries
@@ -1102,24 +1118,27 @@ internal fun interceptApiRequest(
         val transportResponseHeaders = responseHeaderFields
             .filterNot { it.key.equals("Set-Cookie", ignoreCase = true) }
             .associate { it.key to it.value.joinToString(", ") }
-        val diagnosticResponseHeaders = transportResponseHeaders.filterKeys { key ->
-            key.lowercase(Locale.US) !in SENSITIVE_HEADER_NAMES
-        }
+        val diagnosticResponseHeaders = SensitiveDataRedactor.redactHeaders(transportResponseHeaders)
 
         // 记录日志
-        val entry = ApiLogEntry(
+        val entry = ApiDebugEntry(
+            accountId = "console:$tag",
             url = diagnosticUrl,
             method = method,
-            statusCode = statusCode,
-            responseBody = "",
             requestHeaders = diagnosticHeaders,
-            responseHeaders = diagnosticResponseHeaders
+            requestBody = null,
+            statusCode = statusCode,
+            responseHeaders = diagnosticResponseHeaders,
+            responseBody = capturedResponse.text,
+            timestamp = startTime,
+            duration = System.currentTimeMillis() - startTime,
+            error = if (statusCode in 200..299) null else capturedResponse.text,
+            providerType = "Console",
+            endpoint = request?.url?.path,
+            responseBodyTruncated = capturedResponse.truncated,
+            errorTruncated = statusCode !in 200..299 && capturedResponse.truncated
         )
-        synchronized(apiLogs) {
-            apiLogs.removeAll { it.url == diagnosticUrl }
-            apiLogs.add(entry)
-            if (apiLogs.size > 100) apiLogs.removeFirst()
-        }
+        entrySink(ApiDebugStore.sanitizedEntry(entry))
 
         // 检测认证失败（401/403）
         if (statusCode == 401 || statusCode == 403) {
@@ -1141,36 +1160,27 @@ internal fun interceptApiRequest(
         DebugLogger.log("[$tag] API request failed: ${e.javaClass.simpleName}")
 
         // 记录错误日志
-        val entry = ApiLogEntry(
+        val capturedError = SensitiveDataRedactor.redactCaptured(
+            "${e.javaClass.simpleName}: ${e.message.orEmpty()}"
+        )
+        val entry = ApiDebugEntry(
+            accountId = "console:$tag",
             url = diagnosticUrl,
             method = method,
-            statusCode = 0,
-            responseBody = "",
             requestHeaders = diagnosticHeaders,
-            error = e.javaClass.simpleName
+            requestBody = null,
+            statusCode = 0,
+            responseHeaders = emptyMap(),
+            responseBody = "",
+            timestamp = startTime,
+            duration = System.currentTimeMillis() - startTime,
+            error = capturedError.text,
+            providerType = "Console",
+            endpoint = request?.url?.path,
+            errorTruncated = capturedError.truncated
         )
-        synchronized(apiLogs) {
-            apiLogs.removeAll { it.url == diagnosticUrl }
-            apiLogs.add(entry)
-            if (apiLogs.size > 100) apiLogs.removeFirst()
-        }
+        entrySink(ApiDebugStore.sanitizedEntry(entry))
 
         null
     }
 }
-
-@Suppress("UNUSED_PARAMETER")
-internal fun interceptApiRequest(
-    request: WebResourceRequest?,
-    tag: String,
-    policy: ConsoleOriginPolicy,
-    debuggable: Boolean,
-    entrySink: (ApiDebugEntry) -> Unit,
-    responseCookieSink: ConsoleCookieSink? = null
-): WebResourceResponse? = interceptApiRequest(
-    request = request,
-    apiLogs = mutableListOf(),
-    tag = tag,
-    policy = policy,
-    responseCookieSink = responseCookieSink
-)

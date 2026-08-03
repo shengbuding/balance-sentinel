@@ -7,6 +7,13 @@ object DebugReportFormatter {
         buildString {
             appendLine("${entry.method} ${entry.url}")
             appendLine("Status: ${entry.statusCode}")
+            appendLine("Timestamp: ${entry.timestamp}")
+            appendLine("Duration: ${entry.duration} ms")
+            entry.accountLabel?.let { appendLine("Account: $it") }
+            entry.providerType?.let { appendLine("Provider: $it") }
+            entry.baseUrl?.let { appendLine("Base URL: $it") }
+            entry.endpoint?.let { appendLine("Endpoint: $it") }
+            if (entry.isCustomScript) appendLine("Custom script: yes")
             appendLine("Request headers: ${entry.requestHeaders}")
             entry.requestBody?.let {
                 append("Request body: $it")
@@ -22,6 +29,7 @@ object DebugReportFormatter {
                 if (entry.errorTruncated) append(" $TRUNCATED_MARKER")
                 appendLine()
             }
+            entry.exceptionType?.let { appendLine("Exception type: $it") }
             entry.exceptionStack?.let {
                 append("Stack: $it")
                 if (entry.exceptionStackTruncated) append(" $TRUNCATED_MARKER")

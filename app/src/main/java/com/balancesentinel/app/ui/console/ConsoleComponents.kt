@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import com.balancesentinel.app.BuildConfig
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,8 +23,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.console.DebugLogger
+import com.balancesentinel.app.data.debug.ApiDebugEntry
+import com.balancesentinel.app.data.debug.DebugReportFormatter
 import com.balancesentinel.app.ui.CustomIcons
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,20 +33,6 @@ import java.util.Locale
 // ═══════════════════════════════════════════════════════════
 // 数据模型
 // ═══════════════════════════════════════════════════════════
-
-/**
- * API 日志条目
- */
-data class ApiLogEntry(
-    val url: String,
-    val method: String = "GET",
-    val statusCode: Int = 0,
-    val responseBody: String = "",
-    val requestHeaders: Map<String, String> = emptyMap(),
-    val responseHeaders: Map<String, String> = emptyMap(),
-    val timestamp: Long = System.currentTimeMillis(),
-    val error: String? = null
-)
 
 /**
  * 会话调试信息
@@ -60,8 +46,6 @@ data class SessionDebugInfo(
     val localStorageCount: Int,
     val email: String?,
     val currentUrl: String?,
-    val cookies: Map<String, String>,
-    val localStorage: Map<String, String>,
     val sessionCreatedAt: String?,
     val sessionExpiresAt: String?
 )
@@ -72,7 +56,7 @@ data class SessionDebugInfo(
 
 @Composable
 fun ApiDebugPanel(
-    apiLogs: List<ApiLogEntry>,
+    apiLogs: List<ApiDebugEntry>,
     sessionInfo: SessionDebugInfo? = null,
     onDismiss: () -> Unit,
     onClear: () -> Unit,
@@ -192,7 +176,7 @@ fun ApiDebugPanel(
 }
 
 @Composable
-private fun ApiLogsTab(apiLogs: List<ApiLogEntry>) {
+private fun ApiLogsTab(apiLogs: List<ApiDebugEntry>) {
     val context = LocalContext.current
 
     Column(
@@ -220,8 +204,6 @@ private fun ApiLogsTab(apiLogs: List<ApiLogEntry>) {
 
 @Composable
 private fun SessionInfoTab(sessionInfo: SessionDebugInfo?, onLogout: (() -> Unit)?) {
-    val context = LocalContext.current
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -263,98 +245,6 @@ private fun SessionInfoTab(sessionInfo: SessionDebugInfo?, onLogout: (() -> Unit
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Cookies 详情
-            if (sessionInfo.cookies.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Cookies (${sessionInfo.cookies.size})",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            IconButton(
-                                onClick = {
-                                    val text = sessionInfo.cookies.entries.joinToString("\n") { "${it.key}=${it.value}" }
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText("Cookies", text)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "已复制 Cookies", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(CustomIcons.ContentCopy, "复制", modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        sessionInfo.cookies.forEach { (key, value) ->
-                            Text(
-                                text = "$key = $value",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // LocalStorage 详情
-            if (sessionInfo.localStorage.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "LocalStorage (${sessionInfo.localStorage.size})",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            IconButton(
-                                onClick = {
-                                    val text = sessionInfo.localStorage.entries.joinToString("\n") { "${it.key}=${it.value}" }
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText("LocalStorage", text)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "已复制 LocalStorage", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(CustomIcons.ContentCopy, "复制", modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        sessionInfo.localStorage.forEach { (key, value) ->
-                            Text(
-                                text = "$key = ${value.take(100)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
             // 操作按钮
             if (onLogout != null) {
                 Button(
@@ -392,7 +282,7 @@ private fun DebugLogsTab() {
             )
             IconButton(
                 onClick = {
-                    val text = debugLogs.joinToString("\n")
+                    val text = DebugReportFormatter.formatText(debugLogs.joinToString("\n"))
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText("Debug Logs", text)
                     clipboard.setPrimaryClip(clip)
@@ -413,7 +303,7 @@ private fun DebugLogsTab() {
         } else {
             debugLogs.forEach { log ->
                 Text(
-                    text = log,
+                    text = DebugReportFormatter.formatText(log),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -446,7 +336,7 @@ private fun DebugInfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun ApiLogItem(log: ApiLogEntry, onCopy: () -> Unit) {
+private fun ApiLogItem(log: ApiDebugEntry, onCopy: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
@@ -535,66 +425,11 @@ private fun ApiLogItem(log: ApiLogEntry, onCopy: () -> Unit) {
             // 展开时显示详细信息
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
-
-                // 错误信息
-                if (log.error != null) {
-                    Text(
-                        text = "错误: ${log.error}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                // 请求头
-                if (log.requestHeaders.isNotEmpty()) {
-                    Text(
-                        text = "请求头:",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    log.requestHeaders.forEach { (key, value) ->
-                        Text(
-                            text = "  $key: $value",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                // 响应头
-                if (log.responseHeaders.isNotEmpty()) {
-                    Text(
-                        text = "响应头:",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    log.responseHeaders.forEach { (key, value) ->
-                        Text(
-                            text = "  $key: $value",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                // 响应体
-                if (log.responseBody.isNotBlank()) {
-                    Text(
-                        text = "响应体:",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = log.responseBody,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
+                Text(
+                    text = DebugReportFormatter.formatEntry(log),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace
+                )
             }
         }
     }
@@ -609,13 +444,16 @@ private fun formatTimestamp(timestamp: Long): String {
 // 工具函数
 // ═══════════════════════════════════════════════════════════
 
-private fun copyDebugInfoToClipboard(context: Context, apiLogs: List<ApiLogEntry>, sessionInfo: SessionDebugInfo?) {
-    val content = buildString {
+private fun copyDebugInfoToClipboard(
+    context: Context,
+    apiLogs: List<ApiDebugEntry>,
+    sessionInfo: SessionDebugInfo?
+) {
+    val content = DebugReportFormatter.formatText(buildString {
         appendLine("=== 钱包哨兵调试信息 ===")
         appendLine("时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
         appendLine()
 
-        // 会话信息
         if (sessionInfo != null) {
             appendLine("=== 会话状态 ===")
             appendLine("平台: ${sessionInfo.platformName} (${sessionInfo.platformId})")
@@ -628,63 +466,17 @@ private fun copyDebugInfoToClipboard(context: Context, apiLogs: List<ApiLogEntry
             appendLine("Session创建时间: ${sessionInfo.sessionCreatedAt ?: "未知"}")
             appendLine("Session过期时间: ${sessionInfo.sessionExpiresAt ?: "未知"}")
             appendLine()
-
-            if (sessionInfo.cookies.isNotEmpty()) {
-                appendLine("=== Cookies ===")
-                sessionInfo.cookies.forEach { (key, value) ->
-                    appendLine("$key = $value")
-                }
-                appendLine()
-            }
-
-            if (sessionInfo.localStorage.isNotEmpty()) {
-                appendLine("=== LocalStorage ===")
-                sessionInfo.localStorage.forEach { (key, value) ->
-                    appendLine("$key = $value")
-                }
-                appendLine()
-            }
         }
 
-        // API 请求日志
         appendLine("=== API 请求日志 (${apiLogs.size}) ===")
-        apiLogs.forEachIndexed { index, log ->
-            appendLine("--- 请求 #${index + 1} ---")
-            appendLine("时间: ${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(log.timestamp))}")
-            appendLine("方法: ${log.method}")
-            appendLine("URL: ${log.url}")
-            appendLine("状态码: ${log.statusCode}")
-            if (log.error != null) {
-                appendLine("错误: ${log.error}")
-            }
-            if (log.requestHeaders.isNotEmpty()) {
-                appendLine("请求头:")
-                log.requestHeaders.forEach { (key, value) ->
-                    appendLine("  $key: $value")
-                }
-            }
-            if (log.responseHeaders.isNotEmpty()) {
-                appendLine("响应头:")
-                log.responseHeaders.forEach { (key, value) ->
-                    appendLine("  $key: $value")
-                }
-            }
-            if (log.responseBody.isNotBlank()) {
-                appendLine("响应体:")
-                appendLine(log.responseBody)
-            }
-            appendLine()
-        }
+        appendLine(DebugReportFormatter.formatEntries(apiLogs))
 
-        // 调试日志
         val debugLogs = DebugLogger.getLogs()
         if (debugLogs.isNotEmpty()) {
             appendLine("=== 调试日志 (${debugLogs.size}) ===")
-            debugLogs.forEach { log ->
-                appendLine(log)
-            }
+            appendLine(DebugReportFormatter.formatText(debugLogs.joinToString("\n")))
         }
-    }
+    })
 
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("调试信息", content)
@@ -692,119 +484,44 @@ private fun copyDebugInfoToClipboard(context: Context, apiLogs: List<ApiLogEntry
     Toast.makeText(context, "已复制全部调试信息到剪贴板", Toast.LENGTH_SHORT).show()
 }
 
-private fun copySingleLogToClipboard(context: Context, log: ApiLogEntry) {
-    val content = buildString {
-        appendLine("方法: ${log.method}")
-        appendLine("URL: ${log.url}")
-        appendLine("状态码: ${log.statusCode}")
-        if (log.error != null) {
-            appendLine("错误: ${log.error}")
-        }
-        if (log.requestHeaders.isNotEmpty()) {
-            appendLine("请求头:")
-            log.requestHeaders.forEach { (key, value) ->
-                appendLine("  $key: $value")
-            }
-        }
-        if (log.responseHeaders.isNotEmpty()) {
-            appendLine("响应头:")
-            log.responseHeaders.forEach { (key, value) ->
-                appendLine("  $key: $value")
-            }
-        }
-        if (log.responseBody.isNotBlank()) {
-            appendLine("响应体:")
-            appendLine(log.responseBody)
-        }
-    }
-
+private fun copySingleLogToClipboard(context: Context, log: ApiDebugEntry) {
+    val content = DebugReportFormatter.formatEntry(log)
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("API 日志", content)
     clipboard.setPrimaryClip(clip)
     Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
 }
 
-private fun saveToFile(context: Context, apiLogs: List<ApiLogEntry>, sessionInfo: SessionDebugInfo? = null) {
+private fun saveToFile(
+    context: Context,
+    apiLogs: List<ApiDebugEntry>,
+    sessionInfo: SessionDebugInfo? = null
+) {
     try {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val fileName = "console_debug_$timestamp.json"
-
-        // 获取调试日志
         val debugLogs = DebugLogger.getLogs()
-
-        val content = buildString {
-            appendLine("{")
-            appendLine("  \"timestamp\": \"${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\",")
-
-            // 会话信息
-            if (sessionInfo != null) {
-                appendLine("  \"session\": {")
-                appendLine("    \"platform_id\": \"${sessionInfo.platformId}\",")
-                appendLine("    \"platform_name\": \"${sessionInfo.platformName}\",")
-                appendLine("    \"is_logged_in\": ${sessionInfo.isLoggedIn},")
-                appendLine("    \"is_session_valid\": ${sessionInfo.isSessionValid},")
-                appendLine("    \"cookie_count\": ${sessionInfo.cookieCount},")
-                appendLine("    \"local_storage_count\": ${sessionInfo.localStorageCount},")
-                appendLine("    \"email\": ${org.json.JSONObject.quote(sessionInfo.email ?: "")},")
-                appendLine("    \"current_url\": ${org.json.JSONObject.quote(sessionInfo.currentUrl ?: "")},")
-                appendLine("    \"session_created_at\": ${org.json.JSONObject.quote(sessionInfo.sessionCreatedAt ?: "")},")
-                appendLine("    \"session_expires_at\": ${org.json.JSONObject.quote(sessionInfo.sessionExpiresAt ?: "")},")
-                appendLine("    \"cookies\": {")
-                sessionInfo.cookies.entries.forEachIndexed { index, (key, value) ->
-                    append("      ${org.json.JSONObject.quote(key)}: ${org.json.JSONObject.quote(value)}")
-                    if (index < sessionInfo.cookies.size - 1) appendLine(",") else appendLine()
+        val content = DebugReportFormatter.formatText(
+            org.json.JSONObject().apply {
+                put("timestamp", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+                sessionInfo?.let { info ->
+                    put("session", org.json.JSONObject().apply {
+                        put("platform_id", info.platformId)
+                        put("platform_name", info.platformName)
+                        put("is_logged_in", info.isLoggedIn)
+                        put("is_session_valid", info.isSessionValid)
+                        put("cookie_count", info.cookieCount)
+                        put("local_storage_count", info.localStorageCount)
+                        put("email", info.email.orEmpty())
+                        put("current_url", info.currentUrl.orEmpty())
+                        put("session_created_at", info.sessionCreatedAt.orEmpty())
+                        put("session_expires_at", info.sessionExpiresAt.orEmpty())
+                    })
                 }
-                appendLine("    },")
-                appendLine("    \"local_storage\": {")
-                sessionInfo.localStorage.entries.forEachIndexed { index, (key, value) ->
-                    append("      ${org.json.JSONObject.quote(key)}: ${org.json.JSONObject.quote(value)}")
-                    if (index < sessionInfo.localStorage.size - 1) appendLine(",") else appendLine()
-                }
-                appendLine("    }")
-                appendLine("  },")
-            }
-
-            // API 请求日志
-            appendLine("  \"api_logs\": [")
-            apiLogs.forEachIndexed { index, log ->
-                appendLine("    {")
-                appendLine("      \"timestamp\": \"${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(log.timestamp))}\",")
-                appendLine("      \"url\": ${org.json.JSONObject.quote(log.url)},")
-                appendLine("      \"method\": ${org.json.JSONObject.quote(log.method)},")
-                appendLine("      \"statusCode\": ${log.statusCode},")
-                if (log.error != null) {
-                    appendLine("      \"error\": ${org.json.JSONObject.quote(log.error)},")
-                }
-                append("      \"requestHeaders\": {")
-                log.requestHeaders.entries.forEachIndexed { i, (key, value) ->
-                    append("${org.json.JSONObject.quote(key)}: ${org.json.JSONObject.quote(value)}")
-                    if (i < log.requestHeaders.size - 1) append(", ")
-                }
-                appendLine("},")
-                append("      \"responseHeaders\": {")
-                log.responseHeaders.entries.forEachIndexed { i, (key, value) ->
-                    append("${org.json.JSONObject.quote(key)}: ${org.json.JSONObject.quote(value)}")
-                    if (i < log.responseHeaders.size - 1) append(", ")
-                }
-                appendLine("},")
-                append("      \"responseBody\": ")
-                append(org.json.JSONObject.quote(log.responseBody))
-                appendLine()
-                append(if (index < apiLogs.size - 1) "    }," else "    }")
-                appendLine()
-            }
-            appendLine("  ],")
-
-            // 调试日志
-            appendLine("  \"debug_logs\": [")
-            debugLogs.forEachIndexed { index, log ->
-                append("    ")
-                append(org.json.JSONObject.quote(log))
-                if (index < debugLogs.size - 1) appendLine(",") else appendLine()
-            }
-            appendLine("  ]")
-            appendLine("}")
-        }
+                put("api_logs", DebugReportFormatter.formatEntries(apiLogs))
+                put("debug_logs", DebugReportFormatter.formatText(debugLogs.joinToString("\n")))
+            }.toString(2)
+        )
 
         val contentValues = android.content.ContentValues().apply {
             put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -827,6 +544,7 @@ private fun saveToFile(context: Context, apiLogs: List<ApiLogEntry>, sessionInfo
             Toast.makeText(context, "已保存到应用内部: ${file.absolutePath}", Toast.LENGTH_LONG).show()
         }
     } catch (e: Exception) {
-        Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        val message = DebugReportFormatter.formatText(e.message.orEmpty())
+        Toast.makeText(context, "保存失败: $message", Toast.LENGTH_SHORT).show()
     }
 }

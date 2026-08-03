@@ -244,8 +244,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                             onLongPress = { deleteTarget = Pair(account.id, account.label) },
                             onEdit = { editTarget = account },
                             onDelete = { deleteTarget = Pair(account.id, account.label) },
-                            onRefresh = { viewModel.refreshSingleAccount(account.id) },
-                            accountUsageScript = account.usageScript
+                            onRefresh = { viewModel.refreshSingleAccount(account.id) }
                         )
                     }
 

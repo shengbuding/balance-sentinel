@@ -43,8 +43,7 @@ fun AccountBalanceCard(
     onLongPress: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onRefresh: () -> Unit = {},
-    accountUsageScript: String? = null
+    onRefresh: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -55,8 +54,7 @@ fun AccountBalanceCard(
         DebugDialog(
             accountId = accountId,
             accountLabel = accountLabel,
-            onDismiss = { showDebugDialog = false },
-            accountUsageScript = accountUsageScript
+            onDismiss = { showDebugDialog = false }
         )
     }
 
