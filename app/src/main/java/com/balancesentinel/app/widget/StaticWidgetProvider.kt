@@ -58,10 +58,13 @@ class WidgetRefreshExecution(
     private val serviceStarter: ServiceStarter
 ) {
     suspend fun execute(context: Context, decision: WidgetRefreshDecision.Refresh) {
-        WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
-        if (decision.watchdog) {
-            RefreshScheduler.recordRestart(context)
-            serviceStarter.start(context)
+        try {
+            WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
+        } finally {
+            if (decision.watchdog) {
+                RefreshScheduler.recordRestart(context)
+                serviceStarter.start(context)
+            }
         }
     }
 }
