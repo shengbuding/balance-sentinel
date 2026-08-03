@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -82,6 +83,42 @@ class ConsoleScreenSecurityRegressionTest {
         )
         assertFalse(viewModel.uiState.value.isLoggedIn)
         assertTrue(navigationCompleted)
+    }
+
+    // Mutation caught: constructing or exposing a session projection when capture policy is false.
+    @Test
+    fun `capture disabled creates no projection and leaves authentication state intact`() {
+        val session = ConsoleSession(
+            cookies = mapOf("session" to "raw-cookie-secret"),
+            localStorage = mapOf("access_token" to "raw-storage-secret"),
+            token = "raw-auth-token",
+            email = "person@example.com",
+            loginTime = 10,
+            lastActiveTime = 20
+        )
+        var factoryCalls = 0
+
+        val projection = consoleDebugProjection(captureEnabled = false) {
+            factoryCalls++
+            SessionDebugInfo(
+                platformId = PLATFORM.id,
+                platformName = PLATFORM.name,
+                isLoggedIn = true,
+                isSessionValid = true,
+                cookieCount = session.cookies.size,
+                localStorageCount = session.localStorage.size,
+                email = session.email,
+                currentUrl = PLATFORM.dashboardUrl,
+                sessionCreatedAt = session.loginTime.toString(),
+                sessionExpiresAt = session.lastActiveTime.toString()
+            )
+        }
+
+        assertNull(projection)
+        assertEquals(0, factoryCalls)
+        assertEquals("raw-cookie-secret", session.cookies["session"])
+        assertEquals("raw-storage-secret", session.localStorage["access_token"])
+        assertEquals("raw-auth-token", session.token)
     }
 
     private fun validSession(): ConsoleSession {

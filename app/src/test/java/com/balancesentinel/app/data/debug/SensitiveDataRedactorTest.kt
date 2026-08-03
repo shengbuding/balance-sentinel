@@ -8,6 +8,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SensitiveDataRedactorTest {
+    // Mutation caught: restoring the whitespace-stopping free-text value matcher.
+    @Test
+    fun `unquoted credential values retain no whitespace-bearing suffix`() {
+        val redacted = SensitiveDataRedactor.redactText(
+            "password=two word secret, mode=active\naccess_token=three word token; state=ready"
+        )
+
+        assertEquals(
+            "password=[REDACTED], mode=active\naccess_token=[REDACTED]; state=ready",
+            redacted
+        )
+    }
+
+    // Mutation caught: handling only unquoted values and leaving quoted suffixes behind.
+    @Test
+    fun `quoted credential values retain no whitespace-bearing suffix`() {
+        val redacted = SensitiveDataRedactor.redactText(
+            "password=\"quoted word secret\", mode=active\npassword='single quoted secret'; state=ready"
+        )
+
+        assertEquals(
+            "password=\"[REDACTED]\", mode=active\npassword='[REDACTED]'; state=ready",
+            redacted
+        )
+    }
+
     // Mutation caught: preserving any sensitive header value, even when the name uses mixed case.
     @Test
     fun `sensitive header values are fully redacted`() {

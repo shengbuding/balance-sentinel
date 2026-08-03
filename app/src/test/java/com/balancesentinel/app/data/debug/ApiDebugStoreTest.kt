@@ -97,6 +97,22 @@ class ApiDebugStoreTest {
         assertEquals(sha256(script), stored.scriptSha256)
     }
 
+    // Mutation caught: sanitizing only the first whitespace-delimited credential token on insertion.
+    @Test
+    fun `direct callers cannot retain whitespace-bearing credential suffixes`() {
+        ApiDebugStore.addEntry(
+            entry(
+                accountId = "acct",
+                requestBody = "password=two word secret",
+                responseBody = "password=\"quoted word secret\""
+            )
+        )
+
+        val stored = ApiDebugStore.getEntries("acct").single()
+        assertEquals("password=[REDACTED]", stored.requestBody)
+        assertEquals("password=\"[REDACTED]\"", stored.responseBody)
+    }
+
     // Mutation caught: retaining a single sanitized entry that exceeds the global budget.
     @Test
     fun `oversized sanitized entry evicts itself`() {
