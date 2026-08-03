@@ -25,12 +25,16 @@ import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.service.BalanceRefreshService
+import com.balancesentinel.app.service.ForegroundServiceStarter
+import com.balancesentinel.app.service.ServiceStarter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
-open class StaticWidgetProvider : AppWidgetProvider() {
+open class StaticWidgetProvider(
+    private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
+) : AppWidgetProvider() {
 
     override fun onUpdate(
         context: Context,

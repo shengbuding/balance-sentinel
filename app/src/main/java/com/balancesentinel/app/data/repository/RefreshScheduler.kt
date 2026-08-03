@@ -9,6 +9,24 @@ import android.provider.Settings
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 
+const val SCHEDULE_GRACE_MS = 30_000L
+const val HEARTBEAT_GRACE_MS = 120_000L
+const val STARTUP_GRACE_MS = 10_000L
+const val REFRESH_BASE_DEADLINE_MS = 30_000L
+const val REFRESH_ACCOUNT_DEADLINE_MS = 20_000L
+
+data class ServiceHealthState(
+    val expectedNextAt: Long,
+    val lastHeartbeat: Long,
+    val startRequestedAt: Long,
+    val refreshDeadlineAt: Long
+)
+
+object ServiceHealthEvaluator {
+    fun shouldRestart(state: ServiceHealthState, now: Long): Boolean =
+        state.lastHeartbeat <= 0 || now > state.lastHeartbeat + HEARTBEAT_GRACE_MS
+}
+
 /**
  * 调度状态快照。
  */
@@ -62,6 +80,7 @@ object RefreshScheduler {
     private const val KEY_TOTAL_ALARMS_CANCELLED = "total_alarms_cancelled"
     private const val KEY_TOTAL_ALARMS_DROPPED = "total_alarms_dropped"
     private const val KEY_SERVICE_START_REQUESTED_AT = "service_start_requested_at"
+    private const val KEY_REFRESH_DEADLINE_AT = "refresh_deadline_at"
 
     // ── 写入调度状态 ──
 
@@ -115,8 +134,21 @@ object RefreshScheduler {
     }
 
     /** 在 startForegroundService 之前调用，标记启动请求时间（用于启动宽限期判断） */
-    fun markStartRequested(context: Context) {
-        getPrefs(context).edit().putLong(KEY_SERVICE_START_REQUESTED_AT, System.currentTimeMillis()).apply()
+    fun markStartRequested(context: Context, requestedAt: Long = System.currentTimeMillis()) {
+        getPrefs(context).edit().putLong(KEY_SERVICE_START_REQUESTED_AT, requestedAt).apply()
+    }
+
+    fun markRefreshStarted(
+        context: Context,
+        accountCount: Int,
+        now: Long = System.currentTimeMillis()
+    ): Long {
+        getPrefs(context).edit().putLong(KEY_REFRESH_DEADLINE_AT, 0L).apply()
+        return 0L
+    }
+
+    fun clearRefreshDeadline(context: Context) {
+        getPrefs(context).edit().putLong(KEY_REFRESH_DEADLINE_AT, 0L).apply()
     }
 
     /** 将闹钟计数器全部归零（含 expectedNext 和 alarmFired 时间戳）。 */
@@ -148,6 +180,19 @@ object RefreshScheduler {
             totalDropped = p.getInt(KEY_TOTAL_ALARMS_DROPPED, 0)
         )
     }
+
+    fun getServiceHealthState(context: Context): ServiceHealthState {
+        val p = getPrefs(context)
+        return ServiceHealthState(
+            expectedNextAt = p.getLong(KEY_EXPECTED_NEXT, 0),
+            lastHeartbeat = p.getLong(KEY_LAST_HEARTBEAT, 0),
+            startRequestedAt = p.getLong(KEY_SERVICE_START_REQUESTED_AT, 0),
+            refreshDeadlineAt = p.getLong(KEY_REFRESH_DEADLINE_AT, 0)
+        )
+    }
+
+    fun shouldRestart(context: Context, now: Long = System.currentTimeMillis()): Boolean =
+        ServiceHealthEvaluator.shouldRestart(getServiceHealthState(context), now)
 
     /** 获取首页状态摘要 */
     fun getStatusSummary(context: Context): StatusSummary {

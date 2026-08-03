@@ -52,6 +52,7 @@ class BalanceRefreshService : Service() {
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
     private var isSelfDestructing = false
     private lateinit var notificationHelper: NotificationHelper
+    internal var serviceStarter: ServiceStarter = ForegroundServiceStarter()
 
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {

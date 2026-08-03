@@ -4,6 +4,16 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.widget.AccountBalance
 
+interface RefreshDeadlineLifecycle {
+    fun markStarted()
+    fun clear()
+
+    data object None : RefreshDeadlineLifecycle {
+        override fun markStarted() = Unit
+        override fun clear() = Unit
+    }
+}
+
 /**
  * Production runner used by [BalanceRefreshService] to route refreshes
  * through the shared [RefreshGateway] and read committed Widget storage
@@ -15,6 +25,7 @@ import com.balancesentinel.app.widget.AccountBalance
  */
 class BalanceRefreshRunner(
     private val gateway: RefreshGateway,
+    private val refreshDeadline: RefreshDeadlineLifecycle = RefreshDeadlineLifecycle.None,
     private val committedBalanceReader: () -> List<AccountBalance>
 ) {
     /**

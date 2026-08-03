@@ -12,6 +12,8 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.service.BalanceRefreshService
+import com.balancesentinel.app.service.ForegroundServiceStarter
+import com.balancesentinel.app.service.ServiceStarter
 
 /**
  * Dead-man's-switch keepalive 接收器 — OnePlus/ColorOS 冻结对抗。
@@ -27,7 +29,9 @@ import com.balancesentinel.app.service.BalanceRefreshService
  * - Keepalive（本 Receiver）：只检测 Service 存活，间隔 = 固定 2 分钟
  * - 两者互补：即使用户配 30 分钟刷新间隔，Service 冻结后最多 2 分钟就能恢复
  */
-class KeepAliveReceiver : BroadcastReceiver() {
+class KeepAliveReceiver(
+    private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
+) : BroadcastReceiver() {
 
     /** 调度下一次 keepalive 闹钟（由 Service 在每次刷新后调用） */
     companion object {

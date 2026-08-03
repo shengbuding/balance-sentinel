@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.service.BalanceRefreshService
+import com.balancesentinel.app.service.ForegroundServiceStarter
+import com.balancesentinel.app.service.ServiceStarter
 
 /**
  * 开机自启 — 系统启动完成后，以非前台方式启动 Service。
@@ -15,7 +17,9 @@ import com.balancesentinel.app.service.BalanceRefreshService
  *
  * 同时设定初始 keepalive 闹钟，确保即使 Service 启动后立即被冻结也能恢复。
  */
-class BootReceiver : BroadcastReceiver() {
+class BootReceiver(
+    private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
+) : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
