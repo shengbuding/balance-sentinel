@@ -29,7 +29,7 @@ class DebugReportFormatterTest {
 
         val formatted = DebugReportFormatter.formatEntry(entry)
 
-        secrets.forEach { assertFalse(formatted.contains(it)) }
+        secrets.forEach { assertFalse("formatter leaked $it in: $formatted", formatted.contains(it)) }
         assertTrue(formatted.contains("[REDACTED]"))
     }
 

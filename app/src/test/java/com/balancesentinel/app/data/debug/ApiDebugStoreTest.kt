@@ -48,10 +48,10 @@ class ApiDebugStoreTest {
     // Mutation caught: treating global retention as FIFO rather than access-order LRU.
     @Test
     fun `reading an account refreshes its entries in global access order`() {
-        ApiDebugStore.addEntry(entry(accountId = "a", responseBody = "a".repeat(699_000)))
-        ApiDebugStore.addEntry(entry(accountId = "b", responseBody = "b".repeat(699_000)))
+        ApiDebugStore.addEntry(largeEntry("a", "a"))
+        ApiDebugStore.addEntry(largeEntry("b", "b"))
         ApiDebugStore.getEntries("a")
-        ApiDebugStore.addEntry(entry(accountId = "c", responseBody = "c".repeat(699_000)))
+        ApiDebugStore.addEntry(largeEntry("c", "c"))
 
         assertTrue(ApiDebugStore.getAccountIds().contains("a"))
         assertFalse(ApiDebugStore.getAccountIds().contains("b"))
@@ -67,7 +67,7 @@ class ApiDebugStoreTest {
         assertEquals(50, retained.size)
         assertEquals("1", retained.first().responseBody)
         assertEquals("50", retained.last().responseBody)
-        assertEquals(1_391L, ApiDebugStore.currentBytes)
+        assertEquals(1_441L, ApiDebugStore.currentBytes)
     }
 
     // Mutation caught: trusting direct callers to sanitize before insertion.
@@ -100,7 +100,12 @@ class ApiDebugStoreTest {
     // Mutation caught: retaining a single sanitized entry that exceeds the global budget.
     @Test
     fun `oversized sanitized entry evicts itself`() {
-        ApiDebugStore.addEntry(entry(accountId = "oversized", responseBody = "x".repeat(2_200_000)))
+        ApiDebugStore.addEntry(
+            entry(
+                accountId = "oversized",
+                requestHeaders = (0 until 40).associate { "X-Debug-$it" to "x".repeat(65_536) }
+            )
+        )
 
         assertTrue(ApiDebugStore.getEntries("oversized").isEmpty())
         assertEquals(0L, ApiDebugStore.currentBytes)
@@ -129,6 +134,15 @@ class ApiDebugStoreTest {
         responseHeaders, responseBody, 1L, 2L, error, accountLabel,
         providerType, baseUrl, endpoint, isCustomScript, scriptPreview,
         exceptionType, exceptionStack, scriptSha256 = scriptSha256
+    )
+
+    private fun largeEntry(accountId: String, value: String): ApiDebugEntry = entry(
+        accountId = accountId,
+        requestBody = value.repeat(65_536),
+        responseBody = value.repeat(65_536),
+        error = value.repeat(65_536),
+        exceptionStack = value.repeat(65_536),
+        requestHeaders = (0 until 8).associate { "X-Debug-$it" to value.repeat(65_536) }
     )
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
