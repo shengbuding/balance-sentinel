@@ -24,8 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.console.DebugLogger
 import com.balancesentinel.app.data.debug.ApiDebugEntry
+import com.balancesentinel.app.data.debug.DebugReportLabels
 import com.balancesentinel.app.data.debug.DebugReportFormatter
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.ui.debugReportLabels
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,6 +65,7 @@ fun ApiDebugPanel(
     onLogout: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val reportLabels = remember(context) { context.debugReportLabels() }
     var selectedTab by remember { mutableStateOf(0) }
 
     Card(
@@ -106,14 +109,16 @@ fun ApiDebugPanel(
                 Row {
                     // 复制全部调试信息
                     IconButton(
-                        onClick = { copyDebugInfoToClipboard(context, apiLogs, sessionInfo) },
+                        onClick = {
+                            copyDebugInfoToClipboard(context, apiLogs, sessionInfo, reportLabels)
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(CustomIcons.ContentCopy, "复制全部", modifier = Modifier.size(18.dp))
                     }
                     // 保存文件
                     IconButton(
-                        onClick = { saveToFile(context, apiLogs, sessionInfo) },
+                        onClick = { saveToFile(context, apiLogs, sessionInfo, reportLabels) },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(CustomIcons.SaveAlt, "保存", modifier = Modifier.size(18.dp))
@@ -167,7 +172,7 @@ fun ApiDebugPanel(
 
             // 内容区域
             when (selectedTab) {
-                0 -> ApiLogsTab(apiLogs)
+                0 -> ApiLogsTab(apiLogs, reportLabels)
                 1 -> SessionInfoTab(sessionInfo, onLogout)
                 2 -> DebugLogsTab()
             }
@@ -176,7 +181,10 @@ fun ApiDebugPanel(
 }
 
 @Composable
-private fun ApiLogsTab(apiLogs: List<ApiDebugEntry>) {
+private fun ApiLogsTab(
+    apiLogs: List<ApiDebugEntry>,
+    reportLabels: DebugReportLabels
+) {
     val context = LocalContext.current
 
     Column(
@@ -194,7 +202,8 @@ private fun ApiLogsTab(apiLogs: List<ApiDebugEntry>) {
             apiLogs.forEach { log ->
                 ApiLogItem(
                     log = log,
-                    onCopy = { copySingleLogToClipboard(context, log) }
+                    reportLabels = reportLabels,
+                    onCopy = { copySingleLogToClipboard(context, log, reportLabels) }
                 )
                 Spacer(modifier = Modifier.height(4.dp))
             }
@@ -336,7 +345,11 @@ private fun DebugInfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun ApiLogItem(log: ApiDebugEntry, onCopy: () -> Unit) {
+private fun ApiLogItem(
+    log: ApiDebugEntry,
+    reportLabels: DebugReportLabels,
+    onCopy: () -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
@@ -426,7 +439,7 @@ private fun ApiLogItem(log: ApiDebugEntry, onCopy: () -> Unit) {
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = DebugReportFormatter.formatEntry(log),
+                    text = DebugReportFormatter.formatEntry(log, reportLabels),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
@@ -447,7 +460,8 @@ private fun formatTimestamp(timestamp: Long): String {
 private fun copyDebugInfoToClipboard(
     context: Context,
     apiLogs: List<ApiDebugEntry>,
-    sessionInfo: SessionDebugInfo?
+    sessionInfo: SessionDebugInfo?,
+    reportLabels: DebugReportLabels
 ) {
     val content = DebugReportFormatter.formatText(buildString {
         appendLine("=== 钱包哨兵调试信息 ===")
@@ -469,7 +483,7 @@ private fun copyDebugInfoToClipboard(
         }
 
         appendLine("=== API 请求日志 (${apiLogs.size}) ===")
-        appendLine(DebugReportFormatter.formatEntries(apiLogs))
+        appendLine(DebugReportFormatter.formatEntries(apiLogs, reportLabels))
 
         val debugLogs = DebugLogger.getLogs()
         if (debugLogs.isNotEmpty()) {
@@ -484,8 +498,12 @@ private fun copyDebugInfoToClipboard(
     Toast.makeText(context, "已复制全部调试信息到剪贴板", Toast.LENGTH_SHORT).show()
 }
 
-private fun copySingleLogToClipboard(context: Context, log: ApiDebugEntry) {
-    val content = DebugReportFormatter.formatEntry(log)
+private fun copySingleLogToClipboard(
+    context: Context,
+    log: ApiDebugEntry,
+    reportLabels: DebugReportLabels
+) {
+    val content = DebugReportFormatter.formatEntry(log, reportLabels)
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("API 日志", content)
     clipboard.setPrimaryClip(clip)
@@ -495,7 +513,8 @@ private fun copySingleLogToClipboard(context: Context, log: ApiDebugEntry) {
 private fun saveToFile(
     context: Context,
     apiLogs: List<ApiDebugEntry>,
-    sessionInfo: SessionDebugInfo? = null
+    sessionInfo: SessionDebugInfo?,
+    reportLabels: DebugReportLabels
 ) {
     try {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -518,7 +537,7 @@ private fun saveToFile(
                         put("session_expires_at", info.sessionExpiresAt.orEmpty())
                     })
                 }
-                put("api_logs", DebugReportFormatter.formatEntries(apiLogs))
+                put("api_logs", DebugReportFormatter.formatEntries(apiLogs, reportLabels))
                 put("debug_logs", DebugReportFormatter.formatText(debugLogs.joinToString("\n")))
             }.toString(2)
         )

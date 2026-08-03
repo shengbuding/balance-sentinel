@@ -157,7 +157,7 @@ class DebugReportFormatterTest {
         val formatted = DebugReportFormatter.formatEntry(entry, labels)
 
         val expected = """
-            GET https://example.com
+            GET https://example.com/
             Estado: 201
             Marca temporal: 11
             Duracion: 12 ms

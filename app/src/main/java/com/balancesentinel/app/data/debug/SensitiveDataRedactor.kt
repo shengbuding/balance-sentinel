@@ -13,16 +13,20 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object SensitiveDataRedactor {
     const val REDACTED = "[REDACTED]"
     private const val LEGACY_SK_REDACTED = "sk-***"
+    private const val SENSITIVE_KEY_PATTERN =
+        "(?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|" +
+            "password|passwd|access[-_]?token|refresh[-_]?token|token|authorization|" +
+            "proxy[-_]?authorization)"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val sensitiveKey = Regex(
         """(?i)^(?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|password|passwd|access[-_]?token|refresh[-_]?token|token|authorization|proxy[-_]?authorization|cookie|set[-_]?cookie)$"""
     )
     private val keyValue = Regex(
-        """(?i)(\b(?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|password|passwd|access[-_]?token|refresh[-_]?token|token|authorization|proxy[-_]?authorization)\b\s*[:=]\s*)([^\s&,;\r\n]+)"""
+        """(?i)((?:["']?)\b$SENSITIVE_KEY_PATTERN\b(?:["']?)\s*[:=]\s*)(?!["'])([^&,;\r\n}\]]+)"""
     )
     private val quotedKeyValue = Regex(
-        """(?i)([\"'](?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|password|passwd|access[-_]?token|refresh[-_]?token|token|authorization)[\"']\s*:\s*[\"'])([^\"']*)([\"'])"""
+        """(?i)((?:["']?)\b$SENSITIVE_KEY_PATTERN\b(?:["']?)\s*[:=]\s*)(["'])(.*?)(\2)"""
     )
     private val usageScript = Regex("""(?im)(\busageScript\s*=\s*)([^\r\n,]+)""")
     private val cookieLine = Regex("""(?im)(\b(?:cookie|set-cookie)\s*[:=]\s*)([^\r\n]+)""")
@@ -55,18 +59,28 @@ object SensitiveDataRedactor {
     fun redactForClipboard(text: String): String = redactText(text)
 
     internal fun redactCaptured(text: String): CapturedText {
-        val structured = redactJson(text)
-        val sanitized = redactUrls(structured)
-            .let { usageScript.replace(it, "$1$REDACTED") }
-            .let { cookieLine.replace(it, "$1$REDACTED") }
-            .let { bearer.replace(it, "Bearer $REDACTED") }
-            .let { quotedKeyValue.replace(it, "$1$REDACTED$3") }
-            .let { keyValue.replace(it, "$1$REDACTED") }
-            .let { skKey.replace(it, LEGACY_SK_REDACTED) }
+        val sanitized = sanitize(text)
         return DebugCapture.captureUtf8(
             ByteArrayInputStream(sanitized.toByteArray(Charsets.UTF_8)),
             MAX_CAPTURE_BYTES
         )
+    }
+
+    internal fun redactAggregate(text: String): String = sanitize(text)
+
+    private fun sanitize(text: String): String {
+        val structured = redactJson(text)
+        return redactUrls(structured)
+            .let { usageScript.replace(it, "$1$REDACTED") }
+            .let { cookieLine.replace(it, "$1$REDACTED") }
+            .let { bearer.replace(it, "Bearer $REDACTED") }
+            .let { value ->
+                quotedKeyValue.replace(value) { match ->
+                    match.groupValues[1] + match.groupValues[2] + REDACTED + match.groupValues[4]
+                }
+            }
+            .let { keyValue.replace(it, "$1$REDACTED") }
+            .let { skKey.replace(it, LEGACY_SK_REDACTED) }
     }
 
     internal fun isSensitiveHeader(name: String): Boolean {

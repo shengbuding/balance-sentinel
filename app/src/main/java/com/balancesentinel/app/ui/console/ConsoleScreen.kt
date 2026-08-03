@@ -594,25 +594,27 @@ private fun ConsoleDashboard(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        Icon(
-                                            CustomIcons.Analytics,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Text("调试面板")
+                            if (captureEnabled) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Icon(
+                                                CustomIcons.Analytics,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Text("调试面板")
+                                        }
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        showDebugPanel = !showDebugPanel
                                     }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showDebugPanel = !showDebugPanel
-                                }
-                            )
+                                )
+                            }
                             DropdownMenuItem(
                                 text = {
                                     Row(
@@ -714,7 +716,7 @@ private fun ConsoleDashboard(
                     )
                 }
 
-                if (showDebugPanel) {
+                if (captureEnabled && showDebugPanel) {
                     ApiDebugPanel(
                         apiLogs = apiLogs,
                         sessionInfo = sessionDebugInfo,
@@ -1029,11 +1031,10 @@ private fun redactConsoleUrl(url: String?): String? {
     return "${parsed.scheme}://${parsed.host}$port"
 }
 
-@Suppress("UNUSED_PARAMETER")
 internal fun <T> consoleDebugProjection(
     captureEnabled: Boolean,
     factory: () -> T
-): T? = factory()
+): T? = if (captureEnabled) factory() else null
 
 // ═══════════════════════════════════════════════════════════
 // API 拦截
@@ -1098,19 +1099,11 @@ internal fun interceptApiRequest(
             connection.errorStream
         }
 
-        // 读取完整响应（处理 gzip）
-        val responseBytes = try {
-            val encoding = connection.contentEncoding
-            if (encoding != null && encoding.contains("gzip", ignoreCase = true)) {
-                java.util.zip.GZIPInputStream(inputStream).readBytes()
-            } else {
-                inputStream?.readBytes() ?: ByteArray(0)
-            }
-        } catch (e: Exception) {
-            inputStream?.readBytes() ?: ByteArray(0)
-        }
-        val responseBody = String(responseBytes, Charsets.UTF_8)
-        val capturedResponse = DebugCapture.captureUtf8(responseBytes.inputStream())
+        val responseBytes = inputStream?.use { it.readBytes() } ?: ByteArray(0)
+        val capturedResponse = captureConsoleDiagnostic(
+            responseBytes,
+            connection.contentEncoding
+        )
 
         // 记录响应头
         val responseHeaderFields = connection.headerFields.entries
@@ -1154,7 +1147,10 @@ internal fun interceptApiRequest(
         }
 
         val contentType = connection.contentType ?: "application/json"
-        val encoding = connection.contentEncoding ?: "utf-8"
+        val encoding = contentType.substringAfter("charset=", "")
+            .substringBefore(';')
+            .trim()
+            .ifEmpty { "utf-8" }
 
         WebResourceResponse(
             contentType,
@@ -1162,7 +1158,7 @@ internal fun interceptApiRequest(
             statusCode,
             connection.responseMessage,
             transportResponseHeaders,
-            responseBody.byteInputStream()
+            responseBytes.inputStream()
         )
     } catch (e: Exception) {
         DebugLogger.log("[$tag] API request failed: ${e.javaClass.simpleName}")
@@ -1191,4 +1187,18 @@ internal fun interceptApiRequest(
 
         null
     }
+}
+
+private fun captureConsoleDiagnostic(
+    responseBytes: ByteArray,
+    contentEncoding: String?
+) = runCatching {
+    val input = if (contentEncoding?.contains("gzip", ignoreCase = true) == true) {
+        java.util.zip.GZIPInputStream(responseBytes.inputStream())
+    } else {
+        responseBytes.inputStream()
+    }
+    input.use { DebugCapture.captureUtf8(it) }
+}.getOrElse {
+    DebugCapture.captureUtf8(responseBytes.inputStream())
 }

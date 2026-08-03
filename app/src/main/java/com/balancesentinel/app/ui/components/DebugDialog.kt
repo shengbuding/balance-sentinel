@@ -20,8 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.debug.DebugReportLabels
 import com.balancesentinel.app.data.debug.DebugReportFormatter
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.ui.debugReportLabels
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -36,6 +38,7 @@ fun DebugDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val reportLabels = remember(context) { context.debugReportLabels() }
     var entries by remember { mutableStateOf(ApiDebugStore.getEntries(accountId)) }
 
     AlertDialog(
@@ -73,7 +76,11 @@ fun DebugDialog(
                     )
                 } else {
                     entries.forEach { entry ->
-                        DebugEntryCard(entry = entry, context = context)
+                        DebugEntryCard(
+                            entry = entry,
+                            context = context,
+                            reportLabels = reportLabels
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
@@ -90,7 +97,7 @@ fun DebugDialog(
                             appendLine("【调试记录】")
                             appendLine("记录数: ${entries.size}")
                             appendLine()
-                            appendLine(DebugReportFormatter.formatEntries(entries))
+                            appendLine(DebugReportFormatter.formatEntries(entries, reportLabels))
                         })
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("API Debug All", text)
@@ -137,7 +144,11 @@ fun DebugDialog(
  * 单个调试条目卡片
  */
 @Composable
-private fun DebugEntryCard(entry: ApiDebugEntry, context: Context) {
+private fun DebugEntryCard(
+    entry: ApiDebugEntry,
+    context: Context,
+    reportLabels: DebugReportLabels
+) {
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
 
     Card(
@@ -243,7 +254,7 @@ private fun DebugEntryCard(entry: ApiDebugEntry, context: Context) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = DebugReportFormatter.formatEntry(entry),
+                text = DebugReportFormatter.formatEntry(entry, reportLabels),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -254,7 +265,7 @@ private fun DebugEntryCard(entry: ApiDebugEntry, context: Context) {
             // 复制按钮
             Button(
                 onClick = {
-                    val text = DebugReportFormatter.formatEntry(entry)
+                    val text = DebugReportFormatter.formatEntry(entry, reportLabels)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText("API Debug", text)
                     clipboard.setPrimaryClip(clip)

@@ -25,54 +25,54 @@ data class DebugReportLabels(
 object DebugReportFormatter {
     const val TRUNCATED_MARKER = "[TRUNCATED]"
 
-    @Suppress("UNUSED_PARAMETER")
     fun formatEntry(
         entry: ApiDebugEntry,
         labels: DebugReportLabels = DebugReportLabels()
-    ): String = SensitiveDataRedactor.redactText(
+    ): String = SensitiveDataRedactor.redactAggregate(
         buildString {
             appendLine("${entry.method} ${entry.url}")
-            appendLine("Status: ${entry.statusCode}")
-            appendLine("Timestamp: ${entry.timestamp}")
-            appendLine("Duration: ${entry.duration} ms")
-            entry.accountLabel?.let { appendLine("Account: $it") }
-            entry.providerType?.let { appendLine("Provider: $it") }
-            entry.baseUrl?.let { appendLine("Base URL: $it") }
-            entry.endpoint?.let { appendLine("Endpoint: $it") }
-            if (entry.isCustomScript) appendLine("Custom script: yes")
-            appendLine("Request headers: ${entry.requestHeaders}")
+            appendLine("${labels.status}: ${entry.statusCode}")
+            appendLine("${labels.timestamp}: ${entry.timestamp}")
+            appendLine("${labels.duration}: ${entry.duration} ms")
+            entry.accountLabel?.let { appendLine("${labels.account}: $it") }
+            entry.providerType?.let { appendLine("${labels.provider}: $it") }
+            entry.baseUrl?.let { appendLine("${labels.baseUrl}: $it") }
+            entry.endpoint?.let { appendLine("${labels.endpoint}: $it") }
+            if (entry.isCustomScript) appendLine("${labels.customScript}: ${labels.yes}")
+            appendLine("${labels.requestHeaders}: ${entry.requestHeaders}")
             entry.requestBody?.let {
-                append("Request body: $it")
+                append("${labels.requestBody}: $it")
                 if (entry.requestBodyTruncated) append(" $TRUNCATED_MARKER")
                 appendLine()
             }
-            appendLine("Response headers: ${entry.responseHeaders}")
-            append("Response body: ${entry.responseBody}")
+            appendLine("${labels.responseHeaders}: ${entry.responseHeaders}")
+            append("${labels.responseBody}: ${entry.responseBody}")
             if (entry.responseBodyTruncated) append(" $TRUNCATED_MARKER")
             appendLine()
             entry.error?.let {
-                append("Error: $it")
+                append("${labels.error}: $it")
                 if (entry.errorTruncated) append(" $TRUNCATED_MARKER")
                 appendLine()
             }
-            entry.exceptionType?.let { appendLine("Exception type: $it") }
+            entry.exceptionType?.let { appendLine("${labels.exceptionType}: $it") }
             entry.exceptionStack?.let {
-                append("Stack: $it")
+                append("${labels.stack}: $it")
                 if (entry.exceptionStackTruncated) append(" $TRUNCATED_MARKER")
                 appendLine()
             }
-            entry.scriptCharacterCount?.let { appendLine("Script characters: $it") }
-            entry.scriptByteCount?.let { appendLine("Script bytes: $it") }
-            entry.scriptSha256?.let { appendLine("Script SHA-256: $it") }
+            entry.scriptCharacterCount?.let { appendLine("${labels.scriptCharacters}: $it") }
+            entry.scriptByteCount?.let { appendLine("${labels.scriptBytes}: $it") }
+            entry.scriptSha256?.let { appendLine("${labels.scriptSha256}: $it") }
         }
     )
 
-    @Suppress("UNUSED_PARAMETER")
     fun formatEntries(
         entries: Iterable<ApiDebugEntry>,
         labels: DebugReportLabels = DebugReportLabels()
     ): String =
-        SensitiveDataRedactor.redactText(entries.joinToString("\n") { formatEntry(it) })
+        SensitiveDataRedactor.redactAggregate(
+            entries.joinToString("\n") { formatEntry(it, labels) }
+        )
 
-    fun formatText(text: String): String = SensitiveDataRedactor.redactText(text)
+    fun formatText(text: String): String = SensitiveDataRedactor.redactAggregate(text)
 }
