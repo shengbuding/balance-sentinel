@@ -37,6 +37,14 @@ The final commands were run serially with no active Gradle client before or afte
 .\gradlew.bat koverXmlReportDebug koverHtmlReportDebug koverVerifyDebug --rerun-tasks
 ```
 
+Kover task names were bound to this checkout before the coverage gate with:
+
+```powershell
+.\gradlew.bat tasks --all
+```
+
+Discovery exited 0 in 2.84 seconds and identified `app:koverHtmlReportDebug`, `app:koverVerifyDebug`, and `app:koverXmlReportDebug`. The exact command, complete task output, filtered task list, and timing are preserved at `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/task-12-evidence/task-discovery/{command.txt,gradle.log,kover-debug-tasks.txt,metadata.txt}`.
+
 The required focused integration command also passed:
 
 ```powershell
@@ -87,7 +95,28 @@ The Console is a Compose destination, not an Android activity. The nonexistent C
 
 ## Device Test Status
 
-Instrumentation source contains 8 Kotlin classes and 39 `@Test` methods. The connected API 36 AVD discovered and executed 36 tests; all 36 passed. Three API-35-only `ConsoleWebViewSecurityTest` cases were omitted by `@SdkSuppress` as intended.
+The preserved device inventory and gate invocation were:
+
+```powershell
+adb devices -l
+.\gradlew.bat connectedDebugAndroidTest --rerun-tasks
+```
+
+`device-api36/adb-devices.txt` records one connected target, `emulator-5554`, with product/model `sdk_gphone64_x86_64`. `device-api36/device-properties.txt` records SDK 36, Android 16, x86_64, boot completed, and AVD name `medium_phone`; `adb-path.txt` records the exact Platform Tools binary. The gate command is preserved in `device-api36/command.txt`. The valid passing output is `device-api36-full-green/{gradle.log,results.xml,metadata.txt,connected-results.tar.gz,connected-report.zip}`: exit 0, 36/36 passed, and `BUILD SUCCESSFUL` in 5m 38s.
+
+Instrumentation source contains 8 Kotlin classes and 39 `@Test` methods. No instrumentation class ran on API 35.
+
+| Instrumentation class | Source tests | API 36 | API 35 |
+|---|---:|---|---|
+| `MainActivityTest` | 3 | 3 passed | 0 run; no API 35 device |
+| `BalanceRefreshServiceTest` | 4 | 4 passed | 0 run; no API 35 device |
+| `BackupRestoreScreenTest` | 2 | 2 passed | 0 run; no API 35 device |
+| `HomeScreenTest` | 9 | 9 passed | 0 run; no API 35 device |
+| `InsightsScreenTest` | 2 | 2 passed | 0 run; no API 35 device |
+| `OnboardingScreenTest` | 8 | 8 passed | 0 run; no API 35 device |
+| `SettingsScreenTest` | 8 | 8 passed | 0 run; no API 35 device |
+| `ConsoleWebViewSecurityTest` | 3 | 0 run; API-35-only via `@SdkSuppress` | 0 run; no API 35 device |
+| **Total** | **39** | **36 passed** | **0 run** |
 
 The valid device artifact is `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/task-12-evidence/device-api36-full-green/results.xml`. A failed intermediate run under `device-api36-focused-green` is retained only for diagnosis and is not counted as passing evidence.
 
@@ -95,16 +124,19 @@ Valid Insights boundary traces completed in 531 ms and 476 ms. The timeout was c
 
 ## API 35 Gaps
 
-An API 35 device was not available. The following target-API checks remain unexecuted:
+An API 35 device was not available, so all eight instrumentation classes have zero API 35 executions. Required scenarios map as follows:
 
-- Both backup preview/replace scenarios.
-- All three Console WebView exact-origin, navigation, and logout scenarios.
-- Boot restore.
-- Foreground-service start restrictions and OEM behavior.
-- Widget manual-refresh versus watchdog separation.
-- Watchdog restart after failure or cancellation.
-- Long refresh intervals.
-- `BalanceRefreshServiceTest` does not establish API-35 foreground-service restriction behavior.
+| Required device scenario | Instrumentation mapping | API 35 status | Non-device evidence only |
+|---|---|---|---|
+| Backup preview/no-write | `BackupRestoreScreenTest` | Not run; its API 36 case passed | `BackupImportPlannerTest` and `DataManagementViewModelTest` are JVM-only |
+| Destructive replace, complete credentials, and separate confirmations | `BackupRestoreScreenTest` | Not run; its API 36 case passed | `BackupImportPlannerTest` and `DataManagementViewModelTest` are JVM-only |
+| Console exact-origin WebView injection | `ConsoleWebViewSecurityTest` | Not run; API-35-only test was suppressed on API 36 | `ConsoleOriginPolicyTest` and Console security regression tests are JVM-only |
+| Console cross-origin navigation and logout cleanup | `ConsoleWebViewSecurityTest` | Not run; API-35-only tests were suppressed on API 36 | `ConsoleOriginPolicyTest` and `ConsoleSessionCleanerTest` are JVM-only |
+| Boot restore | No instrumentation class exists | Unexecuted | `BootReceiverTest` is JVM-only and is not device boot proof |
+| API-35 foreground-service start restrictions and OEM behavior | No qualifying instrumentation scenario exists; `BalanceRefreshServiceTest` is only a basic service smoke class | Unexecuted; its four API 36 tests do not prove API-35 restrictions | `ForegroundServiceStarterTest` and the JVM `BalanceRefreshServiceTest` are non-device evidence only |
+| Widget manual refresh versus watchdog separation | No instrumentation class exists | Unexecuted | `StaticWidgetSchedulingTest` and widget runner tests are JVM-only |
+| Watchdog restart after refresh failure or cancellation | No instrumentation class exists | Unexecuted | `StaticWidgetSchedulingTest` covers these branches only on the JVM |
+| Long refresh intervals | No instrumentation class exists | Unexecuted | `RefreshSchedulerTest` is JVM-only scheduler-state coverage, not elapsed device behavior |
 
 API 36 results and Robolectric tests are supplemental and are not presented as substitutes for these checks.
 

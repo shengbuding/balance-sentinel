@@ -19,8 +19,9 @@
 | Focused integration | refresh/API/repository/Console/receiver/service/widget suites | 593 tests, 0 failures/errors, 3 skipped |
 | Android lint | Debug and Release with `abortOnError=true` | 0 errors; warnings remain visible |
 | Packaging | fresh Debug and Release assembly | both APKs built and audited |
+| Kover discovery | `.\gradlew.bat tasks --all` | exit 0; Debug XML/HTML/verify tasks identified |
 | Kover | XML, HTML, verification | passed; line coverage 38.3707% |
-| Device | API 36 AVD | 36/36 discovered tests passed |
+| Device | `.\gradlew.bat connectedDebugAndroidTest --rerun-tasks` on API 36 AVD | 36/36 discovered tests passed |
 | Hygiene | diff/resource/NUL/marker/staging audits | passed |
 
 ## Full-Range Security And Persistence Review
@@ -47,19 +48,56 @@ The repository's codebase-memory graph tools were unavailable during the final r
 | Debug | 33,022,173 | `B6C755905E050E8E360D9C58E66C5195DA459CEEE050FC0A1E2DC734D49D3CF5` |
 | Release | 15,103,167 | `93E782F874FBC49EDC9CCBDAFF3A4D33F8817F0264758AC48F77B0BBB669EAD5` |
 
+## Reproducibility Record
+
+Kover task discovery was bound to this checkout with:
+
+```powershell
+.\gradlew.bat tasks --all
+```
+
+It exited 0 in 2.84 seconds and identified `app:koverHtmlReportDebug`, `app:koverVerifyDebug`, and `app:koverXmlReportDebug`. Evidence is under `task-12-evidence/task-discovery/{command.txt,gradle.log,kover-debug-tasks.txt,metadata.txt}`.
+
+The preserved device inventory and gate commands were:
+
+```powershell
+adb devices -l
+.\gradlew.bat connectedDebugAndroidTest --rerun-tasks
+```
+
+`task-12-evidence/device-api36/adb-devices.txt` records `emulator-5554` as `sdk_gphone64_x86_64`; `device-properties.txt` records SDK 36, Android 16, x86_64, boot completed, and AVD `medium_phone`; `adb-path.txt` records the Platform Tools binary. The exact gate command is in `device-api36/command.txt`. The valid pass is under `device-api36-full-green/{gradle.log,results.xml,metadata.txt,connected-results.tar.gz,connected-report.zip}`: exit 0 and 36/36 passed. Earlier failed/intermediate device directories are not release-pass evidence.
+
 ## API 35 Release Gap
 
-Only an API 36 AVD was available. Its 36/36 pass is supplemental, not target-API proof. Before broad rollout, run these on API 35 where possible:
+Only an API 36 AVD was available. No instrumentation class ran on API 35.
 
-- Backup preview and destructive replace.
-- Console exact-origin injection, cross-origin navigation, and logout cleanup.
-- Boot restore.
-- Foreground-service start restriction and representative OEM behavior.
-- Widget manual/watchdog separation.
-- Watchdog restart after failure/cancellation.
-- Long refresh intervals.
+| Instrumentation class | Source tests | API 36 | API 35 |
+|---|---:|---|---|
+| `MainActivityTest` | 3 | 3 passed | 0 run; no API 35 device |
+| `BalanceRefreshServiceTest` | 4 | 4 passed | 0 run; no API 35 device |
+| `BackupRestoreScreenTest` | 2 | 2 passed | 0 run; no API 35 device |
+| `HomeScreenTest` | 9 | 9 passed | 0 run; no API 35 device |
+| `InsightsScreenTest` | 2 | 2 passed | 0 run; no API 35 device |
+| `OnboardingScreenTest` | 8 | 8 passed | 0 run; no API 35 device |
+| `SettingsScreenTest` | 8 | 8 passed | 0 run; no API 35 device |
+| `ConsoleWebViewSecurityTest` | 3 | 0 run; API-35-only via `@SdkSuppress` | 0 run; no API 35 device |
+| **Total** | **39** | **36 passed** | **0 run** |
 
-`BalanceRefreshServiceTest` is a JVM test and does not prove API-35 foreground-service restrictions.
+Required target-API scenarios remain:
+
+| Required device scenario | Instrumentation mapping | API 35 status | Non-device evidence only |
+|---|---|---|---|
+| Backup preview/no-write | `BackupRestoreScreenTest` | Not run; API 36 case passed | `BackupImportPlannerTest` and `DataManagementViewModelTest` are JVM-only |
+| Destructive replace and confirmations | `BackupRestoreScreenTest` | Not run; API 36 case passed | `BackupImportPlannerTest` and `DataManagementViewModelTest` are JVM-only |
+| Console exact-origin injection | `ConsoleWebViewSecurityTest` | Not run; suppressed on API 36 | Console origin/security tests are JVM-only |
+| Console navigation and logout cleanup | `ConsoleWebViewSecurityTest` | Not run; suppressed on API 36 | `ConsoleOriginPolicyTest` and `ConsoleSessionCleanerTest` are JVM-only |
+| Boot restore | No instrumentation class exists | Unexecuted | `BootReceiverTest` is JVM-only and is not device boot proof |
+| API-35 foreground-service restrictions and OEM behavior | No qualifying instrumentation scenario exists; `BalanceRefreshServiceTest` is only a basic service smoke class | Unexecuted; four API 36 service tests do not prove API-35 restrictions | `ForegroundServiceStarterTest` and the JVM `BalanceRefreshServiceTest` are non-device only |
+| Widget manual/watchdog separation | No instrumentation class exists | Unexecuted | `StaticWidgetSchedulingTest` and widget runner tests are JVM-only |
+| Watchdog restart after failure/cancellation | No instrumentation class exists | Unexecuted | `StaticWidgetSchedulingTest` covers these branches only on the JVM |
+| Long refresh intervals | No instrumentation class exists | Unexecuted | `RefreshSchedulerTest` is JVM-only scheduler-state coverage, not elapsed device behavior |
+
+The API 36 pass is supplemental and is not a substitute for the API 35 scenarios above.
 
 ## Accepted Non-Blocking Residuals
 
