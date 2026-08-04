@@ -286,7 +286,7 @@ C:\Users\Administrator\
 | `BackupRestoreScreenTest.kt` | Preview/no-write and confirmed replace UI flows |
 | `ConsoleWebViewSecurityTest.kt` | Exact-origin injection, navigation and logout on API 35 |
 | `BalanceRefreshServiceTest.kt` | Basic service lifecycle behavior (not API-35 FGS restriction proof) |
-| `MainActivityTest.kt` | Activity lifecycle + navigation |
+| `MainActivityTest.kt` | HomeScreen Compose toolbar smoke tests (does not launch MainActivity) |
 
 ### Update Tests
 | File | What it covers |
