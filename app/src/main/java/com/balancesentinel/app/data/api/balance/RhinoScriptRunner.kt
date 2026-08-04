@@ -61,6 +61,7 @@ class RhinoScriptRunner {
         private val deadlineNanos = ThreadLocal<Long>()
 
         override fun makeContext(): Context = super.makeContext().apply {
+            languageVersion = Context.VERSION_ES6
             optimizationLevel = -1
             instructionObserverThreshold = INSTRUCTION_THRESHOLD
             setClassShutter(ClassShutter { false })

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.mozilla.javascript.Context
 
 class RhinoScriptRunnerTest {
 
@@ -30,5 +31,24 @@ class RhinoScriptRunnerTest {
         }
 
         assertNotEquals(callerThread, workerThread)
+    }
+
+    // Mutation caught: leaving Rhino at its default dialect, which rejects saved-script let syntax.
+    @Test
+    fun `runner executes saved script let syntax under explicit dialect`() {
+        val value = RhinoScriptRunner().run(500, "configuration") { context ->
+            val scope = context.initSafeStandardObjects()
+            Context.toNumber(
+                context.evaluateString(
+                    scope,
+                    "let answer = 40; answer + 2;",
+                    "usage-script",
+                    1,
+                    null
+                )
+            )
+        }
+
+        assertEquals(42.0, value, 0.0)
     }
 }

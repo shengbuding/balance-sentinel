@@ -21,6 +21,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.mozilla.javascript.CompilerEnvirons
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.Parser
 import org.mozilla.javascript.ScriptableObject
@@ -478,11 +479,15 @@ object UsageScriptExecutor {
         return runCatching { WebOrigin.from(url) }.getOrNull()
     }
 
-    private fun preprocessScript(source: String): String = source
+    private fun preprocessScript(source: String): String = SavedScriptCompatibility.rewrite(source)
 
     private fun hasLiteralRequestUrl(source: String): Boolean {
         val root = try {
-            Parser().parse(source, SCRIPT_SOURCE_NAME, 1)
+            val compatibleSource = preprocessScript(source)
+            val environs = CompilerEnvirons().apply {
+                languageVersion = Context.VERSION_ES6
+            }
+            Parser(environs).parse(compatibleSource, SCRIPT_SOURCE_NAME, 1)
         } catch (_: Exception) {
             return false
         }
