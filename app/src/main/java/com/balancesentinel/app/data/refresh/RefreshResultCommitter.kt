@@ -60,6 +60,9 @@ class RefreshResultCommitter(
         ) {
             return@withMutation stale(request.accountId)
         }
+        if (fetched.balance.balances.any { !it.hasPersistableAmounts() }) {
+            return@withMutation responseSchemaFailure(request.accountId)
+        }
 
         try {
             val providerBefore = providerCache.snapshot(account.providerType, account.id)
@@ -225,6 +228,11 @@ class RefreshResultCommitter(
     private fun persistenceFailure(accountId: String) = AccountRefreshResult.Failed(
         accountId,
         RefreshFailure.PersistenceFailure("Refresh data could not be saved")
+    )
+
+    private fun responseSchemaFailure(accountId: String) = AccountRefreshResult.Failed(
+        accountId,
+        RefreshFailure.ResponseSchemaFailure("Balance response schema is invalid")
     )
 
     private companion object {

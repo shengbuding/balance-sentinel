@@ -55,9 +55,7 @@ class AccountBalanceRefresher(
             balance.balances.isEmpty() ||
             balance.balances.any { entry ->
                 entry.currency.isBlank() ||
-                    !entry.totalBalance.isFinite() ||
-                    entry.grantedBalance?.isFinite() == false ||
-                    entry.toppedUpBalance?.isFinite() == false
+                    !entry.hasPersistableAmounts()
             }
         return if (invalid) {
             failure(
