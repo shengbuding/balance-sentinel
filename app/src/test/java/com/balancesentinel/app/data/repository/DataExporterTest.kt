@@ -15,6 +15,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
 
 @RunWith(RobolectricTestRunner::class)
 class DataExporterTest {
@@ -310,6 +312,101 @@ class DataExporterTest {
         val result = DataExporter.applyImport(context, importedData)
         assertEquals(2, result.recordsInFile)
         assertEquals(1, result.recordsImported)
+    }
+
+    // Mutation caught: admitting partial raw source after only a complete summary remains.
+    @Test
+    fun `applyImport reports and skips raw source for a summary-only key`() {
+        val sourceDate = LocalDate.parse("2026-08-01")
+        val zoneId = ZoneId.systemDefault()
+        val retained = DailySummary(
+            accountId = "a1",
+            date = sourceDate.toString(),
+            currency = "CNY",
+            open = 12f,
+            close = 9f,
+            consumed = 3f,
+            toppedUp = 0f,
+            avgBalance = 10f,
+            sampleCount = 3,
+            toppedUpBalanceClose = 9f,
+            generatedAt = 123L
+        )
+        DailySummaryStore.addSummaries(context, listOf(retained))
+        val partial = RawRecord(
+            accountId = "a1",
+            timestamp = sourceDate.atTime(12, 0).atZone(zoneId).toInstant().toEpochMilli(),
+            currency = "cny",
+            totalBalance = 4f,
+            grantedBalance = 0f,
+            toppedUpBalance = 4f
+        )
+
+        val result = DataExporter.applyImport(
+            context,
+            DataExport(
+                exportedAt = "2026-08-04T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = emptyList(),
+                rawRecords = listOf(partial)
+            )
+        )
+
+        assertEquals(1, result.recordsInFile)
+        assertEquals(0, result.recordsImported)
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+    }
+
+    @Test
+    fun `applyImport accepts late raw source while the retained source window is open`() {
+        val sourceDate = LocalDate.parse("2026-08-01")
+        val zoneId = ZoneId.systemDefault()
+        val early = RawRecord(
+            "a1",
+            sourceDate.atTime(9, 0).atZone(zoneId).toInstant().toEpochMilli(),
+            "CNY",
+            12f,
+            0f,
+            12f
+        )
+        val late = RawRecord(
+            "a1",
+            sourceDate.atTime(20, 0).atZone(zoneId).toInstant().toEpochMilli(),
+            "cny",
+            9f,
+            0f,
+            9f
+        )
+        DailySummaryStore.addSummaries(
+            context,
+            listOf(
+                DailySummary(
+                    accountId = "a1",
+                    date = sourceDate.toString(),
+                    currency = "CNY",
+                    open = 12f,
+                    close = 12f,
+                    consumed = 0f,
+                    toppedUp = 0f,
+                    avgBalance = 12f,
+                    sampleCount = 1
+                )
+            )
+        )
+        RawRecordStore.addRecords(context, listOf(early))
+
+        val result = DataExporter.applyImport(
+            context,
+            DataExport(
+                exportedAt = "2026-08-02T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = emptyList(),
+                rawRecords = listOf(late)
+            )
+        )
+
+        assertEquals(1, result.recordsImported)
+        assertEquals(listOf(early, late), RawRecordStore.getAllRecords(context))
     }
 
     @Test

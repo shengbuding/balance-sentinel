@@ -84,6 +84,47 @@ class CleanupSchedulerTest {
         assertEquals(listOf(early, late), RawRecordStore.getAllRecords(context))
     }
 
+    // Mutation caught: treating one post-retention import as complete recomputation source.
+    @Test
+    fun `post-retention partial import cannot replace a complete retained summary`() = runTest {
+        val retained = DailySummary(
+            accountId = "acct",
+            date = "2026-08-01",
+            currency = "CNY",
+            open = 12f,
+            close = 9f,
+            consumed = 3f,
+            toppedUp = 0f,
+            avgBalance = 10f,
+            sampleCount = 3,
+            toppedUpBalanceClose = 9f,
+            generatedAt = 123L
+        )
+        DailySummaryStore.addSummaries(context, listOf(retained))
+        val partial = record("acct", "cny", at("2026-08-01T10:00:00Z"), 4f)
+        val importResult = DataExporter.applyImport(
+            context,
+            DataExport(
+                exportedAt = "2026-08-04T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = emptyList(),
+                rawRecords = listOf(partial)
+            )
+        )
+
+        CleanupScheduler.runCleanup(context, NOW, ZoneOffset.UTC)
+
+        val persisted = DailySummaryStore.getSummaries(context).single {
+            it.date == retained.date &&
+                it.accountId == retained.accountId &&
+                it.currency == retained.currency
+        }
+        assertEquals(retained, persisted)
+        assertEquals(1, importResult.recordsInFile)
+        assertEquals(0, importResult.recordsImported)
+        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+    }
+
     // Mutation caught: deleting failed-summary source or aborting all later dates.
     @Test
     fun `failed summary commit retains its date and a later date still completes`() = runTest {
