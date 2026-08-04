@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.util
 
+import com.balancesentinel.app.BuildConfig
 import com.balancesentinel.app.data.console.DebugLogger
 import com.balancesentinel.app.data.debug.MAX_CAPTURE_BYTES
 import org.junit.After
@@ -87,7 +88,12 @@ class LoggerTest {
     fun `debug logger bounds and redacts retained messages`() {
         DebugLogger.log("token=debug-secret " + "凭".repeat(30_000))
 
-        val retained = DebugLogger.getLogs().single()
+        val logs = DebugLogger.getLogs()
+        if (!BuildConfig.DEBUG) {
+            assertTrue("Release must not retain debug logs", logs.isEmpty())
+            return
+        }
+        val retained = logs.single()
         assertFalse(retained.contains("debug-secret"))
         assertTrue(retained.toByteArray().size <= MAX_CAPTURE_BYTES + 16)
         assertTrue(retained.contains("[REDACTED]"))
@@ -98,6 +104,10 @@ class LoggerTest {
         repeat(101) { DebugLogger.log("entry-$it") }
 
         val retained = DebugLogger.getLogs()
+        if (!BuildConfig.DEBUG) {
+            assertTrue("Release must not retain debug logs", retained.isEmpty())
+            return
+        }
         assertEquals(100, retained.size)
         assertTrue(retained.first().endsWith("entry-1"))
         assertTrue(retained.last().endsWith("entry-100"))
