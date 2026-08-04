@@ -514,6 +514,9 @@ class HomeViewModel @JvmOverloads constructor(
                         is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
                             val label = accounts.find { it.id == accountId }?.label ?: accountId
                             if (firstError == null) firstError = "[$label] ${result.failure.message}"
+                            _uiState.value.accountBalances[accountId]?.let { existing ->
+                                newBalances[accountId] = existing
+                            }
                         }
                         is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
                             // stale — preserve cached value
