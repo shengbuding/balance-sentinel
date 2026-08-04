@@ -34,17 +34,19 @@ object RefreshLogStore {
      */
     internal fun addEntriesStrict(context: Context, entries: List<RefreshLogEntry>) {
         if (entries.isEmpty()) return
-        synchronized(LOG_LOCK) {
-            val maxEntries = getMaxEntries(context)
-            val existing = readEntries(context).toMutableList()
-            val existingIds = existing.mapTo(mutableSetOf()) { it.id }
-            val toAdd = entries.filter { existingIds.add(it.id) }
-            if (toAdd.isEmpty()) return
-            existing.addAll(0, toAdd)
-            if (existing.size > maxEntries) {
-                existing.subList(maxEntries, existing.size).clear()
+        DataMutationCoordinator.withMutation {
+            synchronized(LOG_LOCK) {
+                val maxEntries = getMaxEntries(context)
+                val existing = readEntries(context).toMutableList()
+                val existingIds = existing.mapTo(mutableSetOf()) { it.id }
+                val toAdd = entries.filter { existingIds.add(it.id) }
+                if (toAdd.isEmpty()) return@synchronized
+                existing.addAll(0, toAdd)
+                if (existing.size > maxEntries) {
+                    existing.subList(maxEntries, existing.size).clear()
+                }
+                writeEntries(context, existing)
             }
-            writeEntries(context, existing)
         }
     }
 
@@ -73,17 +75,23 @@ object RefreshLogStore {
      * 内部方法：写入失败时抛出异常，用于 RefreshResultCommitter 的持久化失败检测。
      */
     internal fun clearStrict(context: Context) {
-        synchronized(LOG_LOCK) {
-            check(getPrefs(context).edit().remove(KEY_ENTRIES).commit())
+        DataMutationCoordinator.withMutation {
+            synchronized(LOG_LOCK) {
+                check(getPrefs(context).edit().remove(KEY_ENTRIES).commit())
+            }
         }
     }
 
     internal fun snapshotEntries(context: Context): List<RefreshLogEntry> =
-        synchronized(LOG_LOCK) { readEntries(context).toList() }
+        DataMutationCoordinator.withMutation {
+            synchronized(LOG_LOCK) { readEntries(context).toList() }
+        }
 
     internal fun restoreEntries(context: Context, snapshot: List<RefreshLogEntry>) {
-        synchronized(LOG_LOCK) {
-            writeEntries(context, snapshot)
+        DataMutationCoordinator.withMutation {
+            synchronized(LOG_LOCK) {
+                writeEntries(context, snapshot)
+            }
         }
     }
 

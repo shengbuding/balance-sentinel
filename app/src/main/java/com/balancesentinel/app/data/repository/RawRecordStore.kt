@@ -26,12 +26,14 @@ object RawRecordStore {
 
     fun addRecords(context: Context, records: List<RawRecord>): StoreWriteResult {
         if (records.isEmpty()) return StoreWriteResult.Written(0)
-        return synchronized(storeLock) {
-            try {
-                addRecordsLocked(context, records)
-            } catch (_: Exception) {
-                Logger.w(TAG, "ADD_RECORDS failed")
-                failed("ADD_RECORDS")
+        return DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                try {
+                    addRecordsLocked(context, records)
+                } catch (_: Exception) {
+                    Logger.w(TAG, "ADD_RECORDS failed")
+                    failed("ADD_RECORDS")
+                }
             }
         }
     }
@@ -68,8 +70,10 @@ object RawRecordStore {
         }
 
     fun clear(context: Context) {
-        synchronized(storeLock) {
-            check(getPrefs(context).edit().remove(KEY_RECORDS).commit())
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                check(getPrefs(context).edit().remove(KEY_RECORDS).commit())
+            }
         }
     }
 
@@ -79,69 +83,73 @@ object RawRecordStore {
 
     fun removeExact(context: Context, snapshot: List<RawRecord>): StoreWriteResult {
         if (snapshot.isEmpty()) return StoreWriteResult.Written(0)
-        return synchronized(storeLock) {
-            try {
-                val initialState = getRecordsState(context)
-                if (initialState.pendingRemoval != null) {
-                    if (!persistRecords(context, initialState.records)) {
+        return DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                try {
+                    val initialState = getRecordsState(context)
+                    if (initialState.pendingRemoval != null) {
+                        if (!persistRecords(context, initialState.records)) {
+                            return@synchronized failed("REMOVE_EXACT")
+                        }
+                    }
+                    val remainingCounts = snapshot.groupingBy { it }.eachCount().toMutableMap()
+                    val existing = initialState.records
+                    var removed = 0
+                    val remaining = existing.filter { record ->
+                        val count = remainingCounts[record] ?: 0
+                        if (count > 0) {
+                            if (count == 1) remainingCounts.remove(record)
+                            else remainingCounts[record] = count - 1
+                            removed += 1
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    if (removed == 0) return@synchronized StoreWriteResult.Written(0)
+
+                    val deletionCommitted = persistPendingRemoval(context, existing, remaining)
+                    val stateAfterDeletion = getRecordsState(context)
+                    if (!deletionCommitted) {
+                        if (stateAfterDeletion.pendingRemoval != null) {
+                            persistRecords(context, stateAfterDeletion.records)
+                        }
                         return@synchronized failed("REMOVE_EXACT")
                     }
-                }
-                val remainingCounts = snapshot.groupingBy { it }.eachCount().toMutableMap()
-                val existing = initialState.records
-                var removed = 0
-                val remaining = existing.filter { record ->
-                    val count = remainingCounts[record] ?: 0
-                    if (count > 0) {
-                        if (count == 1) remainingCounts.remove(record)
-                        else remainingCounts[record] = count - 1
-                        removed += 1
-                        false
-                    } else {
-                        true
-                    }
-                }
-                if (removed == 0) return@synchronized StoreWriteResult.Written(0)
 
-                val deletionCommitted = persistPendingRemoval(context, existing, remaining)
-                val stateAfterDeletion = getRecordsState(context)
-                if (!deletionCommitted) {
-                    if (stateAfterDeletion.pendingRemoval != null) {
-                        persistRecords(context, stateAfterDeletion.records)
+                    if (stateAfterDeletion.pendingRemoval == null) {
+                        return@synchronized if (stateAfterDeletion.records == remaining) {
+                            StoreWriteResult.Written(removed)
+                        } else {
+                            failed("REMOVE_EXACT")
+                        }
                     }
-                    return@synchronized failed("REMOVE_EXACT")
-                }
 
-                if (stateAfterDeletion.pendingRemoval == null) {
-                    return@synchronized if (stateAfterDeletion.records == remaining) {
-                        StoreWriteResult.Written(removed)
-                    } else {
-                        failed("REMOVE_EXACT")
+                    if (!persistRecords(context, remaining)) {
+                        val finalState = getRecordsState(context)
+                        return@synchronized if (
+                            finalState.pendingRemoval == null && finalState.records == remaining
+                        ) {
+                            StoreWriteResult.Written(removed)
+                        } else {
+                            failed("REMOVE_EXACT")
+                        }
                     }
+                    StoreWriteResult.Written(removed)
+                } catch (_: Exception) {
+                    Logger.w(TAG, "REMOVE_EXACT failed")
+                    failed("REMOVE_EXACT")
                 }
-
-                if (!persistRecords(context, remaining)) {
-                    val finalState = getRecordsState(context)
-                    return@synchronized if (
-                        finalState.pendingRemoval == null && finalState.records == remaining
-                    ) {
-                        StoreWriteResult.Written(removed)
-                    } else {
-                        failed("REMOVE_EXACT")
-                    }
-                }
-                StoreWriteResult.Written(removed)
-            } catch (_: Exception) {
-                Logger.w(TAG, "REMOVE_EXACT failed")
-                failed("REMOVE_EXACT")
             }
         }
     }
 
     fun removeByAccountId(context: Context, accountId: String) {
-        synchronized(storeLock) {
-            val remaining = getRecordsInternal(context).filter { it.accountId != accountId }
-            check(persistRecords(context, remaining))
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                val remaining = getRecordsInternal(context).filter { it.accountId != accountId }
+                check(persistRecords(context, remaining))
+            }
         }
     }
 
@@ -186,43 +194,50 @@ object RawRecordStore {
         synchronized(storeLock) { getRecordsInternal(context).toList() }
 
     fun removeByDate(context: Context, date: String, minAgeMs: Long = DAY_MS) {
-        synchronized(storeLock) {
-            try {
-                val now = System.currentTimeMillis()
-                val zoneId = ZoneId.systemDefault()
-                val existing = getRecordsInternal(context)
-                val remaining = existing.filter { record ->
-                    dateOf(record.timestamp, zoneId) != date || now - record.timestamp < minAgeMs
-                }
-                if (remaining.size != existing.size && !persistRecords(context, remaining)) {
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                try {
+                    val now = System.currentTimeMillis()
+                    val zoneId = ZoneId.systemDefault()
+                    val existing = getRecordsInternal(context)
+                    val remaining = existing.filter { record ->
+                        dateOf(record.timestamp, zoneId) != date || now - record.timestamp < minAgeMs
+                    }
+                    if (remaining.size != existing.size && !persistRecords(context, remaining)) {
+                        Logger.w(TAG, "REMOVE_DATE failed")
+                    }
+                } catch (_: Exception) {
                     Logger.w(TAG, "REMOVE_DATE failed")
                 }
-            } catch (_: Exception) {
-                Logger.w(TAG, "REMOVE_DATE failed")
             }
         }
     }
 
-    internal fun snapshotRecords(context: Context): List<RawRecord> = synchronized(storeLock) {
-        getRecordsInternal(context).toList()
+    internal fun snapshotRecords(context: Context): List<RawRecord> =
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) { getRecordsInternal(context).toList() }
     }
 
     internal fun restoreRecords(context: Context, snapshot: List<RawRecord>) {
-        synchronized(storeLock) {
-            check(persistRecords(context, snapshot))
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                check(persistRecords(context, snapshot))
+            }
         }
     }
 
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-        synchronized(storeLock) {
-            val existing = getRecordsInternal(context)
-            val migrated = existing.map { record ->
-                migrationMap[record.accountId]?.let { record.copy(accountId = it) } ?: record
-            }
-            if (migrated != existing) {
-                check(persistRecords(context, migrated))
-                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in RawRecordStore")
+        DataMutationCoordinator.withMutation {
+            synchronized(storeLock) {
+                val existing = getRecordsInternal(context)
+                val migrated = existing.map { record ->
+                    migrationMap[record.accountId]?.let { record.copy(accountId = it) } ?: record
+                }
+                if (migrated != existing) {
+                    check(persistRecords(context, migrated))
+                    Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in RawRecordStore")
+                }
             }
         }
     }

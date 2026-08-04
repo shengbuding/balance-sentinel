@@ -113,22 +113,23 @@ object DataExporter {
     /**
      * 将导入的历史数据合并到当前存储。
      */
-    fun applyImport(context: Context, data: DataExport): ImportResult {
-        val summariesImported = mergeSummaries(context, data.dailySummaries)
-        val recordsImported = mergeRecords(context, data.rawRecords)
-        val snapshotsImported = mergeUsageSnapshots(context, data.usageSnapshots)
-        val logsImported = mergeRefreshLogs(context, data.refreshLogs)
-        return ImportResult(
-            summariesInFile = data.dailySummaries.size,
-            summariesImported = summariesImported,
-            recordsInFile = data.rawRecords.size,
-            recordsImported = recordsImported,
-            snapshotsInFile = data.usageSnapshots.size,
-            snapshotsImported = snapshotsImported,
-            logsInFile = data.refreshLogs.size,
-            logsImported = logsImported
-        )
-    }
+    fun applyImport(context: Context, data: DataExport): ImportResult =
+        DataMutationCoordinator.withMutation {
+            val summariesImported = mergeSummaries(context, data.dailySummaries)
+            val recordsImported = mergeRecords(context, data.rawRecords)
+            val snapshotsImported = mergeUsageSnapshots(context, data.usageSnapshots)
+            val logsImported = mergeRefreshLogs(context, data.refreshLogs)
+            ImportResult(
+                summariesInFile = data.dailySummaries.size,
+                summariesImported = summariesImported,
+                recordsInFile = data.rawRecords.size,
+                recordsImported = recordsImported,
+                snapshotsInFile = data.usageSnapshots.size,
+                snapshotsImported = snapshotsImported,
+                logsInFile = data.refreshLogs.size,
+                logsImported = logsImported
+            )
+        }
 
     /**
      * 便捷方法：直接从 URI 导入并合并。

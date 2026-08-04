@@ -55,7 +55,7 @@ object CleanupScheduler {
         context: Context,
         now: Long,
         zoneId: ZoneId
-    ): CleanupReport {
+    ): CleanupReport = DataMutationCoordinator.withMutation {
         val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
         val archivedDates = linkedSetOf<String>()
         val failures = mutableListOf<CleanupFailure>()
@@ -150,7 +150,7 @@ object CleanupScheduler {
             )
             0
         }
-        return CleanupReport(
+        CleanupReport(
             archivedDates = archivedDates,
             deletedRecordCount = deletedRecordCount,
             retainedRecordCount = retainedRecordCount,

@@ -16,31 +16,34 @@ class AccountLifecycleManager(
 ) {
     private val widgetPrefs = WidgetPrefs(context)
 
-    fun save(existingId: String?, draft: AccountDraft): AccountSaveResult {
-        return apiKeyManager.saveAccount(existingId, draft) { result ->
-            if (result is AccountSaveResult.Replaced) {
-                gateway?.invalidate(result.before.id)
-                val migration = mapOf(result.before.id to result.account.id)
-                RawRecordStore.migrateAccountIds(context, migration)
-                DailySummaryStore.migrateAccountIds(context, migration)
-                UsageDataStore.migrateAccountIds(context, migration)
-                widgetPrefs.migrateAccountData(result.before.id, result.account.id)
-                BalanceWidgetDataStore.removeAccountBalance(context, result.before.id)
-                ProviderCache(context).clear(result.before.providerType, result.before.id)
+    fun save(existingId: String?, draft: AccountDraft): AccountSaveResult =
+        DataMutationCoordinator.withMutation {
+            apiKeyManager.saveAccount(existingId, draft) { result ->
+                if (result is AccountSaveResult.Replaced) {
+                    gateway?.invalidate(result.before.id)
+                    val migration = mapOf(result.before.id to result.account.id)
+                    RawRecordStore.migrateAccountIds(context, migration)
+                    DailySummaryStore.migrateAccountIds(context, migration)
+                    UsageDataStore.migrateAccountIds(context, migration)
+                    widgetPrefs.migrateAccountData(result.before.id, result.account.id)
+                    BalanceWidgetDataStore.removeAccountBalance(context, result.before.id)
+                    ProviderCache(context).clear(result.before.providerType, result.before.id)
+                }
             }
         }
-    }
 
     fun delete(accountId: String) {
-        apiKeyManager.removeAccount(accountId) { account ->
-            gateway?.invalidate(accountId)
-            RawRecordStore.removeByAccountId(context, accountId)
-            DailySummaryStore.removeByAccountId(context, accountId)
-            UsageDataStore.removeByAccountId(context, accountId)
-            BalanceWidgetDataStore.removeAccountBalance(context, accountId)
-            ProviderCache(context).clear(account.providerType, accountId)
-            widgetPrefs.removeAccountData(accountId)
-            ApiDebugStore.clearEntries(accountId)
+        DataMutationCoordinator.withMutation {
+            apiKeyManager.removeAccount(accountId) { account ->
+                gateway?.invalidate(accountId)
+                RawRecordStore.removeByAccountId(context, accountId)
+                DailySummaryStore.removeByAccountId(context, accountId)
+                UsageDataStore.removeByAccountId(context, accountId)
+                BalanceWidgetDataStore.removeAccountBalance(context, accountId)
+                ProviderCache(context).clear(account.providerType, accountId)
+                widgetPrefs.removeAccountData(accountId)
+                ApiDebugStore.clearEntries(accountId)
+            }
         }
     }
 }

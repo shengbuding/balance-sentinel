@@ -12,6 +12,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.AlertChecker
+import com.balancesentinel.app.data.repository.DataMutationCoordinator
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.StoreWriteResult
@@ -49,15 +50,15 @@ class RefreshResultCommitter(
         request: RefreshRequest,
         fetched: BalanceFetchResult.Success,
         isLatest: () -> Boolean
-    ): AccountRefreshResult = synchronized(COMMIT_LOCK) {
-        if (!isLatest()) return@synchronized stale(request.accountId)
+    ): AccountRefreshResult = DataMutationCoordinator.withMutation {
+        if (!isLatest()) return@withMutation stale(request.accountId)
         val account = accountStore.getAccount(request.accountId)
         if (
             account == null ||
             account.id != request.accountId ||
             account.revision != request.revision
         ) {
-            return@synchronized stale(request.accountId)
+            return@withMutation stale(request.accountId)
         }
 
         try {
@@ -74,7 +75,7 @@ class RefreshResultCommitter(
                 currentAccount.id != request.accountId ||
                 currentAccount.revision != request.revision
             ) {
-                return@synchronized stale(request.accountId)
+                return@withMutation stale(request.accountId)
             }
 
             var attemptedStage = 0
@@ -110,7 +111,7 @@ class RefreshResultCommitter(
                         logsBefore = logsBefore,
                         usageBefore = usageBefore
                     )
-                    return@synchronized persistenceFailure(request.accountId)
+                    return@withMutation persistenceFailure(request.accountId)
                 }
 
                 attemptedStage = 4
@@ -137,7 +138,7 @@ class RefreshResultCommitter(
                     logsBefore = logsBefore,
                     usageBefore = usageBefore
                 )
-                return@synchronized persistenceFailure(request.accountId)
+                return@withMutation persistenceFailure(request.accountId)
             }
 
             fetched.balance.balances.forEach { entry ->
@@ -227,7 +228,6 @@ class RefreshResultCommitter(
     )
 
     private companion object {
-        val COMMIT_LOCK = Any()
         val LOG_ID = AtomicLong(System.currentTimeMillis())
 
         fun nextLogId(completedAt: Long): Long = LOG_ID.updateAndGet { previous ->

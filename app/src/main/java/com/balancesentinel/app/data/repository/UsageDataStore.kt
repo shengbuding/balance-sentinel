@@ -31,25 +31,27 @@ object UsageDataStore {
      */
     fun saveSnapshots(context: Context, snapshots: List<UsageSnapshot>) {
         if (snapshots.isEmpty()) return
-        synchronized(USAGE_LOCK) {
-            val existing = getAllSnapshots(context).toMutableList()
-            val existingDates = existing.map {
-                dateFormat.format(Date(it.timestamp)) to it.accountId
-            }.toSet()
-            val toAdd = snapshots.filter {
-                (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                val existing = getAllSnapshots(context).toMutableList()
+                val existingDates = existing.map {
+                    dateFormat.format(Date(it.timestamp)) to it.accountId
+                }.toSet()
+                val toAdd = snapshots.filter {
+                    (dateFormat.format(Date(it.timestamp)) to it.accountId) !in existingDates
+                }
+                if (toAdd.isEmpty()) return@synchronized
+                existing.addAll(toAdd)
+                existing.sortBy { it.timestamp }
+                if (existing.size > MAX_SNAPSHOTS) {
+                    existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
+                }
+                val serialized = json.encodeToString(
+                    ListSerializer(UsageSnapshot.serializer()),
+                    existing
+                )
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
             }
-            if (toAdd.isEmpty()) return
-            existing.addAll(toAdd)
-            existing.sortBy { it.timestamp }
-            if (existing.size > MAX_SNAPSHOTS) {
-                existing.subList(0, existing.size - MAX_SNAPSHOTS).clear()
-            }
-            val serialized = json.encodeToString(
-                ListSerializer(UsageSnapshot.serializer()),
-                existing
-            )
-            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
         }
     }
 
@@ -57,35 +59,39 @@ object UsageDataStore {
      * 保存一条用量快照（同一天+同账户覆盖旧数据）。
      */
     fun saveSnapshot(context: Context, snapshot: UsageSnapshot) {
-        synchronized(USAGE_LOCK) {
-            val snapshots = getAllSnapshots(context).toMutableList()
-            val today = dateFormat.format(Date(snapshot.timestamp))
-            val existingIndex = snapshots.indexOfFirst {
-                dateFormat.format(Date(it.timestamp)) == today && it.accountId == snapshot.accountId
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                val snapshots = getAllSnapshots(context).toMutableList()
+                val today = dateFormat.format(Date(snapshot.timestamp))
+                val existingIndex = snapshots.indexOfFirst {
+                    dateFormat.format(Date(it.timestamp)) == today && it.accountId == snapshot.accountId
+                }
+                if (existingIndex >= 0) {
+                    snapshots[existingIndex] = snapshot
+                } else {
+                    snapshots.add(snapshot)
+                }
+                snapshots.sortBy { it.timestamp }
+                if (snapshots.size > MAX_SNAPSHOTS) {
+                    snapshots.subList(0, snapshots.size - MAX_SNAPSHOTS).clear()
+                }
+                val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
             }
-            if (existingIndex >= 0) {
-                snapshots[existingIndex] = snapshot
-            } else {
-                snapshots.add(snapshot)
-            }
-            // 按时间排序，超限删旧
-            snapshots.sortBy { it.timestamp }
-            if (snapshots.size > MAX_SNAPSHOTS) {
-                snapshots.subList(0, snapshots.size - MAX_SNAPSHOTS).clear()
-            }
-            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshots)
-            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
         }
     }
 
-    internal fun snapshotAll(context: Context): List<UsageSnapshot> = synchronized(USAGE_LOCK) {
-        getAllSnapshots(context).toList()
+    internal fun snapshotAll(context: Context): List<UsageSnapshot> =
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) { getAllSnapshots(context).toList() }
     }
 
     internal fun restoreAll(context: Context, snapshot: List<UsageSnapshot>) {
-        synchronized(USAGE_LOCK) {
-            val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshot)
-            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                val serialized = json.encodeToString(ListSerializer(UsageSnapshot.serializer()), snapshot)
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+            }
         }
     }
 
@@ -128,8 +134,10 @@ object UsageDataStore {
      * 清除所有用量快照。
      */
     fun clear(context: Context) {
-        synchronized(USAGE_LOCK) {
-            check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                check(getPrefs(context).edit().remove(KEY_SNAPSHOTS).commit())
+            }
         }
     }
 
@@ -138,14 +146,16 @@ object UsageDataStore {
      * 用于删除账户时清理关联数据。
      */
     fun removeByAccountId(context: Context, accountId: String) {
-        synchronized(USAGE_LOCK) {
-            val snapshots = getAllSnapshots(context)
-            val remaining = snapshots.filter { it.accountId != accountId }
-            val serialized = json.encodeToString(
-                ListSerializer(UsageSnapshot.serializer()),
-                remaining
-            )
-            check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                val snapshots = getAllSnapshots(context)
+                val remaining = snapshots.filter { it.accountId != accountId }
+                val serialized = json.encodeToString(
+                    ListSerializer(UsageSnapshot.serializer()),
+                    remaining
+                )
+                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+            }
         }
     }
 
@@ -154,23 +164,25 @@ object UsageDataStore {
      */
     fun migrateAccountIds(context: Context, migrationMap: Map<String, String>) {
         if (migrationMap.isEmpty()) return
-        synchronized(USAGE_LOCK) {
-            val snapshots = getAllSnapshots(context).toMutableList()
-            var migrated = false
-            for (i in snapshots.indices) {
-                val newId = migrationMap[snapshots[i].accountId]
-                if (newId != null) {
-                    snapshots[i] = snapshots[i].copy(accountId = newId)
-                    migrated = true
+        DataMutationCoordinator.withMutation {
+            synchronized(USAGE_LOCK) {
+                val snapshots = getAllSnapshots(context).toMutableList()
+                var migrated = false
+                for (i in snapshots.indices) {
+                    val newId = migrationMap[snapshots[i].accountId]
+                    if (newId != null) {
+                        snapshots[i] = snapshots[i].copy(accountId = newId)
+                        migrated = true
+                    }
                 }
-            }
-            if (migrated) {
-                val serialized = json.encodeToString(
-                    ListSerializer(UsageSnapshot.serializer()),
-                    snapshots
-                )
-                check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
-                Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
+                if (migrated) {
+                    val serialized = json.encodeToString(
+                        ListSerializer(UsageSnapshot.serializer()),
+                        snapshots
+                    )
+                    check(getPrefs(context).edit().putString(KEY_SNAPSHOTS, serialized).commit())
+                    Logger.i(TAG, "Migrated ${migrationMap.size} account IDs in UsageDataStore")
+                }
             }
         }
     }
