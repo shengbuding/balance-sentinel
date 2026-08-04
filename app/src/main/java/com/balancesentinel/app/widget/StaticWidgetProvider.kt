@@ -7,6 +7,7 @@ import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.util.FormatUtils
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -71,20 +72,90 @@ class WidgetRefreshExecution(
 
 object WidgetRefreshIntents {
     fun manual(context: Context): Intent =
-        manual(context, StaticWidgetProvider_2x1::class.java)
-
-    fun manual(context: Context, receiver: Class<out StaticWidgetProvider>): Intent =
-        Intent(context, receiver).apply {
+        Intent(context, WidgetRefreshReceiver::class.java).apply {
             action = StaticWidgetProvider.ACTION_REFRESH_NOW
         }
 
     fun watchdog(context: Context): Intent =
-        Intent(StaticWidgetProvider.ACTION_WATCHDOG).apply { setPackage(context.packageName) }
+        Intent(context, WidgetRefreshReceiver::class.java).apply {
+            action = StaticWidgetProvider.ACTION_WATCHDOG
+        }
 }
 
-open class StaticWidgetProvider(
+class WidgetRefreshReceiver : BroadcastReceiver() {
     private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
-) : AppWidgetProvider() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        try {
+            val decision = WidgetRefreshActionHandler().decide(
+                context,
+                intent.action,
+                System.currentTimeMillis()
+            )
+            if (decision is WidgetRefreshDecision.Refresh && processingRefresh.compareAndSet(false, true)) {
+                handleRefresh(context, decision)
+            }
+        } catch (e: Exception) {
+            processingRefresh.set(false)
+            Logger.e("StaticWidget", "onReceive error", e)
+            WidgetErrorLogger.log(context, e)
+        }
+    }
+
+    private fun handleRefresh(context: Context, decision: WidgetRefreshDecision.Refresh) {
+        val manager = AppWidgetManager.getInstance(context)
+        val allClasses = listOf(
+            StaticWidgetProvider_2x1::class.java, StaticWidgetProvider_2x2::class.java,
+            StaticWidgetProvider_3x1::class.java, StaticWidgetProvider_4x2::class.java,
+            StaticWidgetProvider_5x1::class.java
+        )
+        val allIds = allClasses.flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
+        if (allIds.isEmpty()) {
+            processingRefresh.set(false)
+            return
+        }
+        val widgetIds = allIds.toIntArray()
+        val provider = StaticWidgetProvider()
+
+        provider.setRefreshProgress(context, manager, allIds, visible = true)
+        if (decision.watchdog) {
+            RefreshScheduler.markFired(context)
+        }
+        provider.onUpdate(context, manager, widgetIds)
+
+        val pendingResult = goAsync()
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StaticWidget:refresh")
+        wakeLock?.setReferenceCounted(false)
+        try { wakeLock?.acquire(30_000L) } catch (_: Exception) {}
+
+        Thread {
+            WidgetRefreshDispatcher(
+                action = {
+                    kotlinx.coroutines.runBlocking {
+                        WidgetRefreshExecution(
+                            RefreshRuntime.from(context),
+                            serviceStarter
+                        ).execute(context, decision)
+                    }
+                    provider.setRefreshProgress(context, manager, allIds, visible = false)
+                    provider.onUpdate(context, manager, widgetIds)
+                },
+                finish = {
+                    pendingResult.finish()
+                    processingRefresh.set(false)
+                    try { if (wakeLock?.isHeld == true) wakeLock.release() } catch (_: Exception) {}
+                }
+            ).dispatch()
+        }.start()
+    }
+
+    private companion object {
+        val processingRefresh = AtomicBoolean(false)
+    }
+}
+
+open class StaticWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(
         context: Context,
@@ -110,78 +181,6 @@ open class StaticWidgetProvider(
         for (id in appWidgetIds) {
             WidgetConfigStore.removeConfig(context, id)
         }
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        try {
-            val decision = WidgetRefreshActionHandler().decide(
-                context,
-                intent.action,
-                System.currentTimeMillis()
-            )
-            if (decision is WidgetRefreshDecision.Refresh) {
-                if (processingRefresh.compareAndSet(false, true)) {
-                    handleRefresh(context, decision)
-                }
-            } else if (intent.action != ACTION_REFRESH_NOW && intent.action != ACTION_WATCHDOG) {
-                super.onReceive(context, intent)
-            }
-        } catch (e: Exception) {
-            Logger.e("StaticWidget", "onReceive error", e)
-            WidgetErrorLogger.log(context, e)
-        }
-    }
-
-    private fun handleRefresh(context: Context, decision: WidgetRefreshDecision.Refresh) {
-        val manager = AppWidgetManager.getInstance(context)
-        val allClasses = listOf(
-            StaticWidgetProvider_2x1::class.java, StaticWidgetProvider_2x2::class.java,
-            StaticWidgetProvider_3x1::class.java, StaticWidgetProvider_4x2::class.java,
-            StaticWidgetProvider_5x1::class.java
-        )
-        val allIds = allClasses.flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
-        if (allIds.isEmpty()) {
-            processingRefresh.set(false)
-            return
-        }
-        val widgetIds = allIds.toIntArray()
-
-        // 显示刷新进度条
-        setRefreshProgress(context, manager, allIds, visible = true)
-
-        if (decision.watchdog) {
-            RefreshScheduler.markFired(context)
-        }
-        onUpdate(context, manager, widgetIds)
-
-        val pendingResult = goAsync()
-
-        // WakeLock 防止 Widget 刷新期间 CPU 休眠
-        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        val wl = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StaticWidget:refresh")
-        wl?.setReferenceCounted(false)
-        try { wl?.acquire(30_000L) } catch (_: Exception) {}
-
-        Thread {
-            WidgetRefreshDispatcher(
-                action = {
-                    kotlinx.coroutines.runBlocking {
-                        WidgetRefreshExecution(
-                            RefreshRuntime.from(context),
-                            serviceStarter
-                        ).execute(context, decision)
-                    }
-                    setRefreshProgress(context, manager, allIds, visible = false)
-                    onUpdate(context, manager, widgetIds)
-                },
-                finish = {
-                    pendingResult.finish()
-                    processingRefresh.set(false)
-                    // 释放 WakeLock
-                    try { if (wl?.isHeld == true) wl.release() } catch (_: Exception) {}
-                }
-            ).dispatch()
-        }.start()
     }
 
     // ── Widget 渲染（汇总显示） ──
@@ -327,7 +326,7 @@ open class StaticWidgetProvider(
         views.setOnClickPendingIntent(R.id.widget_balance, appPending)
         views.setOnClickPendingIntent(R.id.widget_title, appPending)
 
-        val refreshIntent = WidgetRefreshIntents.manual(context, StaticWidgetProvider_2x1::class.java)
+        val refreshIntent = WidgetRefreshIntents.manual(context)
         val refreshPending = PendingIntent.getBroadcast(
             context, widgetId + 1000, refreshIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -406,7 +405,7 @@ open class StaticWidgetProvider(
         } catch (_: Exception) {}
     }
 
-    private fun setRefreshProgress(context: Context, manager: AppWidgetManager, widgetIds: List<Int>, visible: Boolean) {
+    internal fun setRefreshProgress(context: Context, manager: AppWidgetManager, widgetIds: List<Int>, visible: Boolean) {
         val visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
         for (id in widgetIds) {
             try {
@@ -464,7 +463,6 @@ open class StaticWidgetProvider(
     companion object {
         const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
         const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
-        private val processingRefresh = AtomicBoolean(false)
         @Volatile private var lastScheduleTime: Long = 0L
     }
 }
