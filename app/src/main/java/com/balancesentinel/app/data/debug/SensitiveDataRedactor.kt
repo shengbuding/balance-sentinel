@@ -16,12 +16,10 @@ object SensitiveDataRedactor {
     private const val SENSITIVE_KEY_PATTERN =
         "(?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|" +
             "password|passwd|access[-_]?token|refresh[-_]?token|token|authorization|" +
-            "proxy[-_]?authorization)"
+            "proxy[-_]?authorization|cookies?|set[-_]?cookies?|session(?:[-_]?id)?)"
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val sensitiveKey = Regex(
-        """(?i)^(?:api[-_]?key|apikey|api[-_]?secret|secret(?:[-_]?key)?|client[-_]?secret|password|passwd|access[-_]?token|refresh[-_]?token|token|authorization|proxy[-_]?authorization|cookie|set[-_]?cookie)$"""
-    )
+    private val sensitiveKey = Regex("(?i)^$SENSITIVE_KEY_PATTERN$")
     private val keyValue = Regex(
         """(?i)((?:["']?)\b$SENSITIVE_KEY_PATTERN\b(?:["']?)\s*[:=]\s*)(?!["'])([^&,;\r\n}\]]+)"""
     )
@@ -29,7 +27,7 @@ object SensitiveDataRedactor {
         """(?i)((?:["']?)\b$SENSITIVE_KEY_PATTERN\b(?:["']?)\s*[:=]\s*)(["'])(.*?)(\2)"""
     )
     private val usageScript = Regex("""(?im)(\busageScript\s*=\s*)([^\r\n,]+)""")
-    private val cookieLine = Regex("""(?im)(\b(?:cookie|set-cookie)\s*[:=]\s*)([^\r\n]+)""")
+    private val cookieLine = Regex("""(?im)(\b(?:cookie|set[-_]?cookie)\s*[:=]\s*)([^\r\n]+)""")
     private val bearer = Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+""")
     private val skKey = Regex("""\bsk-[A-Za-z0-9_-]{6,}\b""")
     private val url = Regex("""https?://[^\s<>'\"]+""")
@@ -95,7 +93,9 @@ object SensitiveDataRedactor {
             "authorization",
             "proxy-authorization",
             "cookie",
+            "cookies",
             "set-cookie",
+            "set-cookies",
             "x-api-key",
             "api-key",
             "secret-key"
