@@ -3,9 +3,11 @@ package com.balancesentinel.app.ui.screen
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import org.junit.Rule
 import org.junit.Test
@@ -26,6 +28,9 @@ class SettingsScreenTest {
         return HomeViewModel(app)
     }
 
+    private fun string(resId: Int): String =
+        ApplicationProvider.getApplicationContext<Application>().getString(resId)
+
     // ═══════════════════════════════════════════════════════════
     // Smoke tests — screen renders without crash
     // ═══════════════════════════════════════════════════════════
@@ -43,11 +48,12 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("设置").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(string(R.string.settings_back)).assertIsDisplayed()
     }
 
     @Test
-    fun `settings screen shows widget settings section`() {
+    fun `settings screen shows auto refresh section`() {
         val vm = createViewModel()
         composeTestRule.setContent {
             SettingsScreen(
@@ -59,11 +65,11 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("桌面小组件设置").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_auto_refresh)).assertIsDisplayed()
     }
 
     @Test
-    fun `settings screen shows alert section headers`() {
+    fun `settings screen shows alert settings entry`() {
         val vm = createViewModel()
         composeTestRule.setContent {
             SettingsScreen(
@@ -75,13 +81,11 @@ class SettingsScreenTest {
             )
         }
 
-        // Alert section headers — these use labelMedium with bold
-        composeTestRule.onNodeWithText("余额预警").assertIsDisplayed()
-        composeTestRule.onNodeWithText("异动提醒").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_alert_entry)).assertIsDisplayed()
     }
 
     @Test
-    fun `settings screen shows privacy policy and log entry rows`() {
+    fun `about page shows privacy policy row`() {
         val vm = createViewModel()
         composeTestRule.setContent {
             SettingsScreen(
@@ -93,12 +97,12 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("隐私政策").assertIsDisplayed()
-        composeTestRule.onNodeWithText("刷新日志").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_about)).performClick()
+        composeTestRule.onNodeWithText(string(R.string.settings_privacy_policy)).assertIsDisplayed()
     }
 
     @Test
-    fun `settings screen shows version info`() {
+    fun `settings screen shows data management row`() {
         val vm = createViewModel()
         composeTestRule.setContent {
             SettingsScreen(
@@ -110,7 +114,7 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("数据管理").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_data_management)).assertIsDisplayed()
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -131,7 +135,7 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("返回").performClick()
+        composeTestRule.onNodeWithContentDescription(string(R.string.settings_back)).performClick()
         assert(called) { "onBack should be called" }
     }
 
@@ -149,7 +153,8 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("刷新日志").performClick()
+        composeTestRule.onNodeWithText(string(R.string.settings_system_status)).performClick()
+        composeTestRule.onNodeWithText(string(R.string.settings_log_entry)).performClick()
         assert(called) { "onNavigateToLog should be called" }
     }
 
@@ -167,7 +172,7 @@ class SettingsScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("数据管理").performClick()
+        composeTestRule.onNodeWithText(string(R.string.settings_data_management)).performClick()
         assert(called) { "onNavigateToDataManagement should be called" }
     }
 }

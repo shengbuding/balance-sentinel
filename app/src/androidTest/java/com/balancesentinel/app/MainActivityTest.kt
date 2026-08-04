@@ -22,6 +22,9 @@ class MainActivityTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
+    private fun string(resId: Int): String =
+        ApplicationProvider.getApplicationContext<Application>().getString(resId)
+
     @Test
     fun `main activity renders home screen toolbar`() {
         composeTestRule.setContent {
@@ -34,7 +37,7 @@ class MainActivityTest {
             )
         }
 
-        composeTestRule.onNodeWithText("钱包哨兵").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_title)).assertIsDisplayed()
     }
 
     @Test
@@ -48,7 +51,7 @@ class MainActivityTest {
             )
         }
 
-        composeTestRule.onNodeWithContentDescription("设置").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(string(R.string.home_settings)).assertIsDisplayed()
     }
 
     @Test
@@ -62,6 +65,6 @@ class MainActivityTest {
             )
         }
 
-        composeTestRule.onNodeWithContentDescription("刷新").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(string(R.string.home_refresh)).assertIsDisplayed()
     }
 }

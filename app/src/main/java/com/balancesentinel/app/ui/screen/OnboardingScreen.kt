@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -160,6 +161,7 @@ private fun OnboardingPageContent(
 
         // 标题
         Text(
+            modifier = Modifier.testTag("onboarding_page_title"),
             text = stringResource(page.titleRes),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
@@ -291,6 +293,7 @@ private fun OnboardingBottomBar(
 
             // 下一步/开始按钮
             Button(
+                modifier = Modifier.testTag("onboarding_primary_action"),
                 onClick = onNext,
                 shape = RoundedCornerShape(24.dp)
             ) {

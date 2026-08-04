@@ -61,62 +61,66 @@ class BackupRestoreScreenTest {
     }
 
     @Test
-    fun selectingConfigurationFileShowsPreviewWithoutPersistence() = runBlocking {
-        // Mutation caught: the file-selection path writes accounts/settings before the preview action.
-        val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
-        manager.replaceAll(listOf(local))
-        widgetPrefs.refreshIntervalSeconds = 222
-        val config = config(
-            credentialsIncluded = false,
-            accounts = listOf(local.copy(label = "Updated", apiKey = "")),
-            settings = settings(77)
-        )
-        val file = java.io.File(app.cacheDir, "preview-${System.nanoTime()}.json")
-        file.writeText(Json { encodeDefaults = true }.encodeToString(config))
+    fun selectingConfigurationFileShowsPreviewWithoutPersistence() {
+        runBlocking {
+            // Mutation caught: the file-selection path writes accounts/settings before the preview action.
+            val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
+            manager.replaceAll(listOf(local))
+            widgetPrefs.refreshIntervalSeconds = 222
+            val config = config(
+                credentialsIncluded = false,
+                accounts = listOf(local.copy(label = "Updated", apiKey = "")),
+                settings = settings(77)
+            )
+            val file = java.io.File(app.cacheDir, "preview-${System.nanoTime()}.json")
+            file.writeText(Json { encodeDefaults = true }.encodeToString(config))
 
-        viewModel.previewConfiguration(Uri.fromFile(file))
+            viewModel.previewConfiguration(Uri.fromFile(file))
 
-        assertEquals(listOf(local), manager.getAccounts())
-        assertEquals(222, widgetPrefs.refreshIntervalSeconds)
-        composeRule.setContent {
-            DeepSeekBalanceTheme {
-                BackupRestoreScreen(viewModel = viewModel, onBack = {})
+            assertEquals(listOf(local), manager.getAccounts())
+            assertEquals(222, widgetPrefs.refreshIntervalSeconds)
+            composeRule.setContent {
+                DeepSeekBalanceTheme {
+                    BackupRestoreScreen(viewModel = viewModel, onBack = {})
+                }
             }
+            composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
         }
-        composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
     }
 
     @Test
-    fun replaceRequiresPreviewApplyAndSeparateDestructiveConfirmation() = runBlocking {
-        // Mutation caught: Replace All commits after the preview action or stacks both confirmation dialogs.
-        val local = AccountInfo(OLD_ID, "Old", OLD_KEY)
-        val replacement = AccountInfo(NEW_ID, "New", NEW_KEY)
-        manager.replaceAll(listOf(local))
-        viewModel.previewConfiguration(config(true, listOf(replacement)))
-        composeRule.setContent {
-            DeepSeekBalanceTheme {
-                BackupRestoreScreen(viewModel = viewModel, onBack = {})
+    fun replaceRequiresPreviewApplyAndSeparateDestructiveConfirmation() {
+        runBlocking {
+            // Mutation caught: Replace All commits after the preview action or stacks both confirmation dialogs.
+            val local = AccountInfo(OLD_ID, "Old", OLD_KEY)
+            val replacement = AccountInfo(NEW_ID, "New", NEW_KEY)
+            manager.replaceAll(listOf(local))
+            viewModel.previewConfiguration(config(true, listOf(replacement)))
+            composeRule.setContent {
+                DeepSeekBalanceTheme {
+                    BackupRestoreScreen(viewModel = viewModel, onBack = {})
+                }
             }
+
+            composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
+            composeRule.onNodeWithTag("import_mode_replace").performClick()
+            composeRule.waitUntil(5_000) {
+                viewModel.uiState.value.pendingImportPlan?.mode ==
+                    com.balancesentinel.app.data.repository.ImportMode.REPLACE_ALL
+            }
+            composeRule.onNodeWithTag("import_apply").performClick()
+
+            composeRule.onNodeWithTag("replace_confirm_dialog").assertIsDisplayed()
+            composeRule.onNodeWithTag("config_import_preview").assertDoesNotExist()
+            assertEquals(listOf(local), manager.getAccounts())
+
+            composeRule.onNodeWithTag("replace_confirm_apply").performClick()
+            composeRule.waitUntil(5_000) { manager.getAccounts().singleOrNull()?.id == NEW_ID }
+            assertEquals(
+                listOf(replacement.copy(usageScriptEnabled = false)),
+                manager.getAccounts()
+            )
         }
-
-        composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
-        composeRule.onNodeWithTag("import_mode_replace").performClick()
-        composeRule.waitUntil(5_000) {
-            viewModel.uiState.value.pendingImportPlan?.mode ==
-                com.balancesentinel.app.data.repository.ImportMode.REPLACE_ALL
-        }
-        composeRule.onNodeWithTag("import_apply").performClick()
-
-        composeRule.onNodeWithTag("replace_confirm_dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("config_import_preview").assertDoesNotExist()
-        assertEquals(listOf(local), manager.getAccounts())
-
-        composeRule.onNodeWithTag("replace_confirm_apply").performClick()
-        composeRule.waitUntil(5_000) { manager.getAccounts().singleOrNull()?.id == NEW_ID }
-        assertEquals(
-            listOf(replacement.copy(usageScriptEnabled = false)),
-            manager.getAccounts()
-        )
     }
 
     private fun config(

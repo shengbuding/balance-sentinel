@@ -2,11 +2,13 @@ package com.balancesentinel.app.ui.screen
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
+import com.balancesentinel.app.R
 import com.balancesentinel.app.util.OnboardingHelper
 import org.junit.After
 import org.junit.Before
@@ -48,8 +50,8 @@ class OnboardingScreenTest {
             OnboardingScreen(onComplete = { completed = true })
         }
 
-        composeTestRule.onNodeWithText("欢迎使用钱包哨兵").assertIsDisplayed()
-        composeTestRule.onNodeWithText("实时监控 DeepSeek API 余额").assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_welcome_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_welcome_desc)).assertIsDisplayed()
     }
 
     @Test
@@ -60,12 +62,12 @@ class OnboardingScreenTest {
         }
 
         // Navigate to page 2
-        composeTestRule.onNodeWithText("下一步").performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
 
-        composeTestRule.onNodeWithText("核心功能").assertIsDisplayed()
-        composeTestRule.onNodeWithText("自动刷新余额，无需手动操作").assertIsDisplayed()
-        composeTestRule.onNodeWithText("余额不足时推送通知提醒").assertIsDisplayed()
-        composeTestRule.onNodeWithText("桌面小组件随时查看余额").assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_features_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_feat_refresh)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_feat_alert)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_feat_widget)).assertIsDisplayed()
     }
 
     @Test
@@ -76,12 +78,16 @@ class OnboardingScreenTest {
         }
 
         // Page 1 → 2 → 3
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("下一步").performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
 
-        composeTestRule.onNodeWithText("准备就绪").assertIsDisplayed()
-        composeTestRule.onNodeWithText("添加您的 DeepSeek API Key 即可开始监控").assertIsDisplayed()
-        composeTestRule.onNodeWithText("开始使用").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(PAGE_TITLE_TAG)
+            .assertTextEquals(context.getString(R.string.onboarding_start_title))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_start_desc)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG)
+            .assertTextEquals(context.getString(R.string.onboarding_get_started))
+            .assertIsDisplayed()
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -95,10 +101,10 @@ class OnboardingScreenTest {
             OnboardingScreen(onComplete = { completed = true })
         }
 
-        composeTestRule.onNodeWithText("跳过").assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_skip)).assertIsDisplayed()
 
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("跳过").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_skip)).assertIsDisplayed()
     }
 
     @Test
@@ -109,11 +115,11 @@ class OnboardingScreenTest {
         }
 
         // Navigate to page 3
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("下一步").performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
 
         // Skip should NOT be visible on the last page
-        composeTestRule.onNodeWithText("跳过").assertDoesNotExist()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_skip)).assertDoesNotExist()
     }
 
     @Test
@@ -123,7 +129,7 @@ class OnboardingScreenTest {
             OnboardingScreen(onComplete = { completed = true })
         }
 
-        composeTestRule.onNodeWithText("跳过").performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_skip)).performClick()
 
         assert(completed) { "onComplete should be called when skip is clicked" }
         assert(!OnboardingHelper.shouldShow(context)) { "Onboarding should be marked completed" }
@@ -137,10 +143,10 @@ class OnboardingScreenTest {
         }
 
         // Navigate to last page
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("下一步").performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
 
-        composeTestRule.onNodeWithText("开始使用").performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
 
         assert(completed) { "onComplete should be called when get-started is clicked" }
         assert(!OnboardingHelper.shouldShow(context)) { "Onboarding should be marked completed" }
@@ -154,15 +160,26 @@ class OnboardingScreenTest {
         }
 
         // Page 1: shows "下一步"
-        composeTestRule.onNodeWithText("下一步").assertIsDisplayed()
-        composeTestRule.onNodeWithText("开始使用").assertDoesNotExist()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG)
+            .assertTextEquals(context.getString(R.string.onboarding_next))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.onboarding_get_started)).assertDoesNotExist()
 
         // Page 2: still shows "下一步"
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("下一步").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG)
+            .assertTextEquals(context.getString(R.string.onboarding_next))
+            .assertIsDisplayed()
 
         // Page 3: shows "开始使用"
-        composeTestRule.onNodeWithText("下一步").performClick()
-        composeTestRule.onNodeWithText("开始使用").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG).performClick()
+        composeTestRule.onNodeWithTag(PRIMARY_ACTION_TAG)
+            .assertTextEquals(context.getString(R.string.onboarding_get_started))
+            .assertIsDisplayed()
+    }
+
+    private companion object {
+        const val PAGE_TITLE_TAG = "onboarding_page_title"
+        const val PRIMARY_ACTION_TAG = "onboarding_primary_action"
     }
 }

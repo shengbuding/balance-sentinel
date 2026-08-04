@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -30,6 +31,9 @@ class HomeScreenTest {
         return HomeViewModel(app)
     }
 
+    private fun string(resId: Int): String =
+        ApplicationProvider.getApplicationContext<Application>().getString(resId)
+
     // ═══════════════════════════════════════════════════════════
     // Smoke tests — screen renders without crash
     // ═══════════════════════════════════════════════════════════
@@ -41,7 +45,7 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithText("钱包哨兵").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_title)).assertIsDisplayed()
     }
 
     @Test
@@ -51,8 +55,8 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithText("还没有监控账户").assertIsDisplayed()
-        composeTestRule.onNodeWithText("点击右下角的 + 按钮添加 DeepSeek API Key 开始监控余额").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_empty_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_empty_subtitle)).assertIsDisplayed()
     }
 
     @Test
@@ -62,8 +66,8 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("刷新").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("设置").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(string(R.string.home_refresh)).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(string(R.string.home_settings)).assertIsDisplayed()
     }
 
     @Test
@@ -73,7 +77,7 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("添加账户").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -84,7 +88,7 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = { navigated = true })
         }
 
-        composeTestRule.onNodeWithContentDescription("设置").performClick()
+        composeTestRule.onNodeWithContentDescription(string(R.string.home_settings)).performClick()
         assert(navigated) { "onNavigateToSettings should be called" }
     }
 
@@ -99,9 +103,9 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("添加账户").performClick()
+        composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
-        composeTestRule.onNodeWithText("添加 DeepSeek 账户").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.add_account_key_label)).assertIsDisplayed()
     }
 
     @Test
@@ -111,10 +115,10 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("添加账户").performClick()
+        composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
-        composeTestRule.onNodeWithText("账户名称（自定义）").assertIsDisplayed()
-        composeTestRule.onNodeWithText("API Key").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.add_account_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.add_account_key_label)).assertIsDisplayed()
     }
 
     @Test
@@ -124,10 +128,10 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("添加账户").performClick()
+        composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
-        composeTestRule.onNodeWithText("取消").assertIsDisplayed()
-        composeTestRule.onNodeWithText("添加").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_cancel)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_add)).assertIsDisplayed()
     }
 
     @Test
@@ -137,12 +141,16 @@ class HomeScreenTest {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
 
-        composeTestRule.onNodeWithContentDescription("添加账户").performClick()
-        composeTestRule.onNodeWithText("添加 DeepSeek 账户").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
+        composeTestRule.onNodeWithText(string(R.string.add_account_key_label)).assertIsDisplayed()
 
-        composeTestRule.onNodeWithText("取消").performClick()
+        composeTestRule.onNodeWithText(string(R.string.home_cancel)).performClick()
 
         // Dialog should be dismissed — empty state should be visible again
-        composeTestRule.onNodeWithText("还没有监控账户").assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.home_empty_title)).assertIsDisplayed()
+    }
+
+    private companion object {
+        const val ADD_ACCOUNT_FAB_TAG = "add_account_fab"
     }
 }
