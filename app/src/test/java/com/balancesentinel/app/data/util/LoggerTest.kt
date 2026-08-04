@@ -92,4 +92,15 @@ class LoggerTest {
         assertTrue(retained.toByteArray().size <= MAX_CAPTURE_BYTES + 16)
         assertTrue(retained.contains("[REDACTED]"))
     }
+
+    @Test
+    fun `debug logger caps entries while retaining the newest values`() {
+        repeat(101) { DebugLogger.log("entry-$it") }
+
+        val retained = DebugLogger.getLogs()
+        assertEquals(100, retained.size)
+        assertTrue(retained.first().endsWith("entry-1"))
+        assertTrue(retained.last().endsWith("entry-100"))
+        assertFalse(retained.any { it.endsWith("entry-0") })
+    }
 }
