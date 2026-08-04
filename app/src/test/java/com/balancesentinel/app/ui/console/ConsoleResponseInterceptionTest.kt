@@ -213,6 +213,53 @@ class ConsoleResponseInterceptionTest {
         assertTrue(entries.isEmpty())
     }
 
+    // Mutation caught: admitting an API request by host while ignoring its alternate port.
+    @Test
+    fun `same host alternate port receives no intercepted credentials while configured port remains allowed`() {
+        withHttpsServers { configured, alternate ->
+            configured.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            alternate.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            val platform = ConsolePlatform(
+                id = "local",
+                name = "Local",
+                loginUrl = configured.url("/sign-in").toString(),
+                dashboardUrl = configured.url("/overview").toString(),
+                successUrlPatterns = listOf("/overview")
+            )
+            val policy = ConsoleOriginPolicy(platform)
+            val entries = mutableListOf<ApiDebugEntry>()
+            val credentials = mapOf(
+                "Authorization" to "Bearer alternate-port-secret",
+                "Cookie" to "session=alternate-port-cookie"
+            )
+
+            val denied = interceptApiRequest(
+                request = request(alternate.url("/api/usage").toString(), credentials),
+                tag = platform.id,
+                policy = policy,
+                debuggable = true,
+                entrySink = entries::add
+            )
+
+            assertEquals(null, denied)
+            assertEquals(0, alternate.requestCount)
+            assertTrue(entries.isEmpty())
+
+            val allowed = interceptApiRequest(
+                request = request(configured.url("/api/usage").toString(), credentials),
+                tag = platform.id,
+                policy = policy,
+                debuggable = true,
+                entrySink = entries::add
+            )
+
+            assertNotNull(allowed)
+            assertEquals(1, configured.requestCount)
+            assertEquals("Bearer alternate-port-secret", configured.takeRequest().getHeader("Authorization"))
+            assertEquals(1, entries.size)
+        }
+    }
+
     private fun withHttpsServer(block: (MockWebServer) -> Unit) {
         val certificate = HeldCertificate.Builder()
             .commonName("localhost")
@@ -241,10 +288,45 @@ class ConsoleResponseInterceptionTest {
         }
     }
 
-    private fun request(url: String): WebResourceRequest = mockk<WebResourceRequest>().also {
+    private fun withHttpsServers(block: (MockWebServer, MockWebServer) -> Unit) {
+        val certificate = HeldCertificate.Builder()
+            .commonName("localhost")
+            .addSubjectAlternativeName("localhost")
+            .build()
+        val serverCertificates = HandshakeCertificates.Builder()
+            .heldCertificate(certificate)
+            .build()
+        val clientCertificates = HandshakeCertificates.Builder()
+            .addTrustedCertificate(certificate.certificate)
+            .build()
+        val originalSocketFactory = HttpsURLConnection.getDefaultSSLSocketFactory()
+        val originalHostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+        val configured = MockWebServer()
+        val alternate = MockWebServer()
+
+        try {
+            configured.useHttps(serverCertificates.sslSocketFactory(), false)
+            alternate.useHttps(serverCertificates.sslSocketFactory(), false)
+            configured.start()
+            alternate.start()
+            HttpsURLConnection.setDefaultSSLSocketFactory(clientCertificates.sslSocketFactory())
+            HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
+            block(configured, alternate)
+        } finally {
+            HttpsURLConnection.setDefaultSSLSocketFactory(originalSocketFactory)
+            HttpsURLConnection.setDefaultHostnameVerifier(originalHostnameVerifier)
+            configured.shutdown()
+            alternate.shutdown()
+        }
+    }
+
+    private fun request(
+        url: String,
+        headers: Map<String, String> = emptyMap()
+    ): WebResourceRequest = mockk<WebResourceRequest>().also {
         every { it.url } returns Uri.parse(url)
         every { it.method } returns "GET"
-        every { it.requestHeaders } returns emptyMap()
+        every { it.requestHeaders } returns headers
     }
 
     private fun platform(server: MockWebServer) = ConsolePlatform(

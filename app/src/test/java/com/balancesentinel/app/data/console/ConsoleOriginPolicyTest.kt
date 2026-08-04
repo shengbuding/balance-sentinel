@@ -127,6 +127,22 @@ class ConsoleOriginPolicyTest {
         assertFalse(policy.isAllowedApiRequest("https://dashboard.example.com/settings"))
     }
 
+    // Mutation caught: reducing API destinations to hosts and admitting arbitrary ports.
+    @Test
+    fun `API membership requires an exact configured or built in origin`() {
+        val policy = ConsoleOriginPolicy(
+            platform(
+                loginUrl = "https://console.example.com:8443/sign-in",
+                dashboardUrl = "https://console.example.com:8443/overview"
+            )
+        )
+
+        assertTrue(policy.isAllowedApiRequest("https://console.example.com:8443/api/usage"))
+        assertFalse(policy.isAllowedApiRequest("https://console.example.com:9443/api/usage"))
+        assertTrue(policy.isAllowedApiRequest("https://api.deepseek.com/v1/models"))
+        assertFalse(policy.isAllowedApiRequest("https://api.deepseek.com:8443/v1/models"))
+    }
+
     @Test
     fun `navigation handler allows trusted origin dispatches external HTTP and consumes rejects`() {
         val openedUris = mutableListOf<String>()
