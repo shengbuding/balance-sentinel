@@ -133,6 +133,56 @@ class UsageScriptExecutorTest {
         assertTrue(inspection.failure is RefreshFailure.ScriptTimeout)
     }
 
+    // Mutation caught: rejecting optional/nullish syntax during configuration evaluation.
+    @Test
+    fun `inspection evaluates optional and nullish configuration expressions`() = runBlocking {
+        val script = UsageScript(
+            """(function(){var endpoint=null;return {request:{url:endpoint?.url ?? "https://cdn.example.com/balance"},extractor:function(r){return r;}};})()"""
+        )
+
+        val inspection = UsageScriptExecutor.inspect(script, account())
+
+        assertEquals("https://cdn.example.com/balance", inspection.request?.url)
+        assertEquals(setOf(WebOrigin.https("cdn.example.com")), inspection.requiredExtraOrigins)
+        assertFalse(inspection.staticallyDeterminable)
+        assertEquals(null, inspection.failure)
+    }
+
+    // Mutation caught: parsing the original unsupported extractor when classifying a literal request.
+    @Test
+    fun `optional extractor preserves literal request static inspection`() = runBlocking {
+        val inspection = UsageScriptExecutor.inspect(optionalNullishScript(), account())
+
+        assertEquals("https://api.example.com/x", inspection.request?.url)
+        assertTrue(inspection.staticallyDeterminable)
+        assertEquals(null, inspection.failure)
+    }
+
+    // Mutation caught: mapping nullish to truthiness or rewriting operators in lexical literals.
+    @Test
+    fun `optional and nullish extraction preserves falsy values and absent fallbacks`() = runBlocking {
+        val script = optionalNullishScript()
+        val present = UsageScriptExecutor.extractForTest(
+            script,
+            account(),
+            """{"payload":{"remaining":0,"flag":false,"text":""}}"""
+        )
+        val absent = UsageScriptExecutor.extractForTest(script, account(), "{}")
+
+        assertTrue(present is ScriptExecutionResult.Success)
+        assertTrue(absent is ScriptExecutionResult.Success)
+        val presentBalance = (present as ScriptExecutionResult.Success).balances.single()
+        val absentBalance = (absent as ScriptExecutionResult.Success).balances.single()
+        assertEquals(0.0, presentBalance.remaining!!, 0.0)
+        assertEquals(0.0, presentBalance.total!!, 0.0)
+        assertEquals(0.0, presentBalance.used!!, 0.0)
+        assertEquals("literal ?. ??", presentBalance.planName)
+        assertEquals(true, presentBalance.isValid)
+        assertEquals(7.0, absentBalance.remaining!!, 0.0)
+        assertEquals(1.0, absentBalance.total!!, 0.0)
+        assertEquals(1.0, absentBalance.used!!, 0.0)
+    }
+
     // Mutation caught: accepting a missing or non-finite remaining balance from the extractor.
     @Test
     fun `extractor requires a finite remaining balance`() = runBlocking {
@@ -171,6 +221,31 @@ class UsageScriptExecutorTest {
 
     private fun scriptWithExtractor(body: String) =
         """({request:{url:"https://api.example.com/x"},extractor:function(r){$body}})"""
+
+    private fun optionalNullishScript() = UsageScript(
+        """
+            ({
+                request:{url:"https://api.example.com/x"},
+                extractor:function(response){
+                    /* Operators inside comments stay literal: ?. ?? */
+                    var marker="literal ?. ??";
+                    var pattern=/\?\?/;
+                    var fallback=7;
+                    var remaining=response.payload?.remaining ?? fallback;
+                    var flag=response.payload?.flag ?? true;
+                    var text=response.payload?.text ?? "fallback";
+                    return {
+                        remaining:remaining,
+                        total:text===""?0:1,
+                        used:flag===false?0:1,
+                        plan_name:marker,
+                        isValid:pattern.test(marker),
+                        unit:"USD"
+                    };
+                }
+            })
+        """.trimIndent()
+    )
 
     private fun account() = AccountInfo(
         id = "account-id",
