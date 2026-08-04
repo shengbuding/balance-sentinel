@@ -120,3 +120,92 @@ The historical CrashLogger blocker is closed by two independent complete Debug p
 ## Recommendation
 
 The branch is suitable for a controlled release after the release owner accepts the API 35 gaps above. For broad rollout, prioritize an API 35 device pass for WebView origin enforcement, foreground-service restrictions, boot restoration, and watchdog behavior.
+
+## Final-Fix Appendix (Verified Source HEAD `7f15344`)
+
+**Review date:** 2026-08-04
+
+**Required base:** `f13d8e0d009972bae62cc81f6a19f0ac1740682b`
+
+**Verified source HEAD:** `7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+**Final-fix source range:** `f13d8e0d009972bae62cc81f6a19f0ac1740682b..7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+**Whole-review audit range:** `0e858065053f33b68a4f2173358ab97482f0c772..7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+The Task 12 review above is preserved as the historical `fd46ba1` decision. This appendix supersedes its counts and artifact identities for the final-fix source HEAD.
+
+### Final-Fix Decision
+
+**Conditionally releasable.** All executable final-fix gates passed. The remaining release condition is explicit acceptance of the API 35 device gap; only a healthy API 36 emulator was available.
+
+### Final-Fix Gate Matrix
+
+| Area | Fresh final-fix evidence | Result |
+|---|---|---|
+| Affected JVM | security, refresh, repository, ViewModel, receiver, service, widget, and script suites | 700 tests; 0 failures/errors; 3 skipped |
+| Debug JVM | two independent complete executions | each 1,057 tests; 0 failures/errors; 3 skipped |
+| Release JVM | one complete execution | 1,057 tests; 0 failures/errors; 3 skipped |
+| Compilation | Debug production and Android-test Kotlin | both commands exited 0 |
+| Lint | Debug and Release, no baseline | 0 errors; each variant 151 warnings + 5 info |
+| Packaging | fresh Debug and Release assembly plus packaged-manifest checks | both APKs built and audited |
+| Kover | Debug XML, HTML, and verification | passed; line coverage 39.4283% |
+| Device | full unfiltered suite on Android 16/API 36 | 38/38 passed |
+| Resources | paired default/English audit | 554/554 unique keys; no duplicates or differences |
+
+Every Gradle gate recorded zero Java `GradleWrapperMain` clients before and after its invocation. Complete evidence is preserved under `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/final-fix-evidence/final-gates/`.
+
+### Final-Fix Security And Persistence Closure
+
+The final fix wave closes the whole-branch review findings by:
+
+- redacting plural cookie and normalized session credential material before Debug storage and final formatting;
+- requiring exact full Console API origins, including port, before interception or credential forwarding;
+- routing manual widget refresh and watchdog work through an explicit non-exported internal receiver;
+- serializing relevant raw, refresh-log, and usage mutations through one process-wide reentrant coordinator;
+- rejecting partial post-retention raw imports that could replace complete summaries;
+- restoring bounded, syntax-aware optional chaining and nullish compatibility without changing nullish semantics;
+- retaining cached UI balances for failed accounts while allowing successful peers to update;
+- deriving service notifications from committed, per-currency aggregates and saved wallet ordering;
+- rejecting finite `Double` values outside persisted `Float` range as schema failures before side effects;
+- moving account-dialog and provider credential copy into paired locale resources; and
+- correcting the project index to describe `MainActivityTest` as HomeScreen toolbar smoke coverage.
+
+The final-fix source range contains 26 reviewable support, RED, GREEN, and documentation commits. Production behavior changes follow accepted behavior-level RED commits; rejected instrumentation attempts remain recorded only as diagnostic evidence.
+
+### Final-Fix Artifact Identity
+
+| APK | Bytes | SHA-256 |
+|---|---:|---|
+| Debug | 33,090,609 | `127631A86E961A751043D818EF34B97C4C1B70437C7375F0CF6056A4A4132339` |
+| Release | 15,138,835 | `7289B66DA801BD34E68BFA7DC73EED81E5432ACBDB0A21C5FFC6C7F0F8F7F362` |
+
+Both APKs retain five exported framework widget providers and exactly one non-exported internal widget refresh receiver. No packaged manifest exposes the two custom refresh actions, and no APK contains `ConsoleActivity`.
+
+### Final-Fix Coverage
+
+| Counter | Covered | Total | Coverage |
+|---|---:|---:|---:|
+| Instructions | 40,690 | 142,883 | 28.4778% |
+| Branches | 2,514 | 6,114 | 41.1187% |
+| Lines | 5,904 | 14,974 | 39.4283% |
+| Methods | 1,060 | 2,056 | 51.5564% |
+| Classes | 312 | 887 | 35.1747% |
+
+Kover verification exited 0 with its existing 1%..100% bound.
+
+### Final-Fix Device And Release Risk
+
+The available `emulator-5554` was healthy, boot-complete, and reported Android 16/API 36. The fresh full suite passed 38/38 discovered tests. Current instrumentation source contains 41 tests; the remaining three are `ConsoleWebViewSecurityTest` methods constrained to API 35 and therefore suppressed on API 36.
+
+No API 35 device was available, so there is still no target-API execution for the WebView origin cases or the other API-35-specific boot, foreground-service, widget/watchdog, and long-interval scenarios listed earlier. This remains the principal release risk.
+
+### Final-Fix Hygiene And Privacy
+
+- The full working-tree review range passed `git diff --check`; 297 tracked text files contained no NUL bytes; no generated/build output was added; paired resources remained 554/554; and zero Gradle wrapper clients remained. The clean committed-state repeat is recorded in the final ignored handoff after this report-only commit.
+- No privacy-policy change is required for this hardening range: permissions and destinations are unchanged, while credential handling, origin checks, component exposure, and Debug redaction are narrowed.
+- Independent follow-up: the existing policy wording that API keys are used exclusively with official AI-provider APIs should be checked against the product's pre-existing custom-provider/script capability. This is not introduced by the final-fix range.
+
+### Final-Fix Recommendation
+
+The final-fix source is suitable for a controlled release once the owner consciously accepts the unavailable API 35 evidence. Broad rollout should still obtain an API 35 device pass for the target-API scenarios; no API 36 result is treated as a substitute.

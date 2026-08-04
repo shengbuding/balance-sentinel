@@ -153,3 +153,85 @@ API 36 results and Robolectric tests are supplemental and are not presented as s
 ## Result
 
 All executable Task 12 gates passed and no blocking/high defect remains open. Release approval remains conditional on consciously accepting the listed API 35 device gaps and the residual risks in `RELEASE_REVIEW_REPORT.md`.
+
+## Final-Fix Appendix (Verified Source HEAD `7f15344`)
+
+**Verification date:** 2026-08-04
+
+**Required base:** `f13d8e0d009972bae62cc81f6a19f0ac1740682b`
+
+**Verified source HEAD:** `7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+**Final-fix source range:** `f13d8e0d009972bae62cc81f6a19f0ac1740682b..7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+**Whole-review audit range:** `0e858065053f33b68a4f2173358ab97482f0c772..7f15344baa3ebfda9a2d991734751b545080a3fa`
+
+The original Task 12 sections above remain the historical `fd46ba1` snapshot. This appendix is the authoritative verification record for the final-fix source HEAD. The later report-only commit does not change compiled source, tests, resources, or APK inputs.
+
+### Final-Fix Gate Results
+
+All Gradle invocations below were serialized and recorded zero Java `GradleWrapperMain` clients before and after execution.
+
+| Gate | Fresh result |
+|---|---|
+| Combined affected Debug JVM suites | 56 suites, 700 tests, 0 failures, 0 errors, 3 skipped |
+| `compileDebugKotlin --rerun-tasks` | exit 0; `BUILD SUCCESSFUL` |
+| `compileDebugAndroidTestKotlin --rerun-tasks` | exit 0; `BUILD SUCCESSFUL` |
+| Complete Debug JVM run 1 | 91 suites, 1,057 tests, 0 failures, 0 errors, 3 skipped |
+| Complete Debug JVM run 2 | 91 suites, 1,057 tests, 0 failures, 0 errors, 3 skipped |
+| Complete Release JVM run | 91 suites, 1,057 tests, 0 failures, 0 errors, 3 skipped |
+| Debug + Release lint | 0 errors in both variants; no baseline |
+| Debug + Release assembly | both APKs built and packaged-manifest audits passed |
+| Kover Debug XML + HTML + verify | exit 0; configured 1%..100% verification bound passed |
+| API 36 instrumentation | 38 tests, 0 failures, 0 errors, 0 skipped |
+
+The affected JVM gate covered Debug redaction, Console policy/interception, refresh and committer behavior, repository/import/cleanup paths, `HomeViewModel`, receivers, services/notification derivation, widgets, and saved-script/balance execution. Its exact log, boundary record, and 56 XML suites are under `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/final-fix-evidence/final-gates/01-affected-jvm/`.
+
+The two complete Debug runs and the complete Release run are independent process-bounded executions. Their XML and HTML reports are separately archived under final-gates directories `04-test-debug-unit-run-1`, `05-test-debug-unit-run-2`, and `06-test-release-unit`.
+
+The three JVM skips remain the AndroidKeyStore-dependent `WidgetProviderTest` rendering cases.
+
+### Final-Fix Coverage
+
+| Counter | Covered | Total | Coverage |
+|---|---:|---:|---:|
+| Instructions | 40,690 | 142,883 | 28.4778% |
+| Branches | 2,514 | 6,114 | 41.1187% |
+| Lines | 5,904 | 14,974 | 39.4283% |
+| Methods | 1,060 | 2,056 | 51.5564% |
+| Classes | 312 | 887 | 35.1747% |
+
+Kover verification exited 0 with the configured non-zero 1%..100% guard. The guard remains a regression check, not a claim of exhaustive coverage.
+
+### Final-Fix Lint
+
+- Debug: 156 findings, consisting of 151 warnings and 5 informational findings.
+- Release: 156 findings, consisting of 151 warnings and 5 informational findings.
+- Errors: 0 in both variants.
+- No tracked lint baseline exists, and lint was not weakened or suppressed for this fix wave.
+
+### Final-Fix APK And Manifest Evidence
+
+| Artifact | Size | SHA-256 |
+|---|---:|---|
+| `app-debug.apk` | 33,090,609 bytes | `127631A86E961A751043D818EF34B97C4C1B70437C7375F0CF6056A4A4132339` |
+| `app-release.apk` | 15,138,835 bytes | `7289B66DA801BD34E68BFA7DC73EED81E5432ACBDB0A21C5FFC6C7F0F8F7F362` |
+
+Both fresh APK manifests contain all five exported static widget providers with only the framework `APPWIDGET_UPDATE` action. Both contain exactly one non-exported `WidgetRefreshReceiver`; neither contains a manifest filter for `WIDGET_REFRESH_NOW` or `WIDGET_WATCHDOG`. `ConsoleActivity` is absent from both packaged manifests. The APKs, `aapt` dumps, hashes, and parsed audit are preserved under final-gates directory `08-assemble-apks`.
+
+### Final-Fix Device Evidence
+
+`adb devices -l` found one healthy target: `emulator-5554`, Android 16/API 36, x86_64, AVD `medium_phone`, with boot completion set to 1. The complete unfiltered `connectedDebugAndroidTest --rerun-tasks` invocation discovered and passed 38/38 tests. The source now contains 8 instrumentation files and 41 `@Test` methods; the three `ConsoleWebViewSecurityTest` methods remain API-35-only and were suppressed on API 36.
+
+No API 35 device was available. No API 35 execution is claimed, and the target-API device gaps documented in the historical report remain release risks.
+
+### Final-Fix Source Integrity
+
+- Default and English string resources contain 554 unique keys each, with zero duplicates and zero paired-key differences.
+- The final-fix range contains no staged APK, class, DEX, archive, build, or generated output.
+- Privacy-policy decision: no hardening-range update is required because this wave adds no permission or third-party data destination and instead narrows credential, origin, export, and redaction behavior.
+- The full working-tree range from `0e858065053f33b68a4f2173358ab97482f0c772` through the final-fix source and these appendices passed `git diff --check` with exit 0. The tracked-text scan covered 297 files and found no NUL bytes; the range contained no tracked generated/build artifact; zero Gradle wrapper clients remained. Clean status and the exact committed range are repeated in the final ignored handoff after the report commit.
+
+### Final-Fix Result
+
+Every executable final-fix gate passed at source HEAD `7f15344`. Release status remains conditional on explicit acceptance of the unavailable API 35 device coverage; API 36 and Robolectric evidence are supplemental and are not presented as substitutes.
