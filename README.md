@@ -57,7 +57,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (1,528 unit tests, 53 files)
+# 运行测试 (1,033 JVM tests, 88 Kotlin test files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -174,7 +174,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (1,528 unit tests, 53 files)
+# Run tests (1,033 JVM tests, 88 Kotlin test files)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -226,7 +226,7 @@ See [SIGNING.md](SIGNING.md) for details.
 | Storage | EncryptedSharedPreferences + SharedPreferences (JSON, no Room) |
 | Services | Foreground Service + Handler timer loop |
 | i18n | Android LocaleManager (API 35+), Chinese/English bilingual |
-| Testing | JUnit 4 + MockK + Robolectric + MockWebServer |
+| Testing | JUnit 4 + MockK + Robolectric + MockWebServer + AndroidX Compose Test + Kover |
 | Build | Gradle 8.11 + Version Catalog |
 
 ### Version
@@ -284,6 +284,17 @@ System     BalanceRefreshService           ← Foreground service + health track
            BootReceiver                    ← Auto-start + keep-alive
            5 Widget providers              ← RemoteViews (2×1 / 2×2 / 3×1 / 4×2 / 5×1)
 ```
+
+## Hardened Data Flow
+
+- `RefreshCoordinator` owns refresh concurrency, while `AccountBalanceRefresher` performs provider work and `RefreshResultCommitter` is the only success-commit boundary. Manual, service, and widget entry points share this flow so stale or failed work cannot update cache, history, or alerts.
+- `AccountLifecycleManager` centralizes account add/update/delete migration across credentials, history, summaries, widget state, alerts, and Console data.
+- `BalanceQueryService`, `ScriptNetworkPolicy`, and `RhinoScriptRunner` keep native provider contracts separate from custom scripts and enforce HTTPS destination, redirect, DNS/private-address, and sandbox policy.
+- `ConsoleOriginPolicy` and `ConsoleSessionCleaner` constrain WebView injection to exact authorized origins and clear session state on logout.
+- `BackupImportPlanner` requires preview before apply; destructive replace requires complete credentials and two confirmations.
+- `DebugCapturePolicy` gates diagnostic request/response capture by the debuggable build flag; Release packaging tests verify the capture path is inactive.
+
+The current verification baseline is 1,033 Debug and 1,033 Release JVM tests, 8 instrumentation source classes with 39 test methods, and a supplemental 36/36 pass on an API 36 AVD. Target-API device gaps are recorded in [TEST_REPORT.md](TEST_REPORT.md), and accepted release residuals are recorded in [RELEASE_REVIEW_REPORT.md](RELEASE_REVIEW_REPORT.md).
 
 ## Navigation
 
@@ -373,7 +384,9 @@ DeepSeekBalance/
 │       │       ├── values/{strings,themes}.xml
 │       │       ├── values-en/strings.xml
 │       │       └── xml/widget_*.xml
-│       └── test/     ← 53 test files, 1,528 unit tests
+│       ├── test/     ← 86 shared JVM test files
+│       ├── testDebug/ and testRelease/ ← 2 build-variant test files
+│       └── androidTest/ ← 8 classes, 39 instrumentation source tests
 ├── docs/
 │   ├── superpowers/specs/    ← Design & plan documents
 │   ├── adr/                  ← Architecture Decision Records

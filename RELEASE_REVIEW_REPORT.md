@@ -1,205 +1,84 @@
-# 钱包哨兵 v1.4.2 - 上线审查报告
+# Wallet Sentinel v1.4.2 - Release Review
 
-**审查日期**：2026年7月30日
+**Review date:** 2026-08-04
 
-**审查状态**：✅ 通过
+**Review range:** `0e858065053f33b68a4f2173358ab97482f0c772...fd46ba1`
 
----
+**Branch:** `wallet-sentinel-hardening`
 
-## 📊 测试结果总览
+## Decision
 
-| 指标 | 结果 | 状态 |
-|------|------|------|
-| **单元测试** | 1,522 通过 / 57 套件 | ✅ 通过 |
-| **Lint 检查** | 0 个错误 | ✅ 通过 |
-| **Debug 构建** | 成功 | ✅ 通过 |
-| **Release 构建** | 成功 | ✅ 通过 |
+**Conditionally releasable.** The full JVM, lint, build, packaging, coverage, hygiene, and source-review gates passed with no open blocking or high-severity defect. Release owners must explicitly accept the missing API 35 device scenarios and the non-blocking residuals below.
 
----
+## Verified Gates
 
-## ✅ 单元测试详情
+| Area | Evidence | Result |
+|---|---|---|
+| Debug JVM | two mandatory independent runs plus a final current-head run | each 1,033 tests, 0 failures/errors, 3 skipped |
+| Release JVM | fresh current-head run | 1,033 tests, 0 failures/errors, 3 skipped |
+| Focused integration | refresh/API/repository/Console/receiver/service/widget suites | 593 tests, 0 failures/errors, 3 skipped |
+| Android lint | Debug and Release with `abortOnError=true` | 0 errors; warnings remain visible |
+| Packaging | fresh Debug and Release assembly | both APKs built and audited |
+| Kover | XML, HTML, verification | passed; line coverage 38.3707% |
+| Device | API 36 AVD | 36/36 discovered tests passed |
+| Hygiene | diff/resource/NUL/marker/staging audits | passed |
 
-### 测试统计
+## Full-Range Security And Persistence Review
 
-- **总测试数**：1,528
-- **测试套件**：57
-- **通过**：1,522
-- **跳过**：6
-- **失败**：0
-- **通过率**：99.6%
+The entire hardening range was reviewed across refresh, account lifecycle, provider scripts/contracts, backup/restore, Console WebView boundaries, services/receivers/widgets, alerts/history, and debug capture.
 
-### 测试覆盖范围
+Confirmed release properties:
 
-| 模块 | 状态 |
-|------|------|
-| API 层（供应商实现） | ✅ |
-| Repository 层 | ✅ |
-| ViewModel 层 | ✅ |
-| Engine 层 | ✅ |
-| Widget 层 | ✅ |
-| 工具类 | ✅ |
+- Shared refresh coordination prevents stale or failed work from committing cache, history, or alert mutations.
+- Unsupported providers issue zero guessed requests; six native contracts use provider-specific endpoints and fixtures, including SiliconFlow COM.
+- Backup apply is impossible before preview; replace requires complete credentials and two confirmations.
+- URL, origin, DNS, and redirect validation rejects substring, user-info, alternate-port, and private-address bypasses within the allowed-origin model.
+- Account lifecycle changes migrate or remove owned data through the lifecycle manager.
+- Daily summary deletion occurs only after synchronous write and exact readback.
+- Credential, cookie, raw-response, and script-secret paths were traced through stable errors, logs, backups, and clipboard behavior.
+- Release does not install active debug capture, and the nonexistent Console activity is absent from manifests/APKs.
 
----
+The repository's codebase-memory graph tools were unavailable during the final review. The fallback was full-range Git history/diff inspection, `rg`, and direct source/test tracing; this tooling limitation does not change the recorded verification results.
 
-## 🔍 Lint 检查详情
+## Artifact Identity
 
-### 检查结果
+| APK | Bytes | SHA-256 |
+|---|---:|---|
+| Debug | 33,022,173 | `B6C755905E050E8E360D9C58E66C5195DA459CEEE050FC0A1E2DC734D49D3CF5` |
+| Release | 15,103,167 | `93E782F874FBC49EDC9CCBDAFF3A4D33F8817F0264758AC48F77B0BBB669EAD5` |
 
-- **总问题数**：0 个错误
-- **警告**：20 个（非阻塞）
-- **信息**：0
+## API 35 Release Gap
 
-### 警告类型
+Only an API 36 AVD was available. Its 36/36 pass is supplemental, not target-API proof. Before broad rollout, run these on API 35 where possible:
 
-| 类型 | 数量 | 说明 |
-|------|------|------|
-| PluralsCandidate | 16 | 复数形式建议（非阻塞） |
-| 其他 | 4 | 其他警告（非阻塞） |
+- Backup preview and destructive replace.
+- Console exact-origin injection, cross-origin navigation, and logout cleanup.
+- Boot restore.
+- Foreground-service start restriction and representative OEM behavior.
+- Widget manual/watchdog separation.
+- Watchdog restart after failure/cancellation.
+- Long refresh intervals.
 
----
+`BalanceRefreshServiceTest` is a JVM test and does not prove API-35 foreground-service restrictions.
 
-## 🏗️ 构建详情
+## Accepted Non-Blocking Residuals
 
-### Debug 构建
+1. URL validation contains duplicated hard-coded copy; SELECT fields currently use text input, but no provider declares SELECT.
+2. Some provider compatibility parameters remain intentionally ignored, and debug clients may be allocated per request.
+3. Cross-file SharedPreferences lifecycle mutations are compensating operations rather than a transaction; secondary diagnostics may be swallowed.
+4. A thrown widget action finishes its pending result but can escape without structured logging.
+5. Existing Kotlin, deprecation, and lint warnings remain. Lint reports 0 errors, 152/153 warnings, and 5 informational findings per variant.
+6. Additional authorized HTTPS origins are limited to port 443.
+7. Thirty-day TTL arithmetic is duplicated.
+8. Scheduling retains intentionally bounded lateness.
+9. There is no explicit multi-entry relative-order test or explicit `getAccountIds()` access-order mutation test.
 
-- **状态**：✅ 成功
-- **APK 大小**：~30 MB
-- **构建时间**：~10 秒
+The historical CrashLogger blocker is closed by two independent complete Debug passes and is not an accepted residual.
 
-### Release 构建
+## Privacy Decision
 
-- **状态**：✅ 成功
-- **APK 大小**：~15 MB（R8 混淆后）
-- **构建时间**：~1 分 36 秒
-- **代码混淆**：✅ 已启用
-- **资源压缩**：✅ 已启用
+`PRIVACY_POLICY.md` is intentionally unchanged. The full-range review found no proven mismatch between current behavior and its promises. No policy edit was made merely to create documentation churn.
 
----
+## Recommendation
 
-## 🎯 功能验证清单
-
-### 核心功能
-
-| 功能 | 状态 |
-|------|------|
-| 多供应商支持（14个） | ✅ |
-| 多账户管理 | ✅ |
-| 余额刷新 | ✅ |
-| Widget 显示 | ✅ |
-| 余额预警 | ✅ |
-| 数据迁移 | ✅ |
-| 通知栏排序 | ✅ |
-
-### 代码审查修复
-
-| 问题 | 状态 |
-|------|------|
-| Rhino sandbox 加固 (全局对象删除 + 指令限制) | ✅ 已修复 |
-| 模板变量 JS 转义 | ✅ 已修复 |
-| WebView URL scheme 过滤 | ✅ 已修复 |
-| POST body 安全透传 | ✅ 已修复 |
-| WebView 生命周期管理 (DisposableEffect) | ✅ 已修复 |
-| localStorage key/value 转义 | ✅ 已修复 |
-| ConsoleSession 30天 TTL | ✅ 已修复 |
-
----
-
-## 🔒 安全检查
-
-| 检查项 | 状态 |
-|--------|------|
-| API Key 加密存储 | ✅ |
-| HTTPS 传输 | ✅ |
-| 证书固定 | ✅ |
-| 日志脱敏 | ✅ |
-| 备份禁用 | ✅ |
-| 旧版数据清理 | ✅ |
-| Rhino sandbox 隔离 (全局对象删除 + 指令限制) | ✅ |
-| 模板变量 JS 转义 | ✅ |
-| WebView URL scheme 过滤 | ✅ |
-| POST body 安全透传 | ✅ |
-| WebView 生命周期管理 (DisposableEffect) | ✅ |
-| localStorage key/value 转义 | ✅ |
-| ConsoleSession 30天 TTL | ✅ |
-
----
-
-## 📈 代码质量指标
-
-| 指标 | 结果 |
-|------|------|
-| 代码行数 | ~11,000 行 |
-| 测试覆盖率 | ~80% |
-| 编译警告 | 10 个（非阻塞） |
-| Lint 警告 | 20 个（非阻塞） |
-| 安全漏洞 | 0 |
-
----
-
-## 📋 变更记录
-
-### v1.4.2 主要更新
-
-- 多供应商支持（14 个 AI 供应商）
-- 自定义余额查询脚本
-- 账户调试功能
-- 模力方舟预设
-- 缓存层
-- 健康检查
-- 本地用量追踪
-- 账户编辑功能
-- 数据迁移
-
-### 代码审查修复
-
-- Rhino sandbox 加固：删除危险全局对象 + 指令限制隔离 JS 执行环境
-- 模板变量 JS 转义：防止 XSS 注入
-- WebView URL scheme 过滤：仅允许 http/https 协议
-- POST body 安全透传：安全的请求体传递机制
-- WebView 生命周期管理：DisposableEffect 防止内存泄漏
-- localStorage key/value 转义：防止存储注入攻击
-- ConsoleSession 30天 TTL：会话自动过期机制
-
----
-
-## ✅ 上线前检查清单
-
-- [x] 所有单元测试通过（1,528个，1,522通过 / 6跳过 / 0失败）
-- [x] Lint 检查无错误
-- [x] Debug 构建成功
-- [x] Release 构建成功
-- [x] 代码混淆已启用
-- [x] 资源压缩已启用
-- [x] 数据迁移逻辑正常
-- [x] 旧版数据已清理
-- [x] 安全检查通过
-- [x] 功能验证完成
-- [x] 文档已更新
-
----
-
-## 🎯 结论
-
-**项目状态：✅ 可上线**
-
-全部 1,528 项测试中 1,522 项通过、6 项跳过、0 项失败，代码质量良好，功能完整，安全检查合格。代码审查发现的 7 项安全问题已全部修复，包括 Rhino sandbox 隔离、WebView 安全加固、localStorage 转义等。
-
-### 建议
-
-1. **可以发布 Release APK**
-2. **建议先进行小范围用户测试**
-3. **监控首批用户的反馈**
-
----
-
-## 📦 生成的 APK
-
-- **Release APK**：`app/build/outputs/apk/release/app-release.apk`
-- **大小**：~15 MB
-- **版本**：v1.4.2
-
----
-
-**报告生成时间**：2026年7月30日
-
-**审查执行者**：Claude Code
+The branch is suitable for a controlled release after the release owner accepts the API 35 gaps above. For broad rollout, prioritize an API 35 device pass for WebView origin enforcement, foreground-service restrictions, boot restoration, and watchdog behavior.

@@ -1,240 +1,123 @@
-# 钱包哨兵 v1.4.2 - 上线前测试报告
+# Wallet Sentinel v1.4.2 - Verification Report
 
-**测试日期**：2026年7月30日
+**Verification date:** 2026-08-04
 
-**测试环境**：Windows Server 2025
+**Branch:** `wallet-sentinel-hardening`
 
-**GitHub 仓库**：https://github.com/shengbuding/balance-sentinel
+**Review baseline:** `0e858065053f33b68a4f2173358ab97482f0c772`
 
----
+**Verified code HEAD:** `fd46ba1`
 
-## 📊 测试结果总览
+## Outcome
 
-| 指标 | 结果 | 状态 |
-|------|------|------|
-| **单元测试** | 1,522 通过 / 57 套件 | ✅ 通过 |
-| **Lint 检查** | 20 个警告，0 个错误 | ✅ 通过 |
-| **Debug 构建** | 成功 | ✅ 通过 |
-| **Release 构建** | 成功 | ✅ 通过 |
-| **GitHub 推送** | 成功 | ✅ 通过 |
+The complete Debug and Release JVM suites, Android lint, Debug/Release packaging, and Kover verification passed from fresh task execution. A supplemental API 36 device run passed all 36 discovered tests. No API 35 device was available, so the target-API scenarios listed below remain explicitly unexecuted.
 
----
+## Current-Head Gate Results
 
-## ✅ 单元测试详情
+| Gate | Result | Duration |
+|---|---|---:|
+| Debug JVM | 1,033 tests; 0 failures; 0 errors; 3 skipped | 108.72 s |
+| Release JVM | 1,033 tests; 0 failures; 0 errors; 3 skipped | 103.34 s |
+| Android lint | 0 errors; Debug 152 warnings + 5 info; Release 153 warnings + 5 info | 168.87 s |
+| Debug + Release APK | both assembled and audited | 133.16 s |
+| Kover Debug | report generated; verification bound 1..100 passed | 110.54 s |
+| API 36 device | 36 tests; 36 passed; 0 failed/skipped | 5m 38s |
 
-### 测试统计
+The three JVM skips are AndroidKeyStore-dependent `WidgetProviderTest` rendering cases: no data, data exists, and all five providers.
 
-- **总测试数**：1,528
-- **测试套件**：57
-- **通过**：1,522
-- **跳过**：6
-- **失败**：0
-- **通过率**：99.6%
+## Commands
 
-### 测试覆盖范围
+The final commands were run serially with no active Gradle client before or after each gate:
 
-| 模块 | 测试套件 | 测试数量 | 状态 |
-|------|----------|----------|------|
-| **API 层** | | | |
-| DeepSeekApiServiceTest | 1 | 20 | ✅ |
-| DeepSeekProviderTest | 1 | 6 | ✅ |
-| MoonshotProviderTest | 1 | 6 | ✅ |
-| DoubaoProviderTest | 1 | 6 | ✅ |
-| BaichuanProviderTest | 1 | 6 | ✅ |
-| QwenProviderTest | 1 | 6 | ✅ |
-| ProviderIntegrationTest | 1 | 10 | ✅ |
-| ProviderPerformanceTest | 1 | 7 | ✅ |
-| **Repository 层** | | | |
-| ApiKeyManagerTest | 1 | 15+ | ✅ |
-| RawRecordStoreTest | 1 | 10+ | ✅ |
-| DailySummaryStoreTest | 1 | 10+ | ✅ |
-| RefreshLogStoreTest | 1 | 10+ | ✅ |
-| UsageDataStoreTest | 1 | 10+ | ✅ |
-| AlertCheckerTest | 1 | 15+ | ✅ |
-| ConfigManagerTest | 1 | 10+ | ✅ |
-| **ViewModel 层** | | | |
-| HomeViewModelTest | 1 | 25+ | ✅ |
-| InsightsViewModelTest | 1 | 10+ | ✅ |
-| LogViewModelTest | 1 | 10+ | ✅ |
-| DataManagementViewModelTest | 1 | 10+ | ✅ |
-| **Engine 层** | | | |
-| IntradayEngineTest | 1 | 8+ | ✅ |
-| DailyEngineTest | 1 | 10+ | ✅ |
-| RecordAggregatorTest | 1 | 10+ | ✅ |
-| ServiceHealthTrackerTest | 1 | 9+ | ✅ |
-| **Widget 层** | | | |
-| WidgetProviderTest | 1 | 10+ | ✅ |
-| WidgetConfigStoreTest | 1 | 10+ | ✅ |
-| BalanceWidgetDataStoreTest | 1 | 10+ | ✅ |
-| SparklineDrawerTest | 1 | 10+ | ✅ |
-| **工具类** | | | |
-| FormatUtilsTest | 1 | 10+ | ✅ |
-| LoggerTest | 1 | 10+ | ✅ |
-| CrashLoggerTest | 1 | 18 | ✅ |
-| OnboardingHelperTest | 1 | 10+ | ✅ |
-| BatteryOptimizationHelperTest | 1 | 10+ | ✅ |
+```powershell
+.\gradlew.bat testDebugUnitTest --rerun-tasks
+.\gradlew.bat testReleaseUnitTest --rerun-tasks
+.\gradlew.bat lintDebug lintRelease --rerun-tasks
+.\gradlew.bat assembleDebug assembleRelease --rerun-tasks
+.\gradlew.bat koverXmlReportDebug koverHtmlReportDebug koverVerifyDebug --rerun-tasks
+```
 
----
+The required focused integration command also passed:
 
-## 🔍 Lint 检查详情
+```powershell
+.\gradlew.bat testDebugUnitTest `
+  --tests "com.balancesentinel.app.data.refresh.*" `
+  --tests "com.balancesentinel.app.data.api.balance.*" `
+  --tests "com.balancesentinel.app.data.repository.*" `
+  --tests "com.balancesentinel.app.data.console.*" `
+  --tests "com.balancesentinel.app.receiver.*" `
+  --tests "com.balancesentinel.app.service.*" `
+  --tests "com.balancesentinel.app.widget.*" `
+  --rerun-tasks
+```
 
-### 检查结果
+Focused result: 46 suites, 593 tests, 0 failures/errors, 3 skipped.
 
-- **总问题数**：20
-- **错误**：0
-- **警告**：20
-- **信息**：0
+Two independent mandatory complete Debug runs each produced 90 suites, 1,033 tests, 0 failures/errors, and 3 skips. This closes the historical CrashLogger repeated-install/reset blocker; `CrashLoggerTest` contributed 22 passing tests in each run.
 
-### 警告类型
+## Coverage
 
-| 类型 | 数量 | 说明 |
-|------|------|------|
-| PluralsCandidate | 16 | 复数形式建议（非阻塞） |
-| 其他 | 4 | 其他警告（非阻塞） |
+| Counter | Covered | Total | Coverage |
+|---|---:|---:|---:|
+| Instructions | 38,931 | 140,998 | 27.6110% |
+| Branches | 2,364 | 5,943 | 39.7779% |
+| Lines | 5,624 | 14,657 | 38.3707% |
+| Methods | 998 | 1,993 | 50.0753% |
+| Classes | 301 | 873 | 34.4788% |
 
-### 结论
+Kover verification uses a non-zero guard of 1% to 100%. Passing the guard is not treated as a claim of exhaustive coverage.
 
-所有警告均为非阻塞性质，不影响应用功能和上线。
+## Lint
 
----
+- Debug: 157 findings total, consisting of 152 warnings and 5 informational findings.
+- Release: 158 findings total, consisting of 153 warnings and 5 informational findings.
+- Errors: 0 in both variants.
+- `abortOnError=true` remained active.
+- No `lint-baseline.xml` exists.
+- Existing warnings remain visible and are classified as non-blocking release debt.
 
-## 🏗️ 构建详情
+## APK And Manifest Evidence
 
-### Debug 构建
+| Artifact | Size | SHA-256 |
+|---|---:|---|
+| `app-debug.apk` | 33,022,173 bytes | `B6C755905E050E8E360D9C58E66C5195DA459CEEE050FC0A1E2DC734D49D3CF5` |
+| `app-release.apk` | 15,103,167 bytes | `93E782F874FBC49EDC9CCBDAFF3A4D33F8817F0264758AC48F77B0BBB669EAD5` |
 
-- **状态**：✅ 成功
-- **APK 大小**：~30 MB
-- **构建时间**：~10 秒
+The Console is a Compose destination, not an Android activity. The nonexistent Console activity is absent from source declarations, merged and packaged manifests, and both APK audits. Release inspection also found no active debug-capture installation path.
 
-### Release 构建
+## Device Test Status
 
-- **状态**：✅ 成功
-- **APK 大小**：~15 MB（R8 混淆后）
-- **构建时间**：~1 分 36 秒
-- **代码混淆**：✅ 已启用
-- **资源压缩**：✅ 已启用
+Instrumentation source contains 8 Kotlin classes and 39 `@Test` methods. The connected API 36 AVD discovered and executed 36 tests; all 36 passed. Three API-35-only `ConsoleWebViewSecurityTest` cases were omitted by `@SdkSuppress` as intended.
 
----
+The valid device artifact is `.superpowers/sdd/2026-08-01-wallet-sentinel-hardening/task-12-evidence/device-api36-full-green/results.xml`. A failed intermediate run under `device-api36-focused-green` is retained only for diagnosis and is not counted as passing evidence.
 
-## 🎯 功能验证清单
+Valid Insights boundary traces completed in 531 ms and 476 ms. The timeout was caused by semantics-tag placement, not ViewModel latency. The separately archived overlapping trace is invalid and is not used as evidence.
 
-### 核心功能
+## API 35 Gaps
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 多供应商支持 | ✅ | 支持 13 个 AI 供应商 |
-| 多账户管理 | ✅ | 添加、编辑、删除账户 |
-| 余额刷新 | ✅ | 手动和自动刷新 |
-| Widget 显示 | ✅ | 5 种尺寸 Widget |
-| 余额预警 | ✅ | 低余额和异动通知 |
-| 数据导出/导入 | ✅ | 配置和历史数据 |
-| 中英双语 | ✅ | 界面语言切换 |
+An API 35 device was not available. The following target-API checks remain unexecuted:
 
-### 新增功能
+- Both backup preview/replace scenarios.
+- All three Console WebView exact-origin, navigation, and logout scenarios.
+- Boot restore.
+- Foreground-service start restrictions and OEM behavior.
+- Widget manual-refresh versus watchdog separation.
+- Watchdog restart after failure or cancellation.
+- Long refresh intervals.
+- `BalanceRefreshServiceTest` does not establish API-35 foreground-service restriction behavior.
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 供应商选择 UI | ✅ | 添加账户时选择供应商 |
-| 供应商图标 | ✅ | 每个供应商独特图标 |
-| 缓存层 | ✅ | 智能缓存减少 API 调用 |
-| 健康检查 | ✅ | 供应商 API 可用性监控 |
-| 本地用量追踪 | ✅ | 为无余额 API 供应商提供估算 |
-| 错误重试按钮 | ✅ | 错误状态快速重试 |
-| 账户编辑功能 | ✅ | 修改标签和 API Key |
-| 数据迁移 | ✅ | 旧版 ID 自动迁移 |
+API 36 results and Robolectric tests are supplemental and are not presented as substitutes for these checks.
 
----
+## Source Integrity
 
-## 📈 代码质量指标
+- 127 main Kotlin files.
+- 88 unit-test Kotlin files across `test`, `testDebug`, and `testRelease`.
+- 8 instrumented-test Kotlin files with 39 source tests.
+- Chinese/English resources: 512/512 keys paired, no missing key.
+- No NUL bytes in tracked source/text files (binary PNG/JAR assets are excluded).
+- No deferred-work marker in the required source/plan scope.
+- No lint baseline or staged generated build/test/APK output.
 
-| 指标 | 结果 | 说明 |
-|------|------|------|
-| 代码行数 | ~11,000 行 | 新增代码 |
-| 测试覆盖率 | ~80% | 核心功能覆盖 |
-| 编译警告 | 10 个 | 非阻塞警告 |
-| Lint 警告 | 20 个 | 非阻塞警告 |
-| 安全漏洞 | 0 | 无已知漏洞 |
+## Result
 
-### 安全相关测试验证
-
-| 安全项 | 状态 | 说明 |
-|--------|------|------|
-| Rhino sandbox (全局对象删除 + 指令限制) | ✅ | JS 执行沙箱隔离 |
-| 模板变量 JS 转义 | ✅ | 防止 XSS 注入 |
-| WebView URL scheme 过滤 | ✅ | 仅允许 http/https |
-| POST body 透传 | ✅ | 安全的请求体传递 |
-| WebView 生命周期管理 (DisposableEffect) | ✅ | 防止内存泄漏 |
-| localStorage key/value 转义 | ✅ | 防止存储注入 |
-| ConsoleSession 30天 TTL | ✅ | 会话自动过期 |
-
----
-
-## 🔒 安全检查
-
-| 检查项 | 状态 | 说明 |
-|--------|------|------|
-| API Key 加密存储 | ✅ | EncryptedSharedPreferences |
-| HTTPS 传输 | ✅ | 所有 API 调用 |
-| 证书固定 | ✅ | DeepSeek API |
-| 日志脱敏 | ✅ | API Key 自动脱敏 |
-| 备份禁用 | ✅ | allowBackup=false |
-| Rhino sandbox 隔离 | ✅ | 全局对象删除 + 指令限制 |
-| 模板变量 JS 转义 | ✅ | 防止 XSS 注入 |
-| WebView URL scheme 过滤 | ✅ | 仅允许 http/https |
-| POST body 安全透传 | ✅ | 请求体安全传递 |
-| WebView 生命周期管理 | ✅ | DisposableEffect 防泄漏 |
-| localStorage 转义 | ✅ | key/value 防注入 |
-| ConsoleSession TTL | ✅ | 30天自动过期 |
-
----
-
-## 📋 兼容性检查
-
-| 检查项 | 状态 | 说明 |
-|--------|------|------|
-| 旧版数据兼容 | ✅ | 自动迁移 |
-| 旧版 ID 兼容 | ✅ | 自动迁移 |
-| 旧版配置兼容 | ✅ | 默认值处理 |
-| Android 版本 | ✅ | API 35+ |
-
----
-
-## ✅ 上线前检查清单
-
-- [x] 所有单元测试通过
-- [x] Lint 检查无错误
-- [x] Debug 构建成功
-- [x] Release 构建成功
-- [x] 代码混淆已启用
-- [x] 资源压缩已启用
-- [x] 数据迁移逻辑正常
-- [x] 安全检查通过
-- [x] 功能验证完成
-- [x] 文档已更新
-
----
-
-## 🎯 结论
-
-**项目状态：✅ 可上线**
-
-全部 1,528 项测试中 1,522 项通过、6 项跳过、0 项失败，代码质量良好，功能完整，安全检查合格（含 Rhino sandbox 隔离、WebView 安全、localStorage 转义等 7 项安全加固）。
-
-### 建议
-
-1. **可以发布 Release APK**
-2. **建议先进行小范围用户测试**
-3. **监控首批用户的反馈**
-
----
-
-## 📦 生成的 APK
-
-- **Debug APK**：`app/build/outputs/apk/debug/app-debug.apk`
-- **Release APK**：`app/build/outputs/apk/release/app-release.apk`
-
----
-
-**报告生成时间**：2026年7月30日
-
-**测试执行者**：Claude Code
+All executable Task 12 gates passed and no blocking/high defect remains open. Release approval remains conditional on consciously accepting the listed API 35 device gaps and the residual risks in `RELEASE_REVIEW_REPORT.md`.

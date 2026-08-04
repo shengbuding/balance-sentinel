@@ -1,6 +1,6 @@
 # Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated / 生成日期: 2026-07-30
+Generated / 生成日期: 2026-08-04
 
 ---
 
@@ -15,7 +15,7 @@ Generated / 生成日期: 2026-07-30
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 1,528 unit tests (53 files), 6 instrumented tests, all passing / 全部通过
+- **Test count / 测试数**: 1,033 Debug + 1,033 Release JVM tests (88 Kotlin test files); 39 instrumented source tests in 8 files; API 36 supplemental run 36/36 passed
 - **Release / 版本**: v1.4.2
 
 ---
@@ -60,8 +60,9 @@ C:\Users\Administrator\
 │           │   ├── AndroidManifest.xml
 │           │   ├── java/com/balancesentinel/app/
 │           │   └── res/               # Layouts, drawables, mipmaps, values, xml
-│           ├── test/                  # Unit tests (53 files, 1,528 tests)
-│           └── androidTest/           # Instrumented tests (4 classes, 27 UI cases)
+│           ├── test/                  # Shared JVM tests (86 Kotlin files)
+│           ├── testDebug/, testRelease/ # Build-variant policy tests (2 files)
+│           └── androidTest/           # Instrumented tests (8 files, 39 source cases)
 │
 ├── .claude/                           # Claude Code config + session data
 │   ├── settings.json                  # Model config (deepseek-v4-pro), hooks
@@ -114,6 +115,15 @@ C:\Users\Administrator\
 |---|---|
 | `DeepSeekApiService.kt` | OkHttp client — `GET https://api.deepseek.com/user/balance` |
 
+#### Balance Query Security (`data/api/balance/`)
+
+| File | Purpose |
+|---|---|
+| `BalanceQueryService.kt` | Dispatches native provider contracts and custom scripts; unsupported providers make no guessed request |
+| `BuiltInBalanceContracts.kt` | Provider-specific endpoints and response parsing contracts |
+| `ScriptNetworkPolicy.kt` | HTTPS, redirect, DNS/private-address, origin and port enforcement for script requests |
+| `RhinoScriptRunner.kt` | Sealed Rhino sandbox with class access control |
+
 #### Update (`data/update/`)
 
 | File | Purpose |
@@ -153,6 +163,16 @@ C:\Users\Administrator\
 | `DataExporter.kt` | CSV/JSON data export |
 | `LogExporter.kt` | Log export |
 | `WidgetPrefs.kt` | Widget + notification + language preferences / 小组件 + 通知 + 语言偏好 |
+| `AccountLifecycleManager.kt` | Central account add/update/delete migration and owned-data cleanup |
+| `BackupImportPlanner.kt` | Preview-before-apply import plan; validates replace credentials and confirmations |
+
+#### Shared Refresh (`data/refresh/`)
+
+| File | Purpose |
+|---|---|
+| `RefreshCoordinator.kt` | Serializes/coalesces refresh requests across manual, service and widget entry points |
+| `AccountBalanceRefresher.kt` | Performs provider calls without committing stale/failed results |
+| `RefreshResultCommitter.kt` | Single success-commit boundary for cache, history, alerts and widget data |
 
 ### 3.3 UI Layer
 
@@ -210,7 +230,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (53 unit test files, 1,528 tests + 6 instrumented tests)
+## 4. Test Map (88 JVM test files, 1,033 tests per build variant + 39 instrumented source tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -263,7 +283,9 @@ C:\Users\Administrator\
 | `OnboardingScreenTest.kt` | First-run API key setup flow |
 | `SettingsScreenTest.kt` | Settings screen interactions |
 | `InsightsScreenTest.kt` | Insights screen rendering |
-| `ServiceTest.kt` | Service lifecycle + restart |
+| `BackupRestoreScreenTest.kt` | Preview/no-write and confirmed replace UI flows |
+| `ConsoleWebViewSecurityTest.kt` | Exact-origin injection, navigation and logout on API 35 |
+| `BalanceRefreshServiceTest.kt` | Basic service lifecycle behavior (not API-35 FGS restriction proof) |
 | `MainActivityTest.kt` | Activity lifecycle + navigation |
 
 ### Update Tests
@@ -303,6 +325,14 @@ C:\Users\Administrator\
 5. **Background Work**: Handler + foreground service for periodic refresh with keep-alive. BootReceiver + MidnightReceiver for lifecycle rescheduling. No WorkManager dependency.
 
 6. **Skill Routing**: CLAUDE.md decision tree routes user requests through Superpowers (creative/debug/TDD) → gstack (review/QA/deploy) pipeline.
+
+7. **Shared Refresh Commit Boundary**: `RefreshCoordinator` and the entry-point runners converge on `AccountBalanceRefresher`; only `RefreshResultCommitter` may persist a successful current result.
+
+8. **Account Lifecycle Ownership**: `AccountLifecycleManager` applies account mutations across every owned store with compensating cleanup for cross-file SharedPreferences operations.
+
+9. **Web And Script Network Boundaries**: `ConsoleOriginPolicy` uses exact authorized origins, while `ScriptNetworkPolicy` enforces HTTPS, redirect, DNS/private-address and allowed-port policy for custom balance scripts.
+
+10. **Backup And Debug Policy**: `BackupImportPlanner` requires preview before apply and double confirmation for replace; `DebugCapturePolicy` disables request/response capture in non-debuggable Release builds.
 
 ---
 
