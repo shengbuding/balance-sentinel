@@ -70,6 +70,9 @@ class WidgetRefreshExecution(
 }
 
 object WidgetRefreshIntents {
+    fun manual(context: Context): Intent =
+        manual(context, StaticWidgetProvider_2x1::class.java)
+
     fun manual(context: Context, receiver: Class<out StaticWidgetProvider>): Intent =
         Intent(context, receiver).apply {
             action = StaticWidgetProvider.ACTION_REFRESH_NOW
