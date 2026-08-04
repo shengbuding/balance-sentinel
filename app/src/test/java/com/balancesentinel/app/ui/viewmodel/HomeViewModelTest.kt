@@ -748,6 +748,48 @@ class HomeViewModelTest {
         )
     }
 
+    // Mutation caught: omitting a failed account from the all-account replacement map.
+    @Test
+    fun `refreshBalance retains failed account while updating committed account`() {
+        val accountA = apiKeyManager.addAccount("Account A", "sk-failed-a")
+        val accountB = apiKeyManager.addAccount("Account B", "sk-committed-b")
+        val gateway = object : RefreshGateway {
+            private var run = 0
+
+            override suspend fun refreshAccount(
+                accountId: String,
+                trigger: RefreshTrigger
+            ): AccountRefreshResult = error("Single-account refresh is not expected")
+
+            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> =
+                if (run++ == 0) {
+                    listOf(committed(accountA.id, 100.0), committed(accountB.id, 200.0))
+                } else {
+                    listOf(
+                        AccountRefreshResult.Failed(
+                            accountA.id,
+                            RefreshFailure.NetworkFailure("Stable network failure")
+                        ),
+                        committed(accountB.id, 300.0)
+                    )
+                }
+
+            override fun invalidate(accountId: String) = Unit
+        }
+        val vm = createViewModel(gateway)
+
+        vm.refreshBalance()
+        val priorA = vm.uiState.value.accountBalances[accountA.id]
+        assertNotNull(priorA)
+
+        vm.refreshBalance()
+
+        val state = vm.uiState.value
+        assertEquals(priorA, state.accountBalances[accountA.id])
+        assertEquals("300.0", state.accountBalances[accountB.id]?.balanceInfos?.single()?.totalBalance)
+        assertEquals("[Account A] Stable network failure", state.errorMessage)
+    }
+
     // Mutation caught: failed gateway result not preserving cached UI values.
     // Tests that the ViewModel's gateway receives a Failed result and the
     // failure message is stable (no raw response bodies or credentials).
