@@ -57,7 +57,7 @@ class ConsoleOriginPolicy(platform: ConsolePlatform) {
     val allowedOrigins: Set<WebOrigin> = setOf(loginOrigin, dashboardOrigin)
     val cookieInjectionUrl: String = platform.loginUrl
 
-    private val allowedApiHosts = DEFAULT_API_HOSTS + allowedOrigins.map(WebOrigin::host)
+    private val allowedApiOrigins = DEFAULT_API_ORIGINS + allowedOrigins
 
     fun decideNavigation(url: String): NavigationDecision {
         val parsed = url.toHttpUrlOrNull() ?: return NavigationDecision.Reject
@@ -76,7 +76,7 @@ class ConsoleOriginPolicy(platform: ConsolePlatform) {
     fun isAllowedApiRequest(url: String): Boolean {
         val parsed = url.toHttpUrlOrNull() ?: return false
         val isApiPath = API_PATH_MARKERS.any(parsed.encodedPath::contains)
-        return parsed.scheme == "https" && parsed.host in allowedApiHosts && isApiPath
+        return WebOrigin.from(parsed) in allowedApiOrigins && isApiPath
     }
 
     fun webStorageOrigins(): Set<String> = allowedOrigins.mapTo(linkedSetOf(), ::canonicalOrigin)
@@ -106,12 +106,12 @@ class ConsoleOriginPolicy(platform: ConsolePlatform) {
         }
 
         const val HTTPS_PORT = 443
-        private val DEFAULT_API_HOSTS = setOf(
+        private val DEFAULT_API_ORIGINS = setOf(
             "platform.deepseek.com",
             "api.deepseek.com",
             "platform.xiaomimimo.com",
             "api.xiaomimimo.com"
-        )
+        ).mapTo(linkedSetOf(), WebOrigin::https)
         private val API_PATH_MARKERS = listOf("/api/", "/v1/", "/v2/")
 
         private fun requireHttpsUrl(value: String, fieldName: String): HttpUrl {
