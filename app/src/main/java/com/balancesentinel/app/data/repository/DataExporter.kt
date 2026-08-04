@@ -8,6 +8,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 
@@ -115,8 +117,22 @@ object DataExporter {
      */
     fun applyImport(context: Context, data: DataExport): ImportResult =
         DataMutationCoordinator.withMutation {
+            val zoneId = ZoneId.systemDefault()
+            val existingRecords = RawRecordStore.getAllRecords(context)
+            val keysWithRetainedSource = existingRecords.mapTo(mutableSetOf()) {
+                it.historyKey(zoneId)
+            }
+            val summaryOnlyKeys = DailySummaryStore.getSummaries(context)
+                .mapTo(mutableSetOf()) { it.historyKey() }
+                .minus(keysWithRetainedSource)
             val summariesImported = mergeSummaries(context, data.dailySummaries)
-            val recordsImported = mergeRecords(context, data.rawRecords)
+            val recordsImported = mergeRecords(
+                context = context,
+                imported = data.rawRecords,
+                existing = existingRecords,
+                summaryOnlyKeys = summaryOnlyKeys,
+                zoneId = zoneId
+            )
             val snapshotsImported = mergeUsageSnapshots(context, data.usageSnapshots)
             val logsImported = mergeRefreshLogs(context, data.refreshLogs)
             ImportResult(
@@ -163,12 +179,17 @@ object DataExporter {
     /**
      * Merge raw records by full value so same-timestamp currencies remain distinct.
      */
-    private fun mergeRecords(context: Context, imported: List<RawRecord>): Int {
+    private fun mergeRecords(
+        context: Context,
+        imported: List<RawRecord>,
+        existing: List<RawRecord>,
+        summaryOnlyKeys: Set<HistoryKey>,
+        zoneId: ZoneId
+    ): Int {
         if (imported.isEmpty()) return 0
-        val existing = RawRecordStore.getAllRecords(context)
         val seen = existing.toMutableSet()
         val newRecords = imported.filter { record ->
-            seen.add(record)
+            record.historyKey(zoneId) !in summaryOnlyKeys && seen.add(record)
         }
         return when (val result = RawRecordStore.addRecords(context, newRecords)) {
             is StoreWriteResult.Written -> result.itemCount
@@ -207,4 +228,22 @@ object DataExporter {
         }
         return newLogs.size
     }
+
+    private fun DailySummary.historyKey() = HistoryKey(
+        date = date,
+        accountId = accountId,
+        currency = currency.uppercase(Locale.ROOT)
+    )
+
+    private fun RawRecord.historyKey(zoneId: ZoneId) = HistoryKey(
+        date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().toString(),
+        accountId = accountId,
+        currency = currency.uppercase(Locale.ROOT)
+    )
+
+    private data class HistoryKey(
+        val date: String,
+        val accountId: String,
+        val currency: String
+    )
 }
