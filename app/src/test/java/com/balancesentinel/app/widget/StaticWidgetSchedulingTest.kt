@@ -1,5 +1,7 @@
 package com.balancesentinel.app.widget
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
@@ -17,6 +19,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,21 +43,35 @@ class StaticWidgetSchedulingTest {
     }
 
     @Test
-    fun `manual and watchdog intents use distinct production actions`() {
-        val manual = WidgetRefreshIntents.manual(context, StaticWidgetProvider_2x1::class.java)
+    fun `manual and watchdog intents target one non exported internal receiver`() {
+        val manual = WidgetRefreshIntents.manual(context)
         val watchdog = WidgetRefreshIntents.watchdog(context)
+        val expectedComponent = ComponentName(context.packageName, INTERNAL_RECEIVER_CLASS)
 
         assertEquals(StaticWidgetProvider.ACTION_REFRESH_NOW, manual.action)
         assertEquals(StaticWidgetProvider.ACTION_WATCHDOG, watchdog.action)
-        assertEquals(StaticWidgetProvider_2x1::class.java.name, manual.component?.className)
-        assertEquals(context.packageName, watchdog.`package`)
+        assertEquals(expectedComponent, manual.component)
+        assertEquals(expectedComponent, watchdog.component)
+        assertFalse(context.packageManager.getReceiverInfo(expectedComponent, 0).exported)
     }
 
     @Test
-    fun `manifest resolves watchdog action to every widget receiver`() {
-        val intent = Intent(StaticWidgetProvider.ACTION_WATCHDOG).setPackage(context.packageName)
+    fun `implicit custom refresh actions expose no manifest receivers`() {
+        listOf(
+            StaticWidgetProvider.ACTION_REFRESH_NOW,
+            StaticWidgetProvider.ACTION_WATCHDOG
+        ).forEach { action ->
+            val intent = Intent(action).setPackage(context.packageName)
 
-        val receiverNames = context.packageManager.queryBroadcastReceivers(intent, 0)
+            assertTrue(context.packageManager.queryBroadcastReceivers(intent, 0).isEmpty())
+        }
+    }
+
+    @Test
+    fun `all five exported providers still resolve system widget updates`() {
+        val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).setPackage(context.packageName)
+        val receivers = context.packageManager.queryBroadcastReceivers(intent, 0)
+        val receiverNames = receivers
             .map { it.activityInfo.name }
             .toSet()
 
@@ -68,6 +85,7 @@ class StaticWidgetSchedulingTest {
             ),
             receiverNames
         )
+        assertTrue(receivers.all { it.activityInfo.exported })
     }
 
     @Test
@@ -218,6 +236,11 @@ class StaticWidgetSchedulingTest {
         assertEquals(listOf("refresh:WIDGET"), events)
         assertEquals(0, starter.calls)
         assertEquals(0, RefreshScheduler.getRestartCount(context))
+    }
+
+    private companion object {
+        const val INTERNAL_RECEIVER_CLASS =
+            "com.balancesentinel.app.widget.WidgetRefreshReceiver"
     }
 
     private fun schedulerPrefs() =
