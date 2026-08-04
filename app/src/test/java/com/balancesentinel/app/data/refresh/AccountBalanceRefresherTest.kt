@@ -142,6 +142,38 @@ class AccountBalanceRefresherTest {
         assertTrue((result as BalanceFetchResult.Failure).failure is RefreshFailure.ResponseSchemaFailure)
     }
 
+    // Mutation caught: accepting a finite Double that overflows persisted Float total balance.
+    @Test
+    fun `out of Float range total is a response schema failure`() = runTest {
+        assertOutOfFloatRangeRejected(BalanceEntry("CNY", OUT_OF_FLOAT_RANGE))
+    }
+
+    // Mutation caught: accepting a finite Double that overflows persisted Float granted balance.
+    @Test
+    fun `out of Float range granted amount is a response schema failure`() = runTest {
+        assertOutOfFloatRangeRejected(
+            BalanceEntry("CNY", 1.0, grantedBalance = OUT_OF_FLOAT_RANGE)
+        )
+    }
+
+    // Mutation caught: accepting a finite Double that overflows persisted Float topped-up balance.
+    @Test
+    fun `out of Float range topped up amount is a response schema failure`() = runTest {
+        assertOutOfFloatRangeRejected(
+            BalanceEntry("CNY", 1.0, toppedUpBalance = OUT_OF_FLOAT_RANGE)
+        )
+    }
+
+    private suspend fun assertOutOfFloatRangeRejected(entry: BalanceEntry) {
+        val provider = RecordingProvider(ProviderResult.Success(balance(entry)))
+        val result = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver { provider }
+        ).fetch(account())
+
+        assertTrue(result is BalanceFetchResult.Failure)
+        assertTrue((result as BalanceFetchResult.Failure).failure is RefreshFailure.ResponseSchemaFailure)
+    }
+
     private fun account(
         providerType: ProviderType = ProviderType.DEEPSEEK,
         usageScript: String? = null,
@@ -168,6 +200,13 @@ class AccountBalanceRefresherTest {
         balances = listOf(BalanceEntry("CNY", amount))
     )
 
+    private fun balance(entry: BalanceEntry) = UnifiedBalance(
+        provider = ProviderType.DEEPSEEK,
+        accountId = ACCOUNT_ID,
+        isAvailable = true,
+        balances = listOf(entry)
+    )
+
     private class RecordingProvider(
         private val result: ProviderResult<UnifiedBalance>
     ) : AiProvider {
@@ -185,5 +224,6 @@ class AccountBalanceRefresherTest {
 
     private companion object {
         const val ACCOUNT_ID = "acct"
+        val OUT_OF_FLOAT_RANGE = Float.MAX_VALUE.toDouble() * 2
     }
 }

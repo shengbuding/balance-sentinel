@@ -267,6 +267,28 @@ class RefreshResultCommitterTest {
         assertNull(ProviderCache(context).get(ProviderType.DEEPSEEK, ACCOUNT_ID))
     }
 
+    // Mutation caught: narrowing an oversized total after cache and Widget writes begin.
+    @Test
+    fun `committer rejects out of Float range total before side effects`() {
+        assertCommitRejectsOutOfFloatRange(BalanceEntry("CNY", OUT_OF_FLOAT_RANGE))
+    }
+
+    // Mutation caught: narrowing an oversized granted amount after persistence begins.
+    @Test
+    fun `committer rejects out of Float range granted amount before side effects`() {
+        assertCommitRejectsOutOfFloatRange(
+            BalanceEntry("CNY", 1.0, grantedBalance = OUT_OF_FLOAT_RANGE)
+        )
+    }
+
+    // Mutation caught: narrowing an oversized topped-up amount after persistence begins.
+    @Test
+    fun `committer rejects out of Float range topped up amount before side effects`() {
+        assertCommitRejectsOutOfFloatRange(
+            BalanceEntry("CNY", 1.0, toppedUpBalance = OUT_OF_FLOAT_RANGE)
+        )
+    }
+
     // Mutation caught: returning failure after a mid-commit write without restoring earlier stores.
     @Test
     fun `mid commit persistence failure restores prior state and stops downstream effects`() {
@@ -437,6 +459,61 @@ class RefreshResultCommitterTest {
         balances = listOf(BalanceEntry("CNY", amount))
     )
 
+    private fun assertCommitRejectsOutOfFloatRange(entry: BalanceEntry) {
+        clearStores(context)
+        val events = mutableListOf<String>()
+        val recordingContext = RecordingPrefsContext(context, events)
+        var rawWriterCalls = 0
+        var alertCalls = 0
+        var redrawCalls = 0
+        val committer = RefreshResultCommitter(
+            context = recordingContext,
+            accountStore = MutableAccountStore(listOf(account(revision = 2))),
+            providerCache = ProviderCache(recordingContext),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> alertCalls += 1 },
+            widgetRedrawNotifier = WidgetRedrawNotifier { redrawCalls += 1 },
+            rawRecordWriter = { _, records ->
+                rawWriterCalls += 1
+                StoreWriteResult.Written(records.size)
+            }
+        )
+        val result = committer.commit(
+            request(revision = 2),
+            BalanceFetchResult.Success(
+                UnifiedBalance(
+                    provider = ProviderType.DEEPSEEK,
+                    accountId = ACCOUNT_ID,
+                    isAvailable = true,
+                    balances = listOf(entry)
+                ),
+                completedAt = 100L
+            ),
+            isLatest = { true }
+        )
+
+        val outcome = if (result is AccountRefreshResult.Failed) {
+            result.failure.javaClass.simpleName
+        } else {
+            result.javaClass.simpleName
+        }
+        val observed = CommitObservation(
+            outcome = outcome,
+            preferenceWrites = events,
+            rawWriterCalls = rawWriterCalls,
+            alertCalls = alertCalls,
+            redrawCalls = redrawCalls,
+            providerCached = ProviderCache(context).get(ProviderType.DEEPSEEK, ACCOUNT_ID) != null,
+            widgetBalanceCount = BalanceWidgetDataStore.getAllBalances(context).size,
+            refreshLogCount = RefreshLogStore.getEntries(context).size,
+            usageSnapshotCount = UsageDataStore.getAllSnapshots(context).size
+        )
+
+        assertEquals(
+            CommitObservation(outcome = "ResponseSchemaFailure"),
+            observed
+        )
+    }
+
     private fun clearStores(target: Context) {
         RawRecordStore.clear(target)
         RefreshLogStore.clear(target)
@@ -524,7 +601,20 @@ class RefreshResultCommitterTest {
         }
     }
 
+    private data class CommitObservation(
+        val outcome: String,
+        val preferenceWrites: List<String> = emptyList(),
+        val rawWriterCalls: Int = 0,
+        val alertCalls: Int = 0,
+        val redrawCalls: Int = 0,
+        val providerCached: Boolean = false,
+        val widgetBalanceCount: Int = 0,
+        val refreshLogCount: Int = 0,
+        val usageSnapshotCount: Int = 0
+    )
+
     private companion object {
         const val ACCOUNT_ID = "acct"
+        val OUT_OF_FLOAT_RANGE = Float.MAX_VALUE.toDouble() * 2
     }
 }
