@@ -86,6 +86,19 @@ class SensitiveDataRedactorTest {
         assertTrue(redacted.contains("[REDACTED]"))
     }
 
+    // Mutation caught: classifying only singular Cookie headers and generic token keys.
+    @Test
+    fun `nested cookie and session containers are replaced without removing safe siblings`() {
+        val raw = """{"auth":{"cookies":{"sid":"nested-cookie-secret"},"session":{"id":"nested-session-secret"},"sessionId":"normalized-session-secret","safe":"safe-sibling"}}"""
+
+        val redacted = SensitiveDataRedactor.redactText(raw)
+
+        assertEquals(
+            """{"auth":{"cookies":"[REDACTED]","session":"[REDACTED]","sessionId":"[REDACTED]","safe":"safe-sibling"}}""",
+            redacted
+        )
+    }
+
     // Mutation caught: skipping form data and free-text credential patterns.
     @Test
     fun `form and free text credentials are redacted conservatively`() {

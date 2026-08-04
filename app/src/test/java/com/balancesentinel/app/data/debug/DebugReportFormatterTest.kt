@@ -192,4 +192,17 @@ class DebugReportFormatterTest {
         }
         assertTrue(formatted.contains("[REDACTED]"))
     }
+
+    // Mutation caught: omitting plural cookie and normalized session keys from the final clipboard pass.
+    @Test
+    fun `final formatter pass removes plural cookie and session values`() {
+        val secrets = listOf("plural-cookie-secret", "session-secret", "session-id-secret")
+        val raw = "cookies={sid=${secrets[0]}}; safe=safe-sibling\nsession=${secrets[1]}\nsessionId=${secrets[2]}"
+
+        val formatted = DebugReportFormatter.formatText(raw)
+
+        secrets.forEach { assertFalse("formatter leaked $it in: $formatted", formatted.contains(it)) }
+        assertTrue(formatted.contains("safe-sibling"))
+        assertTrue(formatted.contains("[REDACTED]"))
+    }
 }

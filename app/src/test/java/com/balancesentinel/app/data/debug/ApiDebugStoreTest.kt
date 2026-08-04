@@ -113,6 +113,24 @@ class ApiDebugStoreTest {
         assertEquals("password=\"[REDACTED]\"", stored.responseBody)
     }
 
+    // Mutation caught: sanitizing session material only at one debug boundary.
+    @Test
+    fun `store to formatter path removes nested session material and keeps safe siblings`() {
+        val secrets = listOf("store-cookie-secret", "store-session-secret", "store-session-id-secret")
+        ApiDebugStore.addEntry(
+            entry(
+                accountId = "acct",
+                responseBody = """{"cookies":{"sid":"${secrets[0]}"},"session":"${secrets[1]}","sessionId":"${secrets[2]}","safe":"safe-sibling"}"""
+            )
+        )
+
+        val formatted = DebugReportFormatter.formatEntry(ApiDebugStore.getEntries("acct").single())
+
+        secrets.forEach { assertFalse("debug path leaked $it in: $formatted", formatted.contains(it)) }
+        assertTrue(formatted.contains("safe-sibling"))
+        assertTrue(formatted.contains("[REDACTED]"))
+    }
+
     // Mutation caught: retaining a single sanitized entry that exceeds the global budget.
     @Test
     fun `oversized sanitized entry evicts itself`() {
