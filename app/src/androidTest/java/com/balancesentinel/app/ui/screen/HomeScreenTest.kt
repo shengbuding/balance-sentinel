@@ -193,11 +193,11 @@ class HomeScreenTest {
 
         composeTestRule.onNodeWithText("Provider").assertIsDisplayed()
         composeTestRule.onNodeWithText("Custom").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Custom API Key").assertIsDisplayed()
-        composeTestRule.onNodeWithText("API Base URL")
-            .performScrollTo()
-            .performTextInput("not-a-url")
+        composeTestRule.onNodeWithTag(BASE_URL_FIELD_TAG).performScrollTo()
+        composeTestRule.onNodeWithText("API Base URL").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(BASE_URL_FIELD_TAG).performTextInput("not-a-url")
         composeTestRule.onNodeWithText("URL must be a valid http:// or https:// address")
+            .performScrollTo()
             .assertIsDisplayed()
     }
 
@@ -241,5 +241,6 @@ class HomeScreenTest {
         const val ADD_ACCOUNT_FAB_TAG = "add_account_fab"
         const val PROVIDER_SELECTOR_TAG = "account_provider_selector"
         const val CUSTOM_PROVIDER_OPTION_TAG = "account_provider_option_custom"
+        const val BASE_URL_FIELD_TAG = "account_field_baseUrl"
     }
 }

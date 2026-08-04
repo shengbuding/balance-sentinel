@@ -1,5 +1,7 @@
 package com.balancesentinel.app.data.api
 
+import com.balancesentinel.app.R
+
 /**
  * AI供应商抽象接口
  * 所有供应商实现必须实现此接口
@@ -62,10 +64,10 @@ interface AiProvider {
         return listOf(
             ConfigField(
                 key = "apiKey",
-                displayName = "API Key",
+                displayNameRes = R.string.add_account_key_label,
                 type = FieldType.PASSWORD,
                 required = true,
-                hint = "请输入API Key"
+                hintRes = R.string.add_account_key_hint
             )
         )
     }

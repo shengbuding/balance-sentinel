@@ -83,16 +83,19 @@ fun AddAccountDialog(
             ) {
                 Box {
                     OutlinedTextField(
-                        value = selectedProvider.displayName,
+                        value = stringResource(selectedProvider.displayNameResource()),
                         onValueChange = {},
-                        label = { Text("供应商") },
+                        label = { Text(stringResource(R.string.account_provider_label)) },
                         readOnly = true,
                         trailingIcon = {
                             IconButton(
                                 modifier = Modifier.testTag("account_provider_selector"),
                                 onClick = { expanded = true }
                             ) {
-                                Icon(Icons.Default.ArrowDropDown, "展开")
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    stringResource(R.string.account_provider_expand)
+                                )
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -105,7 +108,7 @@ fun AddAccountDialog(
                         availableProviders.forEach { provider ->
                             DropdownMenuItem(
                                 modifier = Modifier.testTag("account_provider_option_${provider.id}"),
-                                text = { Text(provider.displayName) },
+                                text = { Text(stringResource(provider.displayNameResource())) },
                                 onClick = {
                                     selectedProvider = provider
                                     expanded = false

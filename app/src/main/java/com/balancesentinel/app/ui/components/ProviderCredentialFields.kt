@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,8 +54,10 @@ fun ProviderCredentialFields(
             OutlinedTextField(
                 value = value,
                 onValueChange = { onValueChange(field.key, it) },
-                label = { Text(field.displayName) },
-                placeholder = field.hint?.let { hint -> { Text(hint) } },
+                label = { Text(stringResource(field.displayNameRes)) },
+                placeholder = field.hintRes?.let { hintRes ->
+                    { Text(stringResource(hintRes)) }
+                },
                 visualTransformation = if (isPassword && !passwordVisible) {
                     PasswordVisualTransformation()
                 } else {
@@ -116,11 +119,13 @@ fun ProviderCredentialFields(
                     }
                 ),
                 singleLine = field.type != FieldType.SELECT,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("account_field_${field.key}"),
                 shape = RoundedCornerShape(8.dp),
                 isError = invalid,
                 supportingText = if (invalid && field.type == FieldType.URL) {
-                    { Text("URL必须是有效的 http:// 或 https:// 地址") }
+                    { Text(stringResource(R.string.account_field_url_invalid)) }
                 } else {
                     null
                 }

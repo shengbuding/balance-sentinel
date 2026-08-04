@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.api.providers
 
+import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.AiProvider
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ConfigField
@@ -141,10 +142,10 @@ class OpenAiCompatibleProvider(
     override fun getRequiredFields(): List<ConfigField> = listOf(
         ConfigField(
             key = "apiKey",
-            displayName = "API Key",
+            displayNameRes = R.string.add_account_key_label,
             type = FieldType.PASSWORD,
             required = true,
-            hint = "Enter $displayName API Key"
+            hintRes = R.string.add_account_key_hint
         )
     )
 }

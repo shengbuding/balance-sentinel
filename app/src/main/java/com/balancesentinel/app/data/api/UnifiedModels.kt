@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.api
 
+import androidx.annotation.StringRes
 import kotlinx.serialization.Serializable
 
 /**
@@ -76,12 +77,12 @@ data class ProviderConfig(
  */
 data class ConfigField(
     val key: String,
-    val displayName: String,
+    @StringRes val displayNameRes: Int,
     val type: FieldType,
     val required: Boolean,
     val storage: ConfigFieldStorage = ConfigFieldStorage.SETTING,
     val defaultValue: String? = null,
-    val hint: String? = null
+    @StringRes val hintRes: Int? = null
 )
 
 enum class ConfigFieldStorage {

@@ -83,7 +83,7 @@ fun EditAccountDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑账户") },
+        title = { Text(stringResource(R.string.account_edit_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -93,9 +93,9 @@ fun EditAccountDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedTextField(
-                    value = account.providerType.displayName,
+                    value = stringResource(account.providerType.displayNameResource()),
                     onValueChange = {},
-                    label = { Text("供应商") },
+                    label = { Text(stringResource(R.string.account_provider_label)) },
                     readOnly = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
@@ -120,7 +120,7 @@ fun EditAccountDialog(
 
                 if (apiKey.isNotBlank() && !apiKeyValid) {
                     Text(
-                        text = "API Key格式不正确",
+                        text = stringResource(R.string.account_api_key_invalid),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -133,7 +133,7 @@ fun EditAccountDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "自定义余额查询脚本",
+                            text = stringResource(R.string.account_custom_script_toggle),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Switch(
@@ -146,22 +146,10 @@ fun EditAccountDialog(
                         OutlinedTextField(
                             value = usageScript,
                             onValueChange = { usageScript = it },
-                            label = { Text("查询脚本") },
+                            label = { Text(stringResource(R.string.account_custom_script_label)) },
                             placeholder = {
                                 Text(
-                                    """({
-  request: {
-    url: "{{baseUrl}}/v1/usage",
-    method: "GET",
-    headers: { "Authorization": "Bearer {{apiKey}}" }
-  },
-  extractor: function(response) {
-    return {
-      remaining: response.balance,
-      unit: "USD"
-    };
-  }
-})""",
+                                    stringResource(R.string.account_custom_script_placeholder),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             },
@@ -175,8 +163,7 @@ fun EditAccountDialog(
                         )
 
                         Text(
-                            text = "支持模板变量: {{apiKey}}, {{baseUrl}}\n" +
-                                "返回格式: { remaining, unit, isValid }",
+                            text = stringResource(R.string.account_custom_script_help),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -190,14 +177,16 @@ fun EditAccountDialog(
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             ) {
-                                Text("加载预置脚本")
+                                Text(stringResource(R.string.account_custom_script_load_preset))
                             }
                             DropdownMenu(
                                 expanded = showPresetMenu,
                                 onDismissRequest = { showPresetMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("通用脚本") },
+                                    text = {
+                                        Text(stringResource(R.string.account_custom_script_preset_generic))
+                                    },
                                     onClick = {
                                         showPresetMenu = false
                                         usageScript = PresetScripts.getCustomTemplate().code

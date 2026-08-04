@@ -1,5 +1,7 @@
 package com.balancesentinel.app.data.api.providers
 
+import androidx.annotation.StringRes
+import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ConfigField
 import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.FieldType
@@ -14,22 +16,23 @@ object ProviderConfigs {
     /**
      * 获取供应商的API Key格式提示
      */
-    fun getApiKeyHint(type: ProviderType): String {
+    @StringRes
+    fun getApiKeyHint(type: ProviderType): Int {
         return when (type) {
-            ProviderType.DEEPSEEK -> "sk-开头的API Key"
-            ProviderType.MOONSHOT -> "sk-开头的API Key"
-            ProviderType.DOUBAO -> "火山引擎API Key"
-            ProviderType.BAICHUAN -> "百川API Key"
-            ProviderType.QWEN -> "DashScope API Key"
-            ProviderType.ZHIPU -> "智谱API Key（需生成JWT）"
-            ProviderType.WENXIN -> "百度API Key"
-            ProviderType.OPENAI -> "sk-开头的API Key"
-            ProviderType.ANTHROPIC -> "sk-ant-开头的API Key"
-            ProviderType.GEMINI -> "Google AI API Key"
-            ProviderType.MISTRAL -> "Mistral API Key"
-            ProviderType.COHERE -> "Cohere API Key"
-            ProviderType.MODEL_ARK -> "模力方舟 API Key"
-            ProviderType.CUSTOM -> "自定义API Key"
+            ProviderType.DEEPSEEK,
+            ProviderType.MOONSHOT,
+            ProviderType.OPENAI -> R.string.account_hint_api_key_sk_prefix
+            ProviderType.DOUBAO -> R.string.account_hint_api_key_volcengine
+            ProviderType.BAICHUAN -> R.string.account_hint_api_key_baichuan
+            ProviderType.QWEN -> R.string.account_hint_api_key_dashscope
+            ProviderType.ZHIPU -> R.string.account_hint_api_key_zhipu
+            ProviderType.WENXIN -> R.string.account_hint_api_key_baidu
+            ProviderType.ANTHROPIC -> R.string.account_hint_api_key_anthropic
+            ProviderType.GEMINI -> R.string.account_hint_api_key_google
+            ProviderType.MISTRAL -> R.string.account_hint_api_key_mistral
+            ProviderType.COHERE -> R.string.account_hint_api_key_cohere
+            ProviderType.MODEL_ARK -> R.string.account_hint_api_key_model_ark
+            ProviderType.CUSTOM -> R.string.account_hint_api_key_custom
         }
     }
 
@@ -62,11 +65,11 @@ object ProviderConfigs {
         val fields = mutableListOf(
             ConfigField(
                 key = "apiKey",
-                displayName = "API Key",
+                displayNameRes = R.string.add_account_key_label,
                 type = FieldType.PASSWORD,
                 required = true,
                 storage = ConfigFieldStorage.PRIMARY_CREDENTIAL,
-                hint = getApiKeyHint(type)
+                hintRes = getApiKeyHint(type)
             )
         )
 
@@ -76,11 +79,11 @@ object ProviderConfigs {
                 fields.add(
                     ConfigField(
                         key = "secretKey",
-                        displayName = "Secret Key",
+                        displayNameRes = R.string.account_field_secret_key,
                         type = FieldType.PASSWORD,
                         required = true,
                         storage = ConfigFieldStorage.EXTRA_CREDENTIAL,
-                        hint = "用于生成JWT Token"
+                        hintRes = R.string.account_hint_secret_key_jwt
                     )
                 )
             }
@@ -88,11 +91,11 @@ object ProviderConfigs {
                 fields.add(
                     ConfigField(
                         key = "secretKey",
-                        displayName = "Secret Key",
+                        displayNameRes = R.string.account_field_secret_key,
                         type = FieldType.PASSWORD,
                         required = true,
                         storage = ConfigFieldStorage.EXTRA_CREDENTIAL,
-                        hint = "百度云Secret Key"
+                        hintRes = R.string.account_hint_secret_key_baidu
                     )
                 )
             }
@@ -100,11 +103,11 @@ object ProviderConfigs {
                 fields.add(
                     ConfigField(
                         key = "baseUrl",
-                        displayName = "API Base URL",
+                        displayNameRes = R.string.account_field_base_url,
                         type = FieldType.URL,
                         required = true,
                         storage = ConfigFieldStorage.SETTING,
-                        hint = "https://api.example.com/v1"
+                        hintRes = R.string.account_hint_base_url
                     )
                 )
             }
