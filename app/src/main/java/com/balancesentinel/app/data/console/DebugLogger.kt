@@ -20,7 +20,7 @@ object DebugLogger {
         synchronized(logs) {
             logs.add(SensitiveDataRedactor.redactText("[$timestamp] $message"))
             while (logs.size > MAX_LOGS) {
-                logs.removeFirst()
+                logs.removeAt(0)
             }
         }
     }

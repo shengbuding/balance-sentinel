@@ -602,7 +602,7 @@ class HomeViewModelTest {
             trigger: RefreshTrigger
         ): AccountRefreshResult {
             calls += accountId to trigger
-            return if (results.isNotEmpty()) results.removeFirst()
+            return if (results.isNotEmpty()) results.removeAt(0)
             else AccountRefreshResult.Failed(
                 accountId,
                 RefreshFailure.NetworkFailure("no result configured")
@@ -796,7 +796,7 @@ class HomeViewModelTest {
             trigger: RefreshTrigger
         ): AccountRefreshResult {
             calls += accountId to trigger
-            val result = if (resultsList.isNotEmpty()) resultsList.removeFirst()
+            val result = if (resultsList.isNotEmpty()) resultsList.removeAt(0)
             else AccountRefreshResult.Failed(accountId, RefreshFailure.NetworkFailure("no result"))
             if (result is AccountRefreshResult.Committed) {
                 val now = System.currentTimeMillis()
