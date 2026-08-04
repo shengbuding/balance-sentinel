@@ -207,19 +207,26 @@ class BalanceRefreshService : Service() {
                     BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
                 }
                 val committedBalances = runner.refreshAndReadCommitted()
-                val primary = committedBalances.maxByOrNull { it.totalBalance.toDoubleOrNull() ?: 0.0 }
-                if (primary == null) {
+                val showTotal = widgetPrefs.showTotalBalanceInNotification
+                val notification = BalanceNotificationDeriver.derive(
+                    committedBalances = committedBalances,
+                    walletOrder = widgetPrefs.getNotificationWalletOrder(),
+                    showTotal = showTotal
+                )
+                if (notification == null) {
                     notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_no_data))
                 } else {
-                    val status = if (committedBalances.all { it.isAvailable }) getString(R.string.service_notif_status_available)
+                    val status = if (notification.isAvailable) getString(R.string.service_notif_status_available)
                         else getString(R.string.service_notif_status_partial)
                     notificationHelper.sendBalanceNotification(
-                        primary.totalBalance,
-                        primary.currency,
+                        notification.totalBalance,
+                        notification.totalCurrency,
                         status,
-                        committedBalances.filter { widgetPrefs.isNotificationWalletSelected(it.accountId, it.currency) },
-                        widgetPrefs.showTotalBalanceInNotification,
-                        widgetPrefs.getNotificationWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
+                        notification.wallets,
+                        notification.showTotal,
+                        notification.totalPosition,
+                        notification.totalBalance2,
+                        notification.totalCurrency2
                     )
                 }
                 sendWidgetUpdateBroadcast()

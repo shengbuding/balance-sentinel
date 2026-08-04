@@ -3,6 +3,7 @@ package com.balancesentinel.app.service
 import com.balancesentinel.app.data.repository.AlertIdentity
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 internal data class ServiceBalanceNotification(
     val totalBalance: String,
@@ -21,16 +22,19 @@ internal object BalanceNotificationDeriver {
         walletOrder: List<String>,
         showTotal: Boolean
     ): ServiceBalanceNotification? {
-        val primary = committedBalances.maxByOrNull {
-            it.totalBalance.toDoubleOrNull() ?: 0.0
-        } ?: return null
+        val aggregate = BalanceWidgetDataStore.aggregateTopTwo(committedBalances) ?: return null
+        val positions = walletOrder.withIndex().associate { it.value to it.index }
         val selectedWallets = committedBalances.filter { balance ->
             AlertIdentity(balance.accountId, balance.currency).storageSuffix in walletOrder
+        }.sortedBy { balance ->
+            positions.getValue(AlertIdentity(balance.accountId, balance.currency).storageSuffix)
         }
         return ServiceBalanceNotification(
-            totalBalance = primary.totalBalance,
-            totalCurrency = primary.currency,
-            isAvailable = committedBalances.all(AccountBalance::isAvailable),
+            totalBalance = aggregate.totalBalance,
+            totalCurrency = aggregate.currency,
+            totalBalance2 = aggregate.totalBalance2,
+            totalCurrency2 = aggregate.currency2,
+            isAvailable = aggregate.isAvailable,
             wallets = selectedWallets,
             showTotal = showTotal,
             totalPosition = if (showTotal) {
