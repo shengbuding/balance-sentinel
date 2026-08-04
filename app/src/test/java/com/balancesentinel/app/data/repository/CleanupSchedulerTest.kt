@@ -4,8 +4,23 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.BalanceEntry
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.api.cache.ProviderCache
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.BalanceFetchResult
+import com.balancesentinel.app.data.refresh.RefreshAccountStore
+import com.balancesentinel.app.data.refresh.RefreshAlertDispatcher
+import com.balancesentinel.app.data.refresh.RefreshRequest
+import com.balancesentinel.app.data.refresh.RefreshResultCommitter
+import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.WidgetRedrawNotifier
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -20,6 +35,10 @@ import org.robolectric.RobolectricTestRunner
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 @RunWith(RobolectricTestRunner::class)
 class CleanupSchedulerTest {
@@ -332,6 +351,96 @@ class CleanupSchedulerTest {
         assertEquals("2026-08-02", failure.date)
         assertEquals(CleanupStage.WRITE_SUMMARY, failure.stage)
         assertTrue(failure.reason.startsWith("ENSURE_CONTINUITY:"))
+    }
+
+    // Mutation caught: whole-store refresh rollback resurrecting source deleted by production cleanup.
+    @Test
+    fun `failed refresh cannot resurrect a contending cleanup deletion or pollute its summary`() {
+        val source = record("acct", "CNY", at("2026-08-01T10:00:00Z"), 12f)
+        RawRecordStore.addRecords(context, listOf(source))
+        RefreshLogStore.clear(context)
+        UsageDataStore.clear(context)
+        BalanceWidgetDataStore.clearAll(context)
+        ProviderCache(context).clearAll()
+        val account = AccountInfo(
+            id = "acct",
+            label = "Primary",
+            apiKey = "api-key-123456",
+            providerType = ProviderType.DEEPSEEK,
+            revision = 2L
+        )
+        val accountStore = object : RefreshAccountStore {
+            override fun getAccount(accountId: String): AccountInfo? =
+                account.takeIf { it.id == accountId }
+
+            override fun getAccounts(): List<AccountInfo> = listOf(account)
+        }
+        val persistenceReached = CountDownLatch(1)
+        val releaseFailure = CountDownLatch(1)
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = accountStore,
+            providerCache = ProviderCache(context),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier {},
+            wallClock = { at("2026-08-01T11:00:00Z") },
+            afterPersistenceWrite = {
+                persistenceReached.countDown()
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+                throw IllegalStateException("forced post-persistence failure")
+            }
+        )
+        val request = RefreshRequest(
+            accountId = account.id,
+            revision = account.revision,
+            token = 1L,
+            trigger = RefreshTrigger.SERVICE,
+            startedAt = 1L
+        )
+        val fetched = BalanceFetchResult.Success(
+            balance = UnifiedBalance(
+                provider = ProviderType.DEEPSEEK,
+                accountId = account.id,
+                isAvailable = true,
+                balances = listOf(BalanceEntry("CNY", 99.0))
+            ),
+            completedAt = at("2026-08-01T11:00:00Z")
+        )
+        val pool = Executors.newFixedThreadPool(2)
+
+        try {
+            val refreshFuture = pool.submit<AccountRefreshResult> {
+                committer.commit(request, fetched) { true }
+            }
+            assertTrue(persistenceReached.await(5, TimeUnit.SECONDS))
+            val cleanupFuture = pool.submit<CleanupReport> {
+                runBlocking { CleanupScheduler.runCleanup(context, NOW, ZoneOffset.UTC) }
+            }
+
+            try {
+                cleanupFuture.get(1, TimeUnit.SECONDS)
+            } catch (_: TimeoutException) {
+                // Expected once cleanup contends on the shared mutation coordinator.
+            }
+            releaseFailure.countDown()
+
+            assertTrue(refreshFuture.get(5, TimeUnit.SECONDS) is AccountRefreshResult.Failed)
+            val cleanupReport = cleanupFuture.get(5, TimeUnit.SECONDS)
+            assertTrue(cleanupReport.failures.isEmpty())
+            assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+            val summary = DailySummaryStore.getSummaries(context)
+                .single { it.date == "2026-08-01" && it.accountId == "acct" && it.currency == "CNY" }
+            assertEquals(1, summary.sampleCount)
+            assertEquals(12f, summary.close)
+        } finally {
+            releaseFailure.countDown()
+            pool.shutdownNow()
+            pool.awaitTermination(5, TimeUnit.SECONDS)
+            RefreshLogStore.clear(context)
+            UsageDataStore.clear(context)
+            BalanceWidgetDataStore.clearAll(context)
+            ProviderCache(context).clearAll()
+        }
     }
 
     private fun record(

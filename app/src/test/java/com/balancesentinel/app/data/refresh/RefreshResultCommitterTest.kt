@@ -17,7 +17,13 @@ import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.StoreWriteResult
 import com.balancesentinel.app.data.repository.UsageDataStore
+import com.balancesentinel.app.data.repository.DataExport
+import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -317,6 +323,75 @@ class RefreshResultCommitterTest {
         assertEquals(listOf(priorUsage), UsageDataStore.getAllSnapshots(context))
         assertTrue("alerts" !in events)
         assertTrue("widget-redraw" !in events)
+    }
+
+    // Mutation caught: restoring whole-store snapshots across a completed production import.
+    @Test
+    fun `failed refresh cannot erase a contending raw log and usage import`() {
+        val persistenceReached = CountDownLatch(1)
+        val releaseFailure = CountDownLatch(1)
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = MutableAccountStore(listOf(account(revision = 2))),
+            providerCache = ProviderCache(context),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier {},
+            wallClock = { 9_000L },
+            afterPersistenceWrite = {
+                persistenceReached.countDown()
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+                throw IllegalStateException("forced post-persistence failure")
+            }
+        )
+        val importedRecord = RawRecord("imported", 77L, "EUR", 8f, 3f, 5f)
+        val importedLog = RefreshLogEntry(
+            id = 77L,
+            type = RefreshLogType.MANUAL,
+            totalBalance = "8.0",
+            currency = "EUR",
+            timestamp = 77L
+        )
+        val importedUsage = UsageSnapshot("imported", 77L)
+        val data = DataExport(
+            exportedAt = "2026-08-04T00:00:00",
+            appVersion = "test",
+            dailySummaries = emptyList(),
+            rawRecords = listOf(importedRecord),
+            usageSnapshots = listOf(importedUsage),
+            refreshLogs = listOf(importedLog)
+        )
+        val pool = Executors.newFixedThreadPool(2)
+
+        try {
+            val refreshFuture = pool.submit<AccountRefreshResult> {
+                committer.commit(request(revision = 2), success(99.0, completedAt = 100L)) { true }
+            }
+            assertTrue(persistenceReached.await(5, TimeUnit.SECONDS))
+            val importFuture = pool.submit<DataExporter.ImportResult> {
+                DataExporter.applyImport(context, data)
+            }
+
+            try {
+                importFuture.get(1, TimeUnit.SECONDS)
+            } catch (_: TimeoutException) {
+                // Expected once the import contends on the shared mutation coordinator.
+            }
+            releaseFailure.countDown()
+
+            val refreshResult = refreshFuture.get(5, TimeUnit.SECONDS)
+            val importResult = importFuture.get(5, TimeUnit.SECONDS)
+            assertTrue(refreshResult is AccountRefreshResult.Failed)
+            assertEquals(1, importResult.recordsImported)
+            assertEquals(1, importResult.logsImported)
+            assertEquals(1, importResult.snapshotsImported)
+            assertEquals(listOf(importedRecord), RawRecordStore.getAllRecords(context))
+            assertEquals(listOf(importedLog), RefreshLogStore.getEntries(context))
+            assertEquals(listOf(importedUsage), UsageDataStore.getAllSnapshots(context))
+        } finally {
+            releaseFailure.countDown()
+            pool.shutdownNow()
+            pool.awaitTermination(5, TimeUnit.SECONDS)
+        }
     }
 
     private fun account(revision: Long) = AccountInfo(
