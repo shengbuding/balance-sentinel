@@ -41,7 +41,8 @@ class RefreshResultCommitter(
     private val widgetRedrawNotifier: WidgetRedrawNotifier = AndroidWidgetRedrawNotifier(context),
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val rawRecordWriter: (Context, List<RawRecord>) -> StoreWriteResult =
-        RawRecordStore::addRecords
+        RawRecordStore::addRecords,
+    private val afterPersistenceWrite: () -> Unit = {}
 ) : RefreshCommitter {
 
     override fun commit(
@@ -125,6 +126,7 @@ class RefreshResultCommitter(
                     context,
                     UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
                 )
+                afterPersistenceWrite()
             } catch (_: Exception) {
                 rollback(
                     attemptedStage = attemptedStage,
