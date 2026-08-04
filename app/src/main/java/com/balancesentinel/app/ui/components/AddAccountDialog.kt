@@ -88,13 +88,14 @@ fun AddAccountDialog(
                         label = { Text("供应商") },
                         readOnly = true,
                         trailingIcon = {
-                            IconButton(onClick = { expanded = true }) {
+                            IconButton(
+                                modifier = Modifier.testTag("account_provider_selector"),
+                                onClick = { expanded = true }
+                            ) {
                                 Icon(Icons.Default.ArrowDropDown, "展开")
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("account_provider_selector"),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     )
                     DropdownMenu(
