@@ -6,6 +6,8 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.credentials.CredentialReadResult
+import com.balancesentinel.app.data.migration.LegacyAccountSource
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountSaveResult
@@ -152,6 +154,8 @@ class ApiKeyManager(
         removeAccount(id) { }
     }
 
+    private val legacyAccountSource by lazy { LegacyAccountSource(prefs, json) }
+
     internal fun removeAccount(id: String, beforePersist: (AccountInfo) -> Unit) {
         mutateAccounts { accounts ->
             val index = accounts.indexOfFirst { it.id == id }
@@ -201,11 +205,10 @@ class ApiKeyManager(
     fun getAccounts(): List<AccountInfo> = synchronized(accountLock) { readAccountsLocked() }
 
     private fun readAccountsLocked(): List<AccountInfo> {
-        val raw = prefs.getString(KEY_ACCOUNTS, null) ?: return emptyList()
-        return try {
-            json.decodeFromString<List<AccountInfo>>(raw)
-        } catch (_: Exception) {
-            emptyList()
+        return when (val result = legacyAccountSource.read()) {
+            CredentialReadResult.Missing -> emptyList()
+            is CredentialReadResult.Valid -> result.payload.accounts
+            is CredentialReadResult.Corrupt -> throw result.exception
         }
     }
 
@@ -219,6 +222,7 @@ class ApiKeyManager(
 
     fun clearAll() {
         synchronized(accountLock) {
+            readAccountsLocked()
             check(prefs.edit().remove(KEY_ACCOUNTS).commit())
         }
     }

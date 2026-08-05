@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
@@ -194,12 +195,11 @@ class ApiKeyManagerTest {
     }
 
     @Test
-    fun `getAccounts returns empty list for corrupt JSON`() {
+    fun `getAccounts throws when stored accounts are corrupt`() {
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
             .edit().putString("accounts", "not valid json {{{").commit()
 
-        val accounts = manager.getAccounts()
-        assertTrue(accounts.isEmpty())
+        assertThrows(DataCorruptionException::class.java) { manager.getAccounts() }
     }
 
     @Test
@@ -245,12 +245,11 @@ class ApiKeyManagerTest {
     }
 
     @Test
-    fun `getAccounts returns empty list for JSON with wrong type`() {
+    fun `getAccounts throws when stored accounts have the wrong JSON type`() {
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
             .edit().putString("accounts", "42").commit()
 
-        val accounts = manager.getAccounts()
-        assertTrue(accounts.isEmpty())
+        assertThrows(DataCorruptionException::class.java) { manager.getAccounts() }
     }
 
     @Test
