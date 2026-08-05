@@ -203,6 +203,48 @@ class ApiKeyManagerTest {
     }
 
     @Test
+    fun `saveAccount fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.saveAccount(null, AccountDraft("New", "sk-new", ProviderType.DEEPSEEK))
+        }
+    }
+
+    @Test
+    fun `removeAccount fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.removeAccount("missing")
+        }
+    }
+
+    @Test
+    fun `renameAccount fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.renameAccount("missing", "Renamed")
+        }
+    }
+
+    @Test
+    fun `updateExtraSettings fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.updateExtraSettings("missing", mapOf("baseUrl" to "https://example.test"))
+        }
+    }
+
+    @Test
+    fun `migrateLegacyKeyIfNeeded fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.migrateLegacyKeyIfNeeded()
+        }
+    }
+
+    @Test
+    fun `clearAll fails closed when stored accounts are corrupt`() {
+        assertCorruptAccountsAreNotOverwritten {
+            manager.clearAll()
+        }
+    }
+
+    @Test
     fun `getAccounts returns empty list for JSON with wrong type`() {
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
             .edit().putString("accounts", "42").commit()
@@ -393,5 +435,17 @@ class ApiKeyManagerTest {
         assertEquals(before, manager.getAccounts())
         assertEquals(accountA, manager.getAccount(accountA.id))
         assertEquals(accountB, manager.getAccount(accountB.id))
+    }
+
+    private fun assertCorruptAccountsAreNotOverwritten(action: () -> Unit) {
+        val raw = "{ definitely not a valid account list"
+        val prefs = context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
+        assertTrue(prefs.edit().putString("accounts", raw).commit())
+        assertTrue(prefs.edit().putString("deepseek_api_key", "sk-legacy").commit())
+
+        val failure = runCatching(action).exceptionOrNull()
+
+        assertEquals("Corrupt account data must remain byte-for-byte unchanged", raw, prefs.getString("accounts", null))
+        assertNotNull("A mutation must fail when accounts cannot be read", failure)
     }
 }
