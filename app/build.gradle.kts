@@ -37,6 +37,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.kover)
 }
 
@@ -140,6 +141,12 @@ android {
     }
 }
 
+kapt {
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+}
+
 dependencies {
     // AndroidX
     implementation(libs.androidx.core.ktx)
@@ -166,6 +173,11 @@ dependencies {
     // Security
     implementation(libs.security.crypto)
 
+    // Persistence
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    kapt(libs.room.compiler)
+
     // Test (JVM)
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
@@ -174,6 +186,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.room.testing)
 
     // Test (Instrumented / Compose UI)
     androidTestImplementation(libs.compose.ui.test.junit4)
