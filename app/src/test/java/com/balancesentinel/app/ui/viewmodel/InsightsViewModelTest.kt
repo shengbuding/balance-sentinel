@@ -13,6 +13,8 @@ import com.balancesentinel.app.data.engine.IntradayOutput
 import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import org.junit.After
@@ -97,6 +99,23 @@ class InsightsViewModelTest {
         assertEquals(0, state.intradayOutput!!.dataPointCount)
         assertTrue(state.dailyOutput!!.isEmpty)
         assertTrue(state.isEmpty)
+    }
+
+    @Test
+    fun `loadData does not present credential corruption as empty account data`() {
+        val prefs = context.getSharedPreferences("insights_corrupt_${System.nanoTime()}", Context.MODE_PRIVATE)
+        assertTrue(prefs.edit().putString("accounts", "{ corrupt").commit())
+        val viewModel = InsightsViewModel(app)
+        awaitViewModel(viewModel)
+        replaceApiKeyManager(viewModel, ApiKeyManager(context, prefs))
+
+        viewModel.loadData()
+        awaitViewModel(viewModel)
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertNull("Credential corruption must not produce an empty-data result", state.intradayOutput)
+        assertNull("Credential corruption must not produce an empty-data result", state.dailyOutput)
     }
 
     @Test
@@ -951,5 +970,11 @@ class InsightsViewModelTest {
     fun `InsightsUiState isEmpty handles null outputs`() {
         val state = InsightsUiState(intradayOutput = null, dailyOutput = null)
         assertTrue(state.isEmpty)
+    }
+
+    private fun replaceApiKeyManager(viewModel: InsightsViewModel, manager: ApiKeyManager) {
+        val field = InsightsViewModel::class.java.getDeclaredField("apiKeyManager")
+        field.isAccessible = true
+        field.set(viewModel, manager)
     }
 }

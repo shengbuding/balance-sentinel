@@ -445,6 +445,9 @@ class ApiKeyManagerTest {
         val failure = runCatching(action).exceptionOrNull()
 
         assertEquals("Corrupt account data must remain byte-for-byte unchanged", raw, prefs.getString("accounts", null))
-        assertNotNull("A mutation must fail when accounts cannot be read", failure)
+        assertTrue(
+            "A mutation must surface DataCorruptionException when accounts cannot be read",
+            failure is DataCorruptionException
+        )
     }
 }
