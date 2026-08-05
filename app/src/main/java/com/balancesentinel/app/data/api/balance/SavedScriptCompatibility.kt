@@ -5,6 +5,8 @@ import org.mozilla.javascript.Context
 import org.mozilla.javascript.Parser
 import org.mozilla.javascript.Token
 import org.mozilla.javascript.ast.AstNode
+import org.mozilla.javascript.ast.ElementGet
+import org.mozilla.javascript.ast.FunctionCall
 import org.mozilla.javascript.ast.InfixExpression
 import org.mozilla.javascript.ast.PropertyGet
 import java.util.IdentityHashMap
@@ -89,44 +91,63 @@ internal object SavedScriptCompatibility {
         private val marked: IdentityHashMap<AstNode, OperatorKind>,
         private val temporaryName: String
     ) {
-        private val nodes = marked.keys.toList()
+        private data class Rewrite(
+            val markedNode: AstNode,
+            val spanRoot: AstNode
+        )
+
+        private val rewrites = marked.keys.map { node ->
+            Rewrite(
+                markedNode = node,
+                spanRoot = when (marked[node]) {
+                    OperatorKind.OPTIONAL_PROPERTY -> continuousOptionalChainRoot(node)
+                    OperatorKind.NULLISH -> node
+                    null -> error("Unmarked compatibility node")
+                }
+            )
+        }
 
         fun rewrite(): String = renderRange(0, source.length)
 
         private fun renderRange(start: Int, end: Int): String {
-            val outermost = nodes.filter { node ->
-                node.start >= start && node.end <= end && nodes.none { parent ->
-                    parent !== node &&
-                        parent.start >= start &&
-                        parent.end <= end &&
-                        parent.start <= node.start &&
-                        parent.end >= node.end
+            val outermost = rewrites.filter { rewrite ->
+                rewrite.spanRoot.start >= start &&
+                    rewrite.spanRoot.end <= end &&
+                    rewrites.none { parent ->
+                        parent !== rewrite &&
+                            parent.spanRoot.start >= start &&
+                            parent.spanRoot.end <= end &&
+                            parent.spanRoot.start <= rewrite.spanRoot.start &&
+                            parent.spanRoot.end >= rewrite.spanRoot.end
                 }
             }
             if (outermost.isEmpty()) return source.substring(start, end)
 
             val rendered = StringBuilder(source.substring(start, end))
-            outermost.sortedByDescending(AstNode::getAbsolutePosition).forEach { node ->
+            outermost.sortedByDescending { it.spanRoot.absolutePosition }.forEach { rewrite ->
                 rendered.replace(
-                    node.start - start,
-                    node.end - start,
-                    renderMarked(node)
+                    rewrite.spanRoot.start - start,
+                    rewrite.spanRoot.end - start,
+                    renderMarked(rewrite)
                 )
             }
             return rendered.toString()
         }
 
-        private fun renderMarked(node: AstNode): String = when (marked[node]) {
+        private fun renderMarked(rewrite: Rewrite): String = when (marked[rewrite.markedNode]) {
             OperatorKind.OPTIONAL_PROPERTY -> {
-                val propertyGet = node as PropertyGet
+                val propertyGet = rewrite.markedNode as PropertyGet
                 val target = renderNodeRange(propertyGet.target)
-                val property = renderNodeRange(propertyGet.property)
+                val suffix = renderRange(
+                    propertyGet.absoluteOperatorPosition(),
+                    rewrite.spanRoot.end
+                )
                 "((function($temporaryName){return $temporaryName == null ? " +
-                    "void 0 : $temporaryName.$property;}).call(this,($target)))"
+                    "void 0 : $temporaryName$suffix;}).call(this,($target)))"
             }
 
             OperatorKind.NULLISH -> {
-                val expression = node as InfixExpression
+                val expression = rewrite.markedNode as InfixExpression
                 val left = renderNodeRange(expression.left)
                 val right = renderNodeRange(expression.right)
                 "((function($temporaryName){return $temporaryName == null ? " +
@@ -134,6 +155,20 @@ internal object SavedScriptCompatibility {
             }
 
             null -> error("Unmarked compatibility node")
+        }
+
+        private fun continuousOptionalChainRoot(markedNode: AstNode): AstNode {
+            var root = markedNode
+            while (true) {
+                val parent = root.parent ?: return root
+                if (marked.containsKey(parent)) return root
+                root = when (parent) {
+                    is PropertyGet -> if (parent.target === root) parent else return root
+                    is ElementGet -> if (parent.target === root) parent else return root
+                    is FunctionCall -> if (parent.target === root) parent else return root
+                    else -> return root
+                }
+            }
         }
 
         private fun renderNodeRange(node: AstNode): String =
