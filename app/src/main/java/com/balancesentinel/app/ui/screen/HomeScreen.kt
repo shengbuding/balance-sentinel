@@ -381,7 +381,7 @@ private fun EmptyAccountsHint() {
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("添加第一个账户")
+                Text(stringResource(R.string.home_add_account))
             }
         }
     }

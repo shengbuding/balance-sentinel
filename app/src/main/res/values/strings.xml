@@ -10,6 +10,7 @@
     <string name="home_refresh">刷新</string>
     <string name="home_settings">设置</string>
     <string name="home_add_account">添加账户</string>
+    <string name="nav_console">控制台</string>
     <string name="home_delete_account_title">删除账户</string>
     <string name="home_delete_account_confirm">确定要删除「%1$s」吗？该账户的缓存和预警状态将被清除。</string>
     <string name="home_delete">删除</string>

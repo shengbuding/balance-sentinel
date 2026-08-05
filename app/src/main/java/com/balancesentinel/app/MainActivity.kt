@@ -409,9 +409,9 @@ internal fun AppNavigationBar(
             selected = currentScreen == Screen.CONSOLE_SELECT || currentScreen == Screen.CONSOLE,
             onClick = { onScreenSelected(Screen.CONSOLE_SELECT) },
             icon = {
-                Icon(CustomIcons.Analytics, contentDescription = "控制台")
+                Icon(CustomIcons.Analytics, contentDescription = stringResource(R.string.nav_console))
             },
-            label = { Text("控制台") }
+            label = { Text(stringResource(R.string.nav_console)) }
         )
         NavigationBarItem(
             selected = currentScreen == Screen.SETTINGS,
