@@ -9,6 +9,7 @@ import android.os.LocaleList
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -17,6 +18,9 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
 class DeepSeekApp : Application() {
 
     lateinit var refreshGateway: RefreshGateway
+        private set
+
+    var credentialCorruption: DataCorruptionException? = null
         private set
 
     override fun onCreate() {
@@ -60,33 +64,44 @@ class DeepSeekApp : Application() {
      * 2. 迁移账户ID（4字节 -> 8字节）
      * 3. 清理旧版数据
      */
-    private fun migrateDataIfNeeded() {
+    internal fun migrateDataIfNeeded() = migrateDataIfNeeded(::performDataMigration)
+
+    internal fun migrateDataIfNeeded(migration: () -> Unit) {
         try {
-            val apiKeyManager = ApiKeyManager(this)
-
-            // 1. 迁移旧版单Key
-            apiKeyManager.migrateLegacyKeyIfNeeded()
-
-            // 2. 迁移账户ID
-            val migrationMap = apiKeyManager.migrateAccountIds()
-            if (migrationMap.isNotEmpty()) {
-                CrashLogger.breadcrumb("App", "Migrating ${migrationMap.size} account IDs")
-
-                // 迁移关联数据
-                RawRecordStore.migrateAccountIds(this, migrationMap)
-                DailySummaryStore.migrateAccountIds(this, migrationMap)
-                BalanceWidgetDataStore.migrateAccountIds(this, migrationMap)
-
-                CrashLogger.breadcrumb("App", "Account ID migration complete")
-            }
-
-            // 3. 清理旧版数据
-            val widgetPrefs = WidgetPrefs(this)
-            widgetPrefs.cleanupInvalidEntries()
-            widgetPrefs.cleanupLegacyIdData()
-        } catch (e: Exception) {
-            CrashLogger.logNonFatal("App", e)
+            credentialCorruption = null
+            migration()
+        } catch (error: DataCorruptionException) {
+            credentialCorruption = error
+            CrashLogger.breadcrumb("App", "Credential corruption blocked startup migration")
+            CrashLogger.logNonFatal("App", error)
+        } catch (error: Exception) {
+            CrashLogger.logNonFatal("App", error)
         }
+    }
+
+    private fun performDataMigration() {
+        val apiKeyManager = ApiKeyManager(this)
+
+        // 1. 迁移旧版单Key
+        apiKeyManager.migrateLegacyKeyIfNeeded()
+
+        // 2. 迁移账户ID
+        val migrationMap = apiKeyManager.migrateAccountIds()
+        if (migrationMap.isNotEmpty()) {
+            CrashLogger.breadcrumb("App", "Migrating ${migrationMap.size} account IDs")
+
+            // 迁移关联数据
+            RawRecordStore.migrateAccountIds(this, migrationMap)
+            DailySummaryStore.migrateAccountIds(this, migrationMap)
+            BalanceWidgetDataStore.migrateAccountIds(this, migrationMap)
+
+            CrashLogger.breadcrumb("App", "Account ID migration complete")
+        }
+
+        // 3. 清理旧版数据
+        val widgetPrefs = WidgetPrefs(this)
+        widgetPrefs.cleanupInvalidEntries()
+        widgetPrefs.cleanupLegacyIdData()
     }
 
     private fun createNotificationChannel() {

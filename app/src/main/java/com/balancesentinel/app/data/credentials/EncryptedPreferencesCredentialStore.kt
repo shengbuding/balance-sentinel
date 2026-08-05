@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.balancesentinel.app.data.repository.DataMutationCoordinator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -42,15 +45,23 @@ class EncryptedPreferencesCredentialStore(
         CredentialReadResult.Corrupt(DataCorruptionException("Credential payload cannot be read", error))
     }
 
-    override fun write(payload: CredentialPayload) {
-        payload.validate()
-        requireWritable()
-        check(prefs.edit().putString(KEY_PAYLOAD, json.encodeToString(payload)).commit())
+    override suspend fun write(payload: CredentialPayload) = withContext(Dispatchers.IO) {
+        DataMutationCoordinator.withMutation {
+            payload.validate()
+            requireWritable()
+            check(prefs.edit().putString(KEY_PAYLOAD, json.encodeToString(payload)).commit()) {
+                "Credential payload write commit failed"
+            }
+        }
     }
 
-    override fun clear() {
-        requireWritable()
-        check(prefs.edit().remove(KEY_PAYLOAD).commit())
+    override suspend fun clear() = withContext(Dispatchers.IO) {
+        DataMutationCoordinator.withMutation {
+            requireWritable()
+            check(prefs.edit().remove(KEY_PAYLOAD).commit()) {
+                "Credential payload clear commit failed"
+            }
+        }
     }
 
     private fun requireWritable() {

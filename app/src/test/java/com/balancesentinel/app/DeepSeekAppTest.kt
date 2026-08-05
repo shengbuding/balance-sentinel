@@ -3,6 +3,7 @@ package com.balancesentinel.app
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -117,5 +118,15 @@ class DeepSeekAppTest {
         assertEquals("balance_alert_channel", DeepSeekApp.CHANNEL_ID_ALERT)
         assertEquals("balance_usage_channel", DeepSeekApp.CHANNEL_ID_USAGE)
         assertEquals(3002, DeepSeekApp.NOTIFICATION_ID_GROUP_SUMMARY)
+    }
+
+    @Test
+    fun `startup migration retains credential corruption as application state`() {
+        val app = context as DeepSeekApp
+        val corruption = DataCorruptionException("legacy credentials are corrupt")
+
+        app.migrateDataIfNeeded { throw corruption }
+
+        assertSame(corruption, app.credentialCorruption)
     }
 }

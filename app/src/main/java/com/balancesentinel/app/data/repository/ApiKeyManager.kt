@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.credentials.CredentialReadResult
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.migration.LegacyAccountSource
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
@@ -205,7 +206,14 @@ class ApiKeyManager(
     fun getAccounts(): List<AccountInfo> = synchronized(accountLock) { readAccountsLocked() }
 
     private fun readAccountsLocked(): List<AccountInfo> {
-        return when (val result = legacyAccountSource.read()) {
+        val result = try {
+            legacyAccountSource.read()
+        } catch (error: Exception) {
+            CredentialReadResult.Corrupt(
+                DataCorruptionException("Legacy accounts cannot be read", error)
+            )
+        }
+        return when (result) {
             CredentialReadResult.Missing -> emptyList()
             is CredentialReadResult.Valid -> result.payload.accounts
             is CredentialReadResult.Corrupt -> throw result.exception

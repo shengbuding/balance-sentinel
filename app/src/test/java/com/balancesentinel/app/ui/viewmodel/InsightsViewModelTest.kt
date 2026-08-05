@@ -114,8 +114,9 @@ class InsightsViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
-        assertNull("Credential corruption must not produce an empty-data result", state.intradayOutput)
-        assertNull("Credential corruption must not produce an empty-data result", state.dailyOutput)
+        assertTrue(state.credentialCorrupt)
+        assertNotNull("Credential corruption must remain explicit in the UI state", state.intradayOutput)
+        assertNotNull("Credential corruption must remain explicit in the UI state", state.dailyOutput)
     }
 
     @Test

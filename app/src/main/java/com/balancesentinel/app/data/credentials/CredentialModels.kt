@@ -13,6 +13,7 @@ data class CredentialPayload(
         require(accounts.all { it.label.isNotBlank() }) { "Account label must not be blank" }
         require(accounts.all { it.apiKey.isNotBlank() }) { "Account API key must not be blank" }
         require(accounts.map { it.id }.distinct().size == accounts.size) { "Account ids must be unique" }
+        require(legacyApiKey == null || legacyApiKey.isNotBlank()) { "Legacy API key must not be blank" }
     }
 }
 

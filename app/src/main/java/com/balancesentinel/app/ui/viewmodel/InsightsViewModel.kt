@@ -18,6 +18,7 @@ import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -41,6 +42,7 @@ data class InsightsUiState(
     val selectedAccountId: String? = null,
     val availableCurrencies: List<String> = emptyList(),
     val selectedCurrency: String = "",
+    val credentialCorrupt: Boolean = false,
     val rangeDays: Int = 7,
 
     /** IntradayEngine 输出 — 24h 滑动窗口 */
@@ -84,7 +86,8 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
         loadDataJob = viewModelScope.launch(Dispatchers.Default) {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
-                expandedDate = null
+                expandedDate = null,
+                credentialCorrupt = false
             )
 
             try {
@@ -95,7 +98,10 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
                 val accounts = try {
                     apiKeyManager.migrateLegacyKeyIfNeeded()
                     apiKeyManager.getAccounts()
-                } catch (_: Exception) {
+                } catch (error: DataCorruptionException) {
+                    _uiState.value = _uiState.value.copy(
+                        credentialCorrupt = true
+                    )
                     emptyList()
                 }
 

@@ -11,8 +11,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -113,9 +113,9 @@ class EncryptedPreferencesCredentialStoreTest {
         assertTrue(prefs.edit().putString("credential_payload", raw).commit())
         val store = store()
 
-        assertThrows(DataCorruptionException::class.java) { store.write(payload()) }
+        assertDataCorruption { store.write(payload()) }
         assertEquals(raw, prefs.getString("credential_payload", null))
-        assertThrows(DataCorruptionException::class.java) { store.clear() }
+        assertDataCorruption { store.clear() }
         assertEquals(raw, prefs.getString("credential_payload", null))
     }
 
@@ -127,6 +127,19 @@ class EncryptedPreferencesCredentialStoreTest {
         store(trackingPrefs).write(payload())
 
         assertNotEquals(callerThread, trackingPrefs.commitThreadName)
+    }
+
+    @Test
+    fun `write reports an explicit commit failure`() = runTest {
+        var failure: IllegalStateException? = null
+        try {
+            store(CommitFailingPreferences(prefs)).write(payload())
+            fail("Expected commit failure")
+        } catch (error: IllegalStateException) {
+            failure = error
+        }
+
+        assertEquals("Credential payload write commit failed", failure?.message)
     }
 
     @Test
@@ -145,7 +158,14 @@ class EncryptedPreferencesCredentialStoreTest {
 
         val firstWrite = async(Dispatchers.Default) { firstStore.write(payload()) }
         assertTrue(firstCommitEntered.await(5, TimeUnit.SECONDS))
-        val secondClear = async(Dispatchers.Default) { runCatching { secondStore.clear() } }
+        val secondClear = async(Dispatchers.Default) {
+            try {
+                secondStore.clear()
+                null
+            } catch (error: Exception) {
+                error
+            }
+        }
 
         assertFalse(
             "A second store must not reach its corrupting persistence while the first inspection is open",
@@ -177,6 +197,14 @@ class EncryptedPreferencesCredentialStoreTest {
 
     private class DecryptionFailure(message: String) : RuntimeException(message)
 
+    private suspend fun assertDataCorruption(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Expected DataCorruptionException")
+        } catch (_: DataCorruptionException) {
+        }
+    }
+
     private class CommitThreadTrackingPreferences(
         private val delegate: SharedPreferences
     ) : SharedPreferences by delegate {
@@ -194,6 +222,22 @@ class EncryptedPreferencesCredentialStoreTest {
                     commitThreadName = Thread.currentThread().name
                     return editor.commit()
                 }
+            }
+        }
+    }
+
+    private class CommitFailingPreferences(
+        private val delegate: SharedPreferences
+    ) : SharedPreferences by delegate {
+        override fun edit(): SharedPreferences.Editor {
+            val editor = delegate.edit()
+            return object : SharedPreferences.Editor by editor {
+                override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                    editor.putString(key, value)
+                    return this
+                }
+
+                override fun commit(): Boolean = false
             }
         }
     }
