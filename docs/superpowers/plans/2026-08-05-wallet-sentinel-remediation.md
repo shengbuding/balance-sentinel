@@ -10,6 +10,8 @@
 
 **设计规格：** `docs/superpowers/specs/2026-08-05-wallet-sentinel-remediation-design.md`
 
+**Room v1 canonical 规格：** `docs/superpowers/specs/2026-08-06-wallet-sentinel-room-v1-schema-design.md`
+
 ## 全局约束
 
 - 仅在 `C:\Users\Administrator\DeepSeekBalance\.worktrees\wallet-sentinel-hardening` 和 `wallet-sentinel-hardening` 分支工作。
@@ -23,7 +25,7 @@
 - Gradle 串行运行，使用 `--no-parallel`；禁止同时运行两个 `GradleWrapperMain`。
 - 每个任务提交前运行计划列出的聚焦测试和 `git diff --check`。阶段门禁使用 `--rerun-tasks`。
 - 不使用 `allowMainThreadQueries()`、生产 `runBlocking`、无界 `readBytes()` 或文本响应 `body.string()`。
-- Room schema v1 在第一次引入时包含本计划全部表，避免尚未发布就制造内部数据库升级链。
+- Room schema v1 在第一次引入时严格包含 canonical 规格冻结的 19 张表；后续任务可以增加 DAO 查询，但不得修改 v1 表、列、索引、外键、默认值或持久枚举字面量。
 - 稳定账户 UUID 不再由 API Key 推导。阶段 2 完成前保留 nullable `legacyStorageId`，旧数据通过该映射读取和清理。
 - API Key 编辑只切换凭据 generation，不改变账户 UUID。
 - `ConfigSettings` 进入 Room `app_settings`，否则不得宣称账户与设置原子导入。
@@ -77,56 +79,122 @@
 
 ### Task 2：Room v1 完整骨架与事务元数据（支持任务）
 
-**构建文件：**
+**唯一契约：** 本任务逐字实现
+`docs/superpowers/specs/2026-08-06-wallet-sentinel-room-v1-schema-design.md`。
+该文件冻结全部列、Kotlin/SQLite 类型、默认值、PK、索引、FK、枚举字面量、
+DAO 最小 API、发布 DTO、事务顺序和测试门禁；本计划不另造第二份 schema 定义。
 
-- Modify: `gradle/libs.versions.toml`
-- Modify: `app/build.gradle.kts`
-- Create: `app/schemas/` 下 Room schema export
+**已完成构建支持：** 提交 `21aa686` 已在 `gradle/libs.versions.toml` 和
+`app/build.gradle.kts` 固定 Room 2.7.2、kapt、schema export 与 Room testing，
+并通过 `compileDebugKotlin --rerun-tasks --no-parallel`。不得重复或改写该提交。
 
 **生产文件：**
 
-- Create: `data/local/WalletDatabase.kt`, `WalletDatabaseProvider.kt`, `DatabaseConverters.kt`
-- Create: `data/local/account/AccountEntity.kt`, `AccountDao.kt`
-- Create: `data/local/mutation/MutationOperationEntity.kt`, `MutationOperationDao.kt`
-- Create: `data/local/metadata/AppMetadataEntity.kt`, `AppMetadataDao.kt`
-- Create: `data/local/settings/AppSettingsEntity.kt`, `AppSettingsDao.kt`
-- Create: `data/local/settings/AccountAlertSettingEntity.kt`, `NotificationWalletSelectionEntity.kt`, `AlertRuntimeStateEntity.kt`, `SnoozeStateEntity.kt`, `SettingsDao.kt`
-- Create: `data/local/history/BalanceRecordEntity.kt`, `DailySummaryEntity.kt`, `HistoryDao.kt`
-- Create: `data/local/usage/UsageSnapshotEntity.kt`, `UsageRecordEntity.kt`, `UsageDao.kt`
-- Create: `data/local/log/EventLogEntity.kt`, `EventLogDao.kt`
-- Create: `data/local/refresh/RefreshRunEntity.kt`, `RefreshAccountResultEntity.kt`, `RefreshRunDao.kt`
-- Create: `data/local/update/DownloadOperationEntity.kt`, `DownloadOperationDao.kt`
-- Create: `data/local/maintenance/MaintenanceCheckpointEntity.kt`, `MaintenanceCheckpointDao.kt`
-- Create: `data/local/monitoring/MonitoringStateEntity.kt`, `MonitoringStateDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/WalletDatabase.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/WalletDatabaseProvider.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/DatabaseConverters.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/account/AccountEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/account/AccountDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/mutation/MutationOperationEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/mutation/MutationOperationDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/metadata/AppMetadataEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/metadata/AppMetadataDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/AppSettingsEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/AppSettingsDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/AccountAlertSettingEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/NotificationWalletSelectionEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/AlertRuntimeStateEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/SnoozeStateEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/settings/SettingsDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/history/BalanceRecordEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/history/DailySummaryEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/history/HistoryDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/usage/UsageSnapshotEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/usage/UsageRecordEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/usage/UsageDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/log/EventLogEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/log/EventLogDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/refresh/RefreshRunEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/refresh/RefreshAccountResultEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/refresh/RefreshRunDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/update/DownloadOperationEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/update/DownloadOperationDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/maintenance/MaintenanceCheckpointEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/maintenance/MaintenanceCheckpointDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/monitoring/MonitoringStateEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/monitoring/MonitoringStateDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/monitoring/MonitoringSessionEntity.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/monitoring/MonitoringSessionDao.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/publication/MutationPublication.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/publication/MutationPublisher.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/publication/TransactionStepObserver.kt`
+- Create: `app/src/main/java/com/balancesentinel/app/data/local/publication/PublicationConflictException.kt`
+- Create: `app/schemas/com.balancesentinel.app.data.local.WalletDatabase/1.json`
 
-**测试：**
+**测试文件：**
 
 - Create: `app/src/test/java/com/balancesentinel/app/data/local/WalletDatabaseTest.kt`
+- Create: `app/src/test/java/com/balancesentinel/app/data/local/DatabaseConvertersTest.kt`
 - Create: `app/src/test/java/com/balancesentinel/app/data/local/account/AccountDaoTest.kt`
+- Create: `app/src/test/java/com/balancesentinel/app/data/local/publication/MutationPublisherTest.kt`
+- Create: `app/src/test/java/com/balancesentinel/app/data/local/monitoring/MonitoringSessionDaoTest.kt`
 
-**持久状态所有权矩阵：**
+**接口：**
 
-- `mutation_operations`：operation type/stage、targets、完整 staged generation manifest、batch cursor、baseline revision、错误和时间。
-- `app_metadata`：localRevision、活动数据代次、全局 legacy migration stage。
-- `maintenance_checkpoint`：最后完整处理日期、当前 ZoneId 和最后成功时间。
-- `monitoring_state`：desired、processSessionId、lease、前台会话起止、PlatformLimited/Paused 原因。
-- `app_settings`：可导入全局设置、后台周期、前台会话周期。
-- account settings/runtime tables：逐账户告警、通知选择、锚点和 snooze，全部带 FK cascade。
-- `download_operations`：operation owner、tag、临时/目标路径、状态、进度和错误。
-- `refresh_runs`/`refresh_account_results`：run owner session、开始时间、逐账户 RUNNING/终态和 batch aggregate 所需字段。
+- Consumes: canonical 规格中的稳定 UUID、19 表 identity、14 组稳定枚举/provider
+  字面量、`AccountMutation.Create/Update/Delete(expectedRevision)`、五张设置表各自
+  `Unchanged/ReplaceAll`、metadata expected-old/new CAS 和四个事务观察点。
+- Produces: `WalletDatabase` version `1`，实体集合严格为 `accounts`、
+  `mutation_operations`、`app_metadata`、`app_settings`、
+  `account_alert_settings`、`notification_wallet_selections`、
+  `alert_runtime_state`、`snooze_state`、`balance_records`、
+  `daily_summaries`、`usage_snapshots`、`usage_records`、`event_logs`、
+  `refresh_runs`、`refresh_account_results`、`download_operations`、
+  `maintenance_checkpoint`、`monitoring_state`、`monitoring_sessions`。
+- Produces: `suspend fun MutationPublisher.publish(input: MutationPublication): PublicationResult`；
+  成功返回 `PublicationResult(operationId, baselineRevision + 1)`，任何账户 CAS、metadata
+  CAS、DAO 写入或观察点失败都在同一 `withTransaction` 内回滚。
+- Later tasks may add `suspend`/`Flow` DAO queries only. They may not change v1
+  identity. No Task 2 class is registered in `DeepSeekApp` or called by现有 repository/UI/service。
 
-`balance_records(account_id,currency,recorded_at,id)` 建索引；摘要唯一键为 `(date,account_id,currency)`；账户拥有数据使用 FK cascade；event log 与 refresh run 分表。Task 2 完成后，后续任务禁止改 v1 schema；若确需修改，必须恢复 Task 2 原 implementer并重新审查。
-
-- [ ] 先只引入固定版本 Room runtime/ktx/compiler/testing 和 Kotlin kapt，验证依赖解析与 Debug 编译，作为支持提交。
-- [ ] 建立 schema v1、DAO 和事务入口；不得接入任何生产调用方。
-- [ ] 验证同一事务写账户、active generation 引用、修订号和 `PUBLISHED`，注入异常时 Room 列全部回滚；测试不得伪造外部加密存储也随 Room 回滚。
-- [ ] 验证修订号单调递增、摘要唯一键、FK 级联和下载单活动约束。
-- [ ] schema identity 测试固定所有实体、列、索引、FK 和唯一约束，并逐项核对上述所有权矩阵。
-- [ ] 导出并提交 schema JSON，运行聚焦测试和编译。
+- [ ] 创建不接生产调用方的 schema/API 支持面：19 个 `@Entity`、canonical DAO
+  最小签名、完整 converter/DTO 类型、`WalletDatabase` version 1，以及暂时抛出
+  `UnsupportedOperationException("Room v1 publication is not implemented")` 的
+  `MutationPublisher.publish`。此支持提交必须一次性包含全部 19 表，能够编译并打开
+  Room；不得创建不完整 v1、不得修改 Application/Repository/UI/Service。
+- [ ] 串行运行 `compileDebugKotlin` 和 `compileDebugUnitTestKotlin`，提交 schema/API
+  支持面；报告中注明这不是 GREEN，发布事务仍不可用。
+- [ ] 写行为级 RED：使用真实 in-memory Room 调用 `MutationPublisher.publish`，覆盖
+  Create/Update/Delete revision CAS、五表独立 settings publication、metadata CAS、
+  operation `PUBLISHED`，并分别在 `AFTER_ACCOUNT_ROWS`、`AFTER_SETTINGS_ROWS`、
+  `AFTER_METADATA`、`AFTER_OPERATION_PUBLISHED` 抛错后用新事务验证所有 Room 行未变。
+  RED 必须可编译，并因上述显式 `UnsupportedOperationException` 失败。
+- [ ] 同一 RED 提交加入字面 schema/行为契约：PRAGMA 与导出 JSON 固定全部 19 表；
+  未知 enum/provider 原始字面量经 DAO 读取必须失败；revision 单调递增；daily summary
+  唯一；账户删除级联 owned rows 但保留 run-owned refresh result；下载 nullable active
+  slot 唯一；第二个 `DATA_SYNC` 开放会话被拒绝，close/recovery 清 slot 后可重开；
+  overlap closed/open 分支和 `ended_at <= effectiveCutoff` prune 使用真实 Room 行。
+- [ ] 同一字面门禁固定 `HISTORY_DATA_IMPORT`、`manifest_version` 和 committed
+  `batch_cursor`；`usage_records` 以 `(snapshot_id, record_ordinal)` 保留同名 model；
+  event-log 金额/币种原始文本逐字节保留；`refresh_account_results.account_id` 不建立
+  account FK，账户删除后 run-owned 结果仍可终结为 `ACCOUNT_STALE`。
+- [ ] 运行 RED 命令并记录具体失败测试和异常；确认没有编译、fixture 或环境失败后，
+  仅提交测试。
+- [ ] 实现最小 GREEN：在一个 `RoomDatabase.withTransaction` 中依次校验 operation、
+  执行 typed account CAS、逐表 settings replacement、revision/metadata CAS、标记
+  `PUBLISHED`；外部凭据只作为 generation 引用，绝不伪装成随 Room 回滚。
+- [ ] 完成 canonical converter 的 exhaustive literal map；未知值抛
+  `IllegalArgumentException`，`ProviderType` 不得回退到 DeepSeek。完成 schema export，
+  保持所有 DAO 为 `suspend` 或 `Flow`，不使用 `allowMainThreadQueries()`。
+- [ ] 运行 GREEN 聚焦测试、Debug 编译和 `git diff --check`；提交 GREEN，报告记录
+  RED/GREEN 命令、测试计数、四个提交范围（既有依赖支持/schema API 支持/RED/GREEN）、
+  export 路径、未解决风险和自审结论。
 
 ```powershell
-.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.local.WalletDatabaseTest" --tests "com.balancesentinel.app.data.local.account.AccountDaoTest" --rerun-tasks --no-parallel
+.\gradlew.bat compileDebugKotlin compileDebugUnitTestKotlin --rerun-tasks --no-parallel
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.local.WalletDatabaseTest" --tests "com.balancesentinel.app.data.local.DatabaseConvertersTest" --tests "com.balancesentinel.app.data.local.account.AccountDaoTest" --tests "com.balancesentinel.app.data.local.publication.MutationPublisherTest" --tests "com.balancesentinel.app.data.local.monitoring.MonitoringSessionDaoTest" --rerun-tasks --no-parallel
 .\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+git diff --check
 ```
 
 ### Task 3：可重入账户引导迁移与稳定 UUID
@@ -501,17 +569,30 @@ git diff --check "${phase2Base}..HEAD"
 
 **文件：**
 
-- Create: `service/MonitoringStateStore.kt`, `ServiceLease.kt`, `ServiceLeaseEvaluator.kt`, `ContinuousMonitoringController.kt`, `ForegroundSessionBudget.kt`
+- Create: `service/MonitoringStateStore.kt`, `ServiceLease.kt`, `ServiceLeaseEvaluator.kt`, `ContinuousMonitoringController.kt`, `MonitoringBudgetCalculator.kt`
 - Create: `work/MonitoringHealthWorker.kt`
+- Modify: `data/local/monitoring/MonitoringSessionDao.kt`, `MonitoringStateDao.kt`
 - Modify: `BalanceRefreshService.kt`, `ForegroundServiceStarter.kt`, `RefreshScheduler.kt`, `MainActivity.kt`, `HomeViewModel.kt`, `DeepSeekApp.kt`, `BootReceiver.kt`, `AndroidManifest.xml`
 - Modify: `app/src/main/res/values/strings.xml`, `app/src/main/res/values-en/strings.xml`
 - Retire: `KeepAliveReceiver.kt` 及精确 Alarm 健康链
-- Create/modify service、worker、scheduler、boot tests
+- Create: `app/src/test/java/com/balancesentinel/app/service/MonitoringBudgetCalculatorTest.kt`
+- Create/modify: `app/src/test/java/com/balancesentinel/app/service/ContinuousMonitoringControllerTest.kt`, `app/src/test/java/com/balancesentinel/app/work/MonitoringHealthWorkerTest.kt`, `app/src/test/java/com/balancesentinel/app/data/repository/RefreshSchedulerTest.kt`, `app/src/test/java/com/balancesentinel/app/receiver/BootReceiverTest.kt`
 
 - [ ] 写 RED：desired=false 即使旧心跳存在也 stopped；desired=true 但本进程无新鲜租约只能 starting/abnormal。
 - [ ] 验证旧 processSessionId 心跳立即失效，租约过期 running 转 abnormal。
 - [ ] 验证服务存活期不调用 DETACH，onDestroy 只清当前 session；boot 不无条件启动 FGS。
-- [ ] 写 RED：Android 15 `dataSync` 会话在 6 小时平台预算前主动结束；系统 `onTimeout` 后立即 stopSelf、移除前台并进入 PlatformLimited/Paused，且不得自动重启。
+- [ ] 写 RED：Android 15 `dataSync` 滚动 24 小时预算由 Room `monitoring_sessions`
+  的半开区间并集重建；重复、重叠、相邻、跨 cutoff、恰好结束于 cutoff、恰好开始于
+  now、开放会话和用户前台 reset 均不得重复计时或获得第二份预算。
+- [ ] 验证 `effectiveCutoff = min(now, max(now - 86_400_000,
+  lastUserForegroundResetAt ?: Long.MIN_VALUE))`；纯 `MonitoringBudgetCalculator` 只负责
+  clip/sort/merge/sum，DAO 只返回 closed/open overlap candidates，不在 SQL 中求和。
+- [ ] 验证 start 事务同时插入 `active_slot = 'DATA_SYNC'` 会话并更新 projection；
+  close/recovery 事务同时写 `ended_at`、清 active slot 并更新 projection；第二个开放会话
+  被唯一索引拒绝，旧进程开放会话以 `PROCESS_RECOVERY` 保守结束后才能重开。
+- [ ] 写 RED：会话在平台 6 小时/24 小时限制前主动结束；系统 `onTimeout` 后立即
+  stopSelf、移除前台并进入 PlatformLimited/Paused，且不得自动重启。只删除
+  `ended_at <= effectiveCutoff` 的 closed rows，跨 cutoff 行必须保留。
 - [ ] 验证会话受限后普通 WorkManager 刷新仍存在，小于 15 分钟的期望间隔显示为已降级而不是运行中。
 - [ ] 提交 RED。
 - [ ] Application 生成 processSessionId；Service 用可取消 coroutine loop 调统一引擎并始终保持前台通知；会话是有界、用户发起的 dataSync 会话，不承诺永久常驻。
