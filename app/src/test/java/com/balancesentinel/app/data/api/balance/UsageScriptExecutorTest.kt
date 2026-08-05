@@ -183,6 +183,97 @@ class UsageScriptExecutorTest {
         assertEquals(1.0, absentBalance.used!!, 0.0)
     }
 
+    // Mutation caught: guarding only the marked property and dereferencing the remaining chain.
+    @Test
+    fun `continuous optional property chain short circuits after a null root`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var live={child:{value:42}};
+                        var nullRoot=null;
+                        var undefinedRoot;
+                        var liveValue=live?.child.value;
+                        var nullValue=nullRoot?.child.value;
+                        var undefinedValue=undefinedRoot?.child.value;
+                        return {
+                            remaining:liveValue,
+                            total:nullValue===undefined?1:0,
+                            used:undefinedValue===undefined?1:0,
+                            unit:'USD'
+                        };
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        val balance = (result as ScriptExecutionResult.Success).balances.single()
+        assertEquals(42.0, balance.remaining!!, 0.0)
+        assertEquals(1.0, balance.total!!, 0.0)
+        assertEquals(1.0, balance.used!!, 0.0)
+    }
+
+    // Mutation caught: extracting an optional method before calling it and losing its receiver.
+    @Test
+    fun `optional method call preserves its receiver`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var root={value:41,method:function(){return this===root?this.value+1:-1;}};
+                        return {remaining:root?.method(),unit:'USD'};
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        assertEquals(
+            42.0,
+            (result as ScriptExecutionResult.Success).balances.single().remaining!!,
+            0.0
+        )
+    }
+
+    // Mutation caught: leaving the call outside the optional property's null guard.
+    @Test
+    fun `optional method call skips null and undefined roots`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var calls=0;
+                        var live={method:function(){calls++;return 1;}};
+                        var nullRoot=null;
+                        var undefinedRoot;
+                        var liveValue=live?.method();
+                        var nullValue=nullRoot?.method();
+                        var undefinedValue=undefinedRoot?.method();
+                        return {
+                            remaining:calls,
+                            total:nullValue===undefined?liveValue:99,
+                            used:undefinedValue===undefined?0:99,
+                            unit:'USD'
+                        };
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        val balance = (result as ScriptExecutionResult.Success).balances.single()
+        assertEquals(1.0, balance.remaining!!, 0.0)
+        assertEquals(1.0, balance.total!!, 0.0)
+        assertEquals(0.0, balance.used!!, 0.0)
+    }
+
     // Mutation caught: accepting a missing or non-finite remaining balance from the extractor.
     @Test
     fun `extractor requires a finite remaining balance`() = runBlocking {
