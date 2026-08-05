@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -242,33 +243,10 @@ class MainActivity : ComponentActivity() {
                 } else {
                 Scaffold(
                     bottomBar = {
-                        NavigationBar {
-                            NavigationBarItem(
-                                selected = currentScreen == Screen.HOME,
-                                onClick = { currentScreen = Screen.HOME },
-                                icon = { Icon(Icons.Filled.Home, contentDescription = stringResource(R.string.home_title)) },
-                                label = { Text(stringResource(R.string.home_title)) }
-                            )
-                            NavigationBarItem(
-                                selected = currentScreen == Screen.INSIGHTS,
-                                onClick = { currentScreen = Screen.INSIGHTS },
-                                icon = { Icon(CustomIcons.TrendingUp, contentDescription = stringResource(R.string.insights_title)) },
-                                label = { Text(stringResource(R.string.insights_title)) }
-                            )
-                            NavigationBarItem(
-                                selected = currentScreen == Screen.CONSOLE_SELECT ||
-                                        currentScreen == Screen.CONSOLE,
-                                onClick = { currentScreen = Screen.CONSOLE_SELECT },
-                                icon = { Icon(CustomIcons.Analytics, contentDescription = "控制台") },
-                                label = { Text("控制台") }
-                            )
-                            NavigationBarItem(
-                                selected = currentScreen == Screen.SETTINGS,
-                                onClick = { currentScreen = Screen.SETTINGS },
-                                icon = { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings_title)) },
-                                label = { Text(stringResource(R.string.settings_title)) }
-                            )
-                        }
+                        AppNavigationBar(
+                            currentScreen = currentScreen,
+                            onScreenSelected = { currentScreen = it }
+                        )
                     }
                 ) { padding ->
                     Box(modifier = Modifier.padding(padding)) {
@@ -402,5 +380,46 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             com.balancesentinel.app.data.util.Logger.e("MainActivity", "Failed to start refresh service", e)
         }
+    }
+}
+
+@Composable
+internal fun AppNavigationBar(
+    currentScreen: Screen,
+    onScreenSelected: (Screen) -> Unit
+) {
+    NavigationBar {
+        NavigationBarItem(
+            selected = currentScreen == Screen.HOME,
+            onClick = { onScreenSelected(Screen.HOME) },
+            icon = {
+                Icon(Icons.Filled.Home, contentDescription = stringResource(R.string.home_title))
+            },
+            label = { Text(stringResource(R.string.home_title)) }
+        )
+        NavigationBarItem(
+            selected = currentScreen == Screen.INSIGHTS,
+            onClick = { onScreenSelected(Screen.INSIGHTS) },
+            icon = {
+                Icon(CustomIcons.TrendingUp, contentDescription = stringResource(R.string.insights_title))
+            },
+            label = { Text(stringResource(R.string.insights_title)) }
+        )
+        NavigationBarItem(
+            selected = currentScreen == Screen.CONSOLE_SELECT || currentScreen == Screen.CONSOLE,
+            onClick = { onScreenSelected(Screen.CONSOLE_SELECT) },
+            icon = {
+                Icon(CustomIcons.Analytics, contentDescription = "控制台")
+            },
+            label = { Text("控制台") }
+        )
+        NavigationBarItem(
+            selected = currentScreen == Screen.SETTINGS,
+            onClick = { onScreenSelected(Screen.SETTINGS) },
+            icon = {
+                Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings_title))
+            },
+            label = { Text(stringResource(R.string.settings_title)) }
+        )
     }
 }

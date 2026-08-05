@@ -9,7 +9,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -85,6 +87,17 @@ class HomeScreenTest {
 
         composeTestRule.onNodeWithText(string(R.string.home_empty_title)).assertIsDisplayed()
         composeTestRule.onNodeWithText(string(R.string.home_empty_subtitle)).assertIsDisplayed()
+    }
+
+    @Test
+    fun `empty account guidance does not leak Chinese in English locale`() {
+        val vm = createViewModel()
+        setEnglishContent {
+            HomeScreen(viewModel = vm, onNavigateToSettings = {})
+        }
+
+        composeTestRule.onAllNodesWithText("添加第一个账户").assertCountEquals(0)
+        composeTestRule.onNodeWithText("Add Account").assertIsDisplayed()
     }
 
     @Test
