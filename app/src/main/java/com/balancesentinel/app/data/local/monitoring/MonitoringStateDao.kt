@@ -1,0 +1,80 @@
+package com.balancesentinel.app.data.local.monitoring
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface MonitoringStateDao {
+    @Query("SELECT * FROM monitoring_state WHERE id = 0")
+    suspend fun get(): MonitoringStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfMissing(state: MonitoringStateEntity): Long
+
+    suspend fun getOrCreate(defaultValue: MonitoringStateEntity): MonitoringStateEntity {
+        insertIfMissing(defaultValue)
+        return requireNotNull(get())
+    }
+
+    @Query("SELECT * FROM monitoring_state WHERE id = 0")
+    fun observe(): Flow<MonitoringStateEntity?>
+
+    @Query("UPDATE monitoring_state SET desired = :desired, updated_at = :updatedAt WHERE id = 0")
+    suspend fun setDesired(desired: Boolean, updatedAt: Long): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state SET
+            process_session_id = :processSessionId,
+            lease_expires_at = :leaseExpiresAt,
+            observed_state = 'RUNNING',
+            updated_at = :updatedAt
+        WHERE id = 0
+        """
+    )
+    suspend fun renewLease(
+        processSessionId: String,
+        leaseExpiresAt: Long,
+        updatedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state SET
+            current_monitoring_session_id = :monitoringSessionId,
+            process_session_id = :processSessionId,
+            foreground_session_started_at = :startedAt,
+            foreground_session_ended_at = NULL,
+            observed_state = 'RUNNING',
+            updated_at = :startedAt
+        WHERE id = 0
+        """
+    )
+    suspend fun projectSessionStart(
+        monitoringSessionId: String,
+        processSessionId: String,
+        startedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state SET
+            current_monitoring_session_id = NULL,
+            foreground_session_ended_at = :endedAt,
+            lease_expires_at = NULL,
+            observed_state = :observedState,
+            state_reason = :reason,
+            updated_at = :endedAt
+        WHERE id = 0 AND current_monitoring_session_id = :monitoringSessionId
+        """
+    )
+    suspend fun projectSessionEnd(
+        monitoringSessionId: String,
+        endedAt: Long,
+        observedState: MonitoringObservedState,
+        reason: String?
+    ): Int
+}
