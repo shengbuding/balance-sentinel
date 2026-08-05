@@ -8,6 +8,8 @@ import org.mozilla.javascript.ast.AstNode
 import org.mozilla.javascript.ast.ElementGet
 import org.mozilla.javascript.ast.FunctionCall
 import org.mozilla.javascript.ast.InfixExpression
+import org.mozilla.javascript.ast.NewExpression
+import org.mozilla.javascript.ast.ParenthesizedExpression
 import org.mozilla.javascript.ast.PropertyGet
 import java.util.IdentityHashMap
 
@@ -93,18 +95,27 @@ internal object SavedScriptCompatibility {
     ) {
         private data class Rewrite(
             val markedNode: AstNode,
-            val spanRoot: AstNode
+            val spanRoot: AstNode,
+            val optionalChainRoot: AstNode? = null,
+            val groupedCall: FunctionCall? = null
         )
 
         private val rewrites = marked.keys.map { node ->
-            Rewrite(
-                markedNode = node,
-                spanRoot = when (marked[node]) {
-                    OperatorKind.OPTIONAL_PROPERTY -> continuousOptionalChainRoot(node)
-                    OperatorKind.NULLISH -> node
-                    null -> error("Unmarked compatibility node")
+            when (marked[node]) {
+                OperatorKind.OPTIONAL_PROPERTY -> {
+                    val chainRoot = continuousOptionalChainRoot(node)
+                    val groupedCall = groupedCallAfter(chainRoot)
+                    Rewrite(
+                        markedNode = node,
+                        spanRoot = groupedCall ?: chainRoot,
+                        optionalChainRoot = chainRoot,
+                        groupedCall = groupedCall
+                    )
                 }
-            )
+
+                OperatorKind.NULLISH -> Rewrite(markedNode = node, spanRoot = node)
+                null -> error("Unmarked compatibility node")
+            }
         }
 
         fun rewrite(): String = renderRange(0, source.length)
@@ -140,10 +151,18 @@ internal object SavedScriptCompatibility {
                 val target = renderNodeRange(propertyGet.target)
                 val suffix = renderRange(
                     propertyGet.absoluteOperatorPosition(),
-                    rewrite.spanRoot.end
+                    checkNotNull(rewrite.optionalChainRoot).end
                 )
-                "((function($temporaryName){return $temporaryName == null ? " +
-                    "void 0 : $temporaryName$suffix;}).call(this,($target)))"
+                val groupedCall = rewrite.groupedCall
+                if (groupedCall == null) {
+                    "((function($temporaryName){return $temporaryName == null ? " +
+                        "void 0 : $temporaryName$suffix;}).call(this,($target)))"
+                } else {
+                    val callSuffix = renderRange(groupedCall.target.end, groupedCall.end)
+                    "((function($temporaryName){return $temporaryName == null ? " +
+                        "(void 0)$callSuffix : $temporaryName$suffix$callSuffix;})" +
+                        ".call(this,($target)))"
+                }
             }
 
             OperatorKind.NULLISH -> {
@@ -165,9 +184,38 @@ internal object SavedScriptCompatibility {
                 root = when (parent) {
                     is PropertyGet -> if (parent.target === root) parent else return root
                     is ElementGet -> if (parent.target === root) parent else return root
-                    is FunctionCall -> if (parent.target === root) parent else return root
+                    is NewExpression -> {
+                        require(parent.target !== root) {
+                            "Unsupported optional chaining expression"
+                        }
+                        return root
+                    }
+
+                    is FunctionCall -> if (
+                        parent.javaClass == FunctionCall::class.java && parent.target === root
+                    ) {
+                        parent
+                    } else {
+                        return root
+                    }
+
                     else -> return root
                 }
+            }
+        }
+
+        private fun groupedCallAfter(chainRoot: AstNode): FunctionCall? {
+            var groupedRoot = chainRoot
+            var parent = groupedRoot.parent
+            var hasGrouping = false
+            while (parent is ParenthesizedExpression && parent.expression === groupedRoot) {
+                hasGrouping = true
+                groupedRoot = parent
+                parent = groupedRoot.parent
+            }
+            if (!hasGrouping) return null
+            return (parent as? FunctionCall)?.takeIf { call ->
+                call.javaClass == FunctionCall::class.java && call.target === groupedRoot
             }
         }
 
