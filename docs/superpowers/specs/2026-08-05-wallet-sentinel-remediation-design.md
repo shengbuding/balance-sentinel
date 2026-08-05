@@ -70,6 +70,10 @@ Room 与加密存储无法参加同一个物理事务，因此跨存储一致性
 
 ### Room 数据库
 
+Room v1 的冻结表、列、索引、外键、持久枚举、事务 DTO 与测试门禁以
+`docs/superpowers/specs/2026-08-06-wallet-sentinel-room-v1-schema-design.md`
+为唯一 canonical 定义；后续任务只能增加 DAO 查询，不能改动 v1 identity。
+
 第一版数据库至少包含以下职责：
 
 - `accounts`：稳定账户 UUID、显示顺序、标签、Provider、非敏感配置、活动凭据代次、账户修订号和状态。
