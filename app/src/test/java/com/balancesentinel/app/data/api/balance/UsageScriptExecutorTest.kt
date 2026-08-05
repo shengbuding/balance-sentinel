@@ -274,6 +274,93 @@ class UsageScriptExecutorTest {
         assertEquals(0.0, balance.used!!, 0.0)
     }
 
+    // Mutation caught: materializing the grouped property as a bare function value before calling it.
+    @Test
+    fun `grouped optional method call preserves its receiver`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var argumentCalls=0;
+                        var root={value:41,method:function(offset){
+                            return this===root?this.value+offset+1:-1;
+                        }};
+                        var remaining=(root?.method)(argumentCalls++);
+                        return {remaining:remaining,total:argumentCalls,unit:'USD'};
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        assertEquals(
+            42.0,
+            (result as ScriptExecutionResult.Success).balances.single().remaining!!,
+            0.0
+        )
+        assertEquals(
+            1.0,
+            (result as ScriptExecutionResult.Success).balances.single().total!!,
+            0.0
+        )
+    }
+
+    // Control: grouping ends optional short-circuiting, so the null result is still called and throws.
+    @Test
+    fun `grouped optional method call throws for a null root`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var root=null;
+                        var threw=false;
+                        try{(root?.method)();}catch(error){threw=true;}
+                        return {remaining:threw?1:-1,unit:'USD'};
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        assertEquals(
+            1.0,
+            (result as ScriptExecutionResult.Success).balances.single().remaining!!,
+            0.0
+        )
+    }
+
+    // Mutation caught: absorbing NewExpression as a FunctionCall and silently dropping `new`.
+    @Test
+    fun `optional chain directly targeted by new fails closed`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    """
+                        var normalCalls=0;
+                        var root={Ctor:function(){normalCalls++;return 7;}};
+                        var value=new root?.Ctor();
+                        return {
+                            remaining:normalCalls===1&&value===7?99:-1,
+                            unit:'USD'
+                        };
+                    """.trimIndent()
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue("unexpected result: $result", result is ScriptExecutionResult.Failure)
+        assertTrue(
+            (result as ScriptExecutionResult.Failure).failure is
+                RefreshFailure.ResponseSchemaFailure
+        )
+    }
+
     // Mutation caught: accepting a missing or non-finite remaining balance from the extractor.
     @Test
     fun `extractor requires a finite remaining balance`() = runBlocking {
