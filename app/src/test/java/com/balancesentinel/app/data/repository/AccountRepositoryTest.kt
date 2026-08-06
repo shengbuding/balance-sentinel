@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
@@ -64,6 +65,82 @@ class AccountRepositoryTest {
             assertTrue(roomId != manager.computeId("key-before"))
             assertTrue(roomId != manager.computeId("key-after"))
             assertEquals(1, database.accountDao().getAllForMigration().size)
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun multiAccountRotationReusesMappingsWhenLegacyListOrderChanges() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("task3-round2-rotation", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val manager = ApiKeyManager(context, prefs)
+        val first = manager.addAccount("A", "key-a")
+        val second = manager.addAccount("B", "key-b")
+        val third = manager.addAccount("C", "key-c")
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        val store = InMemoryCredentialStore()
+        try {
+            val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            val initialIds = initial.mappings.associateBy { it.legacyStorageId }
+            val operationId = database.mutationOperationDao().listRecoverable().single().id
+            manager.saveAccount(second.id, AccountDraft("B", "key-b-rotated", ProviderType.DEEPSEEK))
+            val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            assertEquals(operationId, database.mutationOperationDao().listRecoverable().single().id)
+            assertEquals(initialIds.mapValues { it.value.accountId }, recovered.mappings.associate { it.legacyStorageId to it.accountId })
+            assertEquals(3, database.accountDao().getAllForMigration().size)
+            assertEquals(3, database.accountDao().observeVerified().first().size)
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun explicitLegacyListReorderReusesExistingMappings() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("task3-round2-reorder", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val manager = ApiKeyManager(context, prefs)
+        val a = manager.addAccount("A", "key-a")
+        val b = manager.addAccount("B", "key-b")
+        val c = manager.addAccount("C", "key-c")
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        val store = InMemoryCredentialStore()
+        try {
+            val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            val initialIds = initial.mappings.associate { it.legacyStorageId to it.accountId }
+            val reordered = manager.getAccounts().let { list -> listOf(list[2], list[0], list[1]) }
+            manager.replaceAll(reordered)
+            val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            assertEquals(initialIds, recovered.mappings.associate { it.legacyStorageId to it.accountId })
+            assertEquals(3, database.accountDao().getAllForMigration().size)
+            assertEquals(3, database.accountDao().observeVerified().first().size)
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun addingAccountAfterMigrationReusesExistingMappingsAndAddsOnlyOneRow() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("task3-round2-add", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val manager = ApiKeyManager(context, prefs)
+        val original = manager.addAccount("A", "key-a")
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        val store = InMemoryCredentialStore()
+        try {
+            val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            val originalRoomId = initial.mappings.single().accountId
+            manager.addAccount("B", "key-b")
+            val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
+            assertEquals(originalRoomId, recovered.mappings.first { it.legacyStorageId == original.id }.accountId)
+            assertEquals(2, database.accountDao().getAllForMigration().size)
+            assertEquals(2, database.accountDao().observeVerified().first().size)
         } finally {
             database.close()
             prefs.edit().clear().commit()
