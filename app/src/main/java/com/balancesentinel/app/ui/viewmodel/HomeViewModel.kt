@@ -22,6 +22,8 @@ import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
+import com.balancesentinel.app.data.repository.AccountMutationCoordinator
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
@@ -69,7 +71,9 @@ class HomeViewModel @JvmOverloads constructor(
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val repository: BalanceRepository = BalanceRepository(),
     // Tests provide a deterministic gateway; production resolves the Application singleton.
-    private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null
+    private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null,
+    private val accountUiRepository: AccountUiRepository? = null,
+    private val accountMutationCoordinator: AccountMutationCoordinator? = null
 ) : AndroidViewModel(application) {
 
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)

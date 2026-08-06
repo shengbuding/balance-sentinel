@@ -20,6 +20,7 @@ import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +70,10 @@ data class InsightsUiState(
  *
  * 多账户全部账户模式：null accountId 时逐账户跑引擎再合并。
  */
-class InsightsViewModel(application: Application) : AndroidViewModel(application) {
+class InsightsViewModel @JvmOverloads constructor(
+    application: Application,
+    private val accountUiRepository: AccountUiRepository? = null
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(InsightsUiState())
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()

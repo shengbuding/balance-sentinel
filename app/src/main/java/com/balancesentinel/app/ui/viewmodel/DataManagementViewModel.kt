@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.BackupImportPlanner
@@ -85,7 +86,8 @@ class DataManagementViewModel @JvmOverloads constructor(
     application: Application,
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application),
-    private val importPlanner: BackupImportPlanner = BackupImportPlanner(apiKeyManager, widgetPrefs)
+    private val importPlanner: BackupImportPlanner = BackupImportPlanner(apiKeyManager, widgetPrefs),
+    private val accountUiRepository: AccountUiRepository? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DataManagementUiState())
