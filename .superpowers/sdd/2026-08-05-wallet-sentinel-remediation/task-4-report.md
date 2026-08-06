@@ -84,3 +84,42 @@ tests; Room v1 schema, persistent enums, and Task 2 DAO contracts are unchanged.
 All persistence-facing code is suspend/IO based, external cleanup is never
 pretended to be part of Room rollback, and cleanup retries are represented by a
 durable PUBLISHED operation.
+
+## Fix Round 1
+
+### Review findings addressed
+
+The fresh scoped review identified three load-bearing gaps:
+
+1. Recovery attempted to decode Task 3 legacy migration operations and one bad
+   row could abort all later account recovery.
+2. A process death after credential commit but before the stage update could
+   leave PREPARED state without a safe resume path; rollback failure had no
+   durable retry signal.
+3. Multiple coordinator instances could interleave read/prepare/publish and a
+   later rollback could overwrite an earlier successful credential write.
+
+### RED
+
+- RED commit: `72d9802` (`test: expose mutation recovery isolation and races`).
+- Added behavior tests for legacy-operation filtering and bad-operation
+  isolation, process death between credential write and stage update, deterministic
+  coordinator serialization, startup recovery invocation, and durable rollback
+  retry signaling.
+- Before the fix, the new tests failed with a recovery JSON decode exception,
+  missing PREPARED operation after simulated process death, and concurrent write
+  interleaving.
+
+### GREEN
+
+- Fix commit: `d5c346c` (`fix: serialize and isolate account recovery`).
+- Recovery now filters to account replace/delete operations and isolates each
+  malformed/conflicting row. PREPARED rows are fingerprint-verified and resumed
+  when their staged payload is present; failed rollback/cleanup leaves a
+  `ROLLBACK_PENDING` PREPARED row for retry.
+- A process-wide suspend `Mutex` covers save/delete/recover critical sections;
+  it suspends callers and never blocks the main thread.
+- Required focused command including `AccountLifecycleManagerTest`,
+  `AccountMutationRecoveryTest`, and `DeepSeekAppTest` passed with 11/11,
+  10/10, and 7/7 tests respectively. Debug Kotlin compilation and
+  `git diff --check` passed, with no Room schema or identity diff.
