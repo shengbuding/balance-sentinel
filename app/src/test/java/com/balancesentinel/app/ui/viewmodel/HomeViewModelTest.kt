@@ -32,6 +32,7 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -713,6 +714,93 @@ class HomeViewModelTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
+    fun `single refresh ends loading when target disappears and a later refresh can run`() {
+        // Mutation caught: returning after post-gateway revalidation without clearing isLoading.
+        val account = AccountInfo(
+            id = "15a937c7-ad9d-4f46-bb94-ac0576348e96",
+            label = "Removed in flight",
+            apiKey = "sk-removed-in-flight"
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(account)))
+        val gateway = ControlledRefreshGateway()
+        val vm = HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            gateway,
+            source,
+            RecordingMutationCoordinator()
+        )
+
+        vm.refreshSingleAccount(account.id)
+        assertTrue(vm.uiState.value.isLoading)
+        assertEquals(1, gateway.singleCalls)
+
+        source.publish(AccountLoadState.Ready(emptyList()))
+        gateway.completeNextSingle(committed(account.id, 111.0))
+        drainMain()
+
+        val invalidated = vm.uiState.value
+        assertFalse("A vanished refresh target must not leave the screen loading", invalidated.isLoading)
+        assertTrue(invalidated.accounts.isEmpty())
+        assertFalse(invalidated.accountBalances.containsKey(account.id))
+        assertEquals(0L, invalidated.lastRefreshTime)
+
+        source.publish(AccountLoadState.Ready(listOf(account)))
+        vm.refreshSingleAccount(account.id)
+        assertTrue(vm.uiState.value.isLoading)
+        assertEquals(2, gateway.singleCalls)
+        gateway.completeNextSingle(committed(account.id, 222.0))
+        drainMain()
+
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals("222.0", vm.uiState.value.accountBalances[account.id]?.balanceInfos?.single()?.totalBalance)
+    }
+
+    @Test
+    fun `refresh all ends loading across Loading to Ready and can run again`() {
+        // Mutation caught: returning while the account Flow is Loading without a final loading cleanup.
+        val account = AccountInfo(
+            id = "e6826b7e-7715-46ac-bfec-5a31ee212283",
+            label = "Reloaded in flight",
+            apiKey = "sk-reloaded-in-flight"
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(account)))
+        val gateway = ControlledRefreshGateway()
+        val vm = HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            gateway,
+            source,
+            RecordingMutationCoordinator()
+        )
+
+        vm.refreshBalance()
+        assertTrue(vm.uiState.value.isLoading)
+        assertEquals(1, gateway.allCalls)
+
+        source.publish(AccountLoadState.Loading)
+        gateway.completeNextAll(listOf(committed(account.id, 333.0)))
+        drainMain()
+        source.publish(AccountLoadState.Ready(listOf(account)))
+
+        val reloaded = vm.uiState.value
+        assertFalse("A completed invalidated refresh must not keep controls disabled", reloaded.isLoading)
+        assertFalse(reloaded.accountBalances.containsKey(account.id))
+        assertEquals(0L, reloaded.lastRefreshTime)
+
+        vm.refreshBalance()
+        assertTrue(vm.uiState.value.isLoading)
+        assertEquals(2, gateway.allCalls)
+        gateway.completeNextAll(listOf(committed(account.id, 444.0)))
+        drainMain()
+
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals("444.0", vm.uiState.value.accountBalances[account.id]?.balanceInfos?.single()?.totalBalance)
+    }
+
+    @Test
     fun `getConfigJson returns non-empty string with accounts`() {
         apiKeyManager.addAccount("账户", "sk-config-key")
         val vm = createViewModel()
@@ -899,6 +987,38 @@ class HomeViewModelTest {
         }
 
         override fun invalidate(accountId: String) {}
+    }
+
+    private class ControlledRefreshGateway : RefreshGateway {
+        private val pendingSingle = java.util.ArrayDeque<CompletableDeferred<AccountRefreshResult>>()
+        private val pendingAll = java.util.ArrayDeque<CompletableDeferred<List<AccountRefreshResult>>>()
+        var singleCalls: Int = 0
+            private set
+        var allCalls: Int = 0
+            private set
+
+        override suspend fun refreshAccount(
+            accountId: String,
+            trigger: RefreshTrigger
+        ): AccountRefreshResult {
+            singleCalls++
+            return CompletableDeferred<AccountRefreshResult>().also(pendingSingle::addLast).await()
+        }
+
+        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+            allCalls++
+            return CompletableDeferred<List<AccountRefreshResult>>().also(pendingAll::addLast).await()
+        }
+
+        fun completeNextSingle(result: AccountRefreshResult) {
+            pendingSingle.removeFirst().complete(result)
+        }
+
+        fun completeNextAll(results: List<AccountRefreshResult>) {
+            pendingAll.removeFirst().complete(results)
+        }
+
+        override fun invalidate(accountId: String) = Unit
     }
 
     private fun committed(accountId: String, amount: Double = 100.0) =
