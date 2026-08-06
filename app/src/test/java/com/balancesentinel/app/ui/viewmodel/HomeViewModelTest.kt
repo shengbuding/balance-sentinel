@@ -2,6 +2,7 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.BalanceEntry
@@ -55,6 +56,7 @@ class HomeViewModelTest {
 
     private lateinit var context: Application
     private lateinit var testPrefsName: String
+    private lateinit var accountPrefs: SharedPreferences
     private lateinit var apiKeyManager: ApiKeyManager
     private lateinit var mockRepository: BalanceRepository
     private lateinit var mainDispatcher: TestDispatcher
@@ -63,7 +65,8 @@ class HomeViewModelTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         testPrefsName = "test_home_vm_${System.nanoTime()}"
-        apiKeyManager = ApiKeyManager(context, context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE))
+        accountPrefs = context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
+        apiKeyManager = ApiKeyManager(context, accountPrefs)
         mockRepository = mockk(relaxed = true)
         mainDispatcher = UnconfinedTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
@@ -204,6 +207,61 @@ class HomeViewModelTest {
         assertEquals(listOf(existing), apiKeyManager.getAccounts())
         assertTrue(coordinator.saveCalls.isEmpty())
         assertTrue(coordinator.deleteCalls.isEmpty())
+    }
+
+    @Test
+    fun `corrupt account emission clears rendered accounts and balances`() {
+        // Mutation caught: retaining the last Ready account and balance snapshots after Corrupt.
+        val account = apiKeyManager.addAccount("Visible before corruption", "sk-visible-before-corruption")
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(account)))
+        val gateway = RecordingRefreshGateway(committed(account.id))
+        val vm = HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            gateway,
+            source,
+            RecordingMutationCoordinator()
+        )
+        vm.refreshBalance()
+        assertTrue(vm.uiState.value.accountBalances.containsKey(account.id))
+
+        val corruption = DataCorruptionException("credentials became unreadable")
+        source.publish(AccountLoadState.Corrupt(corruption))
+
+        val state = vm.uiState.value
+        assertSame(corruption, (state.accountLoadState as AccountLoadState.Corrupt).error)
+        assertTrue("Corrupt state must hide the last Ready accounts", state.accounts.isEmpty())
+        assertTrue("Corrupt state must hide the last cached balances", state.accountBalances.isEmpty())
+        assertFalse("Corrupt state must stop the visible refresh spinner", state.isLoading)
+    }
+
+    @Test
+    fun `corrupt account state rejects every refresh without reading legacy storage`() {
+        // Mutation caught: refresh entry points reading ApiKeyManager or invoking the gateway after Corrupt.
+        val account = apiKeyManager.addAccount("Legacy must stay unread", "sk-legacy-must-stay-unread")
+        val source = RecordingAccountUiRepository(
+            AccountLoadState.Corrupt(DataCorruptionException("repository is corrupt"))
+        )
+        val gateway = RecordingRefreshGateway(committed(account.id), committed(account.id))
+        val vm = HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            gateway,
+            source,
+            RecordingMutationCoordinator()
+        )
+        assertTrue(accountPrefs.edit().putString("accounts", "{ corrupt legacy JSON").commit())
+
+        val singleFailure = runCatching { vm.refreshSingleAccount(account.id) }.exceptionOrNull()
+        val allFailure = runCatching { vm.refreshBalance() }.exceptionOrNull()
+
+        assertNull("Single refresh must return before reading corrupt legacy storage", singleFailure)
+        assertNull("Refresh-all must return before reading corrupt legacy storage", allFailure)
+        assertEquals(0, gateway.refreshAccountCalls)
+        assertEquals(0, gateway.refreshAllCalls)
+        assertTrue(vm.uiState.value.accountLoadState is AccountLoadState.Corrupt)
     }
 
     @Test
@@ -786,12 +844,17 @@ class HomeViewModelTest {
         vararg results: AccountRefreshResult
     ) : RefreshGateway {
         val calls = mutableListOf<Pair<String, RefreshTrigger>>()
+        var refreshAccountCalls = 0
+            private set
+        var refreshAllCalls = 0
+            private set
         private val results = results.toMutableList()
 
         override suspend fun refreshAccount(
             accountId: String,
             trigger: RefreshTrigger
         ): AccountRefreshResult {
+            refreshAccountCalls++
             calls += accountId to trigger
             return if (results.isNotEmpty()) results.removeAt(0)
             else AccountRefreshResult.Failed(
@@ -803,6 +866,7 @@ class HomeViewModelTest {
         override suspend fun refreshAll(
             trigger: RefreshTrigger
         ): List<AccountRefreshResult> {
+            refreshAllCalls++
             // Record per-account calls from the results list
             val snapshot = results.toList()
             for (r in snapshot) {
