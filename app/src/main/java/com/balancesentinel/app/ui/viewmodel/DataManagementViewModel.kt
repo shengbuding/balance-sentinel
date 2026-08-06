@@ -3,11 +3,18 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountLifecycleManager
+import com.balancesentinel.app.data.repository.AccountMutationCoordinator
 import com.balancesentinel.app.data.repository.AccountUiRepository
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.BackupImportPlanner
@@ -25,9 +32,12 @@ import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -89,16 +99,64 @@ class DataManagementViewModel @JvmOverloads constructor(
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application),
     private val importPlanner: BackupImportPlanner = BackupImportPlanner(apiKeyManager, widgetPrefs),
-    private val accountUiRepository: AccountUiRepository? = null
+    private val injectedAccountUiRepository: AccountUiRepository? = null,
+    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DataManagementUiState())
     val uiState: StateFlow<DataManagementUiState> = _uiState.asStateFlow()
     private var pendingImportConfig: AppConfig? = null
+    private val accountSource: AccountUiRepository = injectedAccountUiRepository
+        ?: RoomAccountUiRepository(
+            RoomAccountRepository(WalletDatabaseProvider.get(application)),
+            EncryptedPreferencesCredentialStore(application)
+        )
+    private val mutationCoordinator: AccountMutationCoordinator = injectedAccountMutationCoordinator
+        ?: AccountLifecycleManager(application).mutationCoordinator()
+    private var accountCollectionJob: Job? = null
 
     init {
+        observeAccounts()
         loadStats()
     }
+
+    private fun observeAccounts() {
+        accountCollectionJob?.cancel()
+        accountCollectionJob = viewModelScope.launch {
+            accountSource.observe()
+                .catch { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    emit(
+                        AccountLoadState.Corrupt(
+                            error as? DataCorruptionException
+                                ?: DataCorruptionException("Account UI state cannot be read", error)
+                        )
+                    )
+                }
+                .collect { state ->
+                    when (state) {
+                        AccountLoadState.Loading -> {
+                            _uiState.value = _uiState.value.copy(accountLoadState = state)
+                        }
+                        is AccountLoadState.Ready -> {
+                            _uiState.value = _uiState.value.copy(accountLoadState = state)
+                        }
+                        is AccountLoadState.Corrupt -> {
+                            pendingImportConfig = null
+                            _uiState.value = _uiState.value.copy(
+                                accountLoadState = state,
+                                pendingImportPlan = null,
+                                replaceConfirmationRequired = false,
+                                importError = true
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun readyAccounts() =
+        (_uiState.value.accountLoadState as? AccountLoadState.Ready)?.accounts
 
     // ── 统计 ──
 
@@ -162,7 +220,17 @@ class DataManagementViewModel @JvmOverloads constructor(
     }
 
     suspend fun previewConfiguration(config: AppConfig): Boolean {
-        val plan = importPlanner.plan(config, apiKeyManager.getAccounts(), ImportMode.MERGE)
+        val accounts = readyAccounts()
+        if (accounts == null) {
+            pendingImportConfig = null
+            _uiState.value = _uiState.value.copy(
+                pendingImportPlan = null,
+                replaceConfirmationRequired = false,
+                importError = true
+            )
+            return false
+        }
+        val plan = importPlanner.plan(config, accounts, ImportMode.MERGE)
         pendingImportConfig = config
         _uiState.value = _uiState.value.copy(
             pendingImportPlan = plan,
@@ -177,7 +245,8 @@ class DataManagementViewModel @JvmOverloads constructor(
 
     suspend fun selectImportMode(mode: ImportMode) {
         val config = pendingImportConfig ?: return
-        val basePlan = importPlanner.plan(config, apiKeyManager.getAccounts(), mode)
+        val accounts = readyAccounts() ?: return
+        val basePlan = importPlanner.plan(config, accounts, mode)
         val plan = importPlanner.withScriptAuthorizations(
             basePlan,
             _uiState.value.enabledImportedScripts,
@@ -285,6 +354,19 @@ class DataManagementViewModel @JvmOverloads constructor(
         false
     }
 
+    suspend fun exportConfiguration(uri: Uri, includeTokens: Boolean): Boolean {
+        val accounts = readyAccounts() ?: return false
+        return withContext(Dispatchers.IO) {
+            ConfigManager.exportToUri(
+                getApplication(),
+                uri,
+                accounts,
+                widgetPrefs,
+                includeTokens
+            )
+        }
+    }
+
     // ── 执行 ──
 
     /**
@@ -359,6 +441,7 @@ class DataManagementViewModel @JvmOverloads constructor(
                     res.getString(R.string.data_reset_toast)
                 }
                 PendingAction.ResetEntireApp -> {
+                    val accounts = readyAccounts() ?: return@launch
                     RawRecordStore.clear(ctx)
                     DailySummaryStore.clear(ctx)
                     UsageDataStore.clear(ctx)
@@ -369,7 +452,9 @@ class DataManagementViewModel @JvmOverloads constructor(
                     WidgetConfigStore.clearAll(ctx)
                     WidgetPrefs(ctx).resetAll()
                     RefreshScheduler.resetAlarmCounters(ctx)
-                    ApiKeyManager(ctx).clearAll()
+                    accounts.forEach { account ->
+                        mutationCoordinator.delete(account.id)
+                    }
                     // 清除控制台数据
                     com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
                     try {

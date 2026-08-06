@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -87,7 +88,7 @@ class InsightsViewModelTest {
             RawRecord("acc1", now, "CNY", 90f, 0f, 90f)
         )
 
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
@@ -103,7 +104,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `loadData handles empty data gracefully`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
@@ -121,6 +122,12 @@ class InsightsViewModelTest {
         val corruption = DataCorruptionException("repository payload corrupt")
         val source = RecordingAccountUiRepository(AccountLoadState.Corrupt(corruption))
         val viewModel = InsightsViewModel(app, source)
+        awaitAccountState(viewModel) { state ->
+            state.accountLoadState is AccountLoadState.Corrupt &&
+                !state.isLoading &&
+                state.intradayOutput != null &&
+                state.dailyOutput != null
+        }
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
@@ -216,7 +223,7 @@ class InsightsViewModelTest {
             )
         )
 
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         awaitViewModel(viewModel)
 
         val state = viewModel.uiState.value
@@ -240,7 +247,7 @@ class InsightsViewModelTest {
             RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f)
         )
 
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         awaitViewModel(viewModel)
 
         // Initial load picks first currency (CNY)
@@ -259,7 +266,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `setRangeDays triggers reload`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
 
         assertEquals(7, viewModel.uiState.value.rangeDays)
 
@@ -394,7 +401,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `setChartMode updates state without reloading data`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
 
         assertEquals("balance", viewModel.uiState.value.chartMode)
 
@@ -411,7 +418,7 @@ class InsightsViewModelTest {
         RawRecordStore.addRecord(context, RawRecord("acc1", now, "CNY", 100f, 0f, 100f))
         RawRecordStore.addRecord(context, RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f))
 
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         awaitViewModel(viewModel)
 
         // Set consumption mode and expand a row
@@ -434,7 +441,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `historyVisibleCount starts at 7`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         assertEquals(7, viewModel.uiState.value.historyVisibleCount)
     }
 
@@ -455,7 +462,7 @@ class InsightsViewModelTest {
             )
         }
 
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         // Switch to 30-day range to include all 30 data points
         viewModel.setRangeDays(30)
         awaitViewModel(viewModel)
@@ -477,7 +484,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `toggleExpandDate toggles expanded date`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
 
         assertNull(viewModel.uiState.value.expandedDate)
 
@@ -991,14 +998,14 @@ class InsightsViewModelTest {
 
     @Test
     fun `selectAccount null goes to all-accounts mode`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         viewModel.selectAccount(null)
         assertNull(viewModel.uiState.value.selectedAccountId)
     }
 
     @Test
     fun `selectAccount sets specific account`() {
-        val viewModel = InsightsViewModel(app)
+        val viewModel = createViewModel()
         viewModel.selectAccount("specific-id")
         assertEquals("specific-id", viewModel.uiState.value.selectedAccountId)
     }
@@ -1056,6 +1063,11 @@ class InsightsViewModelTest {
         }
         assertTrue("Timed out waiting for account state", predicate(viewModel.uiState.value))
     }
+
+    private fun createViewModel(): InsightsViewModel = InsightsViewModel(
+        app,
+        AccountUiRepository { flowOf(AccountLoadState.Ready(emptyList())) }
+    )
 
     private class RecordingAccountUiRepository(
         initial: AccountLoadState

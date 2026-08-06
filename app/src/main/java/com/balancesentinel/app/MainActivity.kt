@@ -275,6 +275,7 @@ class MainActivity : ComponentActivity() {
                                 onConfigImported = viewModel::loadCachedBalances
                             )
                             Screen.ALERT_SETTINGS -> AlertSettingsScreen(
+                                viewModel = viewModel,
                                 onBack = { currentScreen = Screen.SETTINGS }
                             )
                             Screen.CONSOLE_SELECT -> com.balancesentinel.app.ui.console.ConsoleSelectScreen(

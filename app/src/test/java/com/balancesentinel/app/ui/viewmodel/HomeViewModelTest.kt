@@ -19,11 +19,13 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
 import com.balancesentinel.app.data.repository.AccountMutationResult
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
+import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -44,6 +47,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLooper
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -53,6 +57,7 @@ class HomeViewModelTest {
     private lateinit var testPrefsName: String
     private lateinit var apiKeyManager: ApiKeyManager
     private lateinit var mockRepository: BalanceRepository
+    private lateinit var mainDispatcher: TestDispatcher
 
     @Before
     fun setUp() {
@@ -60,7 +65,8 @@ class HomeViewModelTest {
         testPrefsName = "test_home_vm_${System.nanoTime()}"
         apiKeyManager = ApiKeyManager(context, context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE))
         mockRepository = mockk(relaxed = true)
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        mainDispatcher = UnconfinedTestDispatcher()
+        Dispatchers.setMain(mainDispatcher)
     }
 
     @After
@@ -71,7 +77,20 @@ class HomeViewModelTest {
     }
 
     private fun createViewModel(): HomeViewModel {
-        return HomeViewModel(context, apiKeyManager, mockRepository)
+        return HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            null,
+            LegacyAccountUiRepository(apiKeyManager),
+            ImmediateLegacyAccountMutationCoordinator(AccountLifecycleManager(context, apiKeyManager))
+        )
+    }
+
+    private fun drainMain() {
+        mainDispatcher.scheduler.advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+        mainDispatcher.scheduler.advanceUntilIdle()
     }
 
     private fun createViewModel(
@@ -127,6 +146,7 @@ class HomeViewModelTest {
         prefs.alertEnabled = true
 
         vm.loadCachedBalances()
+        drainMain()
 
         assertEquals(listOf(imported), vm.uiState.value.accounts)
         assertEquals(emptyMap<String, com.balancesentinel.app.data.model.BalanceResponse?>(), vm.uiState.value.accountBalances)
@@ -288,8 +308,11 @@ class HomeViewModelTest {
     @Test
     fun `addAccount adds to ApiKeyManager and updates state`() {
         val vm = createViewModel()
-        vm.addAccount("新账户", "sk-new-key")
+        drainMain()
+        vm.addAccount("新账户", "sk-new-key-12345")
+        drainMain()
 
+        assertEquals(1, apiKeyManager.getAccounts().size)
         val accounts = vm.uiState.value.accounts
         assertEquals(1, accounts.size)
         assertEquals("新账户", accounts[0].label)
@@ -412,11 +435,13 @@ class HomeViewModelTest {
 
     @Test
     fun `renameAccount updates label in ApiKeyManager and state`() {
-        apiKeyManager.addAccount("旧名", "sk-key")
+        apiKeyManager.addAccount("旧名", "sk-key-12345")
         val vm = createViewModel()
         val accId = vm.uiState.value.accounts[0].id
 
         vm.renameAccount(accId, "新名字")
+        drainMain()
+        assertEquals("新名字", apiKeyManager.getAccount(accId)?.label)
         assertEquals("新名字", vm.uiState.value.accounts[0].label)
     }
 
@@ -747,7 +772,14 @@ class HomeViewModelTest {
     // ═══════════════════════════════════════════════════════════
 
     private fun createViewModel(gateway: RefreshGateway): HomeViewModel {
-        return HomeViewModel(context, apiKeyManager, mockRepository, gateway)
+        return HomeViewModel(
+            context,
+            apiKeyManager,
+            mockRepository,
+            gateway,
+            LegacyAccountUiRepository(apiKeyManager),
+            ImmediateLegacyAccountMutationCoordinator(AccountLifecycleManager(context, apiKeyManager, gateway))
+        )
     }
 
     private class RecordingRefreshGateway(
@@ -1037,6 +1069,23 @@ class HomeViewModelTest {
 
         fun publish(state: AccountLoadState) {
             states.value = state
+        }
+    }
+
+    /** Keeps the real legacy lifecycle behavior while making old synchronous fixtures deterministic. */
+    private class ImmediateLegacyAccountMutationCoordinator(
+        private val lifecycleManager: AccountLifecycleManager
+    ) : AccountMutationCoordinator {
+        override suspend fun save(
+            existingId: String?,
+            draft: AccountDraft
+        ): AccountMutationResult = AccountMutationResult.Saved(
+            lifecycleManager.save(existingId, draft)
+        )
+
+        override suspend fun delete(accountId: String): AccountMutationResult {
+            lifecycleManager.delete(accountId)
+            return AccountMutationResult.Deleted(accountId)
         }
     }
 

@@ -64,6 +64,7 @@ import com.balancesentinel.app.data.engine.DepletionEstimate
 import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import com.balancesentinel.app.util.FormatUtils
 
@@ -80,7 +81,22 @@ fun InsightsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    if (uiState.isLoading) {
+    if (uiState.accountLoadState is AccountLoadState.Corrupt) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .testTag("insights_corrupt_state"),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(R.string.account_data_corrupt),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(24.dp)
+            )
+        }
+    } else if (uiState.accountLoadState is AccountLoadState.Loading || uiState.isLoading) {
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center

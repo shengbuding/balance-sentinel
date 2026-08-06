@@ -9,6 +9,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.api.ProviderType
@@ -25,6 +27,8 @@ import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
+import com.balancesentinel.app.data.repository.RoomAccountRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
@@ -35,6 +39,7 @@ import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RefreshStats
 import com.balancesentinel.app.data.repository.RefreshStatsStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
@@ -46,7 +51,10 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class HomeUiState(
     val accountLoadState: AccountLoadState = AccountLoadState.Loading,
@@ -74,11 +82,19 @@ class HomeViewModel @JvmOverloads constructor(
     private val repository: BalanceRepository = BalanceRepository(),
     // Tests provide a deterministic gateway; production resolves the Application singleton.
     private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null,
-    private val accountUiRepository: AccountUiRepository? = null,
-    private val accountMutationCoordinator: AccountMutationCoordinator? = null
+    private val injectedAccountUiRepository: AccountUiRepository? = null,
+    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
 ) : AndroidViewModel(application) {
 
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)
+    private val accountSource: AccountUiRepository = injectedAccountUiRepository
+        ?: RoomAccountUiRepository(
+            RoomAccountRepository(WalletDatabaseProvider.get(application)),
+            EncryptedPreferencesCredentialStore(application)
+        )
+    private val mutationCoordinator: AccountMutationCoordinator = injectedAccountMutationCoordinator
+        ?: AccountLifecycleManager(application).mutationCoordinator()
+    private var accountCollectionJob: Job? = null
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -97,10 +113,8 @@ class HomeViewModel @JvmOverloads constructor(
     }
 
     init {
-        apiKeyManager.migrateLegacyKeyIfNeeded()
+        observeAccounts()
         loadCrashLogs()
-        loadAccounts()
-        loadCachedBalances()
         checkMissedRefreshes()
         loadStatusSummary()
         _uiState.value = _uiState.value.copy(
@@ -116,14 +130,61 @@ class HomeViewModel @JvmOverloads constructor(
         scheduleMidnightAndCheckSummary()
     }
 
-    private fun loadAccounts() {
-        _uiState.value = _uiState.value.copy(accounts = apiKeyManager.getAccounts())
+    private fun observeAccounts() {
+        accountCollectionJob?.cancel()
+        accountCollectionJob = viewModelScope.launch {
+            accountSource.observe()
+                .catch { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    emit(AccountLoadState.Corrupt(asCorruption(error)))
+                }
+                .collect { state ->
+                    when (state) {
+                        AccountLoadState.Loading -> {
+                            _uiState.value = _uiState.value.copy(accountLoadState = state)
+                        }
+                        is AccountLoadState.Ready -> {
+                            _uiState.value = _uiState.value.copy(
+                                accountLoadState = state,
+                                accounts = state.accounts,
+                                errorMessage = _uiState.value.errorMessage
+                                    ?.takeUnless { it == accountCorruptionMessage() }
+                            )
+                            loadCachedBalancesForReadyAccounts()
+                        }
+                        is AccountLoadState.Corrupt -> {
+                            _uiState.value = _uiState.value.copy(
+                                accountLoadState = state,
+                                errorMessage = accountCorruptionMessage()
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun resubscribeAccounts() {
+        observeAccounts()
+    }
+
+    private fun readyAccounts(): List<AccountInfo>? =
+        (_uiState.value.accountLoadState as? AccountLoadState.Ready)?.accounts
+
+    private fun asCorruption(error: Throwable): DataCorruptionException =
+        error as? DataCorruptionException
+            ?: DataCorruptionException("Account UI state cannot be read", error)
+
+    private fun accountCorruptionMessage(): String =
+        getApplication<Application>().getString(R.string.account_data_corrupt)
+
+    /** Re-enter the account stream after external imports or page recreation. */
+    fun loadCachedBalances() {
+        resubscribeAccounts()
     }
 
     /** 从 Widget 缓存恢复首页余额数据，避免显示误导的"查询失败" */
-    fun loadCachedBalances() {
+    private fun loadCachedBalancesForReadyAccounts() {
         try {
-            loadAccounts()
             _uiState.value = _uiState.value.copy(
                 accountBalances = emptyMap(),
                 lastRefreshTime = 0L,
@@ -228,9 +289,8 @@ class HomeViewModel @JvmOverloads constructor(
             .filter { it.storage == ConfigFieldStorage.SETTING }
             .mapNotNull { field -> extraSettings[field.key]?.let { field.key to it } }
             .toMap()
-        apiKeyManager.saveAccount(
-            existingId = null,
-            draft = AccountDraft(
+        addAccount(
+            AccountDraft(
                 label = label,
                 apiKey = apiKey,
                 providerType = providerType,
@@ -241,9 +301,6 @@ class HomeViewModel @JvmOverloads constructor(
                 authorizedScriptOrigins = emptySet()
             )
         )
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-        refreshBalance()
     }
 
     fun addAccount(draft: AccountDraft) {
@@ -253,24 +310,43 @@ class HomeViewModel @JvmOverloads constructor(
             !ProviderConfigs.validateFieldValues(draft.providerType, values)
         ) return
 
-        val result = apiKeyManager.saveAccount(existingId = null, draft = draft)
-        if (result is AccountSaveResult.Conflict) {
-            _uiState.value = _uiState.value.copy(
-                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
-            )
-            return
+        if (readyAccounts() == null) return
+        viewModelScope.launch {
+            try {
+                when (val result = mutationCoordinator.save(existingId = null, draft = draft)) {
+                    is com.balancesentinel.app.data.repository.AccountMutationResult.Saved -> {
+                        if (result.result is AccountSaveResult.Conflict) {
+                            _uiState.value = _uiState.value.copy(
+                                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
+                            )
+                        } else {
+                            _uiState.value = _uiState.value.copy(errorMessage = null)
+                            resubscribeAccounts()
+                            refreshBalance()
+                        }
+                    }
+                    else -> Unit
+                }
+            } catch (error: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户保存失败")
+            }
         }
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-        refreshBalance()
     }
 
     fun removeAccount(id: String) {
-        AccountLifecycleManager(getApplication(), apiKeyManager).delete(id)
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(
-            accountBalances = _uiState.value.accountBalances - id
-        )
+        if (readyAccounts()?.any { it.id == id } != true) return
+        viewModelScope.launch {
+            try {
+                mutationCoordinator.delete(id)
+                _uiState.value = _uiState.value.copy(
+                    accountBalances = _uiState.value.accountBalances - id,
+                    errorMessage = null
+                )
+                resubscribeAccounts()
+            } catch (error: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户删除失败")
+            }
+        }
     }
 
     /**
@@ -278,17 +354,13 @@ class HomeViewModel @JvmOverloads constructor(
      * 关联数据包括：Widget缓存、预警状态、原始记录、日摘要、用量快照
      */
     fun removeAccountWithData(id: String) {
-        AccountLifecycleManager(getApplication(), apiKeyManager).delete(id)
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(
-            accountBalances = _uiState.value.accountBalances - id
-        )
+        removeAccount(id)
     }
 
     fun renameAccount(id: String, newLabel: String) {
         if (newLabel.isBlank()) return
-        apiKeyManager.renameAccount(id, newLabel)
-        loadAccounts()
+        val current = readyAccounts()?.firstOrNull { it.id == id } ?: return
+        editAccount(id, current.toDraft(label = newLabel))
     }
 
     /**
@@ -305,16 +377,27 @@ class HomeViewModel @JvmOverloads constructor(
             !ProviderConfigs.validateFieldValues(draft.providerType, values)
         ) return
 
-        val result = AccountLifecycleManager(getApplication(), apiKeyManager).save(id, draft)
-        if (result is AccountSaveResult.Conflict) {
-            _uiState.value = _uiState.value.copy(
-                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
-            )
-            return
+        if (readyAccounts()?.any { it.id == id } != true) return
+        viewModelScope.launch {
+            try {
+                when (val result = mutationCoordinator.save(existingId = id, draft = draft)) {
+                    is com.balancesentinel.app.data.repository.AccountMutationResult.Saved -> {
+                        if (result.result is AccountSaveResult.Conflict) {
+                            _uiState.value = _uiState.value.copy(
+                                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
+                            )
+                        } else {
+                            _uiState.value = _uiState.value.copy(errorMessage = null)
+                            resubscribeAccounts()
+                            refreshBalance()
+                        }
+                    }
+                    else -> Unit
+                }
+            } catch (error: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户保存失败")
+            }
         }
-        loadAccounts()
-        _uiState.value = _uiState.value.copy(errorMessage = null)
-        refreshBalance()
     }
 
     fun editAccount(
@@ -326,7 +409,7 @@ class HomeViewModel @JvmOverloads constructor(
     ) {
         if (newLabel.isBlank() || newApiKey.isBlank()) return
 
-        val currentAccount = apiKeyManager.getAccount(id) ?: return
+        val currentAccount = readyAccounts()?.firstOrNull { it.id == id } ?: return
         editAccount(
             id,
             AccountDraft(
@@ -341,6 +424,22 @@ class HomeViewModel @JvmOverloads constructor(
             )
         )
     }
+
+    private fun AccountInfo.toDraft(
+        label: String = this.label,
+        apiKey: String = this.apiKey,
+        extraSettings: Map<String, String> = this.extraSettings,
+        usageScript: String? = this.usageScript
+    ) = AccountDraft(
+        label = label,
+        apiKey = apiKey,
+        providerType = providerType,
+        extraCredentials = extraCredentials,
+        extraSettings = extraSettings,
+        usageScript = usageScript,
+        usageScriptEnabled = usageScriptEnabled,
+        authorizedScriptOrigins = authorizedScriptOrigins
+    )
 
     // ── 全局设置 ──
 

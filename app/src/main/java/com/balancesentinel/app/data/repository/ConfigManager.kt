@@ -79,8 +79,20 @@ object ConfigManager {
         apiKeyManager: ApiKeyManager,
         widgetPrefs: WidgetPrefs,
         includeTokens: Boolean = false
+    ): String = buildConfig(
+        context,
+        apiKeyManager.getAccounts(),
+        widgetPrefs,
+        includeTokens
+    )
+
+    fun buildConfig(
+        context: Context,
+        sourceAccounts: List<AccountInfo>,
+        widgetPrefs: WidgetPrefs,
+        includeTokens: Boolean = false
     ): String {
-        val accounts = apiKeyManager.getAccounts().map { account ->
+        val accounts = sourceAccounts.map { account ->
             if (includeTokens) account
             else account.copy(
                 apiKey = "",
@@ -130,17 +142,13 @@ object ConfigManager {
         apiKeyManager: ApiKeyManager,
         widgetPrefs: WidgetPrefs,
         includeTokens: Boolean = false
-    ): Boolean {
-        return try {
-            val content = buildConfig(context, apiKeyManager, widgetPrefs, includeTokens)
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                out.write(content.toByteArray(Charsets.UTF_8))
-            }
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
+    ): Boolean = exportToUri(
+        context,
+        uri,
+        apiKeyManager.getAccounts(),
+        widgetPrefs,
+        includeTokens
+    )
 
     /**
      * 从 SAF URI 读取并解析配置。
@@ -170,6 +178,24 @@ object ConfigManager {
         widgetPrefs.applyPerCurrencyAlertSettings(s.perCurrencyAlertSettings)
         widgetPrefs.showTotalBalanceInNotification = s.showTotalBalance
         widgetPrefs.applyNotificationWalletSelections(s.notificationSelectedWallets)
+    }
+
+    fun exportToUri(
+        context: Context,
+        uri: Uri,
+        accounts: List<AccountInfo>,
+        widgetPrefs: WidgetPrefs,
+        includeTokens: Boolean = false
+    ): Boolean {
+        return try {
+            val content = buildConfig(context, accounts, widgetPrefs, includeTokens)
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun decodeConfig(content: String): AppConfig {

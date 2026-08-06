@@ -24,6 +24,7 @@ import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlanner
 import com.balancesentinel.app.data.repository.ConfigSettings
 import com.balancesentinel.app.data.repository.ImportMode
+import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
@@ -517,7 +518,8 @@ class DataManagementViewModelTest {
             app,
             manager,
             prefs,
-            BackupImportPlanner(manager, prefs, ::staticInspection)
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            LegacyAccountUiRepository(manager)
         )
 
         viewModel.previewConfiguration(Uri.fromFile(file))
@@ -547,7 +549,8 @@ class DataManagementViewModelTest {
             app,
             manager,
             prefs,
-            BackupImportPlanner(manager, prefs, ::staticInspection)
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            LegacyAccountUiRepository(manager)
         )
         viewModel.previewConfiguration(importConfig(true, listOf(created), importSettings(77)))
 
@@ -572,7 +575,8 @@ class DataManagementViewModelTest {
             app,
             manager,
             prefs,
-            BackupImportPlanner(manager, prefs, ::staticInspection)
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            LegacyAccountUiRepository(manager)
         )
         viewModel.previewConfiguration(importConfig(true, listOf(replacement)))
         viewModel.selectImportMode(ImportMode.REPLACE_ALL)
@@ -600,7 +604,8 @@ class DataManagementViewModelTest {
             app,
             manager,
             prefs,
-            BackupImportPlanner(manager, prefs, ::staticInspection)
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            LegacyAccountUiRepository(manager)
         )
         viewModel.previewConfiguration(importConfig(false, emptyList()))
         viewModel.selectImportMode(ImportMode.REPLACE_ALL)
@@ -630,7 +635,13 @@ class DataManagementViewModelTest {
         val planner = BackupImportPlanner(manager, prefs) { _, _ ->
             ScriptInspection(null, setOf(origin), staticallyDeterminable = true)
         }
-        val viewModel = DataManagementViewModel(app, manager, prefs, planner)
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            planner,
+            LegacyAccountUiRepository(manager)
+        )
         viewModel.previewConfiguration(importConfig(true, listOf(scripted)))
 
         assertEquals(1, viewModel.uiState.value.pendingImportPlan?.scriptAuthorizations?.size)

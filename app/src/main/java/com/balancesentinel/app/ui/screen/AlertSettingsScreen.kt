@@ -20,13 +20,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.data.model.AccountInfo
-import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.SnoozeInfo
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.ui.theme.WalletColors
+import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 /**
@@ -38,11 +40,12 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlertSettingsScreen(onBack: () -> Unit) {
+fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { WidgetPrefs(context) }
-    val apiKeyManager = remember { ApiKeyManager(context) }
-    val accounts = remember { apiKeyManager.getAccounts() }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val accountLoadState = uiState.accountLoadState
+    val accounts = (accountLoadState as? AccountLoadState.Ready)?.accounts.orEmpty()
 
     // 从缓存中获取每个账户的币种列表
     val accountCurrencies = remember(accounts) {
@@ -117,7 +120,7 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
         ) {
             // ── Snooze 状态横幅 ──
             if (snoozeInfo.anySnoozed) {
-                SnoozeBanner(snoozeInfo, prefs, apiKeyManager) {
+                SnoozeBanner(snoozeInfo, prefs, accounts) {
                     prefs.clearAllSnooze()
                     snoozeInfo = prefs.getSnoozeInfo()
                     Toast.makeText(
@@ -154,30 +157,42 @@ fun AlertSettingsScreen(onBack: () -> Unit) {
             // ── 区域 1: 分账户/币种开关 ──
             SectionHeader(stringResource(R.string.alert_settings_section_accounts))
 
-            if (accounts.isEmpty()) {
-                NoAccountsCard()
-            } else {
-                accounts.forEach { account ->
-                    val currencies = accountCurrencies[account.id].orEmpty()
-                    AccountAlertCard(
-                        account = account,
-                        currencies = currencies,
-                        prefs = prefs,
-                        showNotificationColumn = true,
-                        orderVersion = orderVersion,
-                        onMoveUp = { aid, cur ->
-                            prefs.moveNotificationWalletUp(aid, cur)
-                            orderVersion++
-                        },
-                        onMoveDown = { aid, cur ->
-                            prefs.moveNotificationWalletDown(aid, cur)
-                            orderVersion++
-                        },
-                        onToggle = {
-                            orderVersion++
-                            snoozeInfo = prefs.getSnoozeInfo()
+            when (accountLoadState) {
+                AccountLoadState.Loading -> AccountDataStateCard(
+                    message = stringResource(R.string.account_data_loading),
+                    loading = true
+                )
+                is AccountLoadState.Corrupt -> AccountDataStateCard(
+                    message = stringResource(R.string.account_data_corrupt),
+                    loading = false
+                )
+                is AccountLoadState.Ready -> {
+                    if (accounts.isEmpty()) {
+                        NoAccountsCard()
+                    } else {
+                        accounts.forEach { account ->
+                            val currencies = accountCurrencies[account.id].orEmpty()
+                            AccountAlertCard(
+                                account = account,
+                                currencies = currencies,
+                                prefs = prefs,
+                                showNotificationColumn = true,
+                                orderVersion = orderVersion,
+                                onMoveUp = { aid, cur ->
+                                    prefs.moveNotificationWalletUp(aid, cur)
+                                    orderVersion++
+                                },
+                                onMoveDown = { aid, cur ->
+                                    prefs.moveNotificationWalletDown(aid, cur)
+                                    orderVersion++
+                                },
+                                onToggle = {
+                                    orderVersion++
+                                    snoozeInfo = prefs.getSnoozeInfo()
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
 
@@ -281,6 +296,40 @@ private fun SectionHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 4.dp)
     )
+}
+
+@Composable
+private fun AccountDataStateCard(message: String, loading: Boolean) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (loading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (loading) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -558,18 +607,13 @@ private fun CurrencyAlertRow(
 private fun SnoozeBanner(
     snoozeInfo: SnoozeInfo,
     prefs: WidgetPrefs,
-    apiKeyManager: ApiKeyManager,
+    accounts: List<AccountInfo>,
     onClear: () -> Unit
 ) {
     val remainingMin = (snoozeInfo.maxRemainingMs / 60_000L).toInt().coerceAtLeast(1)
-    val accountLabels = remember(snoozeInfo) {
-        try {
-            val accounts = apiKeyManager.getAccounts()
-            snoozeInfo.snoozedAccountIds.mapNotNull { id ->
-                accounts.find { it.id == id }?.label
-            }
-        } catch (_: Exception) {
-            emptyList()
+    val accountLabels = remember(snoozeInfo, accounts) {
+        snoozeInfo.snoozedAccountIds.mapNotNull { id ->
+            accounts.find { it.id == id }?.label
         }
     }
 

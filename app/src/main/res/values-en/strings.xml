@@ -19,6 +19,8 @@
     <string name="home_add">Add</string>
     <string name="home_empty_title">No accounts yet</string>
     <string name="home_empty_subtitle">Tap the + button to add an API Key</string>
+    <string name="account_data_loading">Loading accounts…</string>
+    <string name="account_data_corrupt">Account data is corrupt. Account-related actions are disabled.</string>
     <string name="home_no_data">No balance data</string>
     <string name="home_query_failed">Query failed</string>
     <string name="home_status_available">Available</string>

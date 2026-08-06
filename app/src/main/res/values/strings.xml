@@ -19,6 +19,8 @@
     <string name="home_add">添加</string>
     <string name="home_empty_title">还没有添加账户</string>
     <string name="home_empty_subtitle">点击右下角 + 按钮添加 API Key</string>
+    <string name="account_data_loading">正在加载账户…</string>
+    <string name="account_data_corrupt">账户数据损坏，账户相关操作已停止。</string>
     <string name="home_no_data">暂无余额数据</string>
     <string name="home_query_failed">查询失败</string>
     <string name="home_status_available">可用</string>

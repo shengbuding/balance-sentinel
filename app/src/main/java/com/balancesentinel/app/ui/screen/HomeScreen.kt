@@ -36,9 +36,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.BalanceResponse
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.components.AccountBalanceCard
 import com.balancesentinel.app.ui.components.AddAccountDialog
@@ -54,6 +54,7 @@ import com.balancesentinel.app.util.FormatUtils
 fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val accountMutationsEnabled = uiState.accountLoadState is AccountLoadState.Ready
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -74,7 +75,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 
     // 添加账户对话框
     var showAddDialog by remember { mutableStateOf(false) }
-    if (showAddDialog) {
+    if (accountMutationsEnabled && showAddDialog) {
         AddAccountDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { draft ->
@@ -86,7 +87,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
 
     // 删除确认对话框
     var deleteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
-    deleteTarget?.let { (id, label) ->
+    if (accountMutationsEnabled) deleteTarget?.let { (id, label) ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.home_delete_account_title)) },
@@ -118,14 +119,26 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     }
 
     // 编辑账户对话框
-    var editTarget by remember { mutableStateOf<AccountInfo?>(null) }
+    var editTargetId by remember { mutableStateOf<String?>(null) }
+    val editTarget = editTargetId?.let { id ->
+        uiState.accounts.firstOrNull { it.id == id }
+    }
+    LaunchedEffect(accountMutationsEnabled, editTargetId, uiState.accounts) {
+        if (!accountMutationsEnabled) {
+            showAddDialog = false
+            deleteTarget = null
+            editTargetId = null
+        } else if (editTargetId != null && editTarget == null) {
+            editTargetId = null
+        }
+    }
     editTarget?.let { account ->
         EditAccountDialog(
             account = account,
-            onDismiss = { editTarget = null },
+            onDismiss = { editTargetId = null },
             onConfirm = { draft ->
                 viewModel.editAccount(account.id, draft)
-                editTarget = null
+                editTargetId = null
             }
         )
     }
@@ -185,15 +198,17 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                modifier = Modifier.testTag("add_account_fab"),
-                onClick = { showAddDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.home_add_account)) },
-                shape = RoundedCornerShape(16.dp)
-            )
+            if (accountMutationsEnabled) {
+                ExtendedFloatingActionButton(
+                    modifier = Modifier.testTag("add_account_fab"),
+                    onClick = { showAddDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.home_add_account)) },
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
         }
     ) { padding ->
         val pullRefreshState = rememberPullRefreshState(
@@ -229,7 +244,13 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                 }
 
                 // 空状态
-                if (uiState.accounts.isEmpty()) {
+                if (uiState.accountLoadState is AccountLoadState.Loading && uiState.accounts.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.account_data_loading),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (uiState.accounts.isEmpty() && uiState.accountLoadState is AccountLoadState.Ready) {
                     EmptyAccountsHint()
                 } else {
                     // 每账户一张余额卡片
@@ -244,8 +265,9 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                             lastRefreshTime = uiState.lastRefreshTime,
                             now = now,
                             onLongPress = { deleteTarget = Pair(account.id, account.label) },
-                            onEdit = { editTarget = account },
+                            onEdit = { editTargetId = account.id },
                             onDelete = { deleteTarget = Pair(account.id, account.label) },
+                            accountMutationsEnabled = accountMutationsEnabled,
                             onRefresh = { viewModel.refreshSingleAccount(account.id) }
                         )
                     }

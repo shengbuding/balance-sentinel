@@ -21,14 +21,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.repository.ApiKeyManager
-import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.api.balance.WebOrigin
 import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.data.repository.LogExporter
-import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import com.balancesentinel.app.ui.viewmodel.DataManagementUiState
@@ -112,18 +109,18 @@ fun BackupRestoreScreen(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            val prefs = WidgetPrefs(context)
-            val keyMgr = ApiKeyManager(context)
-            val ok = ConfigManager.exportToUri(context, uri, keyMgr, prefs, includeTokensInExport)
-            if (ok) {
-                Toast.makeText(context, context.getString(R.string.data_config_export_success), Toast.LENGTH_SHORT).show()
-                if (includeTokensInExport) {
-                    Toast.makeText(context, context.getString(R.string.data_config_export_token_warning), Toast.LENGTH_LONG).show()
+            scope.launch {
+                val ok = viewModel.exportConfiguration(uri, includeTokensInExport)
+                if (ok) {
+                    Toast.makeText(context, context.getString(R.string.data_config_export_success), Toast.LENGTH_SHORT).show()
+                    if (includeTokensInExport) {
+                        Toast.makeText(context, context.getString(R.string.data_config_export_token_warning), Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.data_config_export_warning), Toast.LENGTH_SHORT).show()
+                    }
                 } else {
-                    Toast.makeText(context, context.getString(R.string.data_config_export_warning), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.data_config_export_fail), Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(context, context.getString(R.string.data_config_export_fail), Toast.LENGTH_SHORT).show()
             }
         }
     }

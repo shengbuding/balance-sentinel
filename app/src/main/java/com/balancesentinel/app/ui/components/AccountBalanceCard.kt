@@ -43,6 +43,7 @@ fun AccountBalanceCard(
     onLongPress: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    accountMutationsEnabled: Boolean = true,
     onRefresh: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -71,7 +72,9 @@ fun AccountBalanceCard(
             }
             .combinedClickable(
                 onClick = {},
-                onLongClick = onLongPress
+                onLongClick = {
+                    if (accountMutationsEnabled) onLongPress()
+                }
             )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -160,6 +163,7 @@ fun AccountBalanceCard(
                             )
                             DropdownMenuItem(
                                 text = { Text("编辑") },
+                                enabled = accountMutationsEnabled,
                                 onClick = {
                                     showMenu = false
                                     onEdit()
@@ -188,6 +192,7 @@ fun AccountBalanceCard(
                             )
                             DropdownMenuItem(
                                 text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                enabled = accountMutationsEnabled,
                                 onClick = {
                                     showMenu = false
                                     onDelete()
