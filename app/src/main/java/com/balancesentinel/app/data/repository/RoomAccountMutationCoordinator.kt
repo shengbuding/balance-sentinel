@@ -348,7 +348,10 @@ class RoomAccountMutationCoordinator(
     ) {
         var rollbackSucceeded = true
         try {
-            credentialStore.write(oldPayload)
+            val rollbackFingerprint = requireNotNull(
+                decodeManifest(operation).rollbackPayloadFingerprint
+            )
+            writeAndVerifyRollback(oldPayload, rollbackFingerprint)
         } catch (_: Exception) {
             rollbackSucceeded = false
         }
@@ -402,14 +405,9 @@ class RoomAccountMutationCoordinator(
         manifest: AccountMutationManifest
     ) {
         val rollbackPayload = manifest.rollbackPayload ?: return
-        if (manifest.rollbackPayloadFingerprint != fingerprint(rollbackPayload)) return
+        val rollbackFingerprint = manifest.rollbackPayloadFingerprint ?: return
         try {
-            rollbackPayload.validate()
-            credentialStore.write(rollbackPayload)
-            val readback = readPayloadOrNull()
-            require(readback != null && fingerprint(readback) == manifest.rollbackPayloadFingerprint) {
-                "Rollback credential readback did not match the durable snapshot"
-            }
+            writeAndVerifyRollback(rollbackPayload, rollbackFingerprint)
             cleanup.clearGeneration(manifest.stagedGeneration)
             require(
                 database.mutationOperationDao().updateStage(
@@ -424,6 +422,21 @@ class RoomAccountMutationCoordinator(
         } catch (_: Exception) {
             // Keep PREPARED + ROLLBACK_PENDING until the old payload and staged
             // generation can both be restored/cleaned successfully.
+        }
+    }
+
+    private suspend fun writeAndVerifyRollback(
+        rollbackPayload: CredentialPayload,
+        expectedFingerprint: String
+    ) {
+        rollbackPayload.validate()
+        require(fingerprint(rollbackPayload) == expectedFingerprint) {
+            "Rollback credential snapshot fingerprint did not match the operation manifest"
+        }
+        credentialStore.write(rollbackPayload)
+        val readback = readPayloadOrNull()
+        require(readback != null && fingerprint(readback) == expectedFingerprint) {
+            "Rollback credential readback did not match the durable snapshot"
         }
     }
 
