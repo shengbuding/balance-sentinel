@@ -53,7 +53,9 @@ private data class AccountMutationManifest(
     val stagedGeneration: String,
     val expectedRevision: Long,
     val create: Boolean,
-    val payloadFingerprint: String
+    val payloadFingerprint: String,
+    val rollbackPayload: CredentialPayload? = null,
+    val rollbackPayloadFingerprint: String? = null
 )
 
 /** Room-backed account mutation coordinator using the durable staged protocol. */
@@ -109,7 +111,8 @@ class RoomAccountMutationCoordinator(
             legacyStorageId = before?.id,
             previousGeneration = existing?.activeCredentialGeneration,
             create = existing == null,
-            payload = desiredPayload
+            payload = desiredPayload,
+            previousPayload = oldPayload
         )
         try {
             stageCredentialsAndVerify(desiredPayload, operation)
@@ -142,7 +145,8 @@ class RoomAccountMutationCoordinator(
             legacyStorageId = source.id,
             previousGeneration = existing.activeCredentialGeneration,
             create = false,
-            payload = desiredPayload
+            payload = desiredPayload,
+            previousPayload = oldPayload
         )
         try {
             stageCredentialsAndVerify(desiredPayload, operation)
@@ -214,7 +218,8 @@ class RoomAccountMutationCoordinator(
         legacyStorageId: String?,
         previousGeneration: String?,
         create: Boolean,
-        payload: CredentialPayload
+        payload: CredentialPayload,
+        previousPayload: CredentialPayload
     ): MutationOperationEntity = database.withTransaction {
         database.appMetadataDao().ensureSingleton(now())
         val metadata = requireNotNull(database.appMetadataDao().get())
@@ -227,7 +232,9 @@ class RoomAccountMutationCoordinator(
             stagedGeneration = stagedGeneration,
             expectedRevision = database.accountDao().get(accountId)?.revision ?: 0,
             create = create,
-            payloadFingerprint = fingerprint(payload)
+            payloadFingerprint = fingerprint(payload),
+            rollbackPayload = previousPayload,
+            rollbackPayloadFingerprint = fingerprint(previousPayload)
         )
         val operation = MutationOperationEntity(
             id = operationId,
@@ -363,6 +370,10 @@ class RoomAccountMutationCoordinator(
 
     private suspend fun recoverPrepared(operation: MutationOperationEntity) {
         val manifest = decodeManifest(operation)
+        if (operation.errorCode == "ROLLBACK_PENDING") {
+            recoverRollbackPending(operation, manifest)
+            return
+        }
         val payload = readPayloadOrNull()
         if (payload != null && fingerprint(payload) == manifest.payloadFingerprint) {
             markStage(operation.id, MutationStage.CREDENTIALS_STAGED)
@@ -384,6 +395,36 @@ class RoomAccountMutationCoordinator(
             "No verifiable staged payload remained after interruption",
             now()
         )
+    }
+
+    private suspend fun recoverRollbackPending(
+        operation: MutationOperationEntity,
+        manifest: AccountMutationManifest
+    ) {
+        val rollbackPayload = manifest.rollbackPayload ?: return
+        if (manifest.rollbackPayloadFingerprint != fingerprint(rollbackPayload)) return
+        try {
+            rollbackPayload.validate()
+            credentialStore.write(rollbackPayload)
+            val readback = readPayloadOrNull()
+            require(readback != null && fingerprint(readback) == manifest.rollbackPayloadFingerprint) {
+                "Rollback credential readback did not match the durable snapshot"
+            }
+            cleanup.clearGeneration(manifest.stagedGeneration)
+            require(
+                database.mutationOperationDao().updateStage(
+                    operation.id,
+                    MutationStage.FAILED,
+                    operation.batchCursor,
+                    "ROLLBACK_RESTORED",
+                    "External rollback completed after retry",
+                    now()
+                ) == 1
+            )
+        } catch (_: Exception) {
+            // Keep PREPARED + ROLLBACK_PENDING until the old payload and staged
+            // generation can both be restored/cleaned successfully.
+        }
     }
 
     private suspend fun markStage(id: String, stage: MutationStage) {
