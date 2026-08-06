@@ -84,9 +84,9 @@ the complete 123-test focused command both terminated normally.
 
 ## Remaining risks
 
-- Home refresh still uses the legacy `ApiKeyManager` path in
-  `refreshSingleAccount()` / `refreshBalance()`; refresh, Service, and Widget
-  migration belongs to Task 6.
+- Home refresh entry points no longer read `ApiKeyManager`. Migration of the
+  refresh gateway's internal account store, Service, and Widget paths belongs
+  to Task 6.
 - `HomeViewModel.getConfigJson()` remains for test/compatibility callers, while
   production BackupRestore now uses the DataManagement typed snapshot.
 - Task 4 manifest credential material and the payload-level CredentialStore
@@ -101,3 +101,76 @@ ViewModels, their screens/components, localized strings, and focused tests. It
 does not alter Room v1 identity or persistence contracts. Account corruption is
 visible and fail-closed, UI account writes use the coordinator, and stable IDs
 rather than stale `AccountInfo` instances cross page and edit lifecycles.
+
+## Fix Round 1
+
+### Review findings addressed
+
+The fresh task review identified two Important gaps:
+
+1. Home retained the last Ready account and balance snapshots after a Corrupt
+   emission. Toolbar, pull, and card refresh actions could still enter the
+   legacy refresh path and expose or persist stale account data.
+2. The original focused suite injected recording account repositories only. It
+   did not exercise real Room metadata plus credential payload reconciliation or
+   prove that credential reconciliation was dispatched away from Android main.
+
+### RED
+
+- RED commit: `6766bd9` (`test: expose corrupt UI refresh bypasses`).
+- Command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.viewmodel.HomeViewModelTest" --tests "com.balancesentinel.app.data.repository.RoomAccountUiRepositoryTest" --rerun-tasks --no-parallel --console=plain
+```
+
+The final RED run compiled and executed 53 tests. Five real in-memory Room
+repository tests passed. Two Home behavior tests failed as expected, with zero
+errors: the Corrupt emission left the last Ready accounts visible, and the
+single-account refresh entry still read deliberately damaged legacy storage.
+The same test also covers the refresh-all entry and gateway call counts.
+
+The new repository fixture uses a real in-memory `WalletDatabase` without
+`allowMainThreadQueries`, a VERIFIED Room account row, `RoomAccountRepository`,
+and a mutable `CredentialStore`. It covers Missing, explicit Corrupt, payload
+mismatch, valid reconciliation, and recovery through a fresh subscription. A
+named single-thread dispatcher records that credential reconciliation executes
+on `room-account-ui-test-io` and not the Android main looper.
+
+### GREEN
+
+- GREEN commit: `6b3272a` (`fix: fail closed on corrupt UI account state`).
+- Corrupt now clears Home accounts and balances, resets the refresh timestamp,
+  and ends the visible loading state. Recovery requires a fresh account-source
+  subscription before Ready accounts become visible again.
+- Single-account and all-account refresh use only the typed Ready snapshot;
+  neither entry reads `ApiKeyManager` when the account state is Corrupt. Both
+  recheck Ready after asynchronous gateway work before publishing UI results.
+- Home disables toolbar, pull, and card refresh controls outside a non-empty
+  Ready state. The Corrupt error action retries the account subscription rather
+  than entering balance refresh.
+
+Required focused command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.viewmodel.HomeViewModelTest" --tests "com.balancesentinel.app.data.repository.RoomAccountUiRepositoryTest" --tests "com.balancesentinel.app.ui.viewmodel.DataManagementViewModelTest" --tests "com.balancesentinel.app.ui.viewmodel.InsightsViewModelTest" --rerun-tasks --no-parallel --console=plain
+```
+
+Results: Home 49/49, Room account UI repository 5/5, DataManagement 29/29,
+and Insights 48/48 passed. Total: 131/131, with 0 failures, errors, or skips.
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel --console=plain
+git diff --check
+```
+
+Debug Kotlin compilation succeeded and the diff check was clean. Output retained
+only existing Room index, kapt, and deprecation warnings. No Room schema,
+Entity, DAO, persistent identity, or Task 4 coordinator protocol changed.
+
+### Remaining boundary
+
+Task 6 still owns migration of the refresh gateway's internal account store,
+Service, and Widget refresh call sites. Fix Round 1 closes every Home UI entry
+before that deferred legacy layer; it does not expand Task 5 into the Task 6
+refresh architecture.
