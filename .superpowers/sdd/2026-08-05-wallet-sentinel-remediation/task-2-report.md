@@ -109,3 +109,52 @@ Result: passed.
   identity.
 - Verification used the five focused Task 2 test classes and the required Debug
   compile, not the repository-wide test suite.
+
+## Fix Round 1: DAO Boundary Hardening
+
+Commit boundaries:
+
+- RED tests: `9a6c2101aafeb90b0e469fdc6d99c5bb4f247941`
+- GREEN implementation and tests: `fb9fa2c`
+
+The RED command was:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.local.WalletDatabaseTest" --tests "com.balancesentinel.app.data.local.DatabaseConvertersTest" --tests "com.balancesentinel.app.data.local.account.AccountDaoTest" --tests "com.balancesentinel.app.data.local.publication.MutationPublisherTest" --tests "com.balancesentinel.app.data.local.monitoring.MonitoringSessionDaoTest" --rerun-tasks --no-parallel
+```
+
+It compiled and ran 24 tests with 3 expected failures: history cursor
+pagination repeated page one, stale refresh completion updated one row, and
+singleton DAO construction accepted a caller-supplied nonzero identity. The
+premature aggregate assertion was after the stale assertion in the same test,
+so it was not reached in that RED run.
+
+The GREEN command was the same focused command. It ran all 24 tests with 0
+failures. The required compile gate also passed:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Finding resolutions:
+
+1. History, usage, and event-log reads now use stable composite keyset cursors;
+   history and usage expose bounded range, count, and aggregate APIs.
+2. Refresh account completion is guarded by the captured account revision,
+   while explicitly stale results remain completable without overwriting data.
+3. Refresh-run aggregate derivation now refuses missing or running result rows
+   and derives terminal state from all completed result states.
+4. Singleton DAOs own `id = 0` construction. Settings publication keeps each
+   of the five settings tables independently selectable and remains atomic;
+   mixed `Unchanged`/`ReplaceAll` and injected settings-step rollback tests pass.
+
+The exported schema remains unchanged: the 19-table schema is still
+`app/schemas/com.balancesentinel.app.data.local.WalletDatabase/1.json` with
+identity hash `eb8fe9271b06473c65e36c9120a43b44`. No
+`allowMainThreadQueries()` usage was introduced.
+
+Remaining concerns are unchanged: Room still reports child-index warnings for
+`event_logs.account_id`, `event_logs.refresh_run_id`, and
+`monitoring_state.current_monitoring_session_id`; adding those indexes would
+change the frozen schema identity. Verification remains focused-suite-only,
+so the repository-wide test suite was not run.
