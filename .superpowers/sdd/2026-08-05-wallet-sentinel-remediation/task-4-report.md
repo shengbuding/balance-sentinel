@@ -123,3 +123,50 @@ The fresh scoped review identified three load-bearing gaps:
   `AccountMutationRecoveryTest`, and `DeepSeekAppTest` passed with 11/11,
   10/10, and 7/7 tests respectively. Debug Kotlin compilation and
   `git diff --check` passed, with no Room schema or identity diff.
+
+## Fix Round 2
+
+### Review finding addressed
+
+The fresh re-review found that a `PREPARED + ROLLBACK_PENDING` operation could
+be mistaken for an interrupted staged write. Recovery compared the current
+credential payload only with the desired payload fingerprint, then retried the
+old CAS publication using the stale expected revision. That could publish a
+new credential payload after Room had rejected the publication, leaving Room
+and credentials inconsistent.
+
+### RED
+
+- RED commit: `35b9e77` (`test: expose rollback recovery payload confusion`).
+- The regression first exercises a Room CAS failure after desired credentials
+  are staged and then injects a rollback write failure. After the failure is
+  cleared, recovery must restore the old payload and leave the Room account
+  unchanged while terminating the operation as failed. The pre-fix run failed
+  at the post-recovery assertions; compilation and fixtures succeeded.
+
+### GREEN
+
+- GREEN commit: `305ee5c` (`fix: restore durable rollback before account publish`).
+- The PREPARED manifest now carries the prior validated payload and a canonical
+  fingerprint. Recovery verifies that snapshot, writes it back, reads it back,
+  cleans the staged generation, and only then marks the operation `FAILED`.
+  Any write/readback/cleanup failure leaves `PREPARED + ROLLBACK_PENDING`; it
+  never enters the desired-payload publication path. `markStage` is not used
+  for this branch, so rollback error state is preserved.
+- This is a minimal device-consistency compensation for the current single-slot
+  `CredentialStore`; full physical per-generation credential storage remains a
+  later scope. The manifest snapshot contains credential material in the
+  existing Room ledger and is therefore a retained payload-level security risk,
+  with no logging or UI exposure.
+
+### Verification
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.AccountLifecycleManagerTest" --tests "com.balancesentinel.app.data.repository.AccountMutationRecoveryTest" --tests "com.balancesentinel.app.DeepSeekAppTest" --rerun-tasks --no-parallel
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+git diff --check
+```
+
+Results: `AccountLifecycleManagerTest` 11/11, `AccountMutationRecoveryTest`
+10/10, and `DeepSeekAppTest` 7/7 passed. Debug Kotlin compilation passed,
+`git diff --check` was clean, and no Room schema or identity files changed.
