@@ -170,3 +170,40 @@ git diff --check
 Results: `AccountLifecycleManagerTest` 11/11, `AccountMutationRecoveryTest`
 10/10, and `DeepSeekAppTest` 7/7 passed. Debug Kotlin compilation passed,
 `git diff --check` was clean, and no Room schema or identity files changed.
+
+## Fix Round 3
+
+### Review finding addressed
+
+The Round 2 re-review found that the immediate `rollbackBeforePublish` path
+treated a successful `CredentialStore.write(oldPayload)` call as a completed
+rollback without reading the value back. A store that silently persisted the
+wrong or damaged payload could therefore leave Room on the old account state
+while the operation was incorrectly terminated as `FAILED`.
+
+### RED
+
+- RED commit: `93c5de5` (`test: expose unverified account rollback writes`).
+- The behavior test injects a Room CAS conflict, makes the first rollback write
+  return normally while retaining a wrong payload, and asserts that the
+  operation remains `PREPARED + ROLLBACK_PENDING`. Before the fix, the test
+  compiled and ran but failed its stage assertion because the operation was
+  already marked `FAILED` and excluded from recovery.
+
+### GREEN
+
+- GREEN commit: `c032884` (`fix: verify account rollback writes`).
+- Immediate rollback and startup recovery now share one rollback write gate.
+  The gate validates the durable snapshot fingerprint before writing, then
+  reads through `CredentialStore.read()` and verifies generation, payload
+  structure, and the exact fingerprint. A write exception, corrupt/missing
+  readback, or mismatch leaves the existing `ROLLBACK_PENDING` signal intact.
+  Recovery terminates the operation only after the same gate and staged
+  generation cleanup both succeed.
+
+### Verification
+
+The required serial focused suite passed with `AccountLifecycleManagerTest`
+11/11, `AccountMutationRecoveryTest` 11/11, and `DeepSeekAppTest` 7/7.
+`compileDebugKotlin --rerun-tasks --no-parallel` passed, `git diff --check`
+was clean, and no Room schema or identity files changed.
