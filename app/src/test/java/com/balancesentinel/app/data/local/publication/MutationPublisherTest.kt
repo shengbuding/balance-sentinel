@@ -166,6 +166,90 @@ class MutationPublisherTest {
     }
 
     @Test
+    fun `mixed settings publication preserves runtime and snooze sentinels`() = runTest {
+        seedMetadata()
+        seedOperation("mixed-settings", baselineRevision = 0)
+        database.accountDao().insertCreate(testAccount("mixed-account"))
+        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        database.settingsDao().replaceAccountAlertSettings(
+            listOf(AccountAlertSettingEntity("mixed-account", "OLD", true, false))
+        )
+        database.settingsDao().replaceNotificationSelections(
+            listOf(NotificationWalletSelectionEntity("mixed-account", "OLD", 0))
+        )
+        database.settingsDao().replaceAlertRuntimeStates(
+            listOf(AlertRuntimeStateEntity("mixed-account", "SENTINEL", lastAlertedBalance = 77.0))
+        )
+        database.settingsDao().replaceSnoozes(listOf(SnoozeStateEntity("mixed-account", 777)))
+
+        MutationPublisher(database).publish(
+            publication(
+                operationId = "mixed-settings",
+                settings = SettingsPublication(
+                    appSettings = AppSettingsWrite.ReplaceAll(
+                        AppSettingsValues(900, 30, true, 1.0, false, 0.0, 0, 100, 60, true)
+                    ),
+                    accountAlertSettings = AccountAlertSettingsWrite.ReplaceAll(
+                        listOf(AccountAlertSettingEntity("mixed-account", "USD", true, true))
+                    ),
+                    notificationSelections = NotificationSelectionsWrite.ReplaceAll(
+                        listOf(NotificationWalletSelectionEntity("mixed-account", "EUR", 1))
+                    ),
+                    alertRuntimeStates = AlertRuntimeStatesWrite.Unchanged,
+                    snoozes = SnoozesWrite.Unchanged
+                )
+            )
+        )
+
+        assertEquals("SENTINEL", database.queryString("SELECT currency FROM alert_runtime_state"))
+        assertEquals(777L, database.queryLong("SELECT snoozed_until FROM snooze_state"))
+        assertEquals("USD", database.queryString("SELECT currency FROM account_alert_settings"))
+        assertEquals("EUR", database.queryString("SELECT currency FROM notification_wallet_selections"))
+    }
+
+    @Test
+    fun `settings-step rollback restores all five settings tables`() = runTest {
+        seedMetadata()
+        seedOperation("settings-fault", baselineRevision = 0)
+        database.accountDao().insertCreate(testAccount("settings-fault-account"))
+        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        database.settingsDao().replaceAccountAlertSettings(
+            listOf(AccountAlertSettingEntity("settings-fault-account", "OLD", true, false))
+        )
+        database.settingsDao().replaceNotificationSelections(
+            listOf(NotificationWalletSelectionEntity("settings-fault-account", "OLD", 0))
+        )
+        database.settingsDao().replaceAlertRuntimeStates(
+            listOf(AlertRuntimeStateEntity("settings-fault-account", "OLD", lastAlertedBalance = 1.0))
+        )
+        database.settingsDao().replaceSnoozes(listOf(SnoozeStateEntity("settings-fault-account", 10)))
+
+        val publisher = MutationPublisher(
+            database,
+            TransactionStepObserver { step ->
+                if (step == TransactionStep.AFTER_SETTINGS_ROWS) {
+                    throw InjectedTransactionFailure(step)
+                }
+            }
+        )
+        expectInjectedFailure {
+            publisher.publish(
+                publication(
+                    operationId = "settings-fault",
+                    settings = allReplaceSettings("settings-fault-account")
+                )
+            )
+        }
+
+        assertFalse(database.appSettingsDao().get()?.alertEnabled ?: true)
+        assertEquals("OLD", database.queryString("SELECT currency FROM account_alert_settings"))
+        assertEquals("OLD", database.queryString("SELECT currency FROM notification_wallet_selections"))
+        assertEquals("OLD", database.queryString("SELECT currency FROM alert_runtime_state"))
+        assertEquals(10L, database.queryLong("SELECT snoozed_until FROM snooze_state"))
+        assertEquals(MutationStage.VERIFIED, database.mutationOperationDao().get("settings-fault")?.stage)
+    }
+
+    @Test
     fun `metadata compare and set advances generation stage and revision atomically`() = runTest {
         seedMetadata(
             revision = 7,
@@ -393,6 +477,22 @@ class MutationPublisherTest {
         notificationSelections = NotificationSelectionsWrite.Unchanged,
         alertRuntimeStates = AlertRuntimeStatesWrite.Unchanged,
         snoozes = SnoozesWrite.Unchanged
+    )
+
+    private fun allReplaceSettings(accountId: String) = SettingsPublication(
+        appSettings = AppSettingsWrite.ReplaceAll(
+            AppSettingsValues(60, 45, true, 5.0, true, 2.0, 15, 10, 20, false)
+        ),
+        accountAlertSettings = AccountAlertSettingsWrite.ReplaceAll(
+            listOf(AccountAlertSettingEntity(accountId, "NEW", false, true))
+        ),
+        notificationSelections = NotificationSelectionsWrite.ReplaceAll(
+            listOf(NotificationWalletSelectionEntity(accountId, "NEW", 2))
+        ),
+        alertRuntimeStates = AlertRuntimeStatesWrite.ReplaceAll(
+            listOf(AlertRuntimeStateEntity(accountId, "NEW", lastAlertedBalance = 88.0))
+        ),
+        snoozes = SnoozesWrite.ReplaceAll(listOf(SnoozeStateEntity(accountId, 888)))
     )
 
     private suspend fun expectPublicationConflict(block: suspend () -> Unit) {

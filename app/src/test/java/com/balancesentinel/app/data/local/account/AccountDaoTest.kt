@@ -12,14 +12,20 @@ import com.balancesentinel.app.data.local.log.EventLogType
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
+import com.balancesentinel.app.data.local.metadata.AppMetadataEntity
+import com.balancesentinel.app.data.local.metadata.LegacyMigrationStage
+import com.balancesentinel.app.data.local.maintenance.MaintenanceCheckpointEntity
+import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
 import com.balancesentinel.app.data.local.queryLong
 import com.balancesentinel.app.data.local.refresh.RefreshAccountResultEntity
 import com.balancesentinel.app.data.local.refresh.RefreshAccountResultState
 import com.balancesentinel.app.data.local.refresh.RefreshErrorCategory
 import com.balancesentinel.app.data.local.refresh.RefreshRunEntity
 import com.balancesentinel.app.data.local.refresh.RefreshRunSource
+import com.balancesentinel.app.data.local.refresh.RefreshRunState
 import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
 import com.balancesentinel.app.data.local.settings.AlertRuntimeStateEntity
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.local.testAccount
@@ -284,6 +290,141 @@ class AccountDaoTest {
         assertEquals(" usd ", event?.currencyText)
         assertEquals("000.100", event?.grantedBalanceText)
         assertEquals("+0.0000", event?.toppedUpBalanceText)
+    }
+
+    @Test
+    fun `history usage and event pages advance stable keysets and expose bounded aggregates`() = runTest {
+        val accountId = "paged-account"
+        database.accountDao().insertCreate(testAccount(accountId))
+        database.historyDao().insertBalanceBatch(
+            listOf(
+                BalanceRecordEntity(accountId = accountId, currency = "USD", recordedAt = 100, totalBalance = 10.0),
+                BalanceRecordEntity(accountId = accountId, currency = "USD", recordedAt = 100, totalBalance = 11.0),
+                BalanceRecordEntity(accountId = accountId, currency = "USD", recordedAt = 90, totalBalance = 9.0),
+                BalanceRecordEntity(accountId = accountId, currency = "USD", recordedAt = 80, totalBalance = 8.0)
+            )
+        )
+        val firstBalances = database.historyDao().keysetPage(accountId, "USD", 0, 101, null, null, 2)
+        val lastBalance = firstBalances.last()
+        val secondBalances = database.historyDao().keysetPage(
+            accountId,
+            "USD",
+            0,
+            101,
+            lastBalance.recordedAt,
+            lastBalance.id,
+            2
+        )
+        assertEquals(listOf(100L, 100L), firstBalances.map { it.recordedAt })
+        assertEquals(listOf(90L, 80L), secondBalances.map { it.recordedAt })
+        assertEquals(4L, database.historyDao().countRange(accountId, "USD", 0, 101))
+        assertEquals(
+            38.0,
+            requireNotNull(database.historyDao().aggregateRange(accountId, "USD", 0, 101).totalBalanceSum),
+            0.0
+        )
+        assertEquals(4, database.historyDao().range(accountId, "USD", 0, 101).size)
+
+        database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-100-a", accountId, 100), emptyList())
+        database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-100-b", accountId, 100), emptyList())
+        database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-090", accountId, 90), emptyList())
+        val firstUsage = database.usageDao().keysetPage(accountId, 0, 101, null, null, 2)
+        val lastUsage = firstUsage.last()
+        val secondUsage = database.usageDao().keysetPage(
+            accountId,
+            0,
+            101,
+            lastUsage.capturedAt,
+            lastUsage.id,
+            2
+        )
+        assertEquals(listOf("usage-100-a", "usage-100-b"), firstUsage.map { it.id })
+        assertEquals(listOf("usage-090"), secondUsage.map { it.id })
+        assertEquals(3L, database.usageDao().countRange(accountId, 0, 101))
+        assertEquals(3, database.usageDao().range(accountId, 0, 101).size)
+
+        database.eventLogDao().insertAll(
+            listOf(
+                EventLogEntity(eventType = EventLogType.AUTO, recordedAt = 100),
+                EventLogEntity(eventType = EventLogType.MANUAL, recordedAt = 100),
+                EventLogEntity(eventType = EventLogType.WATCHDOG, recordedAt = 90)
+            )
+        )
+        val firstEvents = database.eventLogDao().newestPage(null, null, 2)
+        val lastEvent = firstEvents.last()
+        val secondEvents = database.eventLogDao().newestPage(lastEvent.recordedAt, lastEvent.id, 2)
+        assertEquals(listOf(100L, 100L), firstEvents.map { it.recordedAt })
+        assertEquals(listOf(90L), secondEvents.map { it.recordedAt })
+    }
+
+    @Test
+    fun `refresh completion rejects stale account revision and premature aggregate`() = runTest {
+        val accountId = "refresh-stale"
+        database.accountDao().insertCreate(testAccount(accountId))
+        database.refreshRunDao().insertRun(RefreshRunEntity("stale-run", RefreshRunSource.MANUAL, startedAt = 1))
+        database.refreshRunDao().insertRunningResult(
+            RefreshAccountResultEntity("stale-run", accountId, accountRevision = 0, startedAt = 1)
+        )
+        assertEquals(
+            1,
+            database.accountDao().updateWhereRevision(
+                accountId, 0, 1, "edited", ProviderType.OPENAI, "{}", "generation-1", 2
+            )
+        )
+        assertEquals(
+            0,
+            database.refreshRunDao().completeAccountAtomically(
+                runId = "stale-run",
+                accountId = accountId,
+                state = RefreshAccountResultState.SUCCEEDED,
+                errorCategory = null,
+                errorCode = null,
+                retryable = false,
+                retryAfterAt = null,
+                dataTimestamp = 2,
+                stale = false,
+                attemptCount = 1,
+                completedAt = 3
+            )
+        )
+
+        database.refreshRunDao().insertRun(RefreshRunEntity("premature-run", RefreshRunSource.MANUAL, startedAt = 1))
+        database.refreshRunDao().insertRunningResult(
+            RefreshAccountResultEntity("premature-run", "unrelated", accountRevision = 0, startedAt = 1)
+        )
+        assertEquals(
+            0,
+            database.refreshRunDao().deriveAndUpdateAggregate(
+                runId = "premature-run",
+                state = RefreshRunState.SUCCEEDED,
+                completedAt = 4
+            )
+        )
+    }
+
+    @Test
+    fun `singleton DAOs never create a nonzero identity`() = runTest {
+        assertEquals(
+            0L,
+            database.appMetadataDao().ensureSingleton(
+                AppMetadataEntity(id = 42, legacyMigrationStage = LegacyMigrationStage.NONE, updatedAt = 1)
+            )
+        )
+        assertEquals(0L, database.appSettingsDao().ensureSingleton(AppSettingsEntity(id = 42, updatedAt = 1)))
+        assertEquals(
+            0,
+            database.maintenanceCheckpointDao().getOrCreate(
+                MaintenanceCheckpointEntity(id = 42, lastSuccessAt = 1)
+            ).id
+        )
+        assertEquals(
+            0,
+            database.monitoringStateDao().getOrCreate(MonitoringStateEntity(id = 42, updatedAt = 1)).id
+        )
+        assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM app_metadata"))
+        assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM app_settings"))
+        assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM maintenance_checkpoint"))
+        assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM monitoring_state"))
     }
 
     private fun summary(closeBalance: Double) = DailySummaryEntity(

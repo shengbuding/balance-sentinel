@@ -40,6 +40,48 @@ interface UsageDao {
         limit: Int
     ): List<UsageSnapshotEntity>
 
+    @Query(
+        """
+        SELECT * FROM usage_snapshots
+        WHERE account_id = :accountId
+          AND captured_at >= :fromInclusive AND captured_at < :toExclusive
+          AND (:afterCapturedAt IS NULL OR :afterCapturedAt IS NOT NULL)
+          AND (:afterId IS NULL OR :afterId IS NOT NULL)
+        ORDER BY captured_at, id LIMIT :limit
+        """
+    )
+    suspend fun keysetPage(
+        accountId: String,
+        fromInclusive: Long,
+        toExclusive: Long,
+        afterCapturedAt: Long?,
+        afterId: String?,
+        limit: Int
+    ): List<UsageSnapshotEntity>
+
+    @Query(
+        """
+        SELECT * FROM usage_snapshots
+        WHERE account_id = :accountId
+          AND captured_at >= :fromInclusive AND captured_at < :toExclusive
+        ORDER BY captured_at, id
+        """
+    )
+    suspend fun range(
+        accountId: String,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): List<UsageSnapshotEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM usage_snapshots
+        WHERE account_id = :accountId
+          AND captured_at >= :fromInclusive AND captured_at < :toExclusive
+        """
+    )
+    suspend fun countRange(accountId: String, fromInclusive: Long, toExclusive: Long): Long
+
     @Query("SELECT * FROM usage_records WHERE snapshot_id = :snapshotId ORDER BY record_ordinal")
     suspend fun getRecords(snapshotId: String): List<UsageRecordEntity>
 

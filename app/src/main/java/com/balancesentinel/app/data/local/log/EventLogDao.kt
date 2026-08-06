@@ -13,6 +13,20 @@ interface EventLogDao {
     @Query("SELECT * FROM event_logs ORDER BY recorded_at DESC, id DESC LIMIT :limit")
     suspend fun newest(limit: Int): List<EventLogEntity>
 
+    @Query(
+        """
+        SELECT * FROM event_logs
+        WHERE (:afterRecordedAt IS NULL OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId))
+        ORDER BY recorded_at DESC, id DESC LIMIT :limit
+        """
+    )
+    suspend fun newestPage(
+        afterRecordedAt: Long?,
+        afterId: Long?,
+        limit: Int
+    ): List<EventLogEntity>
+
     @Query("DELETE FROM event_logs WHERE recorded_at < :cutoff")
     suspend fun deleteBefore(cutoff: Long): Int
 
