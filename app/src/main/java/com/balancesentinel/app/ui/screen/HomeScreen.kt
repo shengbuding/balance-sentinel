@@ -55,6 +55,8 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val accountMutationsEnabled = uiState.accountLoadState is AccountLoadState.Ready
+    val accountRefreshEnabled = accountMutationsEnabled && uiState.accounts.isNotEmpty()
+    val accountCorrupt = uiState.accountLoadState is AccountLoadState.Corrupt
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -166,7 +168,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                     // 刷新按钮
                     IconButton(
                         onClick = { viewModel.refreshBalance() },
-                        enabled = !uiState.isLoading && uiState.accounts.isNotEmpty()
+                        enabled = accountRefreshEnabled && !uiState.isLoading
                     ) {
                         if (uiState.isLoading) {
                             CircularProgressIndicator(
@@ -213,14 +215,14 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     ) { padding ->
         val pullRefreshState = rememberPullRefreshState(
             refreshing = uiState.isLoading,
-            onRefresh = { viewModel.refreshBalance() }
+            onRefresh = { if (accountRefreshEnabled) viewModel.refreshBalance() }
         )
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .pullRefresh(pullRefreshState)
+                .pullRefresh(pullRefreshState, enabled = accountRefreshEnabled)
         ) {
             Column(
                 modifier = Modifier
@@ -238,7 +240,10 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                     uiState.errorMessage?.let { msg ->
                         ErrorMessageCard(
                             message = msg,
-                            onRetry = { viewModel.refreshBalance() }
+                            onRetry = {
+                                if (accountCorrupt) viewModel.loadCachedBalances()
+                                else viewModel.refreshBalance()
+                            }
                         )
                     }
                 }
@@ -268,6 +273,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                             onEdit = { editTargetId = account.id },
                             onDelete = { deleteTarget = Pair(account.id, account.label) },
                             accountMutationsEnabled = accountMutationsEnabled,
+                            accountRefreshEnabled = accountRefreshEnabled && !uiState.isLoading,
                             onRefresh = { viewModel.refreshSingleAccount(account.id) }
                         )
                     }

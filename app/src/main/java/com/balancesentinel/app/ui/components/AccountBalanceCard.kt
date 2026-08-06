@@ -44,6 +44,7 @@ fun AccountBalanceCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     accountMutationsEnabled: Boolean = true,
+    accountRefreshEnabled: Boolean = true,
     onRefresh: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -149,6 +150,7 @@ fun AccountBalanceCard(
                         ) {
                             DropdownMenuItem(
                                 text = { Text("刷新") },
+                                enabled = accountRefreshEnabled,
                                 onClick = {
                                     showMenu = false
                                     onRefresh()

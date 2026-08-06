@@ -155,6 +155,10 @@ class HomeViewModel @JvmOverloads constructor(
                         is AccountLoadState.Corrupt -> {
                             _uiState.value = _uiState.value.copy(
                                 accountLoadState = state,
+                                accounts = emptyList(),
+                                accountBalances = emptyMap(),
+                                isLoading = false,
+                                lastRefreshTime = 0L,
                                 errorMessage = accountCorruptionMessage()
                             )
                         }
@@ -169,6 +173,9 @@ class HomeViewModel @JvmOverloads constructor(
 
     private fun readyAccounts(): List<AccountInfo>? =
         (_uiState.value.accountLoadState as? AccountLoadState.Ready)?.accounts
+
+    private fun readyAccount(accountId: String): AccountInfo? =
+        readyAccounts()?.firstOrNull { it.id == accountId }
 
     private fun asCorruption(error: Throwable): DataCorruptionException =
         error as? DataCorruptionException
@@ -448,7 +455,7 @@ class HomeViewModel @JvmOverloads constructor(
         _uiState.value = _uiState.value.copy(refreshIntervalSeconds = seconds)
         // 通知前台 Service 用新间隔重新调度 Handler
         notifyServiceReschedule()
-        if (apiKeyManager.hasAccounts()) refreshBalance()
+        if (!readyAccounts().isNullOrEmpty()) refreshBalance()
     }
 
     /** 发送 startService 意图让 Service 的 onStartCommand 触发重调度 */
@@ -519,16 +526,19 @@ class HomeViewModel @JvmOverloads constructor(
     // ── 刷新单个账户 ──
 
     fun refreshSingleAccount(accountId: String) {
-        val account = apiKeyManager.getAccount(accountId) ?: return
+        val account = readyAccount(accountId) ?: return
 
         viewModelScope.launch {
+            if (readyAccount(accountId) == null) return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
             val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
             if (gw != null) {
                 // Task 4: route through shared gateway — committer owns all persistence
                 try {
-                    when (val result = gw.refreshAccount(accountId, RefreshTrigger.MANUAL_ACCOUNT)) {
+                    val result = gw.refreshAccount(accountId, RefreshTrigger.MANUAL_ACCOUNT)
+                    if (readyAccount(accountId) == null) return@launch
+                    when (result) {
                         is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
                             val balance = result.balance
                             val balanceResponse = BalanceResponse(
@@ -563,7 +573,10 @@ class HomeViewModel @JvmOverloads constructor(
                             )
                         }
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
+                    if (readyAccount(accountId) == null) return@launch
                     Logger.e("HomeViewModel", "refreshSingleAccount failed for ${account.label}", e)
                     _uiState.value = _uiState.value.copy(
                         errorMessage = "[$account.label] ${e.message ?: "查询失败"}"
@@ -573,6 +586,7 @@ class HomeViewModel @JvmOverloads constructor(
                 Logger.w("HomeViewModel", "refreshSingleAccount: no gateway available")
             }
 
+            if (readyAccount(accountId) == null) return@launch
             _uiState.value = _uiState.value.copy(isLoading = false)
             updateAllWidgets()
         }
@@ -581,7 +595,7 @@ class HomeViewModel @JvmOverloads constructor(
     // ── 刷新余额（遍历所有账户） ──
 
     fun refreshBalance() {
-        val accounts = apiKeyManager.getAccounts()
+        val accounts = readyAccounts() ?: return
         if (accounts.isEmpty()) {
             _uiState.value = _uiState.value.copy(
                 errorMessage = getApplication<Application>().getString(R.string.no_key)
@@ -590,6 +604,7 @@ class HomeViewModel @JvmOverloads constructor(
         }
 
         viewModelScope.launch {
+            if (readyAccounts() == null) return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             val now = System.currentTimeMillis()
             val newBalances = mutableMapOf<String, BalanceResponse?>()
@@ -599,6 +614,7 @@ class HomeViewModel @JvmOverloads constructor(
             if (gw != null) {
                 // Task 4: route through shared gateway — committer owns all persistence
                 val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL)
+                if (readyAccounts() == null) return@launch
                 for (result in results) {
                     val accountId = result.accountId
                     when (result) {
@@ -639,6 +655,7 @@ class HomeViewModel @JvmOverloads constructor(
                 Logger.w("HomeViewModel", "refreshBalance: no gateway available")
             }
 
+            if (readyAccounts() == null) return@launch
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 accountBalances = newBalances,

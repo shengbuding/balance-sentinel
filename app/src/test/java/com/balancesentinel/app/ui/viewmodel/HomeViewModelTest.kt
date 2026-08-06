@@ -265,6 +265,29 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `corrupt account state recovers only after a fresh repository subscription`() {
+        val recovered = AccountInfo(
+            id = "bd6b8108-62c8-4ab8-b8f8-5942e61a28f5",
+            label = "Recovered",
+            apiKey = "sk-recovered-after-resubscribe"
+        )
+        val source = SubscriptionSnapshotAccountUiRepository(
+            AccountLoadState.Corrupt(DataCorruptionException("temporarily corrupt"))
+        )
+        val vm = createViewModel(source, RecordingMutationCoordinator())
+        assertTrue(vm.uiState.value.accountLoadState is AccountLoadState.Corrupt)
+
+        source.nextState = AccountLoadState.Ready(listOf(recovered))
+        assertTrue("Changing durable state alone must not bypass the active Corrupt state", vm.uiState.value.accounts.isEmpty())
+
+        vm.loadCachedBalances()
+
+        assertEquals(AccountLoadState.Ready(listOf(recovered)), vm.uiState.value.accountLoadState)
+        assertEquals(listOf(recovered), vm.uiState.value.accounts)
+        assertEquals(2, source.subscriptionCount)
+    }
+
+    @Test
     fun `create edit and delete delegate to coordinator exactly once each`() {
         // Mutation caught: any UI mutation calling ApiKeyManager/AccountLifecycleManager or invoking the coordinator twice.
         val existing = AccountInfo(
@@ -1133,6 +1156,18 @@ class HomeViewModelTest {
 
         fun publish(state: AccountLoadState) {
             states.value = state
+        }
+    }
+
+    private class SubscriptionSnapshotAccountUiRepository(
+        var nextState: AccountLoadState
+    ) : AccountUiRepository {
+        var subscriptionCount: Int = 0
+            private set
+
+        override fun observe(): Flow<AccountLoadState> = flow {
+            subscriptionCount++
+            emit(nextState)
         }
     }
 
