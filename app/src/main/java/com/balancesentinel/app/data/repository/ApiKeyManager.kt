@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.credentials.CredentialReadResult
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.migration.LegacyAccountSource
+import com.balancesentinel.app.data.migration.LegacyAccountReader
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountSaveResult
@@ -153,6 +154,11 @@ class ApiKeyManager(
 
     fun removeAccount(id: String) {
         removeAccount(id) { }
+    }
+
+    /** Read-only seam for migration; it delegates to the existing legacy JSON reader. */
+    internal fun legacyAccountReader(): LegacyAccountReader = LegacyAccountReader {
+        LegacyAccountSource(prefs, json).read()
     }
 
     private val legacyAccountSource by lazy { LegacyAccountSource(prefs, json) }

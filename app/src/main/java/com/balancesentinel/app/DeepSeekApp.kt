@@ -9,6 +9,8 @@ import android.os.LocaleList
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.migration.LegacyAccountMigration
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -78,6 +80,12 @@ class DeepSeekApp : Application() {
             CrashLogger.logNonFatal("App", error)
         }
     }
+
+    /** Construction seam for the resumable Room account migration. Not invoked yet. */
+    internal fun legacyAccountMigration(): LegacyAccountMigration = LegacyAccountMigration(
+        database = WalletDatabaseProvider.get(this),
+        source = ApiKeyManager(this).legacyAccountReader()
+    )
 
     private fun performDataMigration() {
         val apiKeyManager = ApiKeyManager(this)
