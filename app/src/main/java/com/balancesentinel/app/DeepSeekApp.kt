@@ -17,12 +17,18 @@ import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class DeepSeekApp : Application() {
 
     internal var legacyMigrationRunner: suspend () -> Unit = {
         legacyAccountMigration().run()
     }
+
+    private val startupMigrationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     lateinit var refreshGateway: RefreshGateway
         private set
@@ -51,6 +57,7 @@ class DeepSeekApp : Application() {
 
         // 执行数据迁移
         migrateDataIfNeeded()
+        launchLegacyAccountMigration()
 
         createNotificationChannel()
 
@@ -92,6 +99,20 @@ class DeepSeekApp : Application() {
         ApiKeyManager(this).legacyAccountReader(),
         EncryptedPreferencesCredentialStore(this)
     )
+
+    internal fun launchLegacyAccountMigration() {
+        startupMigrationScope.launch {
+            try {
+                legacyMigrationRunner()
+            } catch (error: DataCorruptionException) {
+                credentialCorruption = error
+                CrashLogger.breadcrumb("App", "Credential corruption blocked Room migration")
+                CrashLogger.logNonFatal("App", error)
+            } catch (error: Exception) {
+                CrashLogger.logNonFatal("App", error)
+            }
+        }
+    }
 
     private fun performDataMigration() {
         val apiKeyManager = ApiKeyManager(this)
