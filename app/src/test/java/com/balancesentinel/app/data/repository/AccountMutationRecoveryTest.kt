@@ -289,6 +289,15 @@ class AccountMutationRecoveryTest {
         val operation = database.mutationOperationDao().listRecoverable().single()
         assertEquals(MutationStage.PREPARED, operation.stage)
         assertEquals("ROLLBACK_PENDING", operation.errorCode)
+
+        store.afterWrite = null
+        coordinator.recover()
+
+        val terminated = database.mutationOperationDao().get(operation.id)
+        assertEquals(MutationStage.FAILED, terminated?.stage)
+        assertNotNull(terminated?.errorCode)
+        assertEquals("old-key", store.payload?.accounts?.single()?.apiKey)
+        assertEquals("old", database.accountDao().get("stable-a")?.label)
     }
 
     private suspend fun seedAccount(id: String, legacyId: String, generation: String) {
