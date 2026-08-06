@@ -11,6 +11,7 @@ import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.migration.LegacyAccountMigration
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -84,7 +85,8 @@ class DeepSeekApp : Application() {
     /** Construction seam for the resumable Room account migration. Not invoked yet. */
     internal fun legacyAccountMigration(): LegacyAccountMigration = LegacyAccountMigration(
         WalletDatabaseProvider.get(this),
-        ApiKeyManager(this).legacyAccountReader()
+        ApiKeyManager(this).legacyAccountReader(),
+        EncryptedPreferencesCredentialStore(this)
     )
 
     private fun performDataMigration() {
