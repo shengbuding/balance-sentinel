@@ -11,12 +11,23 @@ import com.balancesentinel.app.data.engine.EstimateMethod
 import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayOutput
 import com.balancesentinel.app.data.engine.IntradayPoint
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.credentials.DataCorruptionException
-import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -24,6 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class InsightsViewModelTest {
 
@@ -51,12 +63,14 @@ class InsightsViewModelTest {
         app = context as Application
         RawRecordStore.clear(context)
         DailySummaryStore.clear(context)
+        Dispatchers.setMain(UnconfinedTestDispatcher())
     }
 
     @After
     fun tearDown() {
         RawRecordStore.clear(context)
         DailySummaryStore.clear(context)
+        Dispatchers.resetMain()
     }
 
     // ── ViewModel loadData ──
@@ -103,20 +117,79 @@ class InsightsViewModelTest {
 
     @Test
     fun `loadData does not present credential corruption as empty account data`() {
-        val prefs = context.getSharedPreferences("insights_corrupt_${System.nanoTime()}", Context.MODE_PRIVATE)
-        assertTrue(prefs.edit().putString("accounts", "{ corrupt").commit())
-        val viewModel = InsightsViewModel(app)
-        awaitViewModel(viewModel)
-        replaceApiKeyManager(viewModel, ApiKeyManager(context, prefs))
-
-        viewModel.loadData()
-        awaitViewModel(viewModel)
+        // Mutation caught: converting AccountLoadState.Corrupt to an empty account list.
+        val corruption = DataCorruptionException("repository payload corrupt")
+        val source = RecordingAccountUiRepository(AccountLoadState.Corrupt(corruption))
+        val viewModel = InsightsViewModel(app, source)
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
+        assertTrue("Corruption must remain typed in InsightsUiState", state.accountLoadState is AccountLoadState.Corrupt)
+        assertSame(corruption, (state.accountLoadState as AccountLoadState.Corrupt).error)
         assertTrue(state.credentialCorrupt)
         assertNotNull("Credential corruption must remain explicit in the UI state", state.intradayOutput)
         assertNotNull("Credential corruption must remain explicit in the UI state", state.dailyOutput)
+    }
+
+    @Test
+    fun `account flow replaces instances while preserving selection by stable id`() {
+        // Mutation caught: holding an AccountInfo object or reselecting by list position after Flow emission.
+        val first = AccountInfo(
+            id = "00fd859d-2119-40a0-9477-bda4fa12a2a4",
+            label = "Before",
+            apiKey = "sk-before-insights",
+            revision = 4
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(first)))
+        val viewModel = InsightsViewModel(app, source)
+        awaitAccountState(viewModel) { it.accounts.singleOrNull()?.label == "Before" }
+        viewModel.selectAccount(first.id)
+        val replacement = first.copy(label = "After", apiKey = "sk-after-insights", revision = 5)
+
+        source.publish(AccountLoadState.Ready(listOf(replacement)))
+        awaitAccountState(viewModel) { it.accounts.singleOrNull()?.label == "After" }
+
+        val state = viewModel.uiState.value
+        assertEquals(first.id, state.selectedAccountId)
+        assertSame(replacement, state.accounts.single())
+        assertNotSame(first, state.accounts.single())
+        assertEquals(1, source.subscriptionCount)
+    }
+
+    @Test
+    fun `corruption after a valid emission preserves last accounts but disables ordinary state`() {
+        // Mutation caught: replacing a previously rendered account snapshot with emptyList on corruption.
+        val account = AccountInfo(
+            id = "626b9fc2-98a8-44f9-ae27-bc49d72eef45",
+            label = "Retained",
+            apiKey = "sk-retained-insights"
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(account)))
+        val viewModel = InsightsViewModel(app, source)
+        awaitAccountState(viewModel) { it.accounts == listOf(account) }
+
+        source.publish(AccountLoadState.Corrupt(DataCorruptionException("became corrupt")))
+        awaitAccountState(viewModel) { it.accountLoadState is AccountLoadState.Corrupt }
+
+        assertEquals(listOf(account), viewModel.uiState.value.accounts)
+        assertTrue(viewModel.uiState.value.credentialCorrupt)
+    }
+
+    @Test
+    fun `recreated insights view model establishes a fresh repository subscription`() {
+        // Mutation caught: a recreated page reading a retained legacy snapshot instead of subscribing again.
+        val account = AccountInfo(
+            id = "477714e0-7946-4c27-af96-051e42737429",
+            label = "Stable",
+            apiKey = "sk-stable-insights"
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(account)))
+        val first = InsightsViewModel(app, source)
+        awaitAccountState(first) { it.accounts == listOf(account) }
+        val recreated = InsightsViewModel(app, source)
+        awaitAccountState(recreated) { it.accounts == listOf(account) }
+
+        assertEquals(2, source.subscriptionCount)
     }
 
     @Test
@@ -973,9 +1046,31 @@ class InsightsViewModelTest {
         assertTrue(state.isEmpty)
     }
 
-    private fun replaceApiKeyManager(viewModel: InsightsViewModel, manager: ApiKeyManager) {
-        val field = InsightsViewModel::class.java.getDeclaredField("apiKeyManager")
-        field.isAccessible = true
-        field.set(viewModel, manager)
+    private fun awaitAccountState(
+        viewModel: InsightsViewModel,
+        predicate: (InsightsUiState) -> Boolean
+    ) {
+        val deadline = System.currentTimeMillis() + 5000
+        while (!predicate(viewModel.uiState.value) && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        assertTrue("Timed out waiting for account state", predicate(viewModel.uiState.value))
+    }
+
+    private class RecordingAccountUiRepository(
+        initial: AccountLoadState
+    ) : AccountUiRepository {
+        private val states = MutableStateFlow(initial)
+        var subscriptionCount: Int = 0
+            private set
+
+        override fun observe(): Flow<AccountLoadState> = flow {
+            subscriptionCount++
+            emitAll(states)
+        }
+
+        fun publish(state: AccountLoadState) {
+            states.value = state
+        }
     }
 }

@@ -12,10 +12,16 @@ import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
+import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountMutationCoordinator
+import com.balancesentinel.app.data.repository.AccountMutationResult
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -25,6 +31,10 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -63,6 +73,18 @@ class HomeViewModelTest {
     private fun createViewModel(): HomeViewModel {
         return HomeViewModel(context, apiKeyManager, mockRepository)
     }
+
+    private fun createViewModel(
+        accountRepository: AccountUiRepository,
+        coordinator: AccountMutationCoordinator
+    ): HomeViewModel = HomeViewModel(
+        context,
+        apiKeyManager,
+        mockRepository,
+        null,
+        accountRepository,
+        coordinator
+    )
 
 
     // ═══════════════════════════════════════════════════════════
@@ -111,6 +133,143 @@ class HomeViewModelTest {
         assertEquals(77, vm.uiState.value.refreshIntervalSeconds)
         assertTrue(vm.uiState.value.alertEnabled)
         assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `account flow loads asynchronously without falling back to legacy snapshot`() {
+        // Mutation caught: constructor synchronously reading ApiKeyManager instead of collecting the injected Flow.
+        apiKeyManager.addAccount("Legacy", "sk-legacy-snapshot")
+        val source = RecordingAccountUiRepository(AccountLoadState.Loading)
+        val vm = createViewModel(source, RecordingMutationCoordinator())
+
+        assertEquals(AccountLoadState.Loading, vm.uiState.value.accountLoadState)
+        assertTrue(vm.uiState.value.accounts.isEmpty())
+
+        val roomAccount = AccountInfo(
+            id = "27189c0e-4b1d-4dd7-ad67-a3aca0fc18b5",
+            label = "Room",
+            apiKey = "sk-room-account"
+        )
+        source.publish(AccountLoadState.Ready(listOf(roomAccount)))
+
+        assertEquals(listOf(roomAccount), vm.uiState.value.accounts)
+        assertEquals(AccountLoadState.Ready(listOf(roomAccount)), vm.uiState.value.accountLoadState)
+        assertEquals(1, source.subscriptionCount)
+    }
+
+    @Test
+    fun `corrupt account state remains explicit and blocks every account write`() {
+        // Mutation caught: corruption being converted to an empty/normal state or writes bypassing the guard.
+        val existing = AccountInfo(
+            id = "f9ea9934-72f7-4481-8100-2ddf2c2a6363",
+            label = "Existing",
+            apiKey = "sk-existing-corrupt"
+        )
+        apiKeyManager.replaceAll(listOf(existing))
+        val corruption = DataCorruptionException("credential payload damaged")
+        val source = RecordingAccountUiRepository(AccountLoadState.Corrupt(corruption))
+        val coordinator = RecordingMutationCoordinator()
+        val vm = createViewModel(source, coordinator)
+
+        val loadState = vm.uiState.value.accountLoadState
+        assertTrue("Corruption must remain typed in HomeUiState", loadState is AccountLoadState.Corrupt)
+        assertSame(corruption, (loadState as AccountLoadState.Corrupt).error)
+        vm.addAccount(AccountDraft("New", "sk-new-corrupt", ProviderType.DEEPSEEK))
+        vm.editAccount(
+            existing.id,
+            AccountDraft("Edited", "sk-edited-corrupt", ProviderType.DEEPSEEK)
+        )
+        vm.removeAccount(existing.id)
+
+        assertEquals(listOf(existing), apiKeyManager.getAccounts())
+        assertTrue(coordinator.saveCalls.isEmpty())
+        assertTrue(coordinator.deleteCalls.isEmpty())
+    }
+
+    @Test
+    fun `create edit and delete delegate to coordinator exactly once each`() {
+        // Mutation caught: any UI mutation calling ApiKeyManager/AccountLifecycleManager or invoking the coordinator twice.
+        val existing = AccountInfo(
+            id = "81cbaf5c-b413-41de-a1e3-8ec45af2e590",
+            label = "Existing",
+            apiKey = "sk-existing-coordinator",
+            revision = 4
+        )
+        apiKeyManager.replaceAll(listOf(existing))
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(existing)))
+        val coordinator = RecordingMutationCoordinator()
+        val vm = createViewModel(source, coordinator)
+        val createdDraft = AccountDraft("Created", "sk-created-coordinator", ProviderType.DEEPSEEK)
+        val editedDraft = AccountDraft("Edited", "sk-edited-coordinator", ProviderType.DEEPSEEK)
+
+        vm.addAccount(createdDraft)
+        vm.editAccount(existing.id, editedDraft)
+        vm.removeAccount(existing.id)
+
+        assertEquals(
+            listOf(
+                RecordingMutationCoordinator.SaveCall(null, createdDraft),
+                RecordingMutationCoordinator.SaveCall(existing.id, editedDraft)
+            ),
+            coordinator.saveCalls
+        )
+        assertEquals(listOf(existing.id), coordinator.deleteCalls)
+    }
+
+    @Test
+    fun `edit by stable id resolves the latest repository account instead of a stale instance`() {
+        // Mutation caught: the convenience edit overload retaining credentials from an old AccountInfo snapshot.
+        val stale = AccountInfo(
+            id = "6ff0dabd-b334-4309-b90e-330865746c5a",
+            label = "Before",
+            apiKey = "sk-before-latest",
+            extraCredentials = mapOf("secretKey" to "stale-secret"),
+            revision = 2
+        )
+        apiKeyManager.replaceAll(listOf(stale))
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(stale)))
+        val coordinator = RecordingMutationCoordinator()
+        val vm = createViewModel(source, coordinator)
+        val latest = stale.copy(
+            label = "Externally updated",
+            apiKey = "sk-latest-repository",
+            extraCredentials = mapOf("secretKey" to "latest-secret"),
+            revision = 3
+        )
+        source.publish(AccountLoadState.Ready(listOf(latest)))
+
+        vm.editAccount(
+            id = stale.id,
+            newLabel = "User edit",
+            newApiKey = "sk-user-edit",
+            extraSettings = mapOf("baseUrl" to "https://latest.example.com")
+        )
+
+        assertEquals("Edit must invoke the coordinator once", 1, coordinator.saveCalls.size)
+        val submitted = coordinator.saveCalls.single()
+        assertEquals(stale.id, submitted.existingId)
+        assertEquals("latest-secret", submitted.draft.extraCredentials["secretKey"])
+    }
+
+    @Test
+    fun `recreated view model subscribes again and receives the replacement account instance`() {
+        // Mutation caught: retaining an activity snapshot instead of establishing a fresh repository subscription.
+        val first = AccountInfo(
+            id = "a47a6106-3059-4db8-b15a-7655053ec388",
+            label = "First",
+            apiKey = "sk-first-instance"
+        )
+        val source = RecordingAccountUiRepository(AccountLoadState.Ready(listOf(first)))
+        createViewModel(source, RecordingMutationCoordinator())
+        val replacement = first.copy(label = "Replacement", revision = 1)
+        source.publish(AccountLoadState.Ready(listOf(replacement)))
+
+        val recreated = createViewModel(source, RecordingMutationCoordinator())
+
+        assertEquals(2, source.subscriptionCount)
+        assertEquals(first.id, recreated.uiState.value.accounts.single().id)
+        assertSame(replacement, recreated.uiState.value.accounts.single())
+        assertNotSame(first, recreated.uiState.value.accounts.single())
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -862,5 +1021,53 @@ class HomeViewModelTest {
         }
 
         override fun invalidate(accountId: String) {}
+    }
+
+    private class RecordingAccountUiRepository(
+        initial: AccountLoadState
+    ) : AccountUiRepository {
+        private val states = MutableStateFlow(initial)
+        var subscriptionCount: Int = 0
+            private set
+
+        override fun observe(): Flow<AccountLoadState> = flow {
+            subscriptionCount++
+            emitAll(states)
+        }
+
+        fun publish(state: AccountLoadState) {
+            states.value = state
+        }
+    }
+
+    private class RecordingMutationCoordinator : AccountMutationCoordinator {
+        data class SaveCall(val existingId: String?, val draft: AccountDraft)
+
+        val saveCalls = mutableListOf<SaveCall>()
+        val deleteCalls = mutableListOf<String>()
+
+        override suspend fun save(
+            existingId: String?,
+            draft: AccountDraft
+        ): AccountMutationResult {
+            saveCalls += SaveCall(existingId, draft)
+            val account = AccountInfo(
+                id = existingId ?: "4540ee0b-1cfd-4bdf-8f36-3e9d2cf504f5",
+                label = draft.label,
+                apiKey = draft.apiKey,
+                providerType = draft.providerType,
+                extraCredentials = draft.extraCredentials,
+                extraSettings = draft.extraSettings,
+                usageScript = draft.usageScript,
+                usageScriptEnabled = draft.usageScriptEnabled,
+                authorizedScriptOrigins = draft.authorizedScriptOrigins
+            )
+            return AccountMutationResult.Saved(AccountSaveResult.Created(account))
+        }
+
+        override suspend fun delete(accountId: String): AccountMutationResult {
+            deleteCalls += accountId
+            return AccountMutationResult.Deleted(accountId)
+        }
     }
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.api.balance.ScriptInspection
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.WebOrigin
@@ -16,6 +17,8 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlanner
@@ -29,6 +32,10 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -413,6 +420,82 @@ class DataManagementViewModelTest {
     }
 
     @Test
+    fun `configuration preview waits for repository flow and uses its latest accounts`() = runTest {
+        // Mutation caught: preview reading ApiKeyManager synchronously instead of the injected account Flow.
+        val accountStorage = context.getSharedPreferences("flow-preview-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val source = RecordingAccountUiRepository(AccountLoadState.Loading)
+        val planner = BackupImportPlanner(manager, prefs, ::staticInspection)
+        val viewModel = DataManagementViewModel(app, manager, prefs, planner, source)
+        val local = AccountInfo(LOCAL_ID, "Repository local", LOCAL_KEY)
+
+        assertEquals(AccountLoadState.Loading, viewModel.uiState.value.accountLoadState)
+        source.publish(AccountLoadState.Ready(listOf(local)))
+        val previewed = viewModel.previewConfiguration(
+            importConfig(false, listOf(local.copy(label = "Updated", apiKey = "")))
+        )
+
+        assertTrue(previewed)
+        assertEquals(AccountLoadState.Ready(listOf(local)), viewModel.uiState.value.accountLoadState)
+        assertEquals(1, viewModel.uiState.value.pendingImportPlan?.matchedUpdatedCount)
+        assertEquals(1, source.subscriptionCount)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `corrupt account flow blocks configuration preview and apply`() = runTest {
+        // Mutation caught: a corrupt repository state being treated as an ordinary empty/current account list.
+        val accountStorage = context.getSharedPreferences("corrupt-preview-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
+        manager.replaceAll(listOf(local))
+        val corruption = DataCorruptionException("account payload corrupt")
+        val source = RecordingAccountUiRepository(AccountLoadState.Corrupt(corruption))
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            source
+        )
+
+        val previewed = viewModel.previewConfiguration(
+            importConfig(true, listOf(local.copy(label = "Updated")))
+        )
+
+        assertFalse(previewed)
+        val loadState = viewModel.uiState.value.accountLoadState
+        assertTrue("Corruption must remain typed in DataManagementUiState", loadState is AccountLoadState.Corrupt)
+        assertSame(corruption, (loadState as AccountLoadState.Corrupt).error)
+        assertTrue(viewModel.uiState.value.importError)
+        assertNull(viewModel.uiState.value.pendingImportPlan)
+        assertFalse(viewModel.requestApplyImport())
+        assertEquals(listOf(local), manager.getAccounts())
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `recreated data management view model subscribes to account repository again`() {
+        // Mutation caught: retaining a legacy snapshot across page recreation.
+        val accountStorage = context.getSharedPreferences("recreate-preview-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val source = RecordingAccountUiRepository(
+            AccountLoadState.Ready(listOf(AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)))
+        )
+        val planner = BackupImportPlanner(manager, prefs, ::staticInspection)
+
+        DataManagementViewModel(app, manager, prefs, planner, source)
+        DataManagementViewModel(app, manager, prefs, planner, source)
+        ShadowLooper.idleMainLooper()
+
+        assertEquals(2, source.subscriptionCount)
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
     fun `selecting a configuration file creates preview statistics with zero persistence`() = runTest {
         // Mutation caught: applying accounts or settings in the file-picker callback before preview confirmation.
         val accountStorage = context.getSharedPreferences("preview-${System.nanoTime()}", Context.MODE_PRIVATE)
@@ -589,6 +672,23 @@ class DataManagementViewModelTest {
         script: UsageScript,
         account: AccountInfo
     ): ScriptInspection = ScriptInspection(null, emptySet(), staticallyDeterminable = true)
+
+    private class RecordingAccountUiRepository(
+        initial: AccountLoadState
+    ) : AccountUiRepository {
+        private val states = MutableStateFlow(initial)
+        var subscriptionCount: Int = 0
+            private set
+
+        override fun observe(): Flow<AccountLoadState> = flow {
+            subscriptionCount++
+            emitAll(states)
+        }
+
+        fun publish(state: AccountLoadState) {
+            states.value = state
+        }
+    }
 
     private companion object {
         const val LOCAL_KEY = "sk-local-secret"
