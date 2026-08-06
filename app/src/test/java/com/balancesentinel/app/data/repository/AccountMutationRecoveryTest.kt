@@ -9,10 +9,18 @@ import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.createWalletTestDatabase
+import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
+import com.balancesentinel.app.data.local.mutation.MutationOperationType
+import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -112,6 +120,43 @@ class AccountMutationRecoveryTest {
         assertEquals("old", database.accountDao().get("stable-a")?.label)
     }
 
+    @Test
+    fun `recovery resumes staged operation and marks it completed`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        val desired = CredentialPayload(listOf(account("legacy-a", "new-key")))
+        store.payload = desired
+        database.appMetadataDao().ensureSingleton(1)
+        val operationId = "recover-operation"
+        val stagedGeneration = "generation:$operationId:stable-a"
+        val manifest = RecoveryManifest(
+            accountId = "stable-a",
+            legacyStorageId = "legacy-a",
+            previousGeneration = "generation-a",
+            stagedGeneration = stagedGeneration,
+            expectedRevision = 0,
+            create = false,
+            payloadFingerprint = fingerprint(desired)
+        )
+        database.mutationOperationDao().insertPrepared(
+            MutationOperationEntity(
+                id = operationId,
+                operationType = MutationOperationType.ACCOUNT_REPLACE,
+                stage = MutationStage.CREDENTIALS_STAGED,
+                targetsJson = Json.encodeToString(listOf("stable-a")),
+                stagedGenerationManifestJson = Json.encodeToString(listOf(manifest)),
+                baselineRevision = 0,
+                createdAt = 1,
+                updatedAt = 1
+            )
+        )
+
+        coordinator.recover()
+
+        assertEquals(stagedGeneration, database.accountDao().get("stable-a")?.activeCredentialGeneration)
+        assertEquals("new-key", store.payload?.accounts?.single()?.apiKey)
+        assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get(operationId)?.stage)
+    }
+
     private suspend fun seedAccount(id: String, legacyId: String, generation: String) {
         database.accountDao().insertCreate(
             AccountEntity(
@@ -135,6 +180,24 @@ class AccountMutationRecoveryTest {
         apiKey = key,
         providerType = ProviderType.DEEPSEEK
     )
+
+    @Serializable
+    private data class RecoveryManifest(
+        val accountId: String,
+        val legacyStorageId: String?,
+        val previousGeneration: String?,
+        val stagedGeneration: String,
+        val expectedRevision: Long,
+        val create: Boolean,
+        val payloadFingerprint: String
+    )
+
+    private fun fingerprint(payload: CredentialPayload): String {
+        val json = Json { encodeDefaults = true; explicitNulls = true }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(json.encodeToString(payload).toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
 
     private class RecordingCredentialStore : CredentialStore {
         var payload: CredentialPayload? = null

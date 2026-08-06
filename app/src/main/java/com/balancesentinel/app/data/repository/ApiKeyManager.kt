@@ -82,14 +82,30 @@ class ApiKeyManager(
         existingId: String?,
         draft: AccountDraft,
         beforePersist: (AccountSaveResult) -> Unit
+    ): AccountSaveResult = saveAccountInternal(existingId, draft, true, beforePersist)
+
+    /**
+     * Compatibility path for the pre-Room synchronous lifecycle adapter.
+     * New suspend callers use [saveAccount] and retain stable account identity.
+     */
+    internal fun saveAccountLegacy(
+        existingId: String?,
+        draft: AccountDraft,
+        beforePersist: (AccountSaveResult) -> Unit
+    ): AccountSaveResult = saveAccountInternal(existingId, draft, false, beforePersist)
+
+    private fun saveAccountInternal(
+        existingId: String?,
+        draft: AccountDraft,
+        preserveIdentity: Boolean,
+        beforePersist: (AccountSaveResult) -> Unit
     ): AccountSaveResult = mutateAccounts { accounts ->
         val existingIndex = existingId?.let { id -> accounts.indexOfFirst { it.id == id } } ?: -1
         val before = accounts.getOrNull(existingIndex)
         val normalizedKey = draft.apiKey.trim()
         val newId = computeId(normalizedKey)
         val account = AccountInfo(
-            // Existing account identity is stable across credential rotation.
-            id = before?.id ?: newId,
+            id = if (preserveIdentity) before?.id ?: newId else newId,
             label = draft.label.trim(),
             apiKey = normalizedKey,
             providerType = draft.providerType,

@@ -9,6 +9,9 @@ import android.os.LocaleList
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountMutationRecovery
+import com.balancesentinel.app.data.repository.RoomAccountMutationCoordinator
+import com.balancesentinel.app.data.repository.RoomAccountMutationRecovery
 import com.balancesentinel.app.data.migration.LegacyAccountMigration
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
@@ -26,6 +29,10 @@ class DeepSeekApp : Application() {
 
     internal var legacyMigrationRunner: suspend () -> Unit = {
         legacyAccountMigration().run()
+    }
+
+    internal var accountMutationRecoveryRunner: suspend () -> Unit = {
+        roomAccountMutationRecovery().recover()
     }
 
     private val startupMigrationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -104,6 +111,7 @@ class DeepSeekApp : Application() {
         startupMigrationScope.launch {
             try {
                 legacyMigrationRunner()
+                accountMutationRecoveryRunner()
             } catch (error: DataCorruptionException) {
                 credentialCorruption = error
                 CrashLogger.breadcrumb("App", "Credential corruption blocked Room migration")
@@ -113,6 +121,14 @@ class DeepSeekApp : Application() {
             }
         }
     }
+
+    internal fun roomAccountMutationRecovery(): AccountMutationRecovery =
+        RoomAccountMutationRecovery(
+            RoomAccountMutationCoordinator(
+                WalletDatabaseProvider.get(this),
+                EncryptedPreferencesCredentialStore(this)
+            )
+        )
 
     private fun performDataMigration() {
         val apiKeyManager = ApiKeyManager(this)

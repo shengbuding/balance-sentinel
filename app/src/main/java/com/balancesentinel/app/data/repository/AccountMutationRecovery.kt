@@ -10,3 +10,10 @@ class NoOpAccountMutationRecovery : AccountMutationRecovery {
     override suspend fun recover(): AccountMutationResult.Recovered =
         AccountMutationResult.Recovered(emptyList())
 }
+
+/** Startup adapter for the Room-backed coordinator. */
+class RoomAccountMutationRecovery(
+    private val coordinator: RoomAccountMutationCoordinator
+) : AccountMutationRecovery {
+    override suspend fun recover(): AccountMutationResult.Recovered = coordinator.recover()
+}

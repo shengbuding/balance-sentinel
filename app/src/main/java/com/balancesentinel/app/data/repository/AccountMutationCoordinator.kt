@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.repository
 
 import com.balancesentinel.app.data.model.AccountDraft
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Single entry point for account mutations. Implementations must publish a
@@ -23,10 +25,12 @@ class LegacyAccountMutationCoordinatorAdapter(
     override suspend fun save(
         existingId: String?,
         draft: AccountDraft
-    ): AccountMutationResult = AccountMutationResult.Saved(lifecycleManager.save(existingId, draft))
+    ): AccountMutationResult = withContext(Dispatchers.IO) {
+        AccountMutationResult.Saved(lifecycleManager.save(existingId, draft))
+    }
 
-    override suspend fun delete(accountId: String): AccountMutationResult {
+    override suspend fun delete(accountId: String): AccountMutationResult = withContext(Dispatchers.IO) {
         lifecycleManager.delete(accountId)
-        return AccountMutationResult.Deleted(accountId)
+        AccountMutationResult.Deleted(accountId)
     }
 }
