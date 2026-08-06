@@ -94,3 +94,54 @@ Results:
 
 - `CredentialStore` remains the existing payload-level API rather than a keyed multi-generation store. The operation manifest owns deterministic per-account generation references, while readback validation proves the staged encrypted payload as a whole. Later account mutation work may introduce physical per-generation credential slots.
 - Migration intentionally retains legacy JSON, does not migrate history, and does not declare global CLEANED, per Task 3 scope.
+
+## Fix Round 2
+
+### Commits
+
+- RED: `179832a` (`test: expose order independent migration mapping gaps`)
+- GREEN: `e4d708a` (`fix: reuse legacy mappings across migration reshapes`)
+
+### RED evidence
+
+Command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyAccountMigrationTest" --tests "com.balancesentinel.app.data.repository.AccountRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Compilation succeeded. The suite ran 11 tests; the three new behavior tests failed with `SQLiteConstraintException` from the unique `accounts.legacy_storage_id` index:
+
+- Multi-account API-key rotation changed the legacy JSON order and created a new operation/random mapping.
+- Explicit legacy list reorder created a new operation/random mapping.
+- Adding an account created a new operation whose old account received a new random mapping.
+
+These failures came through the existing `ApiKeyManager` reader and real in-memory Room, not missing classes or fixtures.
+
+### GREEN evidence
+
+Commands:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyAccountMigrationTest" --tests "com.balancesentinel.app.data.repository.AccountRepositoryTest" --rerun-tasks --no-parallel
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+git diff --check
+```
+
+Results:
+
+- Focused suite: 11 tests, 0 failures, 0 errors, 0 skipped.
+- Debug Kotlin compilation: successful.
+- `git diff --check`: clean.
+- Room schema/export: unchanged.
+
+### Resolution
+
+- Operation identity now uses a canonical sorted set of trimmed legacy storage IDs, so API-key rotation and list reorder reuse the same operation/manifest.
+- When creating a new operation, existing Room rows are indexed by `legacyStorageId`; their independent `accountId` and `activeCredentialGeneration` are reused before generating IDs for genuinely new legacy accounts.
+- Recovery maps the persisted manifest by `legacyStorageId` into the current payload order before writing, preventing positional mismatches after reorder.
+- Adding an account creates only the new mapping while retaining every prior mapping; all rows remain unique and VERIFIED.
+
+### Remaining risk
+
+The operation ID intentionally changes when the legacy account set changes (for example, adding an account), while the mapping reuse path preserves all existing account identities and generations. The existing payload-level CredentialStore limitation remains as documented in Round 1.
