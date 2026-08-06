@@ -20,6 +20,10 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 class DeepSeekApp : Application() {
 
+    internal var legacyMigrationRunner: suspend () -> Unit = {
+        legacyAccountMigration().run()
+    }
+
     lateinit var refreshGateway: RefreshGateway
         private set
 
