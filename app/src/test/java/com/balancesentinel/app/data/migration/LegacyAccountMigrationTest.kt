@@ -10,8 +10,10 @@ import com.balancesentinel.app.data.credentials.CredentialStore
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -39,8 +41,8 @@ class LegacyAccountMigrationTest {
                     com.balancesentinel.app.data.credentials.CredentialGeneration.LEGACY
                 )
             }
-            val first = LegacyAccountMigration(database, reader, null).run()
-            val second = LegacyAccountMigration(database, reader, null).run()
+            val first = LegacyAccountMigration(database, reader, RecordingCredentialStore()).run()
+            val second = LegacyAccountMigration(database, reader, RecordingCredentialStore()).run()
             assertEquals(first.mappings.single().accountId, second.mappings.single().accountId)
             assertEquals(1, database.accountDao().getAllForMigration().size)
             val row = database.accountDao().get(first.mappings.single().accountId)
@@ -51,9 +53,89 @@ class LegacyAccountMigrationTest {
         }
     }
 
-    private class NoopCredentialStore : CredentialStore {
-        override fun read(): CredentialReadResult = CredentialReadResult.Missing
-        override suspend fun write(payload: CredentialPayload) = Unit
+    @Test
+    fun migrationRequiresCredentialStore() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val reader = validReader(AccountInfo("legacy-id", "Legacy", "key"))
+            val failure = runCatching {
+                LegacyAccountMigration(database, reader, null).run()
+            }.exceptionOrNull()
+            assertTrue("Missing credential store must fail before Room writes", failure is IllegalArgumentException)
+            assertTrue(database.accountDao().getAllForMigration().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun operationManifestExistsBeforeCredentialStaging() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val reader = validReader(AccountInfo("legacy-id", "Legacy", "key"))
+            val store = RecordingCredentialStore(database)
+            LegacyAccountMigration(database, reader, store).run()
+            assertTrue(store.operationSeenBeforeWrite)
+            assertTrue(store.manifestSeenBeforeWrite)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun verificationCrashLeavesAccountHiddenAndOperationWrittenStage() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val reader = validReader(AccountInfo("legacy-id", "Legacy", "key"))
+            val failure = runCatching {
+                LegacyAccountMigration(
+                    database,
+                    reader,
+                    RecordingCredentialStore(),
+                    onStage = { stage ->
+                        if (stage == LegacyAccountMigrationStage.VERIFIED) error("injected verification crash")
+                    }
+                ).run()
+            }.exceptionOrNull()
+            assertNotNull(failure)
+            assertTrue(database.accountDao().observeVerified().first().isEmpty())
+            assertTrue(database.mutationOperationDao().listRecoverable().isNotEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun validReader(account: AccountInfo): LegacyAccountReader =
+        LegacyAccountReader {
+            CredentialReadResult.Valid(
+                CredentialPayload(listOf(account)),
+                com.balancesentinel.app.data.credentials.CredentialGeneration.LEGACY
+            )
+        }
+
+    private class RecordingCredentialStore(
+        private val database: WalletDatabase? = null
+    ) : CredentialStore {
+        var operationSeenBeforeWrite = false
+        var manifestSeenBeforeWrite = false
+        private var payload: CredentialPayload? = null
+
+        override fun read(): CredentialReadResult = payload?.let {
+            CredentialReadResult.Valid(it, com.balancesentinel.app.data.credentials.CredentialGeneration.ENCRYPTED_PREFERENCES)
+        } ?: CredentialReadResult.Missing
+
+        override suspend fun write(payload: CredentialPayload) {
+            this.payload = payload
+            database?.let {
+                val operation = it.mutationOperationDao().listRecoverable().firstOrNull()
+                operationSeenBeforeWrite = operation != null
+                manifestSeenBeforeWrite = operation?.stagedGenerationManifestJson?.contains("legacy:") == true
+            }
+        }
+
         override suspend fun clear() = Unit
     }
 }
