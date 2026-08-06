@@ -20,6 +20,7 @@ import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -38,6 +39,7 @@ import kotlin.math.roundToInt
  * [dailyOutput] 来自 DailyEngine（长期日历天视图）。
  */
 data class InsightsUiState(
+    val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     val isLoading: Boolean = false,
     val accounts: List<AccountInfo> = emptyList(),
     val selectedAccountId: String? = null,

@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlan
@@ -35,6 +36,7 @@ import kotlinx.coroutines.withContext
 // ═══════════════════════════════════════════════════════════
 
 data class DataManagementUiState(
+    val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     // 存储统计
     val rawRecordCount: Int = 0,
     val rawRecordDistinctDates: Int = 0,

@@ -23,6 +23,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
+import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
@@ -48,6 +49,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
+    val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     val accounts: List<AccountInfo> = emptyList(),
     val accountBalances: Map<String, BalanceResponse?> = emptyMap(),
     val isLoading: Boolean = false,
