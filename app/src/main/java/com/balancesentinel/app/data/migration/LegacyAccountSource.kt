@@ -15,7 +15,8 @@ class LegacyAccountSource(
         encodeDefaults = true
         explicitNulls = true
     }
-) {
+) : LegacyAccountReader {
+    override
     fun read(): CredentialReadResult = try {
         val raw = prefs.getString(KEY_ACCOUNTS, null) ?: return CredentialReadResult.Missing
         val payload = CredentialPayload(json.decodeFromString<List<AccountInfo>>(raw))

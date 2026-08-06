@@ -88,7 +88,8 @@ class ApiKeyManager(
         val normalizedKey = draft.apiKey.trim()
         val newId = computeId(normalizedKey)
         val account = AccountInfo(
-            id = if (before != null && before.id == newId) before.id else newId,
+            // Existing account identity is stable across credential rotation.
+            id = before?.id ?: newId,
             label = draft.label.trim(),
             apiKey = normalizedKey,
             providerType = draft.providerType,

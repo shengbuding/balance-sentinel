@@ -83,8 +83,8 @@ class DeepSeekApp : Application() {
 
     /** Construction seam for the resumable Room account migration. Not invoked yet. */
     internal fun legacyAccountMigration(): LegacyAccountMigration = LegacyAccountMigration(
-        database = WalletDatabaseProvider.get(this),
-        source = ApiKeyManager(this).legacyAccountReader()
+        WalletDatabaseProvider.get(this),
+        ApiKeyManager(this).legacyAccountReader()
     )
 
     private fun performDataMigration() {

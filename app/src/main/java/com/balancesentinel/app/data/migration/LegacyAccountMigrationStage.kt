@@ -10,5 +10,11 @@ enum class LegacyAccountMigrationStage {
     VERIFIED,
     ACTIVE,
     CLEANED,
-    FAILED
+    FAILED;
+
+    companion object {
+        fun fromStorage(value: String): LegacyAccountMigrationStage =
+            entries.firstOrNull { it.name == value }
+                ?: throw IllegalArgumentException("Unknown legacy migration stage: $value")
+    }
 }
