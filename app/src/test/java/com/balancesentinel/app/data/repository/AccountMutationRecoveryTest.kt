@@ -300,6 +300,43 @@ class AccountMutationRecoveryTest {
         assertEquals("old", database.accountDao().get("stable-a")?.label)
     }
 
+    @Test
+    fun `rollback write mismatch leaves a durable retry signal`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        store.payload = CredentialPayload(listOf(account("legacy-a", "old-key")))
+        var operationId: String? = null
+        store.beforeWrite = {
+            if (operationId == null) {
+                operationId = database.mutationOperationDao().listRecoverable().single().id
+            }
+        }
+        var writeIndex = 0
+        store.afterWrite = {
+            if (writeIndex++ == 0) {
+                database.execSql("UPDATE accounts SET revision = 7 WHERE id = 'stable-a'")
+                store.afterWrite = {
+                    store.payload = CredentialPayload(listOf(account("legacy-a", "wrong-key")))
+                }
+            }
+        }
+
+        val failure = runCatching {
+            coordinator.save("stable-a", AccountDraft("Updated", "new-key", ProviderType.DEEPSEEK))
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        val operation = requireNotNull(database.mutationOperationDao().get(requireNotNull(operationId)))
+        assertEquals(MutationStage.PREPARED, operation.stage)
+        assertEquals("ROLLBACK_PENDING", operation.errorCode)
+
+        store.afterWrite = null
+        coordinator.recover()
+
+        assertEquals(MutationStage.FAILED, database.mutationOperationDao().get(operation.id)?.stage)
+        assertEquals("old-key", store.payload?.accounts?.single()?.apiKey)
+        assertEquals("old", database.accountDao().get("stable-a")?.label)
+    }
+
     private suspend fun seedAccount(id: String, legacyId: String, generation: String) {
         database.accountDao().insertCreate(
             AccountEntity(
