@@ -32,6 +32,18 @@ interface RefreshRunDao {
             attempt_count = :attemptCount,
             completed_at = :completedAt
         WHERE run_id = :runId AND account_id = :accountId AND state = 'RUNNING'
+          AND (
+            :state = 'ACCOUNT_STALE'
+            OR EXISTS (
+                SELECT 1 FROM accounts
+                WHERE accounts.id = :accountId
+                  AND accounts.revision = (
+                      SELECT account_revision FROM refresh_account_results
+                      WHERE refresh_account_results.run_id = :runId
+                        AND refresh_account_results.account_id = :accountId
+                  )
+            )
+          )
         """
     )
     suspend fun completeAccountAtomically(
@@ -51,20 +63,32 @@ interface RefreshRunDao {
     @Query(
         """
         UPDATE refresh_runs SET
-            state = :state,
+            state = (
+                SELECT CASE
+                    WHEN SUM(CASE WHEN state = 'SUCCEEDED' THEN 1 ELSE 0 END) = COUNT(*)
+                        THEN 'SUCCEEDED'
+                    WHEN SUM(CASE WHEN state = 'CANCELLED' THEN 1 ELSE 0 END) = COUNT(*)
+                        THEN 'CANCELLED'
+                    WHEN SUM(CASE WHEN state = 'SUCCEEDED' THEN 1 ELSE 0 END) > 0
+                        THEN 'PARTIAL'
+                    ELSE 'FAILED'
+                END
+                FROM refresh_account_results WHERE run_id = :runId
+            ),
             completed_at = :completedAt,
             account_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId),
             success_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state = 'SUCCEEDED'),
             failure_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state NOT IN ('RUNNING', 'SUCCEEDED', 'CANCELLED')),
             cancelled_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state = 'CANCELLED')
         WHERE id = :runId
+          AND EXISTS (SELECT 1 FROM refresh_account_results WHERE run_id = :runId)
+          AND NOT EXISTS (
+              SELECT 1 FROM refresh_account_results
+              WHERE run_id = :runId AND state = 'RUNNING'
+          )
         """
     )
-    suspend fun deriveAndUpdateAggregate(
-        runId: String,
-        state: RefreshRunState,
-        completedAt: Long
-    ): Int
+    suspend fun deriveAndUpdateAggregate(runId: String, completedAt: Long): Int
 
     @Query(
         """

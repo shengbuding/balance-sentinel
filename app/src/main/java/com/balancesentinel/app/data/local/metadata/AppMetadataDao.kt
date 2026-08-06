@@ -6,12 +6,15 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
-interface AppMetadataDao {
+abstract class AppMetadataDao {
     @Query("SELECT * FROM app_metadata WHERE id = 0")
-    suspend fun get(): AppMetadataEntity?
+    abstract suspend fun get(): AppMetadataEntity?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun ensureSingleton(metadata: AppMetadataEntity): Long
+    protected abstract suspend fun insertSingletonRow(metadata: AppMetadataEntity): Long
+
+    suspend fun ensureSingleton(updatedAt: Long): Long =
+        insertSingletonRow(AppMetadataEntity(updatedAt = updatedAt))
 
     @Query(
         """
@@ -21,7 +24,7 @@ interface AppMetadataDao {
         WHERE id = 0 AND local_revision = :expectedRevision
         """
     )
-    suspend fun incrementRevisionIfCurrent(expectedRevision: Long, updatedAt: Long): Int
+    abstract suspend fun incrementRevisionIfCurrent(expectedRevision: Long, updatedAt: Long): Int
 
     @Query(
         """
@@ -36,7 +39,7 @@ interface AppMetadataDao {
           AND legacy_migration_stage = :expectedLegacyMigrationStage
         """
     )
-    suspend fun advanceMetadataAndRevisionIfCurrent(
+    abstract suspend fun advanceMetadataAndRevisionIfCurrent(
         expectedRevision: Long,
         expectedActiveDataGeneration: String,
         expectedLegacyMigrationStage: LegacyMigrationStage,

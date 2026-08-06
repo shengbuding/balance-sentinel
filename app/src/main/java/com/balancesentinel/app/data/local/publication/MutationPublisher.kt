@@ -6,7 +6,6 @@ import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.mutation.MutationStage
-import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 
 class MutationPublisher internal constructor(
     private val database: WalletDatabase,
@@ -94,20 +93,17 @@ class MutationPublisher internal constructor(
         when (val write = input.settings.appSettings) {
             AppSettingsWrite.Unchanged -> Unit
             is AppSettingsWrite.ReplaceAll -> database.appSettingsDao().upsert(
-                AppSettingsEntity(
-                    id = 0,
-                    backgroundRefreshIntervalSeconds = write.value.backgroundRefreshIntervalSeconds,
-                    foregroundMonitoringIntervalSeconds = write.value.foregroundMonitoringIntervalSeconds,
-                    alertEnabled = write.value.alertEnabled,
-                    alertThreshold = write.value.alertThreshold,
-                    changeAlertEnabled = write.value.changeAlertEnabled,
-                    changeAlertThreshold = write.value.changeAlertThreshold,
-                    changeAlertPeriodMinutes = write.value.changeAlertPeriodMinutes,
-                    logMaxEntries = write.value.logMaxEntries,
-                    snoozeDurationMinutes = write.value.snoozeDurationMinutes,
-                    showTotalBalanceInNotification = write.value.showTotalBalanceInNotification,
-                    updatedAt = input.publishedAt
-                )
+                backgroundRefreshIntervalSeconds = write.value.backgroundRefreshIntervalSeconds,
+                foregroundMonitoringIntervalSeconds = write.value.foregroundMonitoringIntervalSeconds,
+                alertEnabled = write.value.alertEnabled,
+                alertThreshold = write.value.alertThreshold,
+                changeAlertEnabled = write.value.changeAlertEnabled,
+                changeAlertThreshold = write.value.changeAlertThreshold,
+                changeAlertPeriodMinutes = write.value.changeAlertPeriodMinutes,
+                logMaxEntries = write.value.logMaxEntries,
+                snoozeDurationMinutes = write.value.snoozeDurationMinutes,
+                showTotalBalanceInNotification = write.value.showTotalBalanceInNotification,
+                updatedAt = input.publishedAt
             )
         }
         when (val write = input.settings.accountAlertSettings) {

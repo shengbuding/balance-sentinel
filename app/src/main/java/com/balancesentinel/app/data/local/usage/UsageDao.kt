@@ -31,13 +31,22 @@ interface UsageDao {
         """
         SELECT * FROM usage_snapshots
         WHERE account_id = :accountId AND captured_at >= :fromInclusive
+          AND captured_at < :toExclusive
+          AND (
+            :afterCapturedAt IS NULL
+            OR captured_at > :afterCapturedAt
+            OR (captured_at = :afterCapturedAt AND id > :afterId)
+          )
         ORDER BY captured_at, id LIMIT :limit
         """
     )
     suspend fun rangePage(
         accountId: String,
         fromInclusive: Long,
-        limit: Int
+        limit: Int,
+        toExclusive: Long = Long.MAX_VALUE,
+        afterCapturedAt: Long? = null,
+        afterId: String? = null
     ): List<UsageSnapshotEntity>
 
     @Query(
@@ -45,8 +54,11 @@ interface UsageDao {
         SELECT * FROM usage_snapshots
         WHERE account_id = :accountId
           AND captured_at >= :fromInclusive AND captured_at < :toExclusive
-          AND (:afterCapturedAt IS NULL OR :afterCapturedAt IS NOT NULL)
-          AND (:afterId IS NULL OR :afterId IS NOT NULL)
+          AND (
+            :afterCapturedAt IS NULL
+            OR captured_at > :afterCapturedAt
+            OR (captured_at = :afterCapturedAt AND id > :afterId)
+          )
         ORDER BY captured_at, id LIMIT :limit
         """
     )

@@ -4,7 +4,7 @@ import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.createWalletTestDatabase
-import com.balancesentinel.app.data.local.metadata.AppMetadataEntity
+import com.balancesentinel.app.data.local.execSql
 import com.balancesentinel.app.data.local.metadata.LegacyMigrationStage
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
@@ -99,7 +99,7 @@ class MutationPublisherTest {
         seedMetadata()
         seedOperation("settings", baselineRevision = 0)
         database.accountDao().insertCreate(testAccount("settings-account"))
-        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        upsertAppSettings(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
         database.settingsDao().replaceAccountAlertSettings(
             listOf(AccountAlertSettingEntity("settings-account", "OLD", true, false))
         )
@@ -170,7 +170,7 @@ class MutationPublisherTest {
         seedMetadata()
         seedOperation("mixed-settings", baselineRevision = 0)
         database.accountDao().insertCreate(testAccount("mixed-account"))
-        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        upsertAppSettings(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
         database.settingsDao().replaceAccountAlertSettings(
             listOf(AccountAlertSettingEntity("mixed-account", "OLD", true, false))
         )
@@ -212,7 +212,7 @@ class MutationPublisherTest {
         seedMetadata()
         seedOperation("settings-fault", baselineRevision = 0)
         database.accountDao().insertCreate(testAccount("settings-fault-account"))
-        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        upsertAppSettings(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
         database.settingsDao().replaceAccountAlertSettings(
             listOf(AccountAlertSettingEntity("settings-fault-account", "OLD", true, false))
         )
@@ -323,7 +323,7 @@ class MutationPublisherTest {
     fun `stale metadata CAS rolls back account settings revision and operation writes`() = runTest {
         seedMetadata(generation = "current", stage = LegacyMigrationStage.DISCOVERED)
         seedOperation("metadata-conflict", baselineRevision = 0)
-        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        upsertAppSettings(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
 
         expectPublicationConflict {
             MutationPublisher(database).publish(
@@ -360,7 +360,7 @@ class MutationPublisherTest {
     @Test
     fun `failure after every durable publication step rolls back the real Room transaction`() = runTest {
         seedMetadata()
-        database.appSettingsDao().upsert(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
+        upsertAppSettings(AppSettingsEntity(alertEnabled = false, updatedAt = 1))
 
         listOf(
             TransactionStep.AFTER_ACCOUNT_ROWS,
@@ -411,13 +411,26 @@ class MutationPublisherTest {
         generation: String = "LEGACY",
         stage: LegacyMigrationStage = LegacyMigrationStage.NONE
     ) {
-        database.appMetadataDao().ensureSingleton(
-            AppMetadataEntity(
-                localRevision = revision,
-                activeDataGeneration = generation,
-                legacyMigrationStage = stage,
-                updatedAt = 1
-            )
+        database.execSql(
+            "INSERT INTO app_metadata " +
+                "(id, local_revision, active_data_generation, legacy_migration_stage, updated_at) " +
+                "VALUES (0, $revision, '$generation', '${stage.name}', 1)"
+        )
+    }
+
+    private suspend fun upsertAppSettings(settings: AppSettingsEntity) {
+        database.appSettingsDao().upsert(
+            backgroundRefreshIntervalSeconds = settings.backgroundRefreshIntervalSeconds,
+            foregroundMonitoringIntervalSeconds = settings.foregroundMonitoringIntervalSeconds,
+            alertEnabled = settings.alertEnabled,
+            alertThreshold = settings.alertThreshold,
+            changeAlertEnabled = settings.changeAlertEnabled,
+            changeAlertThreshold = settings.changeAlertThreshold,
+            changeAlertPeriodMinutes = settings.changeAlertPeriodMinutes,
+            logMaxEntries = settings.logMaxEntries,
+            snoozeDurationMinutes = settings.snoozeDurationMinutes,
+            showTotalBalanceInNotification = settings.showTotalBalanceInNotification,
+            updatedAt = settings.updatedAt
         )
     }
 

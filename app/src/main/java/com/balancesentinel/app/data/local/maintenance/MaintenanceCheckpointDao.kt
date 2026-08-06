@@ -6,15 +6,15 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
-interface MaintenanceCheckpointDao {
+abstract class MaintenanceCheckpointDao {
     @Query("SELECT * FROM maintenance_checkpoint WHERE id = 0")
-    suspend fun get(): MaintenanceCheckpointEntity?
+    abstract suspend fun get(): MaintenanceCheckpointEntity?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfMissing(checkpoint: MaintenanceCheckpointEntity): Long
+    protected abstract suspend fun insertSingletonRow(checkpoint: MaintenanceCheckpointEntity): Long
 
-    suspend fun getOrCreate(defaultValue: MaintenanceCheckpointEntity): MaintenanceCheckpointEntity {
-        insertIfMissing(defaultValue)
+    suspend fun getOrCreate(zoneId: String = "UTC"): MaintenanceCheckpointEntity {
+        insertSingletonRow(MaintenanceCheckpointEntity(zoneId = zoneId))
         return requireNotNull(get())
     }
 
@@ -27,5 +27,5 @@ interface MaintenanceCheckpointDao {
         WHERE id = 0
         """
     )
-    suspend fun advanceAfterCompleteDate(date: String, zoneId: String, successAt: Long): Int
+    abstract suspend fun advanceAfterCompleteDate(date: String, zoneId: String, successAt: Long): Int
 }

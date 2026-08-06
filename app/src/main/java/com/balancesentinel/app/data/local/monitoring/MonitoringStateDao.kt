@@ -7,23 +7,23 @@ import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface MonitoringStateDao {
+abstract class MonitoringStateDao {
     @Query("SELECT * FROM monitoring_state WHERE id = 0")
-    suspend fun get(): MonitoringStateEntity?
+    abstract suspend fun get(): MonitoringStateEntity?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfMissing(state: MonitoringStateEntity): Long
+    protected abstract suspend fun insertSingletonRow(state: MonitoringStateEntity): Long
 
-    suspend fun getOrCreate(defaultValue: MonitoringStateEntity): MonitoringStateEntity {
-        insertIfMissing(defaultValue)
+    suspend fun getOrCreate(updatedAt: Long): MonitoringStateEntity {
+        insertSingletonRow(MonitoringStateEntity(updatedAt = updatedAt))
         return requireNotNull(get())
     }
 
     @Query("SELECT * FROM monitoring_state WHERE id = 0")
-    fun observe(): Flow<MonitoringStateEntity?>
+    abstract fun observe(): Flow<MonitoringStateEntity?>
 
     @Query("UPDATE monitoring_state SET desired = :desired, updated_at = :updatedAt WHERE id = 0")
-    suspend fun setDesired(desired: Boolean, updatedAt: Long): Int
+    abstract suspend fun setDesired(desired: Boolean, updatedAt: Long): Int
 
     @Query(
         """
@@ -35,7 +35,7 @@ interface MonitoringStateDao {
         WHERE id = 0
         """
     )
-    suspend fun renewLease(
+    abstract suspend fun renewLease(
         processSessionId: String,
         leaseExpiresAt: Long,
         updatedAt: Long
@@ -53,7 +53,7 @@ interface MonitoringStateDao {
         WHERE id = 0
         """
     )
-    suspend fun projectSessionStart(
+    abstract suspend fun projectSessionStart(
         monitoringSessionId: String,
         processSessionId: String,
         startedAt: Long
@@ -71,7 +71,7 @@ interface MonitoringStateDao {
         WHERE id = 0 AND current_monitoring_session_id = :monitoringSessionId
         """
     )
-    suspend fun projectSessionEnd(
+    abstract suspend fun projectSessionEnd(
         monitoringSessionId: String,
         endedAt: Long,
         observedState: MonitoringObservedState,

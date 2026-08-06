@@ -12,20 +12,14 @@ import com.balancesentinel.app.data.local.log.EventLogType
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
-import com.balancesentinel.app.data.local.metadata.AppMetadataEntity
-import com.balancesentinel.app.data.local.metadata.LegacyMigrationStage
-import com.balancesentinel.app.data.local.maintenance.MaintenanceCheckpointEntity
-import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
 import com.balancesentinel.app.data.local.queryLong
 import com.balancesentinel.app.data.local.refresh.RefreshAccountResultEntity
 import com.balancesentinel.app.data.local.refresh.RefreshAccountResultState
 import com.balancesentinel.app.data.local.refresh.RefreshErrorCategory
 import com.balancesentinel.app.data.local.refresh.RefreshRunEntity
 import com.balancesentinel.app.data.local.refresh.RefreshRunSource
-import com.balancesentinel.app.data.local.refresh.RefreshRunState
 import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
 import com.balancesentinel.app.data.local.settings.AlertRuntimeStateEntity
-import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.local.testAccount
@@ -325,8 +319,14 @@ class AccountDaoTest {
         )
         assertEquals(4, database.historyDao().range(accountId, "USD", 0, 101).size)
 
-        database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-100-a", accountId, 100), emptyList())
-        database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-100-b", accountId, 100), emptyList())
+        database.usageDao().upsertSnapshotWithRecords(
+            UsageSnapshotEntity("usage-100-a", accountId, 100, identityDiscriminator = "a"),
+            emptyList()
+        )
+        database.usageDao().upsertSnapshotWithRecords(
+            UsageSnapshotEntity("usage-100-b", accountId, 100, identityDiscriminator = "b"),
+            emptyList()
+        )
         database.usageDao().upsertSnapshotWithRecords(UsageSnapshotEntity("usage-090", accountId, 90), emptyList())
         val firstUsage = database.usageDao().keysetPage(accountId, 0, 101, null, null, 2)
         val lastUsage = firstUsage.last()
@@ -338,8 +338,8 @@ class AccountDaoTest {
             lastUsage.id,
             2
         )
-        assertEquals(listOf("usage-100-a", "usage-100-b"), firstUsage.map { it.id })
-        assertEquals(listOf("usage-090"), secondUsage.map { it.id })
+        assertEquals(listOf("usage-090", "usage-100-a"), firstUsage.map { it.id })
+        assertEquals(listOf("usage-100-b"), secondUsage.map { it.id })
         assertEquals(3L, database.usageDao().countRange(accountId, 0, 101))
         assertEquals(3, database.usageDao().range(accountId, 0, 101).size)
 
@@ -396,7 +396,6 @@ class AccountDaoTest {
             0,
             database.refreshRunDao().deriveAndUpdateAggregate(
                 runId = "premature-run",
-                state = RefreshRunState.SUCCEEDED,
                 completedAt = 4
             )
         )
@@ -404,23 +403,10 @@ class AccountDaoTest {
 
     @Test
     fun `singleton DAOs never create a nonzero identity`() = runTest {
-        assertEquals(
-            0L,
-            database.appMetadataDao().ensureSingleton(
-                AppMetadataEntity(id = 42, legacyMigrationStage = LegacyMigrationStage.NONE, updatedAt = 1)
-            )
-        )
-        assertEquals(0L, database.appSettingsDao().ensureSingleton(AppSettingsEntity(id = 42, updatedAt = 1)))
-        assertEquals(
-            0,
-            database.maintenanceCheckpointDao().getOrCreate(
-                MaintenanceCheckpointEntity(id = 42, lastSuccessAt = 1)
-            ).id
-        )
-        assertEquals(
-            0,
-            database.monitoringStateDao().getOrCreate(MonitoringStateEntity(id = 42, updatedAt = 1)).id
-        )
+        database.appMetadataDao().ensureSingleton(1)
+        database.appSettingsDao().ensureSingleton(1)
+        assertEquals(0, database.maintenanceCheckpointDao().getOrCreate("UTC").id)
+        assertEquals(0, database.monitoringStateDao().getOrCreate(1).id)
         assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM app_metadata"))
         assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM app_settings"))
         assertEquals(1L, database.queryLong("SELECT COUNT(*) FROM maintenance_checkpoint"))

@@ -26,6 +26,11 @@ interface HistoryDao {
         SELECT * FROM balance_records
         WHERE account_id = :accountId AND currency = :currency
           AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive
+          AND (
+            :afterRecordedAt IS NULL
+            OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId)
+          )
         ORDER BY recorded_at DESC, id DESC
         LIMIT :limit
         """
@@ -35,7 +40,9 @@ interface HistoryDao {
         currency: String,
         fromInclusive: Long,
         toExclusive: Long,
-        limit: Int
+        limit: Int,
+        afterRecordedAt: Long? = null,
+        afterId: Long? = null
     ): List<BalanceRecordEntity>
 
     @Query(
@@ -43,8 +50,11 @@ interface HistoryDao {
         SELECT * FROM balance_records
         WHERE account_id = :accountId AND currency = :currency
           AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive
-          AND (:afterRecordedAt IS NULL OR :afterRecordedAt IS NOT NULL)
-          AND (:afterId IS NULL OR :afterId IS NOT NULL)
+          AND (
+            :afterRecordedAt IS NULL
+            OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId)
+          )
         ORDER BY recorded_at DESC, id DESC
         LIMIT :limit
         """

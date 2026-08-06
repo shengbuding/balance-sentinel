@@ -7,7 +7,6 @@ import com.balancesentinel.app.data.local.log.EventLogType
 import com.balancesentinel.app.data.local.metadata.LegacyMigrationStage
 import com.balancesentinel.app.data.local.monitoring.MonitoringObservedState
 import com.balancesentinel.app.data.local.monitoring.MonitoringSessionEndReason
-import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.local.refresh.RefreshAccountResultState
@@ -345,7 +344,7 @@ class DatabaseConvertersTest {
                 "VALUES (0, 'NOT_AN_OBSERVED_STATE', 1)"
         )
         assertDaoLiteralFailure {
-            database.monitoringStateDao().getOrCreate(MonitoringStateEntity(updatedAt = 1))
+            database.monitoringStateDao().getOrCreate(1)
         }
 
         database.execSql(
