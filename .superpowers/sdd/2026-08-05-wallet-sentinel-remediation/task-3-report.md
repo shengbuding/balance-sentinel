@@ -5,6 +5,7 @@
 - Support: `1117d4e` (`feat: add account migration support seams`)
 - RED: `8dedf94` (`test: add task3 stable account identity red`)
 - GREEN: `5e7866c` (`feat: migrate legacy accounts to stable Room identities`)
+- GREEN seam: `2485596` (`feat: wire encrypted credential store into migration seam`)
 
 ## RED
 
