@@ -142,4 +142,16 @@ class DeepSeekAppTest {
 
         assertTrue("DeepSeekApp startup must launch the Room account migration", invoked.await(2, TimeUnit.SECONDS))
     }
+
+    @Test
+    fun `startup invokes account mutation recovery after migration`() {
+        val app = context as DeepSeekApp
+        val invoked = CountDownLatch(1)
+        app.legacyMigrationRunner = { }
+        app.accountMutationRecoveryRunner = { invoked.countDown() }
+
+        app.onCreate()
+
+        assertTrue("DeepSeekApp startup must launch account mutation recovery", invoked.await(2, TimeUnit.SECONDS))
+    }
 }

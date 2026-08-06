@@ -16,6 +16,9 @@ import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -157,6 +160,117 @@ class AccountMutationRecoveryTest {
         assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get(operationId)?.stage)
     }
 
+    @Test
+    fun `recovery ignores unrelated operations and isolates a corrupt account operation`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        val desired = CredentialPayload(listOf(account("legacy-a", "new-key")))
+        store.payload = desired
+        database.appMetadataDao().ensureSingleton(1)
+        insertStagedOperation("valid-account", desired)
+        database.mutationOperationDao().insertPrepared(
+            MutationOperationEntity(
+                id = "bad-account",
+                operationType = MutationOperationType.ACCOUNT_REPLACE,
+                stage = MutationStage.CREDENTIALS_STAGED,
+                stagedGenerationManifestJson = "not-json",
+                baselineRevision = 0,
+                createdAt = 1,
+                updatedAt = 1
+            )
+        )
+        database.mutationOperationDao().insertPrepared(
+            MutationOperationEntity(
+                id = "legacy-migration",
+                operationType = MutationOperationType.LEGACY_ACCOUNT_MIGRATION,
+                stage = MutationStage.VERIFIED,
+                stagedGenerationManifestJson = "not-json",
+                baselineRevision = 0,
+                createdAt = 1,
+                updatedAt = 1
+            )
+        )
+
+        coordinator.recover()
+
+        assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get("valid-account")?.stage)
+        assertEquals(MutationStage.CREDENTIALS_STAGED, database.mutationOperationDao().get("bad-account")?.stage)
+        assertEquals(MutationStage.VERIFIED, database.mutationOperationDao().get("legacy-migration")?.stage)
+    }
+
+    @Test
+    fun `prepared operation after process death is recovered from staged payload`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        store.payload = CredentialPayload(listOf(account("legacy-a", "old-key")))
+        store.afterWrite = { throw SimulatedProcessDeath() }
+
+        val failure = runCatching {
+            coordinator.save("stable-a", AccountDraft("Updated", "new-key", ProviderType.DEEPSEEK))
+        }.exceptionOrNull()
+
+        assertTrue(failure is SimulatedProcessDeath)
+        val operationId = database.mutationOperationDao().listRecoverable().single().id
+        assertEquals(MutationStage.PREPARED, database.mutationOperationDao().get(operationId)?.stage)
+        store.afterWrite = null
+
+        coordinator.recover()
+
+        assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get(operationId)?.stage)
+        assertEquals("Updated", database.accountDao().get("stable-a")?.label)
+    }
+
+    @Test
+    fun `coordinator serializes interleaved mutations`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        store.payload = CredentialPayload(listOf(account("legacy-a", "old-key")))
+        val firstWriteEntered = CompletableDeferred<Unit>()
+        val releaseFirstWrite = CompletableDeferred<Unit>()
+        var blockFirstWrite = true
+        store.beforeWrite = {
+            if (blockFirstWrite) {
+                blockFirstWrite = false
+                firstWriteEntered.complete(Unit)
+                releaseFirstWrite.await()
+            }
+        }
+
+        val first = async {
+            coordinator.save("stable-a", AccountDraft("First", "first-key", ProviderType.DEEPSEEK))
+        }
+        firstWriteEntered.await()
+        val second = async {
+            coordinator.save("stable-a", AccountDraft("Second", "second-key", ProviderType.DEEPSEEK))
+        }
+        delay(50)
+        assertEquals(1, store.writeCount)
+        releaseFirstWrite.complete(Unit)
+        first.await()
+        second.await()
+
+        assertEquals("Second", database.accountDao().get("stable-a")?.label)
+        assertEquals("second-key", store.payload?.accounts?.single()?.apiKey)
+    }
+
+    @Test
+    fun `published cleanup failure is retried on recovery`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        store.payload = CredentialPayload(listOf(account("legacy-a", "old-key")))
+        var failCleanup = true
+        val cleanup = AccountMutationCleanup {
+            if (failCleanup) error("injected cleanup failure")
+        }
+        coordinator = RoomAccountMutationCoordinator(database, store, cleanup)
+
+        coordinator.delete("stable-a")
+        val published = database.mutationOperationDao().listRecoverable().single()
+        assertEquals(MutationStage.PUBLISHED, published.stage)
+
+        failCleanup = false
+        coordinator.recover()
+
+        assertEquals(0, database.mutationOperationDao().listRecoverable().size)
+        assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get(published.id)?.stage)
+    }
+
     private suspend fun seedAccount(id: String, legacyId: String, generation: String) {
         database.accountDao().insertCreate(
             AccountEntity(
@@ -168,6 +282,31 @@ class AccountMutationRecoveryTest {
                 revision = 0,
                 state = AccountState.VERIFIED,
                 legacyStorageId = legacyId,
+                createdAt = 1,
+                updatedAt = 1
+            )
+        )
+    }
+
+    private suspend fun insertStagedOperation(id: String, desired: CredentialPayload) {
+        val stagedGeneration = "generation:$id:stable-a"
+        val manifest = RecoveryManifest(
+            accountId = "stable-a",
+            legacyStorageId = "legacy-a",
+            previousGeneration = "generation-a",
+            stagedGeneration = stagedGeneration,
+            expectedRevision = 0,
+            create = false,
+            payloadFingerprint = fingerprint(desired)
+        )
+        database.mutationOperationDao().insertPrepared(
+            MutationOperationEntity(
+                id = id,
+                operationType = MutationOperationType.ACCOUNT_REPLACE,
+                stage = MutationStage.CREDENTIALS_STAGED,
+                targetsJson = Json.encodeToString(listOf("stable-a")),
+                stagedGenerationManifestJson = Json.encodeToString(listOf(manifest)),
+                baselineRevision = 0,
                 createdAt = 1,
                 updatedAt = 1
             )
@@ -203,6 +342,7 @@ class AccountMutationRecoveryTest {
         var payload: CredentialPayload? = null
         var readResult: CredentialReadResult? = null
         var beforeWrite: (suspend () -> Unit)? = null
+        var afterWrite: (suspend () -> Unit)? = null
         var writeCount: Int = 0
 
         override fun read(): CredentialReadResult =
@@ -217,10 +357,13 @@ class AccountMutationRecoveryTest {
             beforeWrite?.invoke()
             writeCount++
             this.payload = payload
+            afterWrite?.invoke()
         }
 
         override suspend fun clear() {
             payload = null
         }
     }
+
+    private class SimulatedProcessDeath : Error("simulated process death")
 }
