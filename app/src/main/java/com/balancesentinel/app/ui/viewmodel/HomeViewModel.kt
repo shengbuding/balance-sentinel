@@ -531,6 +531,7 @@ class HomeViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             if (readyAccount(accountId) == null) return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
 
             val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
             if (gw != null) {
@@ -587,8 +588,10 @@ class HomeViewModel @JvmOverloads constructor(
             }
 
             if (readyAccount(accountId) == null) return@launch
-            _uiState.value = _uiState.value.copy(isLoading = false)
             updateAllWidgets()
+            } finally {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
         }
     }
 
@@ -606,6 +609,7 @@ class HomeViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             if (readyAccounts() == null) return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
             val now = System.currentTimeMillis()
             val newBalances = mutableMapOf<String, BalanceResponse?>()
             var firstError: String? = null
@@ -657,13 +661,15 @@ class HomeViewModel @JvmOverloads constructor(
 
             if (readyAccounts() == null) return@launch
             _uiState.value = _uiState.value.copy(
-                isLoading = false,
                 accountBalances = newBalances,
                 lastRefreshTime = now,
                 errorMessage = firstError
             )
 
             updateAllWidgets()
+            } finally {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
         }
     }
 
