@@ -174,3 +174,72 @@ Task 6 still owns migration of the refresh gateway's internal account store,
 Service, and Widget refresh call sites. Fix Round 1 closes every Home UI entry
 before that deferred legacy layer; it does not expand Task 5 into the Task 6
 refresh architecture.
+
+## Fix Round 2
+
+### Review finding addressed
+
+The Round 1 re-review found that asynchronous refresh revalidation could return
+before the old cleanup statement. If an account disappeared during a single
+refresh, or the account source emitted Loading during an all-account refresh,
+`isLoading` could remain true forever and keep the Home refresh controls disabled.
+
+### RED
+
+- RED commit: `5d4046a` (`test: expose stuck home refresh loading`).
+- Command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.viewmodel.HomeViewModelTest" --rerun-tasks --no-parallel --console=plain
+```
+
+The 51-test run compiled and executed cleanly apart from the two expected
+behavior failures. A controllable, suspending gateway held each refresh in
+flight. The single-account test removed the target from the Ready Flow before
+completion and then verified loading ended, no stale balance/timestamp was
+published, and a later refresh succeeded. The all-account test emitted
+Loading before completion, restored Ready afterward, and made the same
+user-visible and subsequent-refresh assertions. Both failed on the pre-fix
+early returns with `isLoading == true`; there were no fixture or environment
+errors.
+
+### GREEN
+
+- GREEN commit: `d8d5be2` (`fix: always finish Home refresh loading`).
+- Both refresh coroutines now enter `try/finally` immediately after setting
+  loading. Every normal completion, gateway exception, cancellation, and
+  revalidation return executes the final `isLoading = false` cleanup.
+- Revalidation guards remain before publishing balances, errors, timestamps,
+  or widget updates, so an invalidated account snapshot cannot publish results.
+  `CancellationException` remains propagated by the single-account catch path;
+  the all-account path is not caught and is also propagated through `finally`.
+- The existing Corrupt fail-closed behavior remains intact because the final
+  cleanup only changes `isLoading` and preserves the current typed state and
+  cleared snapshots.
+
+### Verification
+
+Required final focused command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.viewmodel.HomeViewModelTest" --tests "com.balancesentinel.app.data.repository.RoomAccountUiRepositoryTest" --tests "com.balancesentinel.app.ui.viewmodel.DataManagementViewModelTest" --tests "com.balancesentinel.app.ui.viewmodel.InsightsViewModelTest" --rerun-tasks --no-parallel --console=plain
+```
+
+Results: Home 51/51, Room account UI repository 5/5, DataManagement 29/29,
+and Insights 48/48 passed. Total: 133/133, with 0 failures, errors, or skips.
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel --console=plain
+git diff --check e5ef635127c17c022318b0d6702f562d06b44cb6..HEAD
+```
+
+Debug Kotlin compilation succeeded. The scoped diff check was clean. Output
+contained only the repository's existing Room index, kapt, and deprecation
+warnings.
+
+### Self-review and concerns
+
+The fix is limited to refresh lifecycle cleanup in `HomeViewModel` and its
+behavior tests. No Room schema, repository contract, UI account identity, or
+Task 4 coordinator protocol changed. The remaining legacy refresh internals,
+Service, and Widget migration remain explicitly deferred to Task 6.
