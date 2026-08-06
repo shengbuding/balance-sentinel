@@ -28,6 +28,8 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -66,7 +68,8 @@ class RoomAccountMutationCoordinator(
     override suspend fun save(
         existingId: String?,
         draft: AccountDraft
-    ): AccountMutationResult = withContext(Dispatchers.IO) {
+    ): AccountMutationResult = GLOBAL_MUTATION_LOCK.withLock {
+        withContext(Dispatchers.IO) {
         val oldPayload = readPayloadOrEmpty(existingId == null)
         val existing = existingId?.let { id ->
             database.accountDao().get(id)
@@ -112,7 +115,7 @@ class RoomAccountMutationCoordinator(
             stageCredentialsAndVerify(desiredPayload, operation)
             markStage(operation.id, MutationStage.VERIFIED)
             publish(operation, desiredPayload)
-        } catch (failure: Throwable) {
+        } catch (failure: Exception) {
             rollbackBeforePublish(operation, oldPayload, failure)
             throw failure
         }
@@ -122,10 +125,12 @@ class RoomAccountMutationCoordinator(
         } else {
             AccountSaveResult.Updated(before, updated)
         }
-        AccountMutationResult.Saved(result)
+            AccountMutationResult.Saved(result)
+        }
     }
 
-    override suspend fun delete(accountId: String): AccountMutationResult = withContext(Dispatchers.IO) {
+    override suspend fun delete(accountId: String): AccountMutationResult = GLOBAL_MUTATION_LOCK.withLock {
+        withContext(Dispatchers.IO) {
         val oldPayload = readPayload()
         val existing = database.accountDao().get(accountId)
             ?: throw IllegalArgumentException("Account $accountId does not exist")
@@ -143,30 +148,28 @@ class RoomAccountMutationCoordinator(
             stageCredentialsAndVerify(desiredPayload, operation)
             markStage(operation.id, MutationStage.VERIFIED)
             publish(operation, desiredPayload)
-        } catch (failure: Throwable) {
+        } catch (failure: Exception) {
             rollbackBeforePublish(operation, oldPayload, failure)
             throw failure
         }
         finishCleanup(operation)
-        AccountMutationResult.Deleted(accountId)
+            AccountMutationResult.Deleted(accountId)
+        }
     }
 
-    override suspend fun recover(): AccountMutationResult.Recovered = withContext(Dispatchers.IO) {
-        val recovered = mutableListOf<String>()
-        database.mutationOperationDao().listRecoverable().forEach { operation ->
-            when (operation.stage) {
+    override suspend fun recover(): AccountMutationResult.Recovered = GLOBAL_MUTATION_LOCK.withLock {
+        withContext(Dispatchers.IO) {
+            val recovered = mutableListOf<String>()
+            database.mutationOperationDao().listRecoverable().forEach { operation ->
+                if (operation.operationType != MutationOperationType.ACCOUNT_REPLACE &&
+                    operation.operationType != MutationOperationType.ACCOUNT_DELETE
+                ) {
+                    return@forEach
+                }
+                try {
+                    when (operation.stage) {
                 MutationStage.PREPARED -> {
-                    // No external write was acknowledged. Mark it failed and leave
-                    // the old Room and credential state untouched.
-                    database.mutationOperationDao().updateStage(
-                        operation.id,
-                        MutationStage.FAILED,
-                        operation.batchCursor,
-                        "NOT_STAGED",
-                        "Operation was interrupted before credential staging",
-                        now()
-                    )
-                    recovered += operation.id
+                    recoverPrepared(operation)
                 }
                 MutationStage.CREDENTIALS_STAGED,
                 MutationStage.VERIFIED -> {
@@ -189,16 +192,20 @@ class RoomAccountMutationCoordinator(
                         publish(operation, payload)
                         finishCleanup(operation)
                     }
-                    recovered += operation.id
                 }
                 MutationStage.PUBLISHED -> {
                     finishCleanup(operation)
-                    recovered += operation.id
                 }
                 else -> Unit
+                    }
+                    recovered += operation.id
+                } catch (_: Exception) {
+                    // A malformed or conflicting operation is isolated. The
+                    // durable row remains recoverable for a later retry.
+                }
             }
+            AccountMutationResult.Recovered(recovered)
         }
-        AccountMutationResult.Recovered(recovered)
     }
 
     private suspend fun prepareOperation(
@@ -332,18 +339,51 @@ class RoomAccountMutationCoordinator(
         oldPayload: CredentialPayload,
         failure: Throwable
     ) {
-        runCatching { credentialStore.write(oldPayload) }
-        runCatching { cleanup.clearGeneration(decodeManifest(operation).stagedGeneration) }
-        runCatching {
-            database.mutationOperationDao().updateStage(
-                operation.id,
-                MutationStage.FAILED,
-                operation.batchCursor,
-                failure::class.simpleName,
-                failure.message,
-                now()
-            )
+        var rollbackSucceeded = true
+        try {
+            credentialStore.write(oldPayload)
+        } catch (_: Exception) {
+            rollbackSucceeded = false
         }
+        var cleanupSucceeded = true
+        try {
+            cleanup.clearGeneration(decodeManifest(operation).stagedGeneration)
+        } catch (_: Exception) {
+            cleanupSucceeded = false
+        }
+        database.mutationOperationDao().updateStage(
+            operation.id,
+            if (rollbackSucceeded && cleanupSucceeded) MutationStage.FAILED else MutationStage.PREPARED,
+            operation.batchCursor,
+            if (rollbackSucceeded && cleanupSucceeded) failure::class.simpleName else "ROLLBACK_PENDING",
+            if (rollbackSucceeded && cleanupSucceeded) failure.message else "External rollback must be retried",
+            now()
+        )
+    }
+
+    private suspend fun recoverPrepared(operation: MutationOperationEntity) {
+        val manifest = decodeManifest(operation)
+        val payload = readPayloadOrNull()
+        if (payload != null && fingerprint(payload) == manifest.payloadFingerprint) {
+            markStage(operation.id, MutationStage.CREDENTIALS_STAGED)
+            markStage(operation.id, MutationStage.VERIFIED)
+            publish(operation, payload)
+            finishCleanup(operation)
+            return
+        }
+        try {
+            cleanup.clearGeneration(manifest.stagedGeneration)
+        } catch (_: Exception) {
+            return
+        }
+        database.mutationOperationDao().updateStage(
+            operation.id,
+            MutationStage.FAILED,
+            operation.batchCursor,
+            "STAGED_PAYLOAD_MISSING",
+            "No verifiable staged payload remained after interruption",
+            now()
+        )
     }
 
     private suspend fun markStage(id: String, stage: MutationStage) {
@@ -411,4 +451,8 @@ class RoomAccountMutationCoordinator(
         put("usageScriptEnabled", account.usageScriptEnabled)
         put("authorizedScriptOrigins", account.authorizedScriptOrigins.sorted().joinToString(","))
     }.toString()
+
+    private companion object {
+        val GLOBAL_MUTATION_LOCK = Mutex()
+    }
 }

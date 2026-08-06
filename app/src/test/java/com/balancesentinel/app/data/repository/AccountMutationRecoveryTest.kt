@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.createWalletTestDatabase
+import com.balancesentinel.app.data.local.execSql
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
@@ -241,7 +242,7 @@ class AccountMutationRecoveryTest {
             coordinator.save("stable-a", AccountDraft("Second", "second-key", ProviderType.DEEPSEEK))
         }
         delay(50)
-        assertEquals(1, store.writeCount)
+        assertEquals(1, store.writeAttempts)
         releaseFirstWrite.complete(Unit)
         first.await()
         second.await()
@@ -269,6 +270,25 @@ class AccountMutationRecoveryTest {
 
         assertEquals(0, database.mutationOperationDao().listRecoverable().size)
         assertEquals(MutationStage.COMPLETED, database.mutationOperationDao().get(published.id)?.stage)
+    }
+
+    @Test
+    fun `rollback failure leaves a durable retry signal`() = runTest {
+        seedAccount("stable-a", "legacy-a", "generation-a")
+        store.payload = CredentialPayload(listOf(account("legacy-a", "old-key")))
+        store.afterWrite = {
+            database.execSql("UPDATE accounts SET revision = 7 WHERE id = 'stable-a'")
+            store.failNextWrite = true
+        }
+
+        val failure = runCatching {
+            coordinator.save("stable-a", AccountDraft("Updated", "new-key", ProviderType.DEEPSEEK))
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        val operation = database.mutationOperationDao().listRecoverable().single()
+        assertEquals(MutationStage.PREPARED, operation.stage)
+        assertEquals("ROLLBACK_PENDING", operation.errorCode)
     }
 
     private suspend fun seedAccount(id: String, legacyId: String, generation: String) {
@@ -344,6 +364,8 @@ class AccountMutationRecoveryTest {
         var beforeWrite: (suspend () -> Unit)? = null
         var afterWrite: (suspend () -> Unit)? = null
         var writeCount: Int = 0
+        var writeAttempts: Int = 0
+        var failNextWrite: Boolean = false
 
         override fun read(): CredentialReadResult =
             readResult ?: payload?.let {
@@ -354,6 +376,11 @@ class AccountMutationRecoveryTest {
             } ?: CredentialReadResult.Missing
 
         override suspend fun write(payload: CredentialPayload) {
+            writeAttempts++
+            if (failNextWrite) {
+                failNextWrite = false
+                error("injected rollback failure")
+            }
             beforeWrite?.invoke()
             writeCount++
             this.payload = payload
