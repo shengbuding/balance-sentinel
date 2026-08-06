@@ -31,3 +31,66 @@ The same focused command passed. Test result XML reports 3 tests, 0 failures, 0 
 ## Self-review
 
 Focused tests pass and `compileDebugKotlin` passed. `git diff --check` is clean. Remaining concern is the direct VERIFIED insert noted above; no Room schema or Task 2 DAO identity was changed.
+
+## Fix Round 1
+
+### Commits
+
+- RED: `ee3d7b8` (`test: expose task3 migration ledger gaps`)
+- Startup support seam: `4868cc8` (`refactor: add startup migration runner seam`)
+- Startup RED: `65e8526` (`test: expose missing startup room migration`)
+- GREEN: `ce48506` (`fix: harden resumable legacy account migration`)
+
+### RED evidence
+
+Focused command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyAccountMigrationTest" --tests "com.balancesentinel.app.data.repository.AccountRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Production and test compilation succeeded. Six tests ran; three behavior tests failed as expected:
+
+- `operationManifestExistsBeforeCredentialStaging`: no operation or generation manifest existed when the external credential write began.
+- `migrationRequiresCredentialStore`: a null store was accepted and migration continued to Room writes.
+- `verificationCrashLeavesAccountHiddenAndOperationWrittenStage`: the account was already VERIFIED/visible when the durable ledger had not safely reached verification.
+
+Startup RED command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.DeepSeekAppTest.startup invokes resumable room account migration" --rerun-tasks --no-parallel
+```
+
+Compilation succeeded; the single test failed with an assertion because `DeepSeekApp.onCreate()` never invoked the injected Room migration runner. An earlier test-harness attempt used an unavailable Robolectric builder API and failed compilation; it was corrected before the RED commit, and the committed RED is the behavior-level assertion failure above.
+
+### GREEN evidence
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyAccountMigrationTest" --tests "com.balancesentinel.app.data.repository.AccountRepositoryTest" --rerun-tasks --no-parallel
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.DeepSeekAppTest" --rerun-tasks --no-parallel
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+git diff --check
+```
+
+Results:
+
+- Focused migration/repository suite: 8 tests, 0 failures, 0 errors, 0 skipped.
+- `DeepSeekAppTest`: 6 tests, 0 failures, 0 errors, 0 skipped.
+- Debug Kotlin compilation: successful.
+- `git diff --check`: clean.
+- Room schema/export: unchanged; no schema file diff.
+
+### Finding resolutions
+
+1. Account UUIDs now use independent `UUID.randomUUID()` values. The full `legacyStorageId -> accountId -> credentialGeneration` mapping is serialized into the PREPARED operation before external writes and is decoded on recovery; no domain UUID is derived from an API key or legacy hash.
+2. `DeepSeekApp.onCreate()` now launches the resumable migration through an application-lifetime `SupervisorJob + Dispatchers.IO` scope. There is no production `runBlocking`.
+3. Room rows are inserted as `PENDING`. Account state, operation stage, and metadata stage transition atomically to VERIFIED only after credential readback and row verification; verified repository queries cannot expose ROOM_WRITTEN accounts.
+4. `CredentialStore` is non-null. Migration requires ENCRYPTED_PREFERENCES readback whose payload exactly matches the source; Missing, corrupt, wrong-generation, or mismatched readback stops before Room account writes.
+5. PREPARED operation targets and the complete staged generation manifest are durable before credential staging. The operation advances through CREDENTIALS_STAGED, ROOM_WRITTEN, and VERIFIED.
+6. DISCOVERED, VALIDATED, CREDENTIALS_STAGED, ROOM_WRITTEN, and VERIFIED are observable durable stages. Crash/retry tests cover every stage, no duplicate rows, legacy JSON byte retention, valid staged credential readback, and visibility only after verification.
+7. The tautological ID test was replaced by end-to-end ApiKeyManager-to-Room key rotation coverage, canonical lowercase UUID syntax, corrupt legacy JSON preservation, startup invocation, and operation ledger assertions.
+
+### Remaining risks
+
+- `CredentialStore` remains the existing payload-level API rather than a keyed multi-generation store. The operation manifest owns deterministic per-account generation references, while readback validation proves the staged encrypted payload as a whole. Later account mutation work may introduce physical per-generation credential slots.
+- Migration intentionally retains legacy JSON, does not migrate history, and does not declare global CLEANED, per Task 3 scope.
