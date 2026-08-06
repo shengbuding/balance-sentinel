@@ -13,6 +13,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = DeepSeekApp::class)
@@ -128,5 +130,16 @@ class DeepSeekAppTest {
         app.migrateDataIfNeeded { throw corruption }
 
         assertSame(corruption, app.credentialCorruption)
+    }
+
+    @Test
+    fun `startup invokes resumable room account migration`() {
+        val app = context as DeepSeekApp
+        val invoked = CountDownLatch(1)
+        app.legacyMigrationRunner = { invoked.countDown() }
+
+        app.onCreate()
+
+        assertTrue("DeepSeekApp startup must launch the Room account migration", invoked.await(2, TimeUnit.SECONDS))
     }
 }
