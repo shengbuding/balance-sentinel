@@ -52,17 +52,23 @@ class LegacyAccountMigration(
         )
         val operationId = operationId(payload)
         val mappings = prepareOperation(operationId, payload)
+        val mappingsByLegacyId = mappings.associateBy { it.legacyStorageId }
+        val orderedMappings = payload.accounts.map { account ->
+            requireNotNull(mappingsByLegacyId[account.id.trim()]) {
+                "Migration manifest is missing legacy account ${account.id.trim()}"
+            }
+        }
 
         stageAndVerifyCredentials(payload)
-        advanceOperation(operationId, MutationStage.CREDENTIALS_STAGED, mappings.size.toLong())
+        advanceOperation(operationId, MutationStage.CREDENTIALS_STAGED, orderedMappings.size.toLong())
         advanceMetadata(LegacyAccountMigrationStage.CREDENTIALS_STAGED)
 
-        writePendingRows(operationId, payload, mappings)
+        writePendingRows(operationId, payload, orderedMappings)
         advanceMetadata(LegacyAccountMigrationStage.ROOM_WRITTEN)
 
-        verifyRowsAndLedgers(operationId, mappings)
+        verifyRowsAndLedgers(operationId, orderedMappings)
         onStage(LegacyAccountMigrationStage.VERIFIED)
-        LegacyAccountMigrationResult(LegacyAccountMigrationStage.VERIFIED, mappings)
+        LegacyAccountMigrationResult(LegacyAccountMigrationStage.VERIFIED, orderedMappings)
     }
 
     private suspend fun discoverAndValidate(): CredentialPayload? {
@@ -93,13 +99,25 @@ class LegacyAccountMigration(
         }
         database.appMetadataDao().ensureSingleton(now())
         val metadata = requireNotNull(database.appMetadataDao().get())
+        val existingByLegacyStorageId = database.accountDao().getAllForMigration()
+            .mapNotNull { account -> account.legacyStorageId?.let { it to account } }
+            .toMap()
         val mappings = payload.accounts.map { account ->
-            val accountId = UUID.randomUUID().toString()
-            LegacyAccountMapping(
-                legacyStorageId = account.id.trim(),
-                accountId = accountId,
-                credentialGeneration = "legacy:$operationId:$accountId"
-            )
+            val legacyStorageId = account.id.trim()
+            existingByLegacyStorageId[legacyStorageId]?.let { existing ->
+                LegacyAccountMapping(
+                    legacyStorageId = legacyStorageId,
+                    accountId = existing.id,
+                    credentialGeneration = existing.activeCredentialGeneration
+                )
+            } ?: run {
+                val accountId = UUID.randomUUID().toString()
+                LegacyAccountMapping(
+                    legacyStorageId = legacyStorageId,
+                    accountId = accountId,
+                    credentialGeneration = "legacy:$operationId:$accountId"
+                )
+            }
         }
         val manifest = Json.encodeToString(mappings)
         database.mutationOperationDao().insertPrepared(
@@ -252,7 +270,7 @@ class LegacyAccountMigration(
 
     private fun operationId(payload: CredentialPayload): String = UUID.nameUUIDFromBytes(
         ("wallet-sentinel:legacy-account-migration:v1|" +
-            payload.accounts.joinToString("|") { it.id.trim() }).toByteArray(StandardCharsets.UTF_8)
+            payload.accounts.map { it.id.trim() }.sorted().joinToString("|")).toByteArray(StandardCharsets.UTF_8)
     ).toString()
 
     private fun decodeMappings(json: String): List<LegacyAccountMapping> =

@@ -84,12 +84,12 @@ class AccountRepositoryTest {
         val store = InMemoryCredentialStore()
         try {
             val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            val initialIds = initial.mappings.associateBy { it.legacyStorageId }
+            val initialMappings = initial.mappings.associateBy { it.legacyStorageId }
             val operationId = database.mutationOperationDao().listRecoverable().single().id
             manager.saveAccount(second.id, AccountDraft("B", "key-b-rotated", ProviderType.DEEPSEEK))
             val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
             assertEquals(operationId, database.mutationOperationDao().listRecoverable().single().id)
-            assertEquals(initialIds.mapValues { it.value.accountId }, recovered.mappings.associate { it.legacyStorageId to it.accountId })
+            assertEquals(initialMappings, recovered.mappings.associateBy { it.legacyStorageId })
             assertEquals(3, database.accountDao().getAllForMigration().size)
             assertEquals(3, database.accountDao().observeVerified().first().size)
         } finally {
@@ -111,11 +111,11 @@ class AccountRepositoryTest {
         val store = InMemoryCredentialStore()
         try {
             val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            val initialIds = initial.mappings.associate { it.legacyStorageId to it.accountId }
+            val initialMappings = initial.mappings.associateBy { it.legacyStorageId }
             val reordered = manager.getAccounts().let { list -> listOf(list[2], list[0], list[1]) }
             manager.replaceAll(reordered)
             val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            assertEquals(initialIds, recovered.mappings.associate { it.legacyStorageId to it.accountId })
+            assertEquals(initialMappings, recovered.mappings.associateBy { it.legacyStorageId })
             assertEquals(3, database.accountDao().getAllForMigration().size)
             assertEquals(3, database.accountDao().observeVerified().first().size)
         } finally {
@@ -135,10 +135,10 @@ class AccountRepositoryTest {
         val store = InMemoryCredentialStore()
         try {
             val initial = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            val originalRoomId = initial.mappings.single().accountId
+            val originalMapping = initial.mappings.single()
             manager.addAccount("B", "key-b")
             val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            assertEquals(originalRoomId, recovered.mappings.first { it.legacyStorageId == original.id }.accountId)
+            assertEquals(originalMapping, recovered.mappings.first { it.legacyStorageId == original.id })
             assertEquals(2, database.accountDao().getAllForMigration().size)
             assertEquals(2, database.accountDao().observeVerified().first().size)
         } finally {
