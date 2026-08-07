@@ -13,6 +13,9 @@ import com.balancesentinel.app.data.repository.AccountMutationRecovery
 import com.balancesentinel.app.data.repository.RoomAccountMutationCoordinator
 import com.balancesentinel.app.data.repository.RoomAccountMutationRecovery
 import com.balancesentinel.app.data.migration.LegacyAccountMigration
+import com.balancesentinel.app.data.migration.LegacyDataMigration
+import com.balancesentinel.app.data.migration.LegacyDataVerifier
+import com.balancesentinel.app.data.migration.LegacyStoresDataSource
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.credentials.DataCorruptionException
@@ -33,6 +36,10 @@ class DeepSeekApp : Application() {
 
     internal var legacyMigrationRunner: suspend () -> Unit = {
         legacyAccountMigration().run()
+    }
+
+    internal var legacyDataMigrationRunner: suspend () -> Unit = {
+        legacyDataMigration().run()
     }
 
     internal var accountMutationRecoveryRunner: suspend () -> Unit = {
@@ -119,10 +126,16 @@ class DeepSeekApp : Application() {
         EncryptedPreferencesCredentialStore(this)
     )
 
+    internal fun legacyDataMigration(): LegacyDataMigration {
+        val database = WalletDatabaseProvider.get(this)
+        return LegacyDataMigration(database, LegacyStoresDataSource(this), LegacyDataVerifier(database))
+    }
+
     internal fun launchLegacyAccountMigration() {
         startupMigrationScope.launch {
             try {
                 legacyMigrationRunner()
+                legacyDataMigrationRunner()
                 settingsMigrationRunner()
                 WidgetPrefs(this@DeepSeekApp).apply {
                     cleanupInvalidEntries()
