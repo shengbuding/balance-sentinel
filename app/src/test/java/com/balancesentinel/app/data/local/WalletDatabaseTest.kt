@@ -39,19 +39,19 @@ class WalletDatabaseTest {
     }
 
     @Test
-    fun `runtime pragma schema is the literal v1 contract`() = runTest {
+    fun `runtime pragma schema is the literal v2 contract`() = runTest {
         assertEquals(EXPECTED_SCHEMA, database.pragmaSchemaSnapshot())
     }
 
     @Test
-    fun `committed Room export is the exact v1 contract`() {
+    fun `committed Room export is the exact v2 contract`() {
         val schemaFile = walletSchemaFile()
         val databaseJson = Json.parseToJsonElement(schemaFile.readText())
             .jsonObject.getValue("database").jsonObject
 
-        assertEquals(1, databaseJson.getValue("version").jsonPrimitive.content.toInt())
+        assertEquals(2, databaseJson.getValue("version").jsonPrimitive.content.toInt())
         assertEquals(
-            "eb8fe9271b06473c65e36c9120a43b44",
+            "90d9ad04de8ed3d122efac424ff84da7",
             databaseJson.getValue("identityHash").jsonPrimitive.content
         )
         assertEquals(EXPECTED_SCHEMA, exportedSchemaSnapshot(databaseJson))
@@ -64,7 +64,7 @@ class WalletDatabaseTest {
             alert_runtime_state|account_id:TEXT:1:<null>:1,currency:TEXT:1:<null>:2,last_alerted_balance:REAL:0:NULL:0,anchor_balance:REAL:0:NULL:0,anchor_at:INTEGER:0:NULL:0,last_change_alerted_balance:REAL:0:NULL:0,last_change_alerted_at:INTEGER:0:NULL:0||account_id->accounts(id):CASCADE:NO ACTION
             app_metadata|id:INTEGER:1:0:1,local_revision:INTEGER:1:0:0,active_data_generation:TEXT:1:'LEGACY':0,legacy_migration_stage:TEXT:1:'NONE':0,updated_at:INTEGER:1:<null>:0||
             app_settings|id:INTEGER:1:0:1,background_refresh_interval_seconds:INTEGER:0:900:0,foreground_monitoring_interval_seconds:INTEGER:1:30:0,alert_enabled:INTEGER:1:0:0,alert_threshold:REAL:1:0.0:0,change_alert_enabled:INTEGER:1:0:0,change_alert_threshold:REAL:1:0.0:0,change_alert_period_minutes:INTEGER:1:0:0,log_max_entries:INTEGER:1:100:0,snooze_duration_minutes:INTEGER:1:60:0,show_total_balance_in_notification:INTEGER:1:1:0,updated_at:INTEGER:1:<null>:0||
-            balance_records|id:INTEGER:1:<null>:1,account_id:TEXT:1:<null>:0,currency:TEXT:1:<null>:0,recorded_at:INTEGER:1:<null>:0,total_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,topped_up_balance:REAL:1:0.0:0,source:TEXT:1:'REFRESH':0|index_balance_records_account_id_currency_recorded_at_id:0:account_id+currency+recorded_at+id|account_id->accounts(id):CASCADE:NO ACTION
+            balance_records|id:INTEGER:1:<null>:1,account_id:TEXT:1:<null>:0,currency:TEXT:1:<null>:0,recorded_at:INTEGER:1:<null>:0,total_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,topped_up_balance:REAL:1:0.0:0,source:TEXT:1:'REFRESH':0|index_balance_records_account_id_currency_recorded_at_id:0:account_id+currency+recorded_at+id,index_balance_records_recorded_at_id:0:recorded_at+id|account_id->accounts(id):CASCADE:NO ACTION
             daily_summaries|date:TEXT:1:<null>:1,account_id:TEXT:1:<null>:2,currency:TEXT:1:<null>:3,open_balance:REAL:1:<null>:0,close_balance:REAL:1:<null>:0,consumed_balance:REAL:1:<null>:0,topped_up_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,average_balance:REAL:1:<null>:0,sample_count:INTEGER:1:<null>:0,topped_up_balance_close:REAL:1:0.0:0,granted_balance_close:REAL:1:0.0:0,generated_at:INTEGER:1:<null>:0|index_daily_summaries_account_id_currency_date:0:account_id+currency+date|account_id->accounts(id):CASCADE:NO ACTION
             download_operations|id:TEXT:1:<null>:1,owner_id:TEXT:1:<null>:0,tag:TEXT:1:<null>:0,source_url:TEXT:1:<null>:0,temporary_path:TEXT:1:<null>:0,target_path:TEXT:1:<null>:0,state:TEXT:1:'QUEUED':0,downloaded_bytes:INTEGER:1:0:0,total_bytes:INTEGER:0:NULL:0,error_code:TEXT:0:NULL:0,error_message:TEXT:0:NULL:0,active_tag:TEXT:0:NULL:0,active_target_path:TEXT:0:NULL:0,created_at:INTEGER:1:<null>:0,updated_at:INTEGER:1:<null>:0,completed_at:INTEGER:0:NULL:0|index_download_operations_active_tag:1:active_tag,index_download_operations_active_target_path:1:active_target_path|
             event_logs|id:INTEGER:1:<null>:1,account_id:TEXT:0:NULL:0,refresh_run_id:TEXT:0:NULL:0,event_type:TEXT:1:<null>:0,total_balance_text:TEXT:1:'':0,currency_text:TEXT:1:'':0,is_available:INTEGER:1:0:0,granted_balance_text:TEXT:1:'':0,topped_up_balance_text:TEXT:1:'':0,recorded_at:INTEGER:1:<null>:0,message:TEXT:1:'':0,interval_seconds:INTEGER:0:NULL:0,expected_at:INTEGER:0:NULL:0,alarm_method:TEXT:0:NULL:0,miss_reason:TEXT:0:NULL:0|index_event_logs_recorded_at_id:0:recorded_at+id|account_id->accounts(id):CASCADE:NO ACTION,refresh_run_id->refresh_runs(id):SET NULL:NO ACTION
@@ -187,8 +187,8 @@ private suspend fun WalletDatabase.pragmaSchemaSnapshot(): String = withContext(
 private fun walletSchemaFile(): File {
     val root = File(System.getProperty("user.dir"))
     return listOf(
-        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/1.json"),
-        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/1.json")
+        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/2.json"),
+        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/2.json")
     ).first { it.isFile }
 }
 

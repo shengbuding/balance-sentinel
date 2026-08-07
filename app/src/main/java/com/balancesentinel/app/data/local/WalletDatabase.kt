@@ -3,6 +3,8 @@ package com.balancesentinel.app.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.balancesentinel.app.data.local.account.AccountDao
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
@@ -58,7 +60,7 @@ import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
         MonitoringStateEntity::class,
         MonitoringSessionEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -76,4 +78,15 @@ abstract class WalletDatabase : RoomDatabase() {
     abstract fun maintenanceCheckpointDao(): MaintenanceCheckpointDao
     abstract fun monitoringStateDao(): MonitoringStateDao
     abstract fun monitoringSessionDao(): MonitoringSessionDao
+
+    companion object {
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_balance_records_recorded_at_id` " +
+                        "ON `balance_records` (`recorded_at`, `id`)"
+                )
+            }
+        }
+    }
 }

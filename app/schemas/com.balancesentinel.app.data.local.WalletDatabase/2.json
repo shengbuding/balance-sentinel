@@ -1,0 +1,1676 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "90d9ad04de8ed3d122efac424ff84da7",
+    "entities": [
+      {
+        "tableName": "accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `display_order` INTEGER NOT NULL, `label` TEXT NOT NULL, `provider_type` TEXT NOT NULL, `provider_config_json` TEXT NOT NULL DEFAULT '{}', `active_credential_generation` TEXT NOT NULL, `revision` INTEGER NOT NULL DEFAULT 0, `state` TEXT NOT NULL DEFAULT 'PENDING', `legacy_storage_id` TEXT DEFAULT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "display_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerType",
+            "columnName": "provider_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerConfigJson",
+            "columnName": "provider_config_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'{}'"
+          },
+          {
+            "fieldPath": "activeCredentialGeneration",
+            "columnName": "active_credential_generation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          },
+          {
+            "fieldPath": "legacyStorageId",
+            "columnName": "legacy_storage_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_accounts_display_order",
+            "unique": false,
+            "columnNames": [
+              "display_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accounts_display_order` ON `${TABLE_NAME}` (`display_order`)"
+          },
+          {
+            "name": "index_accounts_legacy_storage_id",
+            "unique": true,
+            "columnNames": [
+              "legacy_storage_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_accounts_legacy_storage_id` ON `${TABLE_NAME}` (`legacy_storage_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "mutation_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `operation_type` TEXT NOT NULL, `stage` TEXT NOT NULL DEFAULT 'PREPARED', `targets_json` TEXT NOT NULL DEFAULT '[]', `staged_generation_manifest_json` TEXT NOT NULL DEFAULT '[]', `manifest_version` INTEGER NOT NULL DEFAULT 1, `batch_cursor` INTEGER NOT NULL DEFAULT 0, `baseline_revision` INTEGER NOT NULL, `error_code` TEXT DEFAULT NULL, `error_message` TEXT DEFAULT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `published_at` INTEGER DEFAULT NULL, `completed_at` INTEGER DEFAULT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationType",
+            "columnName": "operation_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PREPARED'"
+          },
+          {
+            "fieldPath": "targetsJson",
+            "columnName": "targets_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "stagedGenerationManifestJson",
+            "columnName": "staged_generation_manifest_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "manifestVersion",
+            "columnName": "manifest_version",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "batchCursor",
+            "columnName": "batch_cursor",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "baselineRevision",
+            "columnName": "baseline_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "errorMessage",
+            "columnName": "error_message",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publishedAt",
+            "columnName": "published_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completed_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_mutation_operations_stage_updated_at",
+            "unique": false,
+            "columnNames": [
+              "stage",
+              "updated_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_mutation_operations_stage_updated_at` ON `${TABLE_NAME}` (`stage`, `updated_at`)"
+          },
+          {
+            "name": "index_mutation_operations_operation_type_stage",
+            "unique": false,
+            "columnNames": [
+              "operation_type",
+              "stage"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_mutation_operations_operation_type_stage` ON `${TABLE_NAME}` (`operation_type`, `stage`)"
+          }
+        ]
+      },
+      {
+        "tableName": "app_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL DEFAULT 0, `local_revision` INTEGER NOT NULL DEFAULT 0, `active_data_generation` TEXT NOT NULL DEFAULT 'LEGACY', `legacy_migration_stage` TEXT NOT NULL DEFAULT 'NONE', `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "localRevision",
+            "columnName": "local_revision",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "activeDataGeneration",
+            "columnName": "active_data_generation",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY'"
+          },
+          {
+            "fieldPath": "legacyMigrationStage",
+            "columnName": "legacy_migration_stage",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NONE'"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "app_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL DEFAULT 0, `background_refresh_interval_seconds` INTEGER DEFAULT 900, `foreground_monitoring_interval_seconds` INTEGER NOT NULL DEFAULT 30, `alert_enabled` INTEGER NOT NULL DEFAULT 0, `alert_threshold` REAL NOT NULL DEFAULT 0.0, `change_alert_enabled` INTEGER NOT NULL DEFAULT 0, `change_alert_threshold` REAL NOT NULL DEFAULT 0.0, `change_alert_period_minutes` INTEGER NOT NULL DEFAULT 0, `log_max_entries` INTEGER NOT NULL DEFAULT 100, `snooze_duration_minutes` INTEGER NOT NULL DEFAULT 60, `show_total_balance_in_notification` INTEGER NOT NULL DEFAULT 1, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "backgroundRefreshIntervalSeconds",
+            "columnName": "background_refresh_interval_seconds",
+            "affinity": "INTEGER",
+            "defaultValue": "900"
+          },
+          {
+            "fieldPath": "foregroundMonitoringIntervalSeconds",
+            "columnName": "foreground_monitoring_interval_seconds",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "30"
+          },
+          {
+            "fieldPath": "alertEnabled",
+            "columnName": "alert_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "alertThreshold",
+            "columnName": "alert_threshold",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "changeAlertEnabled",
+            "columnName": "change_alert_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "changeAlertThreshold",
+            "columnName": "change_alert_threshold",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "changeAlertPeriodMinutes",
+            "columnName": "change_alert_period_minutes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "logMaxEntries",
+            "columnName": "log_max_entries",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "100"
+          },
+          {
+            "fieldPath": "snoozeDurationMinutes",
+            "columnName": "snooze_duration_minutes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "60"
+          },
+          {
+            "fieldPath": "showTotalBalanceInNotification",
+            "columnName": "show_total_balance_in_notification",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "account_alert_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `currency` TEXT NOT NULL, `balance_alert_enabled` INTEGER NOT NULL DEFAULT 0, `change_alert_enabled` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`account_id`, `currency`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceAlertEnabled",
+            "columnName": "balance_alert_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "changeAlertEnabled",
+            "columnName": "change_alert_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "currency"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "notification_wallet_selections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `currency` TEXT NOT NULL, `display_order` INTEGER NOT NULL, PRIMARY KEY(`account_id`, `currency`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayOrder",
+            "columnName": "display_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "currency"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notification_wallet_selections_display_order",
+            "unique": true,
+            "columnNames": [
+              "display_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_notification_wallet_selections_display_order` ON `${TABLE_NAME}` (`display_order`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "alert_runtime_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `currency` TEXT NOT NULL, `last_alerted_balance` REAL DEFAULT NULL, `anchor_balance` REAL DEFAULT NULL, `anchor_at` INTEGER DEFAULT NULL, `last_change_alerted_balance` REAL DEFAULT NULL, `last_change_alerted_at` INTEGER DEFAULT NULL, PRIMARY KEY(`account_id`, `currency`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAlertedBalance",
+            "columnName": "last_alerted_balance",
+            "affinity": "REAL",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "anchorBalance",
+            "columnName": "anchor_balance",
+            "affinity": "REAL",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "anchorAt",
+            "columnName": "anchor_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "lastChangeAlertedBalance",
+            "columnName": "last_change_alerted_balance",
+            "affinity": "REAL",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "lastChangeAlertedAt",
+            "columnName": "last_change_alerted_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "currency"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "snooze_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `snoozed_until` INTEGER NOT NULL, PRIMARY KEY(`account_id`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snoozedUntil",
+            "columnName": "snoozed_until",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "balance_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `account_id` TEXT NOT NULL, `currency` TEXT NOT NULL, `recorded_at` INTEGER NOT NULL, `total_balance` REAL NOT NULL, `granted_balance` REAL NOT NULL DEFAULT 0.0, `topped_up_balance` REAL NOT NULL DEFAULT 0.0, `source` TEXT NOT NULL DEFAULT 'REFRESH', FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAt",
+            "columnName": "recorded_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBalance",
+            "columnName": "total_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grantedBalance",
+            "columnName": "granted_balance",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "toppedUpBalance",
+            "columnName": "topped_up_balance",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'REFRESH'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_balance_records_account_id_currency_recorded_at_id",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "currency",
+              "recorded_at",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_balance_records_account_id_currency_recorded_at_id` ON `${TABLE_NAME}` (`account_id`, `currency`, `recorded_at`, `id`)"
+          },
+          {
+            "name": "index_balance_records_recorded_at_id",
+            "unique": false,
+            "columnNames": [
+              "recorded_at",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_balance_records_recorded_at_id` ON `${TABLE_NAME}` (`recorded_at`, `id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "daily_summaries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`date` TEXT NOT NULL, `account_id` TEXT NOT NULL, `currency` TEXT NOT NULL, `open_balance` REAL NOT NULL, `close_balance` REAL NOT NULL, `consumed_balance` REAL NOT NULL, `topped_up_balance` REAL NOT NULL, `granted_balance` REAL NOT NULL DEFAULT 0.0, `average_balance` REAL NOT NULL, `sample_count` INTEGER NOT NULL, `topped_up_balance_close` REAL NOT NULL DEFAULT 0.0, `granted_balance_close` REAL NOT NULL DEFAULT 0.0, `generated_at` INTEGER NOT NULL, PRIMARY KEY(`date`, `account_id`, `currency`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openBalance",
+            "columnName": "open_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closeBalance",
+            "columnName": "close_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consumedBalance",
+            "columnName": "consumed_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toppedUpBalance",
+            "columnName": "topped_up_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grantedBalance",
+            "columnName": "granted_balance",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "averageBalance",
+            "columnName": "average_balance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sample_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toppedUpBalanceClose",
+            "columnName": "topped_up_balance_close",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "grantedBalanceClose",
+            "columnName": "granted_balance_close",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "generatedAt",
+            "columnName": "generated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "date",
+            "account_id",
+            "currency"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_daily_summaries_account_id_currency_date",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "currency",
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_daily_summaries_account_id_currency_date` ON `${TABLE_NAME}` (`account_id`, `currency`, `date`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "usage_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `account_id` TEXT NOT NULL, `captured_at` INTEGER NOT NULL, `identity_discriminator` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`), FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "captured_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityDiscriminator",
+            "columnName": "identity_discriminator",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_usage_snapshots_account_id_captured_at_identity_discriminator",
+            "unique": true,
+            "columnNames": [
+              "account_id",
+              "captured_at",
+              "identity_discriminator"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_usage_snapshots_account_id_captured_at_identity_discriminator` ON `${TABLE_NAME}` (`account_id`, `captured_at`, `identity_discriminator`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "usage_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`snapshot_id` TEXT NOT NULL, `record_ordinal` INTEGER NOT NULL, `model_name` TEXT NOT NULL, `total_tokens` INTEGER NOT NULL DEFAULT 0, `prompt_tokens` INTEGER NOT NULL DEFAULT 0, `completion_tokens` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`snapshot_id`, `record_ordinal`), FOREIGN KEY(`snapshot_id`) REFERENCES `usage_snapshots`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "snapshotId",
+            "columnName": "snapshot_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordOrdinal",
+            "columnName": "record_ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelName",
+            "columnName": "model_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalTokens",
+            "columnName": "total_tokens",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "promptTokens",
+            "columnName": "prompt_tokens",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "completionTokens",
+            "columnName": "completion_tokens",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "snapshot_id",
+            "record_ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_usage_records_snapshot_id_model_name",
+            "unique": false,
+            "columnNames": [
+              "snapshot_id",
+              "model_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_usage_records_snapshot_id_model_name` ON `${TABLE_NAME}` (`snapshot_id`, `model_name`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "usage_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "snapshot_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "event_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `account_id` TEXT DEFAULT NULL, `refresh_run_id` TEXT DEFAULT NULL, `event_type` TEXT NOT NULL, `total_balance_text` TEXT NOT NULL DEFAULT '', `currency_text` TEXT NOT NULL DEFAULT '', `is_available` INTEGER NOT NULL DEFAULT 0, `granted_balance_text` TEXT NOT NULL DEFAULT '', `topped_up_balance_text` TEXT NOT NULL DEFAULT '', `recorded_at` INTEGER NOT NULL, `message` TEXT NOT NULL DEFAULT '', `interval_seconds` INTEGER DEFAULT NULL, `expected_at` INTEGER DEFAULT NULL, `alarm_method` TEXT DEFAULT NULL, `miss_reason` TEXT DEFAULT NULL, FOREIGN KEY(`account_id`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`refresh_run_id`) REFERENCES `refresh_runs`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "refreshRunId",
+            "columnName": "refresh_run_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "event_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBalanceText",
+            "columnName": "total_balance_text",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "currencyText",
+            "columnName": "currency_text",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "isAvailable",
+            "columnName": "is_available",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "grantedBalanceText",
+            "columnName": "granted_balance_text",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "toppedUpBalanceText",
+            "columnName": "topped_up_balance_text",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "recordedAt",
+            "columnName": "recorded_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "message",
+            "columnName": "message",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "intervalSeconds",
+            "columnName": "interval_seconds",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "expectedAt",
+            "columnName": "expected_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "alarmMethod",
+            "columnName": "alarm_method",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "missReason",
+            "columnName": "miss_reason",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_event_logs_recorded_at_id",
+            "unique": false,
+            "columnNames": [
+              "recorded_at",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_event_logs_recorded_at_id` ON `${TABLE_NAME}` (`recorded_at`, `id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "refresh_runs",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "refresh_run_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "refresh_runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `source` TEXT NOT NULL, `owner_process_session_id` TEXT DEFAULT NULL, `state` TEXT NOT NULL DEFAULT 'RUNNING', `started_at` INTEGER NOT NULL, `completed_at` INTEGER DEFAULT NULL, `account_count` INTEGER NOT NULL DEFAULT 0, `success_count` INTEGER NOT NULL DEFAULT 0, `failure_count` INTEGER NOT NULL DEFAULT 0, `cancelled_count` INTEGER NOT NULL DEFAULT 0, `error_code` TEXT DEFAULT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerProcessSessionId",
+            "columnName": "owner_process_session_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'RUNNING'"
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "started_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completed_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "accountCount",
+            "columnName": "account_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "successCount",
+            "columnName": "success_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "failureCount",
+            "columnName": "failure_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "cancelledCount",
+            "columnName": "cancelled_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_refresh_runs_state_started_at",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "started_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_refresh_runs_state_started_at` ON `${TABLE_NAME}` (`state`, `started_at`)"
+          },
+          {
+            "name": "index_refresh_runs_owner_process_session_id_state",
+            "unique": false,
+            "columnNames": [
+              "owner_process_session_id",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_refresh_runs_owner_process_session_id_state` ON `${TABLE_NAME}` (`owner_process_session_id`, `state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "refresh_account_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`run_id` TEXT NOT NULL, `account_id` TEXT NOT NULL, `account_revision` INTEGER NOT NULL, `state` TEXT NOT NULL DEFAULT 'RUNNING', `error_category` TEXT DEFAULT NULL, `error_code` TEXT DEFAULT NULL, `retryable` INTEGER NOT NULL DEFAULT 0, `retry_after_at` INTEGER DEFAULT NULL, `data_timestamp` INTEGER DEFAULT NULL, `stale` INTEGER NOT NULL DEFAULT 0, `attempt_count` INTEGER NOT NULL DEFAULT 0, `started_at` INTEGER NOT NULL, `completed_at` INTEGER DEFAULT NULL, PRIMARY KEY(`run_id`, `account_id`), FOREIGN KEY(`run_id`) REFERENCES `refresh_runs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "runId",
+            "columnName": "run_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountRevision",
+            "columnName": "account_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'RUNNING'"
+          },
+          {
+            "fieldPath": "errorCategory",
+            "columnName": "error_category",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "retryable",
+            "columnName": "retryable",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "retryAfterAt",
+            "columnName": "retry_after_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "dataTimestamp",
+            "columnName": "data_timestamp",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "stale",
+            "columnName": "stale",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "started_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completed_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "run_id",
+            "account_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_refresh_account_results_account_id_completed_at",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "completed_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_refresh_account_results_account_id_completed_at` ON `${TABLE_NAME}` (`account_id`, `completed_at`)"
+          },
+          {
+            "name": "index_refresh_account_results_run_id_state",
+            "unique": false,
+            "columnNames": [
+              "run_id",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_refresh_account_results_run_id_state` ON `${TABLE_NAME}` (`run_id`, `state`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "refresh_runs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "run_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "download_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `owner_id` TEXT NOT NULL, `tag` TEXT NOT NULL, `source_url` TEXT NOT NULL, `temporary_path` TEXT NOT NULL, `target_path` TEXT NOT NULL, `state` TEXT NOT NULL DEFAULT 'QUEUED', `downloaded_bytes` INTEGER NOT NULL DEFAULT 0, `total_bytes` INTEGER DEFAULT NULL, `error_code` TEXT DEFAULT NULL, `error_message` TEXT DEFAULT NULL, `active_tag` TEXT DEFAULT NULL, `active_target_path` TEXT DEFAULT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER DEFAULT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerId",
+            "columnName": "owner_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUrl",
+            "columnName": "source_url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "temporaryPath",
+            "columnName": "temporary_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetPath",
+            "columnName": "target_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'QUEUED'"
+          },
+          {
+            "fieldPath": "downloadedBytes",
+            "columnName": "downloaded_bytes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "totalBytes",
+            "columnName": "total_bytes",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "errorMessage",
+            "columnName": "error_message",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "activeTag",
+            "columnName": "active_tag",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "activeTargetPath",
+            "columnName": "active_target_path",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completed_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_download_operations_active_tag",
+            "unique": true,
+            "columnNames": [
+              "active_tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_operations_active_tag` ON `${TABLE_NAME}` (`active_tag`)"
+          },
+          {
+            "name": "index_download_operations_active_target_path",
+            "unique": true,
+            "columnNames": [
+              "active_target_path"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_operations_active_target_path` ON `${TABLE_NAME}` (`active_target_path`)"
+          }
+        ]
+      },
+      {
+        "tableName": "maintenance_checkpoint",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL DEFAULT 0, `last_completed_date` TEXT DEFAULT NULL, `zone_id` TEXT NOT NULL DEFAULT 'UTC', `last_success_at` INTEGER DEFAULT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "lastCompletedDate",
+            "columnName": "last_completed_date",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'UTC'"
+          },
+          {
+            "fieldPath": "lastSuccessAt",
+            "columnName": "last_success_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "monitoring_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL DEFAULT 0, `desired` INTEGER NOT NULL DEFAULT 0, `observed_state` TEXT NOT NULL DEFAULT 'STOPPED', `process_session_id` TEXT DEFAULT NULL, `lease_expires_at` INTEGER DEFAULT NULL, `current_monitoring_session_id` TEXT DEFAULT NULL, `foreground_session_started_at` INTEGER DEFAULT NULL, `foreground_session_ended_at` INTEGER DEFAULT NULL, `last_user_foreground_reset_at` INTEGER DEFAULT NULL, `state_reason` TEXT DEFAULT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`current_monitoring_session_id`) REFERENCES `monitoring_sessions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "desired",
+            "columnName": "desired",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "observedState",
+            "columnName": "observed_state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'STOPPED'"
+          },
+          {
+            "fieldPath": "processSessionId",
+            "columnName": "process_session_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "leaseExpiresAt",
+            "columnName": "lease_expires_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "currentMonitoringSessionId",
+            "columnName": "current_monitoring_session_id",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "foregroundSessionStartedAt",
+            "columnName": "foreground_session_started_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "foregroundSessionEndedAt",
+            "columnName": "foreground_session_ended_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "lastUserForegroundResetAt",
+            "columnName": "last_user_foreground_reset_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "stateReason",
+            "columnName": "state_reason",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "monitoring_sessions",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "current_monitoring_session_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "monitoring_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `process_session_id` TEXT NOT NULL, `started_at` INTEGER NOT NULL, `ended_at` INTEGER DEFAULT NULL, `active_slot` TEXT DEFAULT NULL, `end_reason` TEXT DEFAULT NULL, `recovered_at` INTEGER DEFAULT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processSessionId",
+            "columnName": "process_session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "started_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAt",
+            "columnName": "ended_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "activeSlot",
+            "columnName": "active_slot",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "endReason",
+            "columnName": "end_reason",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "recoveredAt",
+            "columnName": "recovered_at",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_monitoring_sessions_ended_at_started_at",
+            "unique": false,
+            "columnNames": [
+              "ended_at",
+              "started_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_monitoring_sessions_ended_at_started_at` ON `${TABLE_NAME}` (`ended_at`, `started_at`)"
+          },
+          {
+            "name": "index_monitoring_sessions_process_session_id_ended_at",
+            "unique": false,
+            "columnNames": [
+              "process_session_id",
+              "ended_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_monitoring_sessions_process_session_id_ended_at` ON `${TABLE_NAME}` (`process_session_id`, `ended_at`)"
+          },
+          {
+            "name": "index_monitoring_sessions_active_slot",
+            "unique": true,
+            "columnNames": [
+              "active_slot"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_monitoring_sessions_active_slot` ON `${TABLE_NAME}` (`active_slot`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '90d9ad04de8ed3d122efac424ff84da7')"
+    ]
+  }
+}

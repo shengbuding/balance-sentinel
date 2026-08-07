@@ -29,7 +29,10 @@ enum class BalanceRecordSource {
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["account_id", "currency", "recorded_at", "id"])]
+    indices = [
+        Index(value = ["account_id", "currency", "recorded_at", "id"]),
+        Index(value = ["recorded_at", "id"])
+    ]
 )
 data class BalanceRecordEntity(
     @PrimaryKey(autoGenerate = true)
