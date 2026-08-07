@@ -9,8 +9,10 @@ import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.UsageDataStore
+import kotlinx.serialization.Serializable
 
 /** Snapshot of all legacy JSON-backed data read before any writes occur. */
+@Serializable
 data class LegacyDataSnapshot(
     val records: List<RawRecord> = emptyList(),
     val summaries: List<DailySummary> = emptyList(),

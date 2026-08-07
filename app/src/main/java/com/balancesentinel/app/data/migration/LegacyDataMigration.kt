@@ -42,7 +42,8 @@ class LegacyDataMigration(
             return@withContext LegacyDataVerification(0, 0, 0, 0)
         }
         val operationId = operationId(snapshot)
-        val mappings = ensureOperation(operationId)
+        val manifest = ensureOperation(operationId, snapshot)
+        val mappings = manifest.mappings
         try {
             resetFailedMetadata()
             advanceMetadata(LegacyMigrationStage.DISCOVERED)
@@ -51,7 +52,7 @@ class LegacyDataMigration(
             writeRecords(operationId, snapshot.records, mappings)
             writeRemaining(operationId, snapshot, mappings)
             advanceMetadata(LegacyMigrationStage.ROOM_WRITTEN)
-            val verification = verifier.verify(snapshot, mappings)
+            val verification = verifier.verify(snapshot, mappings, operationId, manifest)
             advanceMetadata(LegacyMigrationStage.VERIFIED)
             publish(operationId)
             advanceMetadata(LegacyMigrationStage.ACTIVE, roomGeneration = true)
@@ -69,27 +70,36 @@ class LegacyDataMigration(
         }
     }
 
-    private suspend fun ensureOperation(id: String): Map<String, String> = database.withTransaction {
+    private suspend fun ensureOperation(id: String, snapshot: LegacyDataSnapshot): LegacyMigrationManifest = database.withTransaction {
         database.mutationOperationDao().get(id)?.let {
             if (it.stage == MutationStage.FAILED) {
                 require(database.mutationOperationDao().updateStage(id, MutationStage.PREPARED, it.batchCursor, null, null, now()) == 1)
             }
-            return@withTransaction decodeMappings(it.targetsJson)
+            return@withTransaction decodeManifest(it.targetsJson)
         }
         val accounts = database.accountDao().getAllForMigration()
         val mappings = accounts.mapNotNull { account -> account.legacyStorageId?.let { it to account.id } }.toMap()
         database.appMetadataDao().ensureSingleton(now())
         val metadata = requireNotNull(database.appMetadataDao().get())
+        val manifest = LegacyMigrationManifest(
+            mappings = mappings,
+            baselineLegacyRecordCount = database.historyDao().countLegacyRecords(),
+            baselineLegacyRecordMaxId = database.historyDao().maxLegacyRecordId(),
+            expectedRecordCount = snapshot.records.size,
+            expectedSummaryKeys = snapshot.summaries.map { summaryKey(it.date, mappings[it.accountId] ?: error("Missing mapping"), it.currency) },
+            expectedUsageIds = snapshot.usage.map { usageId(it, mappings, id) },
+            expectedLogIds = snapshot.logs.map { it.id }
+        )
         database.mutationOperationDao().insertPrepared(
             MutationOperationEntity(
                 id = id,
                 operationType = MutationOperationType.LEGACY_DATA_MIGRATION,
-                targetsJson = Json.encodeToString(mappings),
+                targetsJson = Json.encodeToString(manifest),
                 baselineRevision = metadata.localRevision,
                 createdAt = now(), updatedAt = now()
             )
         )
-        mappings
+        manifest
     }
 
     private suspend fun writeRecords(id: String, records: List<com.balancesentinel.app.data.model.RawRecord>, mappings: Map<String, String>) {
@@ -110,7 +120,7 @@ class LegacyDataMigration(
 
     private suspend fun writeRemaining(id: String, snapshot: LegacyDataSnapshot, mappings: Map<String, String>) = database.withTransaction {
         snapshot.summaries.chunked(BATCH_SIZE).forEach { batch -> database.historyDao().upsertSummaries(batch.map { s -> DailySummaryEntity(s.date, requireMapping(s.accountId, mappings), s.currency.uppercase(), s.open.toDouble(), s.close.toDouble(), s.consumed.toDouble(), s.toppedUp.toDouble(), s.granted.toDouble(), s.avgBalance.toDouble(), s.sampleCount, s.toppedUpBalanceClose.toDouble(), s.grantedBalanceClose.toDouble(), s.generatedAt) }) }
-        snapshot.usage.forEach { u -> database.usageDao().upsertSnapshotWithRecords(com.balancesentinel.app.data.local.usage.UsageSnapshotEntity(id = usageId(u, mappings), accountId = requireMapping(u.accountId, mappings), capturedAt = u.timestamp, identityDiscriminator = "legacy-migration"), u.records.mapIndexed { index, r -> com.balancesentinel.app.data.local.usage.UsageRecordEntity(usageId(u, mappings), index, r.model_name, r.total_tokens, r.prompt_tokens, r.completion_tokens) }) }
+        snapshot.usage.forEach { u -> database.usageDao().upsertSnapshotWithRecords(com.balancesentinel.app.data.local.usage.UsageSnapshotEntity(id = usageId(u, mappings, id), accountId = requireMapping(u.accountId, mappings), capturedAt = u.timestamp, identityDiscriminator = "legacy-migration:$id"), u.records.mapIndexed { index, r -> com.balancesentinel.app.data.local.usage.UsageRecordEntity(usageId(u, mappings, id), index, r.model_name, r.total_tokens, r.prompt_tokens, r.completion_tokens) }) }
         snapshot.logs.chunked(BATCH_SIZE).forEach { batch -> batch.forEach { e -> if (database.eventLogDao().get(e.id) == null) database.eventLogDao().insertAll(listOf(EventLogEntity(id = e.id, eventType = EventLogType.valueOf(e.type.name), totalBalanceText = e.totalBalance, currencyText = e.currency, isAvailable = e.isAvailable, grantedBalanceText = e.grantedBalance, toppedUpBalanceText = e.toppedUpBalance, recordedAt = e.timestamp, message = e.message, intervalSeconds = e.intervalSeconds.takeIf { it != 0 }, expectedAt = e.expectedTime.takeIf { it != 0L }, alarmMethod = e.alarmMethod.takeIf { it.isNotEmpty() }, missReason = e.missReason.takeIf { it.isNotEmpty() }))) } }
         updateOperation(id, MutationStage.ROOM_WRITTEN, snapshot.records.size.toLong())
     }
@@ -124,8 +134,9 @@ class LegacyDataMigration(
         val digest = MessageDigest.getInstance("SHA-256").digest(Json.encodeToString(s).toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
         return UUID.nameUUIDFromBytes(("wallet-sentinel:legacy-data:v2|$digest").toByteArray(StandardCharsets.UTF_8)).toString()
     }
-    private fun decodeMappings(json: String): Map<String, String> = Json.decodeFromString(json)
-    private fun usageId(u: UsageSnapshot, mappings: Map<String, String>) = UUID.nameUUIDFromBytes("legacy|${mappings[u.accountId] ?: u.accountId}|${u.timestamp}".toByteArray(StandardCharsets.UTF_8)).toString()
+    private fun decodeManifest(json: String): LegacyMigrationManifest = Json.decodeFromString(json)
+    private fun summaryKey(date: String, accountId: String, currency: String) = "$date|$accountId|${currency.uppercase()}"
+    private fun usageId(u: UsageSnapshot, mappings: Map<String, String>, operationId: String) = UUID.nameUUIDFromBytes("legacy|${mappings[u.accountId] ?: u.accountId}|${u.timestamp}|$operationId".toByteArray(StandardCharsets.UTF_8)).toString()
     private fun requireMapping(legacyId: String, mappings: Map<String, String>): String = mappings[legacyId]?.also { UUID.fromString(it) } ?: error("No stable account mapping for legacy id $legacyId")
     private suspend fun recordReadFailure(error: Exception) { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); val existing = database.mutationOperationDao().get(READ_FAILURE_OPERATION); if (existing == null) { val metadata = requireNotNull(database.appMetadataDao().get()); database.mutationOperationDao().insertPrepared(MutationOperationEntity(READ_FAILURE_OPERATION, MutationOperationType.LEGACY_DATA_MIGRATION, targetsJson = "{}", baselineRevision = metadata.localRevision, createdAt = now(), updatedAt = now())) }; require(database.mutationOperationDao().updateStage(READ_FAILURE_OPERATION, MutationStage.FAILED, 0, "READ_FAILED", error.message, now()) == 1); val current = requireNotNull(database.appMetadataDao().get()); if (current.legacyMigrationStage != LegacyMigrationStage.FAILED) require(database.appMetadataDao().advanceMetadataAndRevisionIfCurrent(current.localRevision, current.activeDataGeneration, current.legacyMigrationStage, current.activeDataGeneration, LegacyMigrationStage.FAILED, now()) == 1) } }
     private suspend fun resetFailedMetadata() { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); if (database.appMetadataDao().get()?.legacyMigrationStage == LegacyMigrationStage.FAILED) require(database.appMetadataDao().resetFailedLegacyMigration(now()) == 1) } }

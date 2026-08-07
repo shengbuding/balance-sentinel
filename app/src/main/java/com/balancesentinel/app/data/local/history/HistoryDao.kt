@@ -242,6 +242,22 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM balance_records WHERE source = 'LEGACY_MIGRATION'")
     suspend fun countLegacyRecords(): Long
 
+    @Query("SELECT COALESCE(MAX(id), 0) FROM balance_records WHERE source = 'LEGACY_MIGRATION'")
+    suspend fun maxLegacyRecordId(): Long
+
+    @Query(
+        """SELECT * FROM balance_records
+           WHERE source = 'LEGACY_MIGRATION' AND account_id = :accountId
+             AND currency = :currency AND recorded_at = :recordedAt AND id > :afterId
+           ORDER BY id"""
+    )
+    suspend fun legacyRecordsAt(
+        accountId: String,
+        currency: String,
+        recordedAt: Long,
+        afterId: Long
+    ): List<BalanceRecordEntity>
+
     @Query("SELECT DISTINCT currency FROM balance_records ORDER BY currency")
     suspend fun distinctCurrencies(): List<String>
 
