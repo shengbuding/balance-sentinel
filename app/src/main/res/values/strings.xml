@@ -190,6 +190,9 @@
     <string name="settings_auto_refresh">自动刷新</string>
     <string name="settings_refresh_desc">配置余额查询间隔和刷新策略</string>
     <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
+    <string name="settings_loading">Loading</string>
+    <string name="settings_cadence_disabled">已停用</string>
+    <string name="settings_refresh_cadences">前台 %1$d 秒 · 后台 %2$s 秒 · 当前生效 %3$d 秒</string>
     <string name="settings_value">数值</string>
     <string name="settings_minutes">分钟</string>
     <string name="settings_seconds">秒</string>

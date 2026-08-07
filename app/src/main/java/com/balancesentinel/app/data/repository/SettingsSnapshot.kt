@@ -24,6 +24,9 @@ data class SettingsSnapshot(
     val effectiveBackgroundCadenceSeconds: Int?
         get() = backgroundRefreshIntervalSeconds
 
+    fun effectiveCadenceSeconds(isForeground: Boolean): Int? =
+        if (isForeground) foregroundMonitoringIntervalSeconds else backgroundRefreshIntervalSeconds
+
     fun accountAlert(accountId: String, currency: String): AccountAlertSettingEntity? =
         accountAlertSettings.firstOrNull { it.accountId == accountId && it.currency == currency }
 

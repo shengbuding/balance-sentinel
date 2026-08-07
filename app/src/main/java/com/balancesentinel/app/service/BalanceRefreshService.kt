@@ -22,7 +22,9 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.NotificationHelper
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.SettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.receiver.KeepAliveReceiver
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
@@ -43,7 +45,7 @@ class BalanceRefreshService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var refreshGateway: RefreshGateway
-    private lateinit var widgetPrefs: WidgetPrefs
+    private lateinit var settingsRepository: SettingsRepository
     private var isLoopRunning = false
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
     private var isSelfDestructing = false
@@ -69,7 +71,7 @@ class BalanceRefreshService : Service() {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.breadcrumb(TAG, "Service onCreate")
-        widgetPrefs = WidgetPrefs(this)
+        settingsRepository = SettingsRepositoryProvider.get(this)
         notificationHelper = NotificationHelper(this)
         refreshGateway = RefreshRuntime.from(this)
         createNotificationChannel()
@@ -206,10 +208,16 @@ class BalanceRefreshService : Service() {
                     }
                 )
                 val committedBalances = runner.refreshBatch().committedBalances
-                val showTotal = widgetPrefs.showTotalBalanceInNotification
+                val settings = (settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value
+                    ?: settingsRepository.readSnapshot()
+                val showTotal = settings.appSettings.showTotalBalanceInNotification
+                val walletOrder = buildList {
+                    if (showTotal) add(NOTIFICATION_TOTAL_KEY)
+                    addAll(settings.notificationSelections.map { "${it.accountId}_${it.currency}" })
+                }
                 val notification = BalanceNotificationDeriver.derive(
                     committedBalances = committedBalances,
-                    walletOrder = widgetPrefs.getNotificationWalletOrder(),
+                    walletOrder = walletOrder,
                     showTotal = showTotal
                 )
                 if (notification == null) {
@@ -252,7 +260,9 @@ class BalanceRefreshService : Service() {
     }
 
     private fun scheduleNext() {
-        val baseIntervalSec = widgetPrefs.refreshIntervalSeconds
+        val baseIntervalSec =
+            ((settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value)
+                ?.foregroundMonitoringIntervalSeconds ?: DEFAULT_FOREGROUND_INTERVAL_SECONDS
         val baseIntervalMs = if (baseIntervalSec > 0) baseIntervalSec * 1000L else 30_000L
 
         // 保护模式下降频到每小时一次
@@ -314,5 +324,7 @@ class BalanceRefreshService : Service() {
 
     companion object {
         private const val TAG = "BalanceRefreshSvc"
+        private const val DEFAULT_FOREGROUND_INTERVAL_SECONDS = 30
+        private const val NOTIFICATION_TOTAL_KEY = "__total__"
     }
 }

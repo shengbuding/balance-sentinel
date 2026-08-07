@@ -112,8 +112,10 @@ object RefreshLogStore {
 
     private fun getMaxEntries(context: Context): Int {
         return try {
-            val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-            prefs.getInt(WidgetPrefs.KEY_LOG_MAX, DEFAULT_MAX_ENTRIES).coerceIn(10, 1000)
+            val ready = SettingsRepositoryProvider.get(context).snapshot.value
+                as? SettingsSnapshotState.Ready
+            ready?.value?.appSettings?.logMaxEntries?.coerceIn(10, 1000)
+                ?: DEFAULT_MAX_ENTRIES
         } catch (_: Exception) {
             DEFAULT_MAX_ENTRIES
         }

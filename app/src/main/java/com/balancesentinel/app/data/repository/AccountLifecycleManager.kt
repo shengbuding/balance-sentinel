@@ -17,8 +17,6 @@ class AccountLifecycleManager(
         (context.applicationContext as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway,
     private val injectedCoordinator: AccountMutationCoordinator? = null
 ) {
-    private val widgetPrefs = WidgetPrefs(context)
-
     /** Suspending entry point used by the Room-backed callers. */
     internal suspend fun saveAsync(
         existingId: String?,
@@ -45,7 +43,6 @@ class AccountLifecycleManager(
                     RawRecordStore.migrateAccountIds(context, migration)
                     DailySummaryStore.migrateAccountIds(context, migration)
                     UsageDataStore.migrateAccountIds(context, migration)
-                    widgetPrefs.migrateAccountData(result.before.id, result.account.id)
                     BalanceWidgetDataStore.removeAccountBalance(context, result.before.id)
                     ProviderCache(context).clear(result.before.providerType, result.before.id)
                 }
@@ -61,7 +58,6 @@ class AccountLifecycleManager(
                 UsageDataStore.removeByAccountId(context, accountId)
                 BalanceWidgetDataStore.removeAccountBalance(context, accountId)
                 ProviderCache(context).clear(account.providerType, accountId)
-                widgetPrefs.removeAccountData(accountId)
                 ApiDebugStore.clearEntries(accountId)
             }
         }

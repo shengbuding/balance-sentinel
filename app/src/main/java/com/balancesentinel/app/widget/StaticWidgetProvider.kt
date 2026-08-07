@@ -24,7 +24,8 @@ import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
 import com.balancesentinel.app.data.refresh.RefreshGateway
@@ -395,9 +396,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         if (now - lastScheduleTime < 2000L) return
         lastScheduleTime = now
 
-        val prefs = WidgetPrefs(context)
-        val intervalSec = prefs.refreshIntervalSeconds
-        if (intervalSec <= 0) return
+        val published = SettingsRepositoryProvider.get(context).snapshot.value
+            as? SettingsSnapshotState.Ready ?: return
+        val intervalSec = published.value.backgroundRefreshIntervalSeconds ?: return
 
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: run {
             logSchedule(context, intervalSec, 0, "failed", "无法获取 AlarmManager")

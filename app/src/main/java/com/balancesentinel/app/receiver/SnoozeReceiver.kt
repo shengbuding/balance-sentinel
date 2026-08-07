@@ -5,7 +5,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.repository.NotificationHelper
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * 暂停预警广播接收器。
@@ -18,10 +23,27 @@ class SnoozeReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val accountId = intent.getStringExtra("account_id") ?: return
-        val prefs = WidgetPrefs(context)
+        val pending = goAsync()
         // 暂停时长由用户设置决定（默认 60 分钟）
-        val durationMs = prefs.snoozeDurationMinutes * 60_000L
-        prefs.setSnoozeUntil(accountId, System.currentTimeMillis() + durationMs)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val repository = SettingsRepositoryProvider.get(context)
+                val published = (repository.snapshot.value as? SettingsSnapshotState.Ready)?.value
+                    ?: repository.readSnapshot()
+                val until = System.currentTimeMillis() +
+                    published.appSettings.snoozeDurationMinutes * 60_000L
+                repository.updateSnapshot { current ->
+                    current.copy(
+                        snoozes = current.snoozes.filterNot { it.accountId == accountId } +
+                            SnoozeStateEntity(accountId, until)
+                    )
+                }
+            } catch (error: Exception) {
+                Logger.w("SnoozeReceiver", "Failed to persist snooze: ${error.message}")
+            } finally {
+                pending.finish()
+            }
+        }
 
         // 取消该账户已有的通知
         try {

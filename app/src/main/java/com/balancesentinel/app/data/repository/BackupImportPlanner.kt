@@ -34,10 +34,17 @@ data class ScriptAuthorization(
 
 class BackupImportPlanner(
     private val apiKeyManager: ApiKeyManager,
-    private val widgetPrefs: WidgetPrefs,
+    @Suppress("UNUSED_PARAMETER") private val widgetPrefs: WidgetPrefs,
+    private val settingsRepository: SettingsRepository? = null,
     private val inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection =
         { script, account -> UsageScriptExecutor.inspect(script, account) }
 ) {
+    constructor(
+        apiKeyManager: ApiKeyManager,
+        widgetPrefs: WidgetPrefs,
+        inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection
+    ) : this(apiKeyManager, widgetPrefs, null, inspectScript)
+
     suspend fun plan(
         config: AppConfig,
         localAccounts: List<AccountInfo>,
@@ -223,14 +230,24 @@ class BackupImportPlanner(
     }
 
     fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
+        validateApply(plan, confirmedFullReplace)
+        apiKeyManager.replaceAll(plan.finalAccounts)
+    }
+
+    suspend fun applyAsync(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
+        validateApply(plan, confirmedFullReplace)
+        apiKeyManager.replaceAll(plan.finalAccounts)
+        checkNotNull(settingsRepository) { "Room SettingsRepository is required for imports" }
+            .applyConfigSettings(plan.settings)
+    }
+
+    private fun validateApply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
         check(plan.canApply) {
             "Backup import is blocked: ${plan.blockingReasons.joinToString()}"
         }
         check(plan.mode != ImportMode.REPLACE_ALL || confirmedFullReplace) {
             "Replacing all accounts requires explicit destructive confirmation"
         }
-        apiKeyManager.replaceAll(plan.finalAccounts)
-        ConfigManager.applySettings(plan.settings, widgetPrefs)
     }
 
     private fun findLocalIndex(

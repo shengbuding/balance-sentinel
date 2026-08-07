@@ -41,6 +41,7 @@ class SettingsRepositoryTest {
 
     @Test
     fun `publication exposes one snapshot containing every settings table`() = runTest {
+        database.accountDao().insertCreate(testAccount("acct"))
         val expected = SettingsSnapshot(
             appSettings = AppSettingsEntity(
                 backgroundRefreshIntervalSeconds = 900,

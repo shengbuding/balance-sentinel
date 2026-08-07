@@ -251,8 +251,8 @@ private class AndroidRefreshAlertDispatcher(
 ) : RefreshAlertDispatcher {
     override fun check(account: AccountInfo, balance: BalanceEntry) {
         val amount = balance.totalBalance.toString()
-        AlertChecker.check(context, account.id, amount, balance.currency, account.label)
-        AlertChecker.checkChange(context, account.id, amount, balance.currency, account.label)
+        AlertChecker.checkPublished(context, account.id, amount, balance.currency, account.label)
+        AlertChecker.checkChangePublished(context, account.id, amount, balance.currency, account.label)
     }
 }
 

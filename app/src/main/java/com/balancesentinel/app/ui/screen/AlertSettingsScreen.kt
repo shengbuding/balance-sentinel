@@ -26,7 +26,8 @@ import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.SnoozeInfo
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
+import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
@@ -42,7 +43,6 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
 @Composable
 fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember { WidgetPrefs(context) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accountLoadState = uiState.accountLoadState
     val accounts = (accountLoadState as? AccountLoadState.Ready)?.accounts.orEmpty()
@@ -60,27 +60,27 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
     }
 
     // 全局阈值状态
-    var alertThresholdInput by remember {
+    var alertThresholdInput by remember(uiState.alertThreshold) {
         mutableStateOf(
-            if (prefs.alertThreshold > 0f) prefs.alertThreshold.toInt().toString() else ""
+            if (uiState.alertThreshold > 0f) uiState.alertThreshold.toInt().toString() else ""
         )
     }
-    var changeThresholdInput by remember {
+    var changeThresholdInput by remember(uiState.changeAlertThreshold) {
         mutableStateOf(
-            if (prefs.changeAlertThreshold > 0f) prefs.changeAlertThreshold.toInt().toString() else ""
+            if (uiState.changeAlertThreshold > 0f) uiState.changeAlertThreshold.toInt().toString() else ""
         )
     }
-    var changePeriodInput by remember {
+    var changePeriodInput by remember(uiState.changeAlertPeriodMinutes) {
         mutableStateOf(
-            if (prefs.changeAlertPeriodMinutes > 0) prefs.changeAlertPeriodMinutes.toString() else ""
+            if (uiState.changeAlertPeriodMinutes > 0) uiState.changeAlertPeriodMinutes.toString() else ""
         )
     }
 
     // Snooze 信息
-    var snoozeInfo by remember { mutableStateOf(prefs.getSnoozeInfo()) }
+    val snoozeInfo = uiState.snoozeInfo
 
     // 通知栏：显示总余额
-    var showTotal by remember { mutableStateOf(prefs.showTotalBalanceInNotification) }
+    val showTotal = uiState.showTotalBalanceInNotification
 
     // 通知栏钱包排序列表（驱动 UI 重组的 key）
     var orderVersion by remember { mutableStateOf(0) }
@@ -120,9 +120,8 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
         ) {
             // ── Snooze 状态横幅 ──
             if (snoozeInfo.anySnoozed) {
-                SnoozeBanner(snoozeInfo, prefs, accounts) {
-                    prefs.clearAllSnooze()
-                    snoozeInfo = prefs.getSnoozeInfo()
+                SnoozeBanner(snoozeInfo, accounts) {
+                    viewModel.clearAllSnooze()
                     Toast.makeText(
                         context,
                         context.getString(R.string.settings_alert_snooze_cleared),
@@ -135,23 +134,14 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
             SectionHeader(stringResource(R.string.alert_settings_notification_title))
             NotificationHintCard(
                 showTotal = showTotal,
-                totalOrderPos = remember(orderVersion) {
-                    prefs.getSelectedWalletPosition(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
-                },
-                totalCount = remember(orderVersion) { prefs.getSelectedWalletCount() },
+                totalOrderPos = if (showTotal) 0 else -1,
+                totalCount = uiState.notificationSelections.size + if (showTotal) 1 else 0,
                 onShowTotalChange = { checked ->
-                    showTotal = checked
-                    prefs.showTotalBalanceInNotification = checked
+                    viewModel.setShowTotalBalanceInNotification(checked)
                     orderVersion++
                 },
-                onMoveTotalUp = {
-                    prefs.moveNotificationWalletUp(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
-                    orderVersion++
-                },
-                onMoveTotalDown = {
-                    prefs.moveNotificationWalletDown(WidgetPrefs.KEY_NOTIFICATION_TOTAL, "")
-                    orderVersion++
-                }
+                onMoveTotalUp = {},
+                onMoveTotalDown = {}
             )
 
             // ── 区域 1: 分账户/币种开关 ──
@@ -173,22 +163,24 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                         accounts.forEach { account ->
                             val currencies = accountCurrencies[account.id].orEmpty()
                             AccountAlertCard(
+                                viewModel = viewModel,
                                 account = account,
                                 currencies = currencies,
-                                prefs = prefs,
+                                settings = uiState.accountAlertSettings,
+                                notifications = uiState.notificationSelections,
+                                showTotal = showTotal,
                                 showNotificationColumn = true,
                                 orderVersion = orderVersion,
                                 onMoveUp = { aid, cur ->
-                                    prefs.moveNotificationWalletUp(aid, cur)
+                                    viewModel.moveNotificationWallet(aid, cur, -1)
                                     orderVersion++
                                 },
                                 onMoveDown = { aid, cur ->
-                                    prefs.moveNotificationWalletDown(aid, cur)
+                                    viewModel.moveNotificationWallet(aid, cur, 1)
                                     orderVersion++
                                 },
                                 onToggle = {
                                     orderVersion++
-                                    snoozeInfo = prefs.getSnoozeInfo()
                                 }
                             )
                         }
@@ -201,17 +193,17 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
 
             // 派生响应式标签（globalApplyVersion 变化时重新计算）
             val alertCurrentLabel = key(globalApplyVersion) {
-                stringResource(R.string.settings_alert_current, prefs.alertThreshold.toInt())
+                stringResource(R.string.settings_alert_current, uiState.alertThreshold.toInt())
             }
             val changeCurrentLabel = key(globalApplyVersion) {
-                stringResource(R.string.settings_alert_current, prefs.changeAlertThreshold.toInt())
+                stringResource(R.string.settings_alert_current, uiState.changeAlertThreshold.toInt())
             }
             val periodCurrentLabel = key(globalApplyVersion) {
-                if (prefs.changeAlertPeriodMinutes > 0)
-                    stringResource(R.string.settings_alert_snooze_duration_current, prefs.changeAlertPeriodMinutes)
+                if (uiState.changeAlertPeriodMinutes > 0)
+                    stringResource(R.string.settings_alert_snooze_duration_current, uiState.changeAlertPeriodMinutes)
                 else ""
             }
-            val snoozeCurrentMinutes = key(globalApplyVersion) { prefs.snoozeDurationMinutes }
+            val snoozeCurrentMinutes = key(globalApplyVersion) { uiState.snoozeDurationMinutes }
 
             // 余额预警阈值
             ThresholdCard(
@@ -220,14 +212,12 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                 hint = stringResource(R.string.alert_settings_threshold_hint),
                 inputValue = alertThresholdInput,
                 onInputChange = { alertThresholdInput = it.filter { c -> c.isDigit() } },
-                currentValue = prefs.alertThreshold,
+                currentValue = uiState.alertThreshold,
                 currentLabel = alertCurrentLabel,
                 onApply = {
                     val num = alertThresholdInput.toFloatOrNull()
                     if (num != null && num > 0f) {
-                        prefs.alertThreshold = num
-                        prefs.clearAllSnooze()
-                        snoozeInfo = prefs.getSnoozeInfo()
+                        viewModel.setAlertThreshold(num)
                         globalApplyVersion++
                     }
                 }
@@ -240,14 +230,12 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                 hint = stringResource(R.string.alert_settings_threshold_hint),
                 inputValue = changeThresholdInput,
                 onInputChange = { changeThresholdInput = it.filter { c -> c.isDigit() } },
-                currentValue = prefs.changeAlertThreshold,
+                currentValue = uiState.changeAlertThreshold,
                 currentLabel = changeCurrentLabel,
                 onApply = {
                     val num = changeThresholdInput.toFloatOrNull()
                     if (num != null && num > 0f) {
-                        prefs.changeAlertThreshold = num
-                        prefs.clearAllSnooze()
-                        snoozeInfo = prefs.getSnoozeInfo()
+                        viewModel.setChangeAlertThreshold(num)
                         globalApplyVersion++
                     }
                 }
@@ -260,12 +248,12 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                 hint = stringResource(R.string.alert_settings_period_hint),
                 inputValue = changePeriodInput,
                 onInputChange = { changePeriodInput = it.filter { c -> c.isDigit() } },
-                currentValue = prefs.changeAlertPeriodMinutes.toFloat(),
+                currentValue = uiState.changeAlertPeriodMinutes.toFloat(),
                 currentLabel = periodCurrentLabel,
                 onApply = {
                     val num = changePeriodInput.toIntOrNull()
                     if (num != null && num > 0) {
-                        prefs.changeAlertPeriodMinutes = num
+                        viewModel.setChangeAlertPeriodMinutes(num)
                         globalApplyVersion++
                     }
                 }
@@ -275,7 +263,7 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
             SnoozeDurationCard(
                 currentMinutes = snoozeCurrentMinutes,
                 onSelect = { minutes ->
-                    prefs.snoozeDurationMinutes = minutes
+                    viewModel.setSnoozeDurationMinutes(minutes)
                     globalApplyVersion++
                 }
             )
@@ -368,9 +356,12 @@ private fun NoAccountsCard() {
 
 @Composable
 private fun AccountAlertCard(
+    viewModel: HomeViewModel,
     account: AccountInfo,
     currencies: List<String>,
-    prefs: WidgetPrefs,
+    settings: List<AccountAlertSettingEntity>,
+    notifications: List<NotificationWalletSelectionEntity>,
+    showTotal: Boolean,
     showNotificationColumn: Boolean,
     orderVersion: Int,
     onMoveUp: (String, String) -> Unit,
@@ -448,21 +439,23 @@ private fun AccountAlertCard(
 
                 currencies.forEach { currency ->
                     // 用本地状态管理，确保 Switch 点击后立即反映 UI 变化
-                    var balanceOn by remember {
-                        mutableStateOf(prefs.isBalanceAlertEnabled(account.id, currency))
+                    val configured = settings.firstOrNull {
+                        it.accountId == account.id && it.currency == currency
                     }
-                    var changeOn by remember {
-                        mutableStateOf(prefs.isChangeAlertEnabled(account.id, currency))
+                    var balanceOn by remember(configured, account.id, currency) {
+                        mutableStateOf(configured?.balanceAlertEnabled ?: false)
                     }
-                    var notifOn by remember(orderVersion) {
-                        mutableStateOf(prefs.isNotificationWalletSelected(account.id, currency))
+                    var changeOn by remember(configured, account.id, currency) {
+                        mutableStateOf(configured?.changeAlertEnabled ?: false)
                     }
-                    val pos = remember(orderVersion) {
-                        prefs.getSelectedWalletPosition(account.id, currency)
+                    val selectedIndex = notifications.indexOfFirst {
+                        it.accountId == account.id && it.currency == currency
                     }
-                    val totalCount = remember(orderVersion) {
-                        prefs.getSelectedWalletCount()
+                    var notifOn by remember(orderVersion, selectedIndex) {
+                        mutableStateOf(selectedIndex >= 0)
                     }
+                    val pos = if (selectedIndex < 0) -1 else selectedIndex + if (showTotal) 1 else 0
+                    val totalCount = notifications.size + if (showTotal) 1 else 0
                     CurrencyAlertRow(
                         currency = currency,
                         balanceEnabled = balanceOn,
@@ -474,19 +467,27 @@ private fun AccountAlertCard(
                         showNotificationCheckbox = showNotificationColumn,
                         onNotificationToggle = { checked ->
                             notifOn = checked
-                            prefs.setNotificationWalletSelected(account.id, currency, checked)
+                            viewModel.setNotificationWalletSelected(account.id, currency, checked)
                             onToggle()
                         },
                         onMoveUp = { onMoveUp(account.id, currency) },
                         onMoveDown = { onMoveDown(account.id, currency) },
                         onBalanceToggle = { enabled ->
                             balanceOn = enabled
-                            prefs.setBalanceAlertEnabled(account.id, currency, enabled)
+                            viewModel.setAccountAlertEnabled(
+                                account.id,
+                                currency,
+                                balanceEnabled = enabled
+                            )
                             onToggle()
                         },
                         onChangeToggle = { enabled ->
                             changeOn = enabled
-                            prefs.setChangeAlertEnabled(account.id, currency, enabled)
+                            viewModel.setAccountAlertEnabled(
+                                account.id,
+                                currency,
+                                changeEnabled = enabled
+                            )
                             onToggle()
                         }
                     )
@@ -606,7 +607,6 @@ private fun CurrencyAlertRow(
 @Composable
 private fun SnoozeBanner(
     snoozeInfo: SnoozeInfo,
-    prefs: WidgetPrefs,
     accounts: List<AccountInfo>,
     onClear: () -> Unit
 ) {

@@ -38,7 +38,12 @@ import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RefreshStats
 import com.balancesentinel.app.data.repository.RefreshStatsStore
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.RoomSettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshot
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
+import com.balancesentinel.app.data.repository.SnoozeInfo
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.service.BalanceRefreshService
@@ -65,14 +70,19 @@ data class HomeUiState(
     val lastRefreshTime: Long = 0L,
     val crashLogs: List<CrashLogger.CrashEntry> = emptyList(),
     val statusSummary: com.balancesentinel.app.data.repository.StatusSummary? = null,
-    val refreshIntervalSeconds: Int = WidgetPrefs.DEFAULT_INTERVAL,
+    val refreshIntervalSeconds: Int = RoomSettingsRepository.DEFAULT_FOREGROUND_INTERVAL_SECONDS,
     val alertEnabled: Boolean = false,
     val alertThreshold: Float = 0f,
     val changeAlertEnabled: Boolean = false,
     val changeAlertThreshold: Float = 0f,
     val changeAlertPeriodMinutes: Int = 0,
     val snoozeInfo: com.balancesentinel.app.data.repository.SnoozeInfo = com.balancesentinel.app.data.repository.SnoozeInfo(),
-    val snoozeDurationMinutes: Int = 60
+    val snoozeDurationMinutes: Int = 60,
+    val backgroundRefreshIntervalSeconds: Int? = 900,
+    val settingsLoading: Boolean = true,
+    val showTotalBalanceInNotification: Boolean = true,
+    val accountAlertSettings: List<com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity> = emptyList(),
+    val notificationSelections: List<com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity> = emptyList()
 )
 
 class HomeViewModel @JvmOverloads constructor(
@@ -86,7 +96,7 @@ class HomeViewModel @JvmOverloads constructor(
     private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
 ) : AndroidViewModel(application) {
 
-    private val widgetPrefs: WidgetPrefs = WidgetPrefs(application)
+    private val settingsRepository: SettingsRepository = SettingsRepositoryProvider.get(application)
     private val accountSource: AccountUiRepository = injectedAccountUiRepository
         ?: RoomAccountUiRepository(
             RoomAccountRepository(WalletDatabaseProvider.get(application)),
@@ -114,20 +124,48 @@ class HomeViewModel @JvmOverloads constructor(
 
     init {
         observeAccounts()
+        observeSettings()
         loadCrashLogs()
         checkMissedRefreshes()
         loadStatusSummary()
-        _uiState.value = _uiState.value.copy(
-            refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
-            alertEnabled = widgetPrefs.alertEnabled,
-            alertThreshold = widgetPrefs.alertThreshold,
-            changeAlertEnabled = widgetPrefs.changeAlertEnabled,
-            changeAlertThreshold = widgetPrefs.changeAlertThreshold,
-            changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-            snoozeInfo = widgetPrefs.getSnoozeInfo(),
-            snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes
-        )
         scheduleMidnightAndCheckSummary()
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settingsRepository.snapshot.collect { state ->
+                when (state) {
+                    SettingsSnapshotState.Loading ->
+                        _uiState.value = _uiState.value.copy(settingsLoading = true)
+                    is SettingsSnapshotState.Ready -> applySettingsSnapshot(state.value)
+                }
+            }
+        }
+    }
+
+    private fun applySettingsSnapshot(snapshot: SettingsSnapshot) {
+        val app = snapshot.appSettings
+        val now = System.currentTimeMillis()
+        val activeSnoozes = snapshot.snoozes.filter { it.snoozedUntil > now }
+        _uiState.value = _uiState.value.copy(
+            refreshIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
+            backgroundRefreshIntervalSeconds = app.backgroundRefreshIntervalSeconds,
+            alertEnabled = app.alertEnabled,
+            alertThreshold = app.alertThreshold.toFloat(),
+            changeAlertEnabled = app.changeAlertEnabled,
+            changeAlertThreshold = app.changeAlertThreshold.toFloat(),
+            changeAlertPeriodMinutes = app.changeAlertPeriodMinutes,
+            snoozeInfo = SnoozeInfo(
+                anySnoozed = activeSnoozes.isNotEmpty(),
+                maxRemainingMs = activeSnoozes.maxOfOrNull { it.snoozedUntil - now } ?: 0L,
+                snoozedAccountIds = activeSnoozes.map { it.accountId }
+            ),
+            snoozeDurationMinutes = app.snoozeDurationMinutes,
+            settingsLoading = false,
+            showTotalBalanceInNotification = app.showTotalBalanceInNotification,
+            accountAlertSettings = snapshot.accountAlertSettings,
+            notificationSelections = snapshot.notificationSelections
+        )
     }
 
     private fun observeAccounts() {
@@ -195,14 +233,7 @@ class HomeViewModel @JvmOverloads constructor(
             _uiState.value = _uiState.value.copy(
                 accountBalances = emptyMap(),
                 lastRefreshTime = 0L,
-                refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
-                alertEnabled = widgetPrefs.alertEnabled,
-                alertThreshold = widgetPrefs.alertThreshold,
-                changeAlertEnabled = widgetPrefs.changeAlertEnabled,
-                changeAlertThreshold = widgetPrefs.changeAlertThreshold,
-                changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-                snoozeInfo = widgetPrefs.getSnoozeInfo(),
-                snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes
+                settingsLoading = _uiState.value.settingsLoading
             )
             val accounts = _uiState.value.accounts
             if (accounts.isEmpty()) {
@@ -451,8 +482,20 @@ class HomeViewModel @JvmOverloads constructor(
     // ── 全局设置 ──
 
     fun setRefreshInterval(seconds: Int) {
-        widgetPrefs.refreshIntervalSeconds = seconds
         _uiState.value = _uiState.value.copy(refreshIntervalSeconds = seconds)
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    appSettings = current.appSettings.copy(
+                        foregroundMonitoringIntervalSeconds = seconds,
+                        backgroundRefreshIntervalSeconds = if (
+                            seconds >= RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
+                        ) seconds else current.backgroundRefreshIntervalSeconds
+                            ?: RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
+                    )
+                )
+            }
+        }
         // 通知前台 Service 用新间隔重新调度 Handler
         notifyServiceReschedule()
         if (!readyAccounts().isNullOrEmpty()) refreshBalance()
@@ -468,59 +511,147 @@ class HomeViewModel @JvmOverloads constructor(
     }
 
     fun setAlertEnabled(enabled: Boolean) {
-        widgetPrefs.alertEnabled = enabled
         _uiState.value = _uiState.value.copy(alertEnabled = enabled)
+        updateAppSettings { it.copy(alertEnabled = enabled) }
     }
 
     fun setAlertThreshold(threshold: Float) {
-        widgetPrefs.alertThreshold = threshold
         // 更新阈值后自动解除所有暂停，确保新设置立即生效
-        widgetPrefs.clearAllSnooze()
         _uiState.value = _uiState.value.copy(
             alertThreshold = threshold,
-            snoozeInfo = widgetPrefs.getSnoozeInfo()
+            snoozeInfo = SnoozeInfo()
         )
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    appSettings = current.appSettings.copy(alertThreshold = threshold.toDouble()),
+                    snoozes = emptyList()
+                )
+            }
+        }
     }
 
     fun setChangeAlertEnabled(enabled: Boolean) {
-        widgetPrefs.changeAlertEnabled = enabled
         _uiState.value = _uiState.value.copy(changeAlertEnabled = enabled)
+        updateAppSettings { it.copy(changeAlertEnabled = enabled) }
     }
 
     fun setChangeAlertThreshold(threshold: Float) {
-        widgetPrefs.changeAlertThreshold = threshold
         // 更新阈值后自动解除所有暂停
-        widgetPrefs.clearAllSnooze()
         _uiState.value = _uiState.value.copy(
             changeAlertThreshold = threshold,
-            snoozeInfo = widgetPrefs.getSnoozeInfo()
+            snoozeInfo = SnoozeInfo()
         )
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    appSettings = current.appSettings.copy(changeAlertThreshold = threshold.toDouble()),
+                    snoozes = emptyList()
+                )
+            }
+        }
     }
 
     fun setChangeAlertPeriodMinutes(minutes: Int) {
-        widgetPrefs.changeAlertPeriodMinutes = minutes
         _uiState.value = _uiState.value.copy(changeAlertPeriodMinutes = minutes)
+        updateAppSettings { it.copy(changeAlertPeriodMinutes = minutes) }
     }
 
     fun setSnoozeDurationMinutes(minutes: Int) {
-        widgetPrefs.snoozeDurationMinutes = minutes
         _uiState.value = _uiState.value.copy(snoozeDurationMinutes = minutes)
+        updateAppSettings { it.copy(snoozeDurationMinutes = minutes) }
     }
 
     fun clearAllSnooze() {
-        widgetPrefs.clearAllSnooze()
-        _uiState.value = _uiState.value.copy(snoozeInfo = widgetPrefs.getSnoozeInfo())
+        _uiState.value = _uiState.value.copy(snoozeInfo = SnoozeInfo())
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { it.copy(snoozes = emptyList()) }
+        }
     }
 
     fun refreshSnoozeInfo() {
-        _uiState.value = _uiState.value.copy(snoozeInfo = widgetPrefs.getSnoozeInfo())
+        val ready = settingsRepository.snapshot.value as? SettingsSnapshotState.Ready ?: return
+        applySettingsSnapshot(ready.value)
     }
 
     // ── 配置导入/导出 ──
 
     /** 获取配置 JSON 字符串（供导出使用） */
     fun getConfigJson(): String {
-        return ConfigManager.buildConfig(getApplication(), apiKeyManager, widgetPrefs)
+        val ready = settingsRepository.snapshot.value as? SettingsSnapshotState.Ready ?: return ""
+        return ConfigManager.buildConfig(getApplication(), apiKeyManager.getAccounts(), ready.value)
+    }
+
+    private fun updateAppSettings(
+        transform: (com.balancesentinel.app.data.local.settings.AppSettingsEntity) ->
+            com.balancesentinel.app.data.local.settings.AppSettingsEntity
+    ) {
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(appSettings = transform(current.appSettings))
+            }
+        }
+    }
+
+    fun setShowTotalBalanceInNotification(enabled: Boolean) {
+        updateAppSettings { it.copy(showTotalBalanceInNotification = enabled) }
+    }
+
+    fun setAccountAlertEnabled(
+        accountId: String,
+        currency: String,
+        balanceEnabled: Boolean? = null,
+        changeEnabled: Boolean? = null
+    ) {
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                val existing = current.accountAlert(accountId, currency)
+                val updated = com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(
+                    accountId,
+                    currency,
+                    balanceEnabled ?: existing?.balanceAlertEnabled ?: current.appSettings.alertEnabled,
+                    changeEnabled ?: existing?.changeAlertEnabled ?: current.appSettings.changeAlertEnabled
+                )
+                current.copy(
+                    accountAlertSettings = current.accountAlertSettings
+                        .filterNot { it.accountId == accountId && it.currency == currency } + updated
+                )
+            }
+        }
+    }
+
+    fun setNotificationWalletSelected(accountId: String, currency: String, selected: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                val retained = current.notificationSelections
+                    .filterNot { it.accountId == accountId && it.currency == currency }
+                val values = if (selected) {
+                    retained + com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity(
+                        accountId,
+                        currency,
+                        retained.size
+                    )
+                } else retained
+                current.copy(notificationSelections = values)
+            }
+        }
+    }
+
+    fun moveNotificationWallet(accountId: String, currency: String, direction: Int) {
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                val values = current.notificationSelections.toMutableList()
+                val index = values.indexOfFirst { it.accountId == accountId && it.currency == currency }
+                val target = (index + direction).coerceIn(0, values.lastIndex.coerceAtLeast(0))
+                if (index >= 0 && target != index) {
+                    val entry = values.removeAt(index)
+                    values.add(target, entry)
+                }
+                current.copy(notificationSelections = values.mapIndexed { order, value ->
+                    value.copy(displayOrder = order)
+                })
+            }
+        }
     }
 
     // ── 刷新单个账户 ──

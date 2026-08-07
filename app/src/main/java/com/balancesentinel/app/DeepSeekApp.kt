@@ -19,6 +19,10 @@ import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.LegacySettingsMigration
+import com.balancesentinel.app.data.repository.SettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,9 +39,16 @@ class DeepSeekApp : Application() {
         roomAccountMutationRecovery().recover()
     }
 
+    internal var settingsMigrationRunner: suspend () -> Unit = {
+        legacySettingsMigration().migrate()
+    }
+
     private val startupMigrationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     lateinit var refreshGateway: RefreshGateway
+        private set
+
+    lateinit var settingsRepository: SettingsRepository
         private set
 
     var credentialCorruption: DataCorruptionException? = null
@@ -45,6 +56,7 @@ class DeepSeekApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        settingsRepository = SettingsRepositoryProvider.get(this)
         refreshGateway = RefreshRuntime.create(this)
         CrashLogger.install(this)
 
@@ -111,6 +123,11 @@ class DeepSeekApp : Application() {
         startupMigrationScope.launch {
             try {
                 legacyMigrationRunner()
+                settingsMigrationRunner()
+                WidgetPrefs(this@DeepSeekApp).apply {
+                    cleanupInvalidEntries()
+                    cleanupLegacyIdData()
+                }
                 accountMutationRecoveryRunner()
             } catch (error: DataCorruptionException) {
                 credentialCorruption = error
@@ -129,6 +146,16 @@ class DeepSeekApp : Application() {
                 EncryptedPreferencesCredentialStore(this)
             )
         )
+
+    internal fun legacySettingsMigration(): LegacySettingsMigration = LegacySettingsMigration(
+        WidgetPrefsLegacySettingsSource(WidgetPrefs(this)),
+        settingsRepository,
+        resolveAccountId = { legacyId ->
+            WalletDatabaseProvider.get(this).accountDao().getAllForMigration()
+                .firstOrNull { it.id == legacyId || it.legacyStorageId == legacyId }
+                ?.id
+        }
+    )
 
     private fun performDataMigration() {
         val apiKeyManager = ApiKeyManager(this)
@@ -150,9 +177,6 @@ class DeepSeekApp : Application() {
         }
 
         // 3. 清理旧版数据
-        val widgetPrefs = WidgetPrefs(this)
-        widgetPrefs.cleanupInvalidEntries()
-        widgetPrefs.cleanupLegacyIdData()
     }
 
     private fun createNotificationChannel() {

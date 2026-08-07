@@ -1,7 +1,6 @@
 package com.balancesentinel.app.service
 
 import com.balancesentinel.app.data.repository.AlertIdentity
-import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.AccountBalance
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
@@ -17,6 +16,8 @@ internal data class ServiceBalanceNotification(
 )
 
 internal object BalanceNotificationDeriver {
+    private const val NOTIFICATION_TOTAL_KEY = "__total__"
+
     fun derive(
         committedBalances: List<AccountBalance>,
         walletOrder: List<String>,
@@ -38,7 +39,7 @@ internal object BalanceNotificationDeriver {
             wallets = selectedWallets,
             showTotal = showTotal,
             totalPosition = if (showTotal) {
-                walletOrder.indexOf(WidgetPrefs.KEY_NOTIFICATION_TOTAL)
+                walletOrder.indexOf(NOTIFICATION_TOTAL_KEY)
             } else {
                 -1
             }

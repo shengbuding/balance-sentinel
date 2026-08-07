@@ -42,7 +42,9 @@ data class ConfigSettings(
     val snoozeDurationMinutes: Int = 60,
     val perCurrencyAlertSettings: List<PerCurrencyAlertSetting> = emptyList(),
     val showTotalBalance: Boolean = true,
-    val notificationSelectedWallets: List<NotificationWalletSelection> = emptyList()
+    val notificationSelectedWallets: List<NotificationWalletSelection> = emptyList(),
+    val backgroundRefreshInterval: Int? = null,
+    val foregroundMonitoringInterval: Int? = null
 )
 
 object ConfigManager {
@@ -102,19 +104,80 @@ object ConfigManager {
                 authorizedScriptOrigins = emptySet()
             )
         }
+        val legacy = WidgetPrefsLegacySettingsSource(widgetPrefs).read()
+        val oldInterval = legacy.refreshIntervalSeconds.coerceAtLeast(1)
         val settings = ConfigSettings(
-            refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
-            alertEnabled = widgetPrefs.alertEnabled,
-            alertThreshold = widgetPrefs.alertThreshold,
-            changeAlertEnabled = widgetPrefs.changeAlertEnabled,
-            changeAlertThreshold = widgetPrefs.changeAlertThreshold,
-            changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-            logMaxEntries = widgetPrefs.logMaxEntries,
-            snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes,
-            perCurrencyAlertSettings = widgetPrefs.getAllPerCurrencyAlertSettings(),
-            showTotalBalance = widgetPrefs.showTotalBalanceInNotification,
-            notificationSelectedWallets = widgetPrefs.getAllNotificationWalletSelections()
+            refreshIntervalSeconds = oldInterval,
+            alertEnabled = legacy.alertEnabled,
+            alertThreshold = legacy.alertThreshold,
+            changeAlertEnabled = legacy.changeAlertEnabled,
+            changeAlertThreshold = legacy.changeAlertThreshold,
+            changeAlertPeriodMinutes = legacy.changeAlertPeriodMinutes,
+            logMaxEntries = legacy.logMaxEntries,
+            snoozeDurationMinutes = legacy.snoozeDurationMinutes,
+            perCurrencyAlertSettings = legacy.perCurrencyAlertSettings,
+            showTotalBalance = legacy.showTotalBalanceInNotification,
+            notificationSelectedWallets = legacy.notificationSelections,
+            backgroundRefreshInterval = oldInterval.coerceAtLeast(
+                RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
+            ),
+            foregroundMonitoringInterval = if (
+                oldInterval < RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
+            ) oldInterval else WidgetPrefs.DEFAULT_INTERVAL
         )
+        return encodeConfig(context, accounts, settings, includeTokens)
+    }
+
+    fun buildConfig(
+        context: Context,
+        sourceAccounts: List<AccountInfo>,
+        snapshot: SettingsSnapshot,
+        includeTokens: Boolean = false
+    ): String {
+        val accounts = sourceAccounts.map { account ->
+            if (includeTokens) account
+            else account.copy(
+                apiKey = "",
+                extraCredentials = account.extraCredentials.mapValues { "" },
+                usageScript = null,
+                usageScriptEnabled = false,
+                authorizedScriptOrigins = emptySet()
+            )
+        }
+        val app = snapshot.appSettings
+        val settings = ConfigSettings(
+            refreshIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
+            alertEnabled = app.alertEnabled,
+            alertThreshold = app.alertThreshold.toFloat(),
+            changeAlertEnabled = app.changeAlertEnabled,
+            changeAlertThreshold = app.changeAlertThreshold.toFloat(),
+            changeAlertPeriodMinutes = app.changeAlertPeriodMinutes,
+            logMaxEntries = app.logMaxEntries,
+            snoozeDurationMinutes = app.snoozeDurationMinutes,
+            perCurrencyAlertSettings = snapshot.accountAlertSettings.map {
+                PerCurrencyAlertSetting(
+                    it.accountId,
+                    it.currency,
+                    it.balanceAlertEnabled,
+                    it.changeAlertEnabled
+                )
+            },
+            showTotalBalance = app.showTotalBalanceInNotification,
+            notificationSelectedWallets = snapshot.notificationSelections.map {
+                NotificationWalletSelection(it.accountId, it.currency)
+            },
+            backgroundRefreshInterval = app.backgroundRefreshIntervalSeconds,
+            foregroundMonitoringInterval = app.foregroundMonitoringIntervalSeconds
+        )
+        return encodeConfig(context, accounts, settings, includeTokens)
+    }
+
+    private fun encodeConfig(
+        context: Context,
+        accounts: List<AccountInfo>,
+        settings: ConfigSettings,
+        includeTokens: Boolean
+    ): String {
         val appVersion = try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
         } catch (_: Exception) {
@@ -167,17 +230,8 @@ object ConfigManager {
     }
 
     internal fun applySettings(s: ConfigSettings, widgetPrefs: WidgetPrefs) {
-        widgetPrefs.refreshIntervalSeconds = s.refreshIntervalSeconds
-        widgetPrefs.alertEnabled = s.alertEnabled
-        widgetPrefs.alertThreshold = s.alertThreshold
-        widgetPrefs.changeAlertEnabled = s.changeAlertEnabled
-        widgetPrefs.changeAlertThreshold = s.changeAlertThreshold
-        widgetPrefs.changeAlertPeriodMinutes = s.changeAlertPeriodMinutes
-        widgetPrefs.logMaxEntries = s.logMaxEntries
-        widgetPrefs.snoozeDurationMinutes = s.snoozeDurationMinutes
-        widgetPrefs.applyPerCurrencyAlertSettings(s.perCurrencyAlertSettings)
-        widgetPrefs.showTotalBalanceInNotification = s.showTotalBalance
-        widgetPrefs.applyNotificationWalletSelections(s.notificationSelectedWallets)
+        // Configuration-owned settings are published through SettingsRepository.
+        // The legacy overload remains as a source-compatible, no-write adapter.
     }
 
     fun exportToUri(
@@ -189,6 +243,24 @@ object ConfigManager {
     ): Boolean {
         return try {
             val content = buildConfig(context, accounts, widgetPrefs, includeTokens)
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun exportToUri(
+        context: Context,
+        uri: Uri,
+        accounts: List<AccountInfo>,
+        snapshot: SettingsSnapshot,
+        includeTokens: Boolean = false
+    ): Boolean {
+        return try {
+            val content = buildConfig(context, accounts, snapshot, includeTokens)
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 out.write(content.toByteArray(Charsets.UTF_8))
             }

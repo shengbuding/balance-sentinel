@@ -18,6 +18,9 @@ import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.BackupImportPlanner
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshot
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
@@ -98,7 +101,11 @@ class DataManagementViewModel @JvmOverloads constructor(
     application: Application,
     private val apiKeyManager: ApiKeyManager = ApiKeyManager(application),
     private val widgetPrefs: WidgetPrefs = WidgetPrefs(application),
-    private val importPlanner: BackupImportPlanner = BackupImportPlanner(apiKeyManager, widgetPrefs),
+    private val importPlanner: BackupImportPlanner = BackupImportPlanner(
+        apiKeyManager,
+        widgetPrefs,
+        settingsRepository = SettingsRepositoryProvider.get(application)
+    ),
     private val injectedAccountUiRepository: AccountUiRepository? = null,
     private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
 ) : AndroidViewModel(application) {
@@ -330,7 +337,15 @@ class DataManagementViewModel @JvmOverloads constructor(
         plan: BackupImportPlan,
         confirmedFullReplace: Boolean
     ): Boolean = try {
-        importPlanner.apply(plan, confirmedFullReplace)
+        viewModelScope.launch {
+            runCatching { importPlanner.applyAsync(plan, confirmedFullReplace) }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        replaceConfirmationRequired = false,
+                        importError = true
+                    )
+                }
+        }
         pendingImportConfig = null
         _uiState.value = _uiState.value.copy(
             pendingImportPlan = null,
@@ -357,11 +372,12 @@ class DataManagementViewModel @JvmOverloads constructor(
     suspend fun exportConfiguration(uri: Uri, includeTokens: Boolean): Boolean {
         val accounts = readyAccounts() ?: return false
         return withContext(Dispatchers.IO) {
+            val settings = SettingsRepositoryProvider.get(getApplication()).readSnapshot()
             ConfigManager.exportToUri(
                 getApplication(),
                 uri,
                 accounts,
-                widgetPrefs,
+                settings,
                 includeTokens
             )
         }
@@ -436,7 +452,10 @@ class DataManagementViewModel @JvmOverloads constructor(
                     res.getString(R.string.data_reset_toast)
                 }
                 PendingAction.ResetSettings -> {
-                    WidgetPrefs(ctx).resetAll()
+                    SettingsRepositoryProvider.get(ctx).publishSnapshot(
+                        SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
+                        System.currentTimeMillis()
+                    )
                     WidgetConfigStore.clearAll(ctx)
                     res.getString(R.string.data_reset_toast)
                 }
@@ -455,6 +474,10 @@ class DataManagementViewModel @JvmOverloads constructor(
                     accounts.forEach { account ->
                         mutationCoordinator.delete(account.id)
                     }
+                    SettingsRepositoryProvider.get(ctx).publishSnapshot(
+                        SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
+                        System.currentTimeMillis()
+                    )
                     // 清除控制台数据
                     com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
                     try {

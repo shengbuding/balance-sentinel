@@ -9,15 +9,37 @@ interface SettingsRepository {
     suspend fun readSnapshot(): SettingsSnapshot
 
     suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long)
-}
 
-fun funSettingsRepositoryFactory(block: (Context) -> SettingsRepository): (Context) -> SettingsRepository = block
+    suspend fun hasPersistedSnapshot(): Boolean
+
+    suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot
+
+    suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot
+}
 
 object SettingsRepositoryProvider {
     @Volatile
-    var factory: (Context) -> SettingsRepository = { context ->
+    private var repositoryFactory: (Context) -> SettingsRepository = { context ->
         RoomSettingsRepository.from(context)
     }
 
-    fun get(context: Context): SettingsRepository = factory(context)
+    var factory: (Context) -> SettingsRepository
+        get() = repositoryFactory
+        set(value) {
+            synchronized(this) {
+                repositoryFactory = value
+                instance = null
+            }
+        }
+
+    @Volatile
+    private var instance: SettingsRepository? = null
+
+    fun get(context: Context): SettingsRepository = instance ?: synchronized(this) {
+        instance ?: repositoryFactory(context.applicationContext).also { instance = it }
+    }
+
+    internal fun resetForTests() {
+        synchronized(this) { instance = null }
+    }
 }

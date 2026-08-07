@@ -37,9 +37,58 @@ class WidgetPrefsLegacySettingsSource(private val widgetPrefs: WidgetPrefs) : Le
 
 /** Migration orchestration is intentionally enabled only by the GREEN wiring. */
 class LegacySettingsMigration(
-    @Suppress("UNUSED_PARAMETER") private val source: LegacySettingsSource,
-    @Suppress("UNUSED_PARAMETER") private val repository: SettingsRepository
+    private val source: LegacySettingsSource,
+    private val repository: SettingsRepository,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val resolveAccountId: suspend (String) -> String? = { it }
 ) {
-    suspend fun migrate(): SettingsSnapshot =
-        throw UnsupportedOperationException("Legacy settings migration is not wired")
+    suspend fun migrate(): SettingsSnapshot {
+        if (repository.hasPersistedSnapshot()) return repository.readSnapshot()
+        val legacy = source.read()
+        val oldInterval = legacy.refreshIntervalSeconds.coerceAtLeast(1)
+        val foreground = if (oldInterval < RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS) {
+            oldInterval
+        } else {
+            WidgetPrefs.DEFAULT_INTERVAL
+        }
+        val background = oldInterval.coerceAtLeast(RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS)
+        val publishedAt = now()
+        val snapshot = SettingsSnapshot(
+            appSettings = com.balancesentinel.app.data.local.settings.AppSettingsEntity(
+                backgroundRefreshIntervalSeconds = background,
+                foregroundMonitoringIntervalSeconds = foreground,
+                alertEnabled = legacy.alertEnabled,
+                alertThreshold = legacy.alertThreshold.toDouble(),
+                changeAlertEnabled = legacy.changeAlertEnabled,
+                changeAlertThreshold = legacy.changeAlertThreshold.toDouble(),
+                changeAlertPeriodMinutes = legacy.changeAlertPeriodMinutes,
+                logMaxEntries = legacy.logMaxEntries,
+                snoozeDurationMinutes = legacy.snoozeDurationMinutes,
+                showTotalBalanceInNotification = legacy.showTotalBalanceInNotification,
+                updatedAt = publishedAt
+            ),
+            accountAlertSettings = legacy.perCurrencyAlertSettings.mapNotNull {
+                val accountId = resolveAccountId(it.accountId) ?: return@mapNotNull null
+                com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(
+                    accountId = accountId,
+                    currency = it.currency,
+                    balanceAlertEnabled = it.balanceAlertEnabled,
+                    changeAlertEnabled = it.changeAlertEnabled
+                )
+            },
+            notificationSelections = legacy.notificationSelections
+                .filter { it.accountId.isNotBlank() && it.accountId != WidgetPrefs.KEY_NOTIFICATION_TOTAL }
+                .mapNotNull {
+                    val accountId = resolveAccountId(it.accountId) ?: return@mapNotNull null
+                    com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity(
+                        accountId = accountId,
+                        currency = it.currency,
+                        displayOrder = 0
+                    )
+                }
+                .mapIndexed { index, value -> value.copy(displayOrder = index) }
+        )
+        repository.publishSnapshot(snapshot, publishedAt)
+        return repository.readSnapshot()
+    }
 }
