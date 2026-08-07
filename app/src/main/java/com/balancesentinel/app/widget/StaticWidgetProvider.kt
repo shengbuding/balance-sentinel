@@ -167,8 +167,15 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
             )
     }
 
-    private companion object {
-        val processingRefresh = AtomicBoolean(false)
+    companion object {
+        private val processingRefresh = AtomicBoolean(false)
+
+        internal var refreshGatewayProvider: (Context) -> RefreshGateway = RefreshRuntime::from
+
+        internal fun resetTestOverrides() {
+            processingRefresh.set(false)
+            refreshGatewayProvider = RefreshRuntime::from
+        }
     }
 }
 
@@ -509,5 +516,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
         const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
         @Volatile private var lastScheduleTime: Long = 0L
+
+        internal var accountStateLoaderOverride: (suspend (Context) -> AccountLoadState)? = null
     }
 }

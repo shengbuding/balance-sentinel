@@ -1,11 +1,20 @@
 package com.balancesentinel.app.widget
 
 import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.os.Bundle
+import android.os.Looper
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.AccountStoreRead
+import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.repository.AccountLoadState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,7 +26,12 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowBroadcastPendingResult
+import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -36,11 +50,15 @@ class WidgetProviderTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         BalanceWidgetDataStore.clearAll(context)
+        WidgetConfigStore.clearAll(context)
     }
 
     @After
     fun tearDown() {
+        StaticWidgetProvider.accountStateLoaderOverride = null
+        WidgetRefreshReceiver.resetTestOverrides()
         BalanceWidgetDataStore.clearAll(context)
+        WidgetConfigStore.clearAll(context)
     }
 
     @Test
@@ -72,6 +90,87 @@ class WidgetProviderTest {
 
         assertEquals(25.0, WidgetBalanceVisibility.filter(state, listOf(balance("active")))
             .single().totalBalance.toDouble(), 0.0)
+    }
+
+    @Test
+    fun `provider entrypoint renders only balances from loaded accounts`() {
+        val manager = AppWidgetManager.getInstance(context)
+        val widgetId = Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        WidgetConfigStore.saveConfig(context, widgetId, WidgetConfig.TOTAL_ACCOUNT_ID, "CNY")
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "active", "Active", "25.00", "CNY", true, "", ""
+        )
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "deleted", "Deleted", "75.00", "CNY", true, "", ""
+        )
+        StaticWidgetProvider.accountStateLoaderOverride = {
+            AccountLoadState.Ready(listOf(account("active")))
+        }
+
+        StaticWidgetProvider_2x1().onUpdate(context, manager, intArrayOf(widgetId))
+
+        val rendered = awaitWidgetBalance(manager, widgetId) { it.contains("25.00") }
+        assertFalse("deleted balance must not affect the rendered aggregate", rendered.contains("100.00"))
+    }
+
+    @Test
+    fun `receiver entrypoint returns while refresh is suspended and finishes afterward`() {
+        val manager = AppWidgetManager.getInstance(context)
+        Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
+        val started = CountDownLatch(1)
+        val release = CompletableDeferred<Unit>()
+        var observedTrigger: RefreshTrigger? = null
+        WidgetRefreshReceiver.refreshGatewayProvider = {
+            gateway { trigger ->
+                observedTrigger = trigger
+                started.countDown()
+                release.await()
+                emptyList()
+            }
+        }
+        val receiver = WidgetRefreshReceiver()
+        val pending = attachPendingResult(receiver)
+
+        receiver.onReceive(context, WidgetRefreshIntents.manual(context))
+
+        assertTrue("refresh must start through onReceive", started.await(1, TimeUnit.SECONDS))
+        assertEquals(RefreshTrigger.WIDGET, observedTrigger)
+        assertFalse("onReceive must leave the async result open while refresh is suspended", pending.future.isDone)
+        release.complete(Unit)
+        pending.future.get(2, TimeUnit.SECONDS)
+        assertTrue(pending.future.isDone)
+    }
+
+    @Test
+    fun `receiver entrypoint finishes its async result when refresh fails`() {
+        val manager = AppWidgetManager.getInstance(context)
+        Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
+        val attempted = CountDownLatch(1)
+        WidgetRefreshReceiver.refreshGatewayProvider = {
+            gateway {
+                attempted.countDown()
+                error("refresh failed")
+            }
+        }
+        val receiver = WidgetRefreshReceiver()
+        val pending = attachPendingResult(receiver)
+
+        receiver.onReceive(context, WidgetRefreshIntents.manual(context))
+
+        assertTrue("refresh must be attempted through onReceive", attempted.await(1, TimeUnit.SECONDS))
+        pending.future.get(2, TimeUnit.SECONDS)
+        assertTrue(pending.future.isDone)
     }
 
     @Test
@@ -122,6 +221,56 @@ class WidgetProviderTest {
 
     private fun account(id: String) = AccountInfo(id, id, "key-$id", ProviderType.DEEPSEEK, revision = 1)
     private fun balance(id: String) = AccountBalance(id, id, "25", "CNY", true, "", "", 1L)
+
+    private fun gateway(
+        refreshAll: suspend (RefreshTrigger) -> List<AccountRefreshResult>
+    ): RefreshGateway = object : RefreshGateway {
+        override suspend fun refreshAccount(
+            accountId: String,
+            trigger: RefreshTrigger
+        ): AccountRefreshResult = error("not used")
+
+        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> =
+            refreshAll.invoke(trigger)
+
+        override fun invalidate(accountId: String) = Unit
+
+        override suspend fun readAccountSnapshot(): AccountStoreRead = AccountStoreRead.Missing
+    }
+
+    private fun attachPendingResult(receiver: BroadcastReceiver): ShadowBroadcastPendingResult {
+        val create = ShadowBroadcastPendingResult::class.java.getDeclaredMethod(
+            "create",
+            Int::class.javaPrimitiveType,
+            String::class.java,
+            Bundle::class.java,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val pending = create.invoke(null, 0, null, null, false) as BroadcastReceiver.PendingResult
+        ReflectionHelpers.setField(receiver, "mPendingResult", pending)
+        return Shadows.shadowOf(pending)
+    }
+
+    private fun awaitWidgetBalance(
+        manager: AppWidgetManager,
+        widgetId: Int,
+        predicate: (String) -> Boolean
+    ): String {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        var rendered = ""
+        while (System.nanoTime() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            rendered = Shadows.shadowOf(manager).getViewFor(widgetId)
+                ?.findViewById<TextView>(R.id.widget_balance)
+                ?.text
+                ?.toString()
+                .orEmpty()
+            if (predicate(rendered)) return rendered
+            Thread.sleep(10)
+        }
+        fail("widget balance did not match; last rendered value was '$rendered'")
+        return rendered
+    }
 
     // Finding 5 RED: WidgetRefreshDispatcher must guarantee finish callback
     // on both success and failure. On current inert shell (empty dispatch()),
