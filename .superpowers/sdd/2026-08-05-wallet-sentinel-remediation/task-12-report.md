@@ -26,3 +26,8 @@ Implemented the Task 12 consumer migration on baseline `2330369`.
 - Existing `InsightsViewModelTest`, `DataManagementViewModelTest`, and `LogViewModelTest` fixtures still write legacy stores and must be migrated to Room fixtures in the Task 12 test follow-up.
 - `DataExporter` still materializes the export model in memory; the 90k streaming limit and true streaming writer remain Task 13.
 - Widget summary data remains backed by the existing bounded SharedPreferences cache; the provider no longer calls its unbounded `getAllBalances` API directly.
+
+## Round Follow-up
+
+- Added `LogViewModel` initialization and persistence of `logMaxEntries` through `WidgetPrefs`, preserving the existing user-visible preference while Room supplies log rows.
+- A test-fixture migration attempt using file-local same-name adapters was abandoned before commit because Kotlin generated package symbols conflicted across the three focused test files. No test was deleted or marked expected; the original legacy fixtures remain and must be replaced with uniquely named shared Room fixtures in a follow-up.

@@ -14,6 +14,7 @@ import com.balancesentinel.app.data.repository.RoomEventLogRepository
 import com.balancesentinel.app.data.repository.EventLogRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
+import com.balancesentinel.app.data.repository.WidgetPrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +34,9 @@ class LogViewModel(
     private val eventLogRepository: EventLogRepository = RoomEventLogRepository(WalletDatabaseProvider.get(application))
 ) : AndroidViewModel(application) {
 
-    private val _uiState = MutableStateFlow(LogUiState())
+    private val _uiState = MutableStateFlow(
+        LogUiState(logMaxEntries = WidgetPrefs(application).logMaxEntries)
+    )
     val uiState: StateFlow<LogUiState> = _uiState.asStateFlow()
 
     private val settingsRepository = SettingsRepositoryProvider.get(application)
@@ -90,6 +93,7 @@ class LogViewModel(
 
     fun setLogMax(count: Int) {
         _uiState.value = _uiState.value.copy(logMaxEntries = count)
+        WidgetPrefs(getApplication()).logMaxEntries = count
         viewModelScope.launch {
             settingsRepository.updateSnapshot { current ->
                 current.copy(appSettings = current.appSettings.copy(logMaxEntries = count))
