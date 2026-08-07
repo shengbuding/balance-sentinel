@@ -238,3 +238,64 @@ git diff --check a692faa..HEAD
 ```
 
 The atomic repository seam is intentionally scoped to the Room-backed implementation: custom repositories must opt in explicitly rather than silently receiving a non-atomic fallback. Cross-store behavior remains compensating for catastrophic account rollback failure, but concurrent Room writes no longer share the stale rollback window. The unrelated stale synchronous `BackupImportPlannerTest` cases documented in Round 2 remain outside this fix scope.
+
+## Fix Round 4 Evidence
+
+Finding-to-fix mapping:
+
+- Imported account settings filtering: `RoomSettingsRepository.applyConfigImport` now invokes `persistAccounts()` before `publishSnapshotLocked(...)` while holding the existing `writeMutex`. `publishSnapshotLocked` therefore sees imported account IDs when filtering `accountAlertSettings` and `notificationSelections`.
+- Atomic/concurrent semantics retained: the repository still publishes and compensates under the same mutex. Room publication failures restore the captured Room preimage before releasing the mutex, so concurrent `updateSnapshot` calls remain queued until rollback completes. The explicit `SettingsRepository.applyConfigImport` contract is unchanged; custom repositories still must opt in rather than receiving a fallback.
+
+RED command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.config import publishes imported account settings after account persistence" --rerun-tasks --no-parallel
+```
+
+Result: 1 test executed, 1 expected assertion failure at `SettingsRepositoryTest.kt:72`; the imported account's per-currency alert and notification selection rows were empty because account persistence occurred after Room publication. No compilation, fixture, or environment failure occurred.
+
+RED commit: `3fda6c3` (`test(settings): cover imported account setting filtering`).
+
+GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.config import publishes imported account settings after account persistence" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 1 test executed, 0 failures, 0 errors, 0 skipped.
+
+GREEN commit: `f8d2bdb` (`fix(settings): persist imported accounts before publication`).
+
+Round 3 regression plus new behavior command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.config import publishes imported account settings after account persistence" --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed import rollback preserves concurrent Room runtime update" --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed URI import restores account and Room settings preimages" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 3 tests executed, 0 failures, 0 errors, 0 skipped.
+
+Task 7 focused regression command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest" --tests "com.balancesentinel.app.data.migration.LegacySettingsMigrationTest" --tests "com.balancesentinel.app.data.repository.AlertCheckerTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --tests "com.balancesentinel.app.ui.screen.AlertSettingsLoadingRobolectricTest" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 40 tests executed, 0 failures, 0 errors, 0 skipped. XML suites report `SettingsRepositoryTest` 6, `LegacySettingsMigrationTest` 3, `AlertCheckerTest` 20, `BalanceRefreshServiceTest` 3, `SettingsFixRound1RedTest` 7, and `AlertSettingsLoadingRobolectricTest` 1.
+
+Required production compile:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 17 actionable tasks executed. Existing Room foreign-key index and unrelated Kotlin/deprecation warnings remain.
+
+Whitespace check:
+
+```powershell
+git diff --check 489ae6072ab5ed19292f463e5482bb8389233fb1..HEAD
+```
+
+Result: passed with no whitespace errors.
+
+Round 4 remaining concerns are unchanged: cross-store account/Room rollback is compensating rather than one storage transaction, rollback failures are retained as suppressed exceptions, and stale synchronous-import tests plus unrelated unbounded reads remain outside this scope.
