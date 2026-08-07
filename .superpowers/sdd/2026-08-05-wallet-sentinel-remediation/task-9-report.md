@@ -98,3 +98,34 @@ Result: `BUILD SUCCESSFUL`; `git diff --check` is clean.
   query deliberately uses indexed correlated predecessor/successor lookups.
   This is semantically equivalent but should be checked on the target Android
   SQLite version during the later device/instrumentation gate.
+
+## Fix Round 2
+
+- RED: `70a1996` (`test(task9): assert global keyset query plan`)
+  - Added a behavior-level Room/Robolectric test that inserts 1,000 real
+    `BalanceRecordEntity` rows, executes `keysetPageAll`, and inspects the
+    exact SQLite `EXPLAIN QUERY PLAN` for the global `(recorded_at,id)` sort.
+  - The pre-fix run failed because the plan did not contain the required global
+    index and used a temporary B-tree for ordering.
+- GREEN: `5c40534` (`fix(task9): index global history keyset pages`)
+  - Added the `index_balance_records_recorded_at_id` entity index.
+  - Bumped `WalletDatabase` to schema v2 and added `MIGRATION_1_2` to create the
+    index for existing v1 databases; registered it in `WalletDatabaseProvider`.
+  - Added the committed Room v2 export schema and updated the schema contract
+    test to assert the new index and identity hash.
+
+Fix Round 2 verification:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.local.history.HistoryDaoTest" --tests "com.balancesentinel.app.data.repository.HistoryRepositoryTest" --tests "com.balancesentinel.app.data.repository.UsageRepositoryTest" --tests "com.balancesentinel.app.data.repository.EventLogRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Result: 14 tests completed, 0 failures, 0 errors, 0 skipped. This includes
+the real query-plan assertion and the existing 90,000-row pagination case.
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; `git diff --check` is clean. The only Room lint
+messages are the three pre-existing foreign-key index warnings recorded above.
