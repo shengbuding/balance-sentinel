@@ -229,16 +229,30 @@ class BackupImportPlanner(
         return plan.copy(finalAccounts = accounts)
     }
 
-    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
+    /**
+     * Synchronous imports cannot participate in the Room publication protocol.
+     * Keep the source-compatible entry point, but fail before touching either
+     * account credentials or configuration settings.
+     */
+    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean): Nothing {
         validateApply(plan, confirmedFullReplace)
-        apiKeyManager.replaceAll(plan.finalAccounts)
+        error("Synchronous configuration imports are not supported; use applyAsync")
     }
 
     suspend fun applyAsync(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
         validateApply(plan, confirmedFullReplace)
-        apiKeyManager.replaceAll(plan.finalAccounts)
-        checkNotNull(settingsRepository) { "Room SettingsRepository is required for imports" }
-            .applyConfigSettings(plan.settings)
+        val repository = checkNotNull(settingsRepository) {
+            "Room SettingsRepository is required for imports"
+        }
+        val previousAccounts = apiKeyManager.getAccounts()
+        try {
+            apiKeyManager.replaceAll(plan.finalAccounts)
+            repository.applyConfigSettings(plan.settings)
+        } catch (error: Throwable) {
+            runCatching { apiKeyManager.replaceAll(previousAccounts) }
+                .onFailure { rollbackError -> error.addSuppressed(rollbackError) }
+            throw error
+        }
     }
 
     private fun validateApply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {

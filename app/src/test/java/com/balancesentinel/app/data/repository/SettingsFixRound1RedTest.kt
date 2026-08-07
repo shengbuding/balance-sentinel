@@ -10,6 +10,8 @@ import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.ui.screen.AlertSettingsContentMode
+import com.balancesentinel.app.ui.screen.alertSettingsContentMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -18,6 +20,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -72,7 +75,9 @@ class SettingsFixRound1RedTest {
         manager.replaceAll(listOf(original))
         val planner = BackupImportPlanner(manager, widgetPrefs, FailingSettingsRepository())
 
-        planner.apply(readyPlan(account("new-id", "sk-new-secret")), confirmedFullReplace = false)
+        assertThrows(IllegalStateException::class.java) {
+            planner.apply(readyPlan(account("new-id", "sk-new-secret")), confirmedFullReplace = false)
+        }
 
         assertEquals(listOf(original), manager.getAccounts())
         storage.edit().clear().commit()
@@ -113,6 +118,8 @@ class SettingsFixRound1RedTest {
         widgetPrefs.changeAlertEnabled = false
 
         assertTrue(AlertChecker.checkChange(context, "account", "95", "USD", "A"))
+        var attempts = 0
+        while (!repository.updated && attempts++ < 100) Thread.sleep(10)
         assertTrue(repository.updated)
     }
 
@@ -151,6 +158,12 @@ class SettingsFixRound1RedTest {
         assertEquals(900, decoded.settings.backgroundRefreshInterval)
         assertEquals(123, decoded.settings.foregroundMonitoringInterval)
         assertEquals(123, decoded.settings.refreshIntervalSeconds)
+    }
+
+    @Test
+    fun `alert settings routes loading and ready snapshots to distinct content`() {
+        assertEquals(AlertSettingsContentMode.LOADING, alertSettingsContentMode(settingsLoading = true))
+        assertEquals(AlertSettingsContentMode.READY, alertSettingsContentMode(settingsLoading = false))
     }
 
     private fun snapshot(

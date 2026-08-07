@@ -8,6 +8,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,7 +86,7 @@ object ConfigManager {
     ): String = buildConfig(
         context,
         apiKeyManager.getAccounts(),
-        widgetPrefs,
+        roomSnapshot(context),
         includeTokens
     )
 
@@ -93,40 +95,7 @@ object ConfigManager {
         sourceAccounts: List<AccountInfo>,
         widgetPrefs: WidgetPrefs,
         includeTokens: Boolean = false
-    ): String {
-        val accounts = sourceAccounts.map { account ->
-            if (includeTokens) account
-            else account.copy(
-                apiKey = "",
-                extraCredentials = account.extraCredentials.mapValues { "" },
-                usageScript = null,
-                usageScriptEnabled = false,
-                authorizedScriptOrigins = emptySet()
-            )
-        }
-        val legacy = WidgetPrefsLegacySettingsSource(widgetPrefs).read()
-        val oldInterval = legacy.refreshIntervalSeconds.coerceAtLeast(1)
-        val settings = ConfigSettings(
-            refreshIntervalSeconds = oldInterval,
-            alertEnabled = legacy.alertEnabled,
-            alertThreshold = legacy.alertThreshold,
-            changeAlertEnabled = legacy.changeAlertEnabled,
-            changeAlertThreshold = legacy.changeAlertThreshold,
-            changeAlertPeriodMinutes = legacy.changeAlertPeriodMinutes,
-            logMaxEntries = legacy.logMaxEntries,
-            snoozeDurationMinutes = legacy.snoozeDurationMinutes,
-            perCurrencyAlertSettings = legacy.perCurrencyAlertSettings,
-            showTotalBalance = legacy.showTotalBalanceInNotification,
-            notificationSelectedWallets = legacy.notificationSelections,
-            backgroundRefreshInterval = oldInterval.coerceAtLeast(
-                RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
-            ),
-            foregroundMonitoringInterval = if (
-                oldInterval < RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
-            ) oldInterval else WidgetPrefs.DEFAULT_INTERVAL
-        )
-        return encodeConfig(context, accounts, settings, includeTokens)
-    }
+    ): String = buildConfig(context, sourceAccounts, roomSnapshot(context), includeTokens)
 
     fun buildConfig(
         context: Context,
@@ -220,7 +189,7 @@ object ConfigManager {
     fun importFromUri(context: Context, uri: Uri): AppConfig? {
         return try {
             val content = context.contentResolver.openInputStream(uri)?.use {
-                it.readBytes().toString(Charsets.UTF_8)
+                readBoundedUtf8(it)
             } ?: return null
             decodeConfig(content)
         } catch (e: Exception) {
@@ -242,7 +211,7 @@ object ConfigManager {
         includeTokens: Boolean = false
     ): Boolean {
         return try {
-            val content = buildConfig(context, accounts, widgetPrefs, includeTokens)
+            val content = buildConfig(context, accounts, roomSnapshot(context), includeTokens)
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 out.write(content.toByteArray(Charsets.UTF_8))
             }
@@ -275,4 +244,28 @@ object ConfigManager {
         val decoded = json.decodeFromString<AppConfig>(content)
         return if ("version" !in root) decoded.copy(version = 1) else decoded
     }
+
+    private fun roomSnapshot(context: Context): SettingsSnapshot {
+        return when (val state = SettingsRepositoryProvider.get(context).snapshot.value) {
+            SettingsSnapshotState.Loading ->
+                error("Settings snapshot is still loading")
+            is SettingsSnapshotState.Ready -> state.value
+        }
+    }
+
+    private fun readBoundedUtf8(input: InputStream): String {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        var total = 0
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > MAX_IMPORT_BYTES) error("Imported configuration exceeds $MAX_IMPORT_BYTES bytes")
+            output.write(buffer, 0, count)
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+
+    private const val MAX_IMPORT_BYTES = 1_048_576
 }

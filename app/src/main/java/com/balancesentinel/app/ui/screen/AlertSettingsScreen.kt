@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -31,6 +32,11 @@ import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEn
 import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+
+internal enum class AlertSettingsContentMode { LOADING, READY }
+
+internal fun alertSettingsContentMode(settingsLoading: Boolean): AlertSettingsContentMode =
+    if (settingsLoading) AlertSettingsContentMode.LOADING else AlertSettingsContentMode.READY
 
 /**
  * 预警设置页面 — 分账户、分币种控制余额预警和异动提醒的启用/禁用。
@@ -119,154 +125,158 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // ── Snooze 状态横幅 ──
-            if (snoozeInfo.anySnoozed) {
-                SnoozeBanner(snoozeInfo, accounts) {
-                    viewModel.clearAllSnooze()
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.settings_alert_snooze_cleared),
-                        Toast.LENGTH_SHORT
-                    ).show()
+            if (alertSettingsContentMode(uiState.settingsLoading) == AlertSettingsContentMode.LOADING) {
+                SettingsLoadingCard()
+            } else {
+                if (snoozeInfo.anySnoozed) {
+                    SnoozeBanner(snoozeInfo, accounts) {
+                        viewModel.clearAllSnooze()
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.settings_alert_snooze_cleared),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
-            }
 
-            // ── 区域 0: 通知栏额外显示 ──
-            SectionHeader(stringResource(R.string.alert_settings_notification_title))
-            NotificationHintCard(
-                showTotal = showTotal,
-                totalOrderPos = if (showTotal) 0 else -1,
-                totalCount = uiState.notificationSelections.size + if (showTotal) 1 else 0,
-                onShowTotalChange = { checked ->
-                    viewModel.setShowTotalBalanceInNotification(checked)
-                    orderVersion++
-                },
-                onMoveTotalUp = {},
-                onMoveTotalDown = {}
-            )
-
-            // ── 区域 1: 分账户/币种开关 ──
-            SectionHeader(stringResource(R.string.alert_settings_section_accounts))
-
-            when (accountLoadState) {
-                AccountLoadState.Loading -> AccountDataStateCard(
-                    message = stringResource(R.string.account_data_loading),
-                    loading = true
+                // ── 区域 0: 通知栏额外显示 ──
+                SectionHeader(stringResource(R.string.alert_settings_notification_title))
+                NotificationHintCard(
+                    showTotal = showTotal,
+                    totalOrderPos = if (showTotal) 0 else -1,
+                    totalCount = uiState.notificationSelections.size + if (showTotal) 1 else 0,
+                    onShowTotalChange = { checked ->
+                        viewModel.setShowTotalBalanceInNotification(checked)
+                        orderVersion++
+                    },
+                    onMoveTotalUp = {},
+                    onMoveTotalDown = {}
                 )
-                is AccountLoadState.Corrupt -> AccountDataStateCard(
-                    message = stringResource(R.string.account_data_corrupt),
-                    loading = false
-                )
-                is AccountLoadState.Ready -> {
-                    if (accounts.isEmpty()) {
-                        NoAccountsCard()
-                    } else {
-                        accounts.forEach { account ->
-                            val currencies = accountCurrencies[account.id].orEmpty()
-                            AccountAlertCard(
-                                viewModel = viewModel,
-                                account = account,
-                                currencies = currencies,
-                                settings = uiState.accountAlertSettings,
-                                notifications = uiState.notificationSelections,
-                                showTotal = showTotal,
-                                showNotificationColumn = true,
-                                orderVersion = orderVersion,
-                                onMoveUp = { aid, cur ->
-                                    viewModel.moveNotificationWallet(aid, cur, -1)
-                                    orderVersion++
-                                },
-                                onMoveDown = { aid, cur ->
-                                    viewModel.moveNotificationWallet(aid, cur, 1)
-                                    orderVersion++
-                                },
-                                onToggle = {
-                                    orderVersion++
-                                }
-                            )
+
+                // ── 区域 1: 分账户/币种开关 ──
+                SectionHeader(stringResource(R.string.alert_settings_section_accounts))
+
+                when (accountLoadState) {
+                    AccountLoadState.Loading -> AccountDataStateCard(
+                        message = stringResource(R.string.account_data_loading),
+                        loading = true
+                    )
+                    is AccountLoadState.Corrupt -> AccountDataStateCard(
+                        message = stringResource(R.string.account_data_corrupt),
+                        loading = false
+                    )
+                    is AccountLoadState.Ready -> {
+                        if (accounts.isEmpty()) {
+                            NoAccountsCard()
+                        } else {
+                            accounts.forEach { account ->
+                                val currencies = accountCurrencies[account.id].orEmpty()
+                                AccountAlertCard(
+                                    viewModel = viewModel,
+                                    account = account,
+                                    currencies = currencies,
+                                    settings = uiState.accountAlertSettings,
+                                    notifications = uiState.notificationSelections,
+                                    showTotal = showTotal,
+                                    showNotificationColumn = true,
+                                    orderVersion = orderVersion,
+                                    onMoveUp = { aid, cur ->
+                                        viewModel.moveNotificationWallet(aid, cur, -1)
+                                        orderVersion++
+                                    },
+                                    onMoveDown = { aid, cur ->
+                                        viewModel.moveNotificationWallet(aid, cur, 1)
+                                        orderVersion++
+                                    },
+                                    onToggle = {
+                                        orderVersion++
+                                    }
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            // ── 区域 2: 全局参数 ──
-            SectionHeader(stringResource(R.string.alert_settings_section_global))
+                // ── 区域 2: 全局参数 ──
+                SectionHeader(stringResource(R.string.alert_settings_section_global))
 
-            // 派生响应式标签（globalApplyVersion 变化时重新计算）
-            val alertCurrentLabel = key(globalApplyVersion) {
-                stringResource(R.string.settings_alert_current, uiState.alertThreshold.toInt())
-            }
-            val changeCurrentLabel = key(globalApplyVersion) {
-                stringResource(R.string.settings_alert_current, uiState.changeAlertThreshold.toInt())
-            }
-            val periodCurrentLabel = key(globalApplyVersion) {
-                if (uiState.changeAlertPeriodMinutes > 0)
-                    stringResource(R.string.settings_alert_snooze_duration_current, uiState.changeAlertPeriodMinutes)
-                else ""
-            }
-            val snoozeCurrentMinutes = key(globalApplyVersion) { uiState.snoozeDurationMinutes }
+                // 派生响应式标签（globalApplyVersion 变化时重新计算）
+                val alertCurrentLabel = key(globalApplyVersion) {
+                    stringResource(R.string.settings_alert_current, uiState.alertThreshold.toInt())
+                }
+                val changeCurrentLabel = key(globalApplyVersion) {
+                    stringResource(R.string.settings_alert_current, uiState.changeAlertThreshold.toInt())
+                }
+                val periodCurrentLabel = key(globalApplyVersion) {
+                    if (uiState.changeAlertPeriodMinutes > 0)
+                        stringResource(R.string.settings_alert_snooze_duration_current, uiState.changeAlertPeriodMinutes)
+                    else ""
+                }
+                val snoozeCurrentMinutes = key(globalApplyVersion) { uiState.snoozeDurationMinutes }
 
-            // 余额预警阈值
-            ThresholdCard(
-                icon = { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
-                title = stringResource(R.string.alert_settings_balance_threshold_label),
-                hint = stringResource(R.string.alert_settings_threshold_hint),
-                inputValue = alertThresholdInput,
-                onInputChange = { alertThresholdInput = it.filter { c -> c.isDigit() } },
-                currentValue = uiState.alertThreshold,
-                currentLabel = alertCurrentLabel,
-                onApply = {
-                    val num = alertThresholdInput.toFloatOrNull()
-                    if (num != null && num > 0f) {
-                        viewModel.setAlertThreshold(num)
+                // 余额预警阈值
+                ThresholdCard(
+                    icon = { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
+                    title = stringResource(R.string.alert_settings_balance_threshold_label),
+                    hint = stringResource(R.string.alert_settings_threshold_hint),
+                    inputValue = alertThresholdInput,
+                    onInputChange = { alertThresholdInput = it.filter { c -> c.isDigit() } },
+                    currentValue = uiState.alertThreshold,
+                    currentLabel = alertCurrentLabel,
+                    onApply = {
+                        val num = alertThresholdInput.toFloatOrNull()
+                        if (num != null && num > 0f) {
+                            viewModel.setAlertThreshold(num)
+                            globalApplyVersion++
+                        }
+                    }
+                )
+
+                // 异动阈值
+                ThresholdCard(
+                    icon = { Icon(CustomIcons.TrendingUp, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
+                    title = stringResource(R.string.alert_settings_change_threshold_label),
+                    hint = stringResource(R.string.alert_settings_threshold_hint),
+                    inputValue = changeThresholdInput,
+                    onInputChange = { changeThresholdInput = it.filter { c -> c.isDigit() } },
+                    currentValue = uiState.changeAlertThreshold,
+                    currentLabel = changeCurrentLabel,
+                    onApply = {
+                        val num = changeThresholdInput.toFloatOrNull()
+                        if (num != null && num > 0f) {
+                            viewModel.setChangeAlertThreshold(num)
+                            globalApplyVersion++
+                        }
+                    }
+                )
+
+                // 异动时间窗口
+                ThresholdCard(
+                    icon = { Icon(Icons.Filled.Refresh, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
+                    title = stringResource(R.string.alert_settings_change_period_label),
+                    hint = stringResource(R.string.alert_settings_period_hint),
+                    inputValue = changePeriodInput,
+                    onInputChange = { changePeriodInput = it.filter { c -> c.isDigit() } },
+                    currentValue = uiState.changeAlertPeriodMinutes.toFloat(),
+                    currentLabel = periodCurrentLabel,
+                    onApply = {
+                        val num = changePeriodInput.toIntOrNull()
+                        if (num != null && num > 0) {
+                            viewModel.setChangeAlertPeriodMinutes(num)
+                            globalApplyVersion++
+                        }
+                    }
+                )
+
+                // 暂停时长快选
+                SnoozeDurationCard(
+                    currentMinutes = snoozeCurrentMinutes,
+                    onSelect = { minutes ->
+                        viewModel.setSnoozeDurationMinutes(minutes)
                         globalApplyVersion++
                     }
+                )
                 }
-            )
-
-            // 异动阈值
-            ThresholdCard(
-                icon = { Icon(CustomIcons.TrendingUp, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
-                title = stringResource(R.string.alert_settings_change_threshold_label),
-                hint = stringResource(R.string.alert_settings_threshold_hint),
-                inputValue = changeThresholdInput,
-                onInputChange = { changeThresholdInput = it.filter { c -> c.isDigit() } },
-                currentValue = uiState.changeAlertThreshold,
-                currentLabel = changeCurrentLabel,
-                onApply = {
-                    val num = changeThresholdInput.toFloatOrNull()
-                    if (num != null && num > 0f) {
-                        viewModel.setChangeAlertThreshold(num)
-                        globalApplyVersion++
-                    }
-                }
-            )
-
-            // 异动时间窗口
-            ThresholdCard(
-                icon = { Icon(Icons.Filled.Refresh, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
-                title = stringResource(R.string.alert_settings_change_period_label),
-                hint = stringResource(R.string.alert_settings_period_hint),
-                inputValue = changePeriodInput,
-                onInputChange = { changePeriodInput = it.filter { c -> c.isDigit() } },
-                currentValue = uiState.changeAlertPeriodMinutes.toFloat(),
-                currentLabel = periodCurrentLabel,
-                onApply = {
-                    val num = changePeriodInput.toIntOrNull()
-                    if (num != null && num > 0) {
-                        viewModel.setChangeAlertPeriodMinutes(num)
-                        globalApplyVersion++
-                    }
-                }
-            )
-
-            // 暂停时长快选
-            SnoozeDurationCard(
-                currentMinutes = snoozeCurrentMinutes,
-                onSelect = { minutes ->
-                    viewModel.setSnoozeDurationMinutes(minutes)
-                    globalApplyVersion++
-                }
-            )
         }
     }
 }
@@ -323,6 +333,28 @@ private fun AccountDataStateCard(message: String, loading: Boolean) {
 // ═══════════════════════════════════════════════════════════
 // 无账户提示
 // ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun SettingsLoadingCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag("settings_loading"),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                stringResource(R.string.account_data_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @Composable
 private fun NoAccountsCard() {

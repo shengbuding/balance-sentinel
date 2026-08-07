@@ -3,6 +3,12 @@ package com.balancesentinel.app.data.repository
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.local.settings.AlertRuntimeStateEntity
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
+import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -40,6 +46,7 @@ class AlertCheckerTest {
         prefs.setLastChangeAlertedBalance("acc2", "CNY", -1f)
         prefs.setLastChangeAlertedTime("acc1", "CNY", 0L)
         prefs.setLastChangeAlertedTime("acc2", "CNY", 0L)
+        SettingsRepositoryProvider.factory = { WidgetPrefsTestSettingsRepository(prefs) }
     }
 
     @After
@@ -50,6 +57,7 @@ class AlertCheckerTest {
         prefs.changeAlertEnabled = false
         prefs.changeAlertThreshold = 0f
         prefs.changeAlertPeriodMinutes = 0
+        SettingsRepositoryProvider.resetForTests()
     }
 
     private fun notificationCount(): Int {
@@ -149,6 +157,117 @@ class AlertCheckerTest {
         // Different account — should also alert (not deduplicated against acc1)
         AlertChecker.check(context, "acc2", "30", "CNY", "A2")
         assertEquals(1, notificationCount())
+    }
+
+    private class WidgetPrefsTestSettingsRepository(
+        private val prefs: WidgetPrefs
+    ) : SettingsRepository {
+        override val snapshot: StateFlow<SettingsSnapshotState> = object : StateFlow<SettingsSnapshotState> {
+            override val value: SettingsSnapshotState
+                get() = SettingsSnapshotState.Ready(currentSnapshot())
+
+            override val replayCache: List<SettingsSnapshotState>
+                get() = listOf(value)
+
+            override suspend fun collect(collector: FlowCollector<SettingsSnapshotState>): Nothing {
+                collector.emit(value)
+                awaitCancellation()
+            }
+        }
+
+        override suspend fun readSnapshot(): SettingsSnapshot = currentSnapshot()
+
+        override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) {
+            persistRuntime(snapshot)
+        }
+
+        override suspend fun hasPersistedSnapshot(): Boolean = true
+
+        override suspend fun updateSnapshot(
+            transform: (SettingsSnapshot) -> SettingsSnapshot
+        ): SettingsSnapshot {
+            val updated = transform(currentSnapshot())
+            persistRuntime(updated)
+            return currentSnapshot()
+        }
+
+        override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot =
+            error("not used")
+
+        private fun currentSnapshot(): SettingsSnapshot {
+            val identities = ACCOUNT_IDS.flatMap { accountId ->
+                CURRENCIES.map { currency -> accountId to currency }
+            }
+            return SettingsSnapshot(
+                appSettings = AppSettingsEntity(
+                    alertEnabled = prefs.alertEnabled,
+                    alertThreshold = prefs.alertThreshold.toDouble(),
+                    changeAlertEnabled = prefs.changeAlertEnabled,
+                    changeAlertThreshold = prefs.changeAlertThreshold.toDouble(),
+                    changeAlertPeriodMinutes = prefs.changeAlertPeriodMinutes,
+                    updatedAt = 1L
+                ),
+                accountAlertSettings = identities.map { (accountId, currency) ->
+                    com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(
+                        accountId,
+                        currency,
+                        prefs.isBalanceAlertEnabled(accountId, currency),
+                        prefs.isChangeAlertEnabled(accountId, currency)
+                    )
+                },
+                alertRuntimeStates = identities.map { (accountId, currency) ->
+                    AlertRuntimeStateEntity(
+                        accountId = accountId,
+                        currency = currency,
+                        lastAlertedBalance = prefs.getLastAlertedBalance(accountId, currency)
+                            .takeIf { it >= 0f }?.toDouble(),
+                        anchorBalance = prefs.getPreviousBalance(accountId, currency)
+                            .takeIf { it >= 0f }?.toDouble(),
+                        anchorAt = prefs.getPreviousBalanceTime(accountId, currency)
+                            .takeIf { it > 0L },
+                        lastChangeAlertedBalance = prefs.getLastChangeAlertedBalance(accountId, currency)
+                            .takeIf { it >= 0f }?.toDouble(),
+                        lastChangeAlertedAt = prefs.getLastChangeAlertedTime(accountId, currency)
+                            .takeIf { it > 0L }
+                    )
+                },
+                snoozes = ACCOUNT_IDS.mapNotNull { accountId ->
+                    prefs.getSnoozeUntil(accountId).takeIf { it > 0L }
+                        ?.let { SnoozeStateEntity(accountId, it) }
+                }
+            )
+        }
+
+        private fun persistRuntime(snapshot: SettingsSnapshot) {
+            snapshot.alertRuntimeStates.forEach { runtime ->
+                prefs.setLastAlertedBalance(
+                    runtime.accountId,
+                    runtime.currency,
+                    runtime.lastAlertedBalance?.toFloat() ?: -1f
+                )
+                prefs.setPreviousBalance(
+                    runtime.accountId,
+                    runtime.currency,
+                    runtime.anchorBalance?.toFloat() ?: -1f
+                )
+                prefs.setPreviousBalanceTime(runtime.accountId, runtime.currency, runtime.anchorAt ?: 0L)
+                prefs.setLastChangeAlertedBalance(
+                    runtime.accountId,
+                    runtime.currency,
+                    runtime.lastChangeAlertedBalance?.toFloat() ?: -1f
+                )
+                prefs.setLastChangeAlertedTime(
+                    runtime.accountId,
+                    runtime.currency,
+                    runtime.lastChangeAlertedAt ?: 0L
+                )
+            }
+        }
+
+        private companion object {
+            val ACCOUNT_IDS = listOf("acc1", "acc2", "acct")
+            val CURRENCIES = listOf("CNY", "USD")
+        }
     }
 
     @Test
