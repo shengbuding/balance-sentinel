@@ -67,4 +67,19 @@ class LegacyDataMigrationTest {
             assertEquals(0, db.historyDao().countLegacyRecords())
         } finally { db.close() }
     }
+
+    @Test
+    fun cleanupExceptionPersistsFailedAndDoesNotReportCleaned() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            db.accountDao().insertCreate(AccountEntity("550e8400-e29b-41d4-a716-446655440001", 0, "A", ProviderType.DEEPSEEK, activeCredentialGeneration = "g", state = AccountState.VERIFIED, legacyStorageId = "legacy", createdAt = 1, updatedAt = 1))
+            val source = object : LegacyDataSource {
+                override fun read() = LegacyDataSnapshot(records = listOf(RawRecord("legacy", 1, "USD", 1f, 0f, 0f)))
+                override fun clear(snapshot: LegacyDataSnapshot): Boolean = error("restore failed")
+            }
+            assertTrue(runCatching { LegacyDataMigration(db, source).run() }.isFailure)
+            assertEquals(com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.FAILED, db.appMetadataDao().get()?.legacyMigrationStage)
+        } finally { db.close() }
+    }
 }
