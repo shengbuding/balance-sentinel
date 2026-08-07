@@ -128,3 +128,61 @@ Static checks:
 - `git diff --check d573a5f7739f41d5d100595a7f91be8299f501a6..HEAD` passed with no whitespace errors after the GREEN commit `bd37662`.
 
 Fix Round 1 self-review found no additional regressions in the focused scope. Remaining concerns are the unrelated unbounded `readBytes()` calls in `ConsoleScreen.kt:1102` and `DataExporter.kt:107`, plus repository-wide legacy tests that still assert the intentionally removed `WidgetPrefs` mirror behavior.
+
+## Fix Round 2 Evidence
+
+Fix mapping:
+
+- Executable loading behavior: `AlertSettingsLoadingRobolectricTest` runs the real `AlertSettingsScreen` and `HomeViewModel` against a repository whose `StateFlow` remains `Loading`, then asserts that the `settings_loading` semantics node is displayed. The JVM test source set now includes Compose UI test dependencies, so this assertion executes without a device or AVD.
+- Real import atomicity: the former no-op `ConfigManager.applySettings` test was replaced. The new test writes a complete credential-bearing backup, reads it through `ConfigManager.importFromUri`, plans it through `BackupImportPlanner`, and injects a failure after the real Room repository has committed imported settings. It asserts exact account and Room settings preimages after failure.
+- Compensating rollback: `BackupImportPlanner.applyAsync` captures both preimages before any write and restores both stores on failure, preserving the original failure and attaching rollback failures as suppressed exceptions.
+
+RED commit: `b7bf96b` (`test(settings): add fix round two red coverage`).
+
+Targeted RED/GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.ui.screen.AlertSettingsLoadingRobolectricTest" --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed URI import restores account and Room settings preimages" --rerun-tasks --no-parallel
+```
+
+Fixture stabilization used the same command before the valid RED run: the first attempt found a test-only missing `withTransaction` import and unavailable `assertDoesNotExist` helper; the second found unrealistic imported account IDs blocked by planner validation; the third found cleanup running before the account assertion. No production code was changed during those corrections.
+
+Valid RED result: 2 tests executed, 1 passed and 1 expected behavior failure, 0 errors, 0 skipped. The Robolectric Compose test passed. The import test failed because Room contained `alertEnabled=true`, `alertThreshold=50.0`, and an empty account-alert list after the injected post-publication failure instead of its original snapshot.
+
+GREEN result for the same command: `BUILD SUCCESSFUL`; 2 tests executed, 0 failures, 0 errors, 0 skipped.
+
+Focused GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest" --tests "com.balancesentinel.app.data.migration.LegacySettingsMigrationTest" --tests "com.balancesentinel.app.data.repository.AlertCheckerTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --tests "com.balancesentinel.app.ui.screen.AlertSettingsLoadingRobolectricTest" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 38 tests executed, 0 failures, 0 errors, 0 skipped. XML suites report `SettingsRepositoryTest` 4, `LegacySettingsMigrationTest` 3, `AlertCheckerTest` 20, `BalanceRefreshServiceTest` 3, `SettingsFixRound1RedTest` 7, and `AlertSettingsLoadingRobolectricTest` 1.
+
+Extended import-planner command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest" --tests "com.balancesentinel.app.data.migration.LegacySettingsMigrationTest" --tests "com.balancesentinel.app.data.repository.AlertCheckerTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --tests "com.balancesentinel.app.ui.screen.AlertSettingsLoadingRobolectricTest" --tests "com.balancesentinel.app.data.repository.BackupImportPlannerTest" --rerun-tasks --no-parallel
+```
+
+Result: 54 tests executed, 2 failures. Both are pre-existing stale synchronous-entrypoint assertions: `BackupImportPlannerTest.account persistence failure leaves settings unchanged` and `BackupImportPlannerTest.apply persists accounts once before applying settings`. They expect the deprecated `apply` method to write, while Round 1 intentionally changed it to reject before writes; all 38 Task 7 focused tests passed when those stale tests were excluded.
+
+Production compile:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 17 actionable tasks executed. Existing Room foreign-key index and unrelated Kotlin/deprecation warnings remain.
+
+Whitespace check:
+
+```powershell
+git diff --check 21e7183..HEAD
+```
+
+Result: passed with no whitespace errors.
+
+GREEN commit: `07232bc` (`fix(settings): restore Room snapshot after import failure`).
+
+Fix Round 2 self-review confirms that the loading assertion is now executable on the JVM and that the import test crosses URI decoding, planning, account persistence, real Room publication, injected failure, and both rollback assertions. Cross-store atomicity remains compensating rather than a single storage transaction: if the underlying account or Room store also fails during rollback, the original operation can still leave partial state; such rollback failures are retained as suppressed exceptions. The unrelated unbounded reads and stale legacy synchronous-import tests remain outside this fix scope.
