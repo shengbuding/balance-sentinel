@@ -245,13 +245,17 @@ class BackupImportPlanner(
             "Room SettingsRepository is required for imports"
         }
         val previousAccounts = apiKeyManager.getAccounts()
+        val previousSettings = repository.readSnapshot()
         try {
             apiKeyManager.replaceAll(plan.finalAccounts)
             repository.applyConfigSettings(plan.settings)
-        } catch (error: Throwable) {
+        } catch (failure: Throwable) {
             runCatching { apiKeyManager.replaceAll(previousAccounts) }
-                .onFailure { rollbackError -> error.addSuppressed(rollbackError) }
-            throw error
+                .onFailure { rollbackError -> failure.addSuppressed(rollbackError) }
+            runCatching {
+                repository.publishSnapshot(previousSettings, previousSettings.appSettings.updatedAt)
+            }.onFailure { rollbackError -> failure.addSuppressed(rollbackError) }
+            throw failure
         }
     }
 
