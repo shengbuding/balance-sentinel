@@ -3,11 +3,16 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
+import com.balancesentinel.app.data.local.history.BalanceRecordEntity
+import com.balancesentinel.app.data.local.history.DailySummaryEntity
+import com.balancesentinel.app.data.local.history.HistoryAggregateProjection
+import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.Currency
 
 interface HistoryRepository {
     suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int
@@ -156,6 +161,181 @@ class LegacyHistoryRepository(
             }
         }
     }
+}
+
+class RoomHistoryRepository(
+    private val database: WalletDatabase
+) : HistoryRepository {
+    override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
+        if (records.isEmpty()) return 0
+        var written = 0
+        records.chunked(HistoryRepository.INSERT_CHUNK_SIZE).forEach { chunk ->
+            val entities = chunk.map { record ->
+                BalanceRecordEntity(
+                    accountId = require(record.accountId.isNotBlank()) { "accountId must not be blank" }.let { record.accountId },
+                    currency = requireIsoCurrency(record.currency),
+                    recordedAt = record.timestamp,
+                    totalBalance = record.totalBalance.toDouble(),
+                    grantedBalance = record.grantedBalance.toDouble(),
+                    toppedUpBalance = record.toppedUpBalance.toDouble(),
+                    source = source
+                )
+            }
+            database.historyDao().insertBalanceBatch(entities)
+            written += entities.size
+        }
+        return written
+    }
+
+    override suspend fun page(
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long,
+        after: HistoryCursor?,
+        limit: Int
+    ): HistoryPage {
+        require(accountId.isNotBlank()) { "accountId must not be blank" }
+        require(toExclusive >= fromInclusive) { "invalid history range" }
+        val rows = database.historyDao().keysetPage(
+            accountId = accountId,
+            currency = requireIsoCurrency(currency),
+            fromInclusive = fromInclusive,
+            toExclusive = toExclusive,
+            afterRecordedAt = after?.recordedAt,
+            afterId = after?.id,
+            limit = limit.coerceIn(1, HistoryRepository.MAX_PAGE_SIZE)
+        )
+        return HistoryPage(
+            records = rows.map { it.toHistoryRecord() },
+            nextCursor = rows.lastOrNull()?.let { HistoryCursor(it.recordedAt, it.id) }
+        )
+    }
+
+    override suspend fun aggregate(
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): HistoryAggregate? {
+        require(toExclusive >= fromInclusive) { "invalid history range" }
+        return database.historyDao().aggregateSemantic(
+            accountId,
+            requireIsoCurrency(currency),
+            fromInclusive,
+            toExclusive
+        ).toHistoryAggregateOrNull(accountId, requireIsoCurrency(currency))
+    }
+
+    override suspend fun count(
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): Long {
+        require(toExclusive >= fromInclusive) { "invalid history range" }
+        return database.historyDao().countRange(
+            accountId,
+            requireIsoCurrency(currency),
+            fromInclusive,
+            toExclusive
+        )
+    }
+
+    override suspend fun distinctCurrencies(): List<String> = database.historyDao().distinctCurrencies()
+
+    override suspend fun summaries(
+        accountId: String?,
+        currency: String?,
+        fromDateInclusive: String?,
+        toDateInclusive: String?
+    ): List<DailySummary> {
+        val canonicalCurrency = currency?.let(::requireIsoCurrency)
+        return database.historyDao().querySummaries(
+            accountId,
+            canonicalCurrency,
+            fromDateInclusive,
+            toDateInclusive
+        ).map { it.toDomain() }
+    }
+
+    override suspend fun upsertSummaries(summaries: List<DailySummary>) {
+        summaries.chunked(HistoryRepository.INSERT_CHUNK_SIZE).forEach { chunk ->
+            database.historyDao().upsertSummaries(chunk.map { it.toEntity() })
+        }
+    }
+}
+
+private fun BalanceRecordEntity.toHistoryRecord() = HistoryRecord(
+    id = id,
+    value = RawRecord(
+        accountId = accountId,
+        timestamp = recordedAt,
+        currency = currency,
+        totalBalance = totalBalance.toFloat(),
+        grantedBalance = grantedBalance.toFloat(),
+        toppedUpBalance = toppedUpBalance.toFloat()
+    )
+)
+
+private fun DailySummary.toEntity() = DailySummaryEntity(
+    date = date,
+    accountId = accountId,
+    currency = requireIsoCurrency(currency),
+    openBalance = open.toDouble(),
+    closeBalance = close.toDouble(),
+    consumedBalance = consumed.toDouble(),
+    toppedUpBalance = toppedUp.toDouble(),
+    grantedBalance = granted.toDouble(),
+    averageBalance = avgBalance.toDouble(),
+    sampleCount = sampleCount,
+    toppedUpBalanceClose = toppedUpBalanceClose.toDouble(),
+    grantedBalanceClose = grantedBalanceClose.toDouble(),
+    generatedAt = generatedAt
+)
+
+private fun DailySummaryEntity.toDomain() = DailySummary(
+    accountId = accountId,
+    date = date,
+    currency = currency,
+    open = openBalance.toFloat(),
+    close = closeBalance.toFloat(),
+    consumed = consumedBalance.toFloat(),
+    toppedUp = toppedUpBalance.toFloat(),
+    granted = grantedBalance.toFloat(),
+    avgBalance = averageBalance.toFloat(),
+    sampleCount = sampleCount,
+    toppedUpBalanceClose = toppedUpBalanceClose.toFloat(),
+    grantedBalanceClose = grantedBalanceClose.toFloat(),
+    generatedAt = generatedAt
+)
+
+private fun HistoryAggregateProjection.toHistoryAggregateOrNull(
+    accountId: String,
+    currency: String
+): HistoryAggregate? = if (count == 0L) null else HistoryAggregate(
+    accountId = accountId,
+    currency = currency,
+    open = requireNotNull(openBalance).toFloat(),
+    close = requireNotNull(closeBalance).toFloat(),
+    consumed = (consumedBalance ?: 0.0).toFloat(),
+    toppedUp = (toppedUpBalance ?: 0.0).toFloat(),
+    granted = (grantedBalance ?: 0.0).toFloat(),
+    avgBalance = requireNotNull(averageBalance).toFloat(),
+    sampleCount = count.toInt(),
+    toppedUpBalanceClose = (toppedUpBalanceClose ?: 0.0).toFloat(),
+    grantedBalanceClose = (grantedBalanceClose ?: 0.0).toFloat()
+)
+
+private fun requireIsoCurrency(value: String): String {
+    val canonical = value.trim().uppercase(Locale.ROOT)
+    require(canonical.length == 3) { "Unknown ISO currency: $value" }
+    try {
+        Currency.getInstance(canonical)
+    } catch (_: IllegalArgumentException) {
+        throw IllegalArgumentException("Unknown ISO currency: $value")
+    }
+    return canonical
 }
 
 private fun DailySummary.toHistoryAggregate() = HistoryAggregate(

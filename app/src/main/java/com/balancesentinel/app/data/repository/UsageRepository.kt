@@ -2,8 +2,14 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import com.balancesentinel.app.data.model.UsageSnapshot
+import com.balancesentinel.app.data.model.UsageRecord
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.usage.UsageRecordEntity
+import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 data class UsageCursor(val capturedAt: Long, val id: String)
 
@@ -76,3 +82,72 @@ class LegacyUsageRepository(
             }.toLong()
         }
 }
+
+class RoomUsageRepository(
+    private val database: WalletDatabase
+) : UsageRepository {
+    override suspend fun upsert(snapshot: UsageSnapshot, identityDiscriminator: String) {
+        require(snapshot.accountId.isNotBlank()) { "accountId must not be blank" }
+        val id = usageSnapshotId(snapshot, identityDiscriminator)
+        val rows = snapshot.records.mapIndexed { ordinal, record ->
+            UsageRecordEntity(
+                snapshotId = id,
+                recordOrdinal = ordinal,
+                modelName = record.model_name,
+                totalTokens = record.total_tokens,
+                promptTokens = record.prompt_tokens,
+                completionTokens = record.completion_tokens
+            )
+        }
+        database.usageDao().upsertSnapshotWithRecords(
+            UsageSnapshotEntity(id, snapshot.accountId, snapshot.timestamp, identityDiscriminator),
+            rows
+        )
+    }
+
+    override suspend fun page(
+        accountId: String,
+        fromInclusive: Long,
+        toExclusive: Long,
+        after: UsageCursor?,
+        limit: Int
+    ): UsagePage {
+        val rows = database.usageDao().keysetPage(
+            accountId,
+            fromInclusive,
+            toExclusive,
+            after?.capturedAt,
+            after?.id,
+            limit.coerceIn(1, HistoryRepository.MAX_PAGE_SIZE)
+        )
+        return UsagePage(
+            snapshots = rows.map { row ->
+                RepositoryUsageSnapshot(
+                    id = row.id,
+                    value = UsageSnapshot(
+                        accountId = row.accountId,
+                        timestamp = row.capturedAt,
+                        records = database.usageDao().getRecords(row.id).map { item ->
+                            UsageRecord(
+                                model_name = item.modelName,
+                                total_tokens = item.totalTokens,
+                                prompt_tokens = item.promptTokens,
+                                completion_tokens = item.completionTokens
+                            )
+                        }
+                    )
+                )
+            },
+            nextCursor = rows.lastOrNull()?.let { UsageCursor(it.capturedAt, it.id) }
+        )
+    }
+
+    override suspend fun count(accountId: String, fromInclusive: Long, toExclusive: Long): Long =
+        database.usageDao().countRange(accountId, fromInclusive, toExclusive)
+}
+
+private fun usageSnapshotId(snapshot: UsageSnapshot, identityDiscriminator: String): String =
+    UUID.nameUUIDFromBytes(
+        "wallet-sentinel:usage-snapshot:v1|${snapshot.accountId}|${snapshot.timestamp}|$identityDiscriminator"
+            .toByteArray(StandardCharsets.UTF_8)
+    ).toString()

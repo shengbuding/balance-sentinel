@@ -28,6 +28,7 @@ class HistoryRepositoryTest {
     fun setUp() {
         database = createWalletTestDatabase()
         runBlocking { database.accountDao().insertCreate(testAccount(accountId)) }
+        runBlocking { database.accountDao().insertCreate(testAccount("other-account", displayOrder = 1)) }
         repository = RoomHistoryRepository(database)
     }
 
@@ -37,7 +38,7 @@ class HistoryRepositoryTest {
     }
 
     @Test
-    fun `ninety thousand records page at most two hundred with no gaps or duplicates`() = runTest {
+    fun `ninety thousand records page at most two hundred with no gaps or duplicates`() = runBlocking {
         val source = (0 until 90_000).map { index ->
             RawRecord(accountId, index.toLong(), "USD", index.toFloat(), 0f, 0f)
         }
