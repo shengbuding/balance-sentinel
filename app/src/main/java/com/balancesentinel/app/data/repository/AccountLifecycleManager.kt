@@ -42,9 +42,11 @@ class AccountLifecycleManager(
     }
 
     fun delete(accountId: String) = runBlocking {
+        val providerType = WalletDatabaseProvider.get(context).accountDao().get(accountId)?.providerType
         val result = mutationCoordinator().delete(accountId)
         require(result is AccountMutationResult.Deleted)
         BalanceWidgetDataStore.removeAccountBalance(context, accountId)
+        providerType?.let { ProviderCache(context).clear(it, accountId) }
         ApiDebugStore.clearEntries(accountId)
     }
 }

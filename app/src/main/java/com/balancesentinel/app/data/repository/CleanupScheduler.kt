@@ -93,6 +93,19 @@ object CleanupScheduler {
                     failures += failure(date, CleanupStage.WRITE_SUMMARY, throwable.message ?: "Room transaction failed")
                 }
             }
+        // Preserve continuity: materialize zero summaries through yesterday
+        // for every account/currency that has an archived history.
+        val existing = repository.summaries()
+        val yesterday = today.minusDays(1)
+        val continuity = existing.flatMap { seed ->
+            val start = runCatching { LocalDate.parse(seed.date) }.getOrNull() ?: return@flatMap emptyList()
+            if (!start.isBefore(yesterday)) return@flatMap emptyList()
+            generateSequence(start.plusDays(1)) { date -> if (date.isBefore(yesterday)) date.plusDays(1) else null }
+                .filter { date -> existing.none { it.accountId == seed.accountId && it.currency == seed.currency && it.date == date.toString() } }
+                .map { date -> seed.copy(date = date.toString(), open = 0f, close = 0f, consumed = 0f, toppedUp = 0f, granted = 0f, avgBalance = 0f, sampleCount = 0, toppedUpBalanceClose = 0f, grantedBalanceClose = 0f, generatedAt = now) }
+                .toList()
+        }
+        if (continuity.isNotEmpty()) repository.upsertSummaries(continuity)
         return CleanupReport(archived, deleted, all.size - deleted, failures)
     }
 

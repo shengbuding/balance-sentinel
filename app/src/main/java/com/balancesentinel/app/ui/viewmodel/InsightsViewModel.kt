@@ -25,9 +25,8 @@ import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.RoomAccountRepository
 import com.balancesentinel.app.data.repository.RoomAccountUiRepository
-import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.HistoryRepository
-import com.balancesentinel.app.data.repository.RawRecordStore
+import com.balancesentinel.app.data.repository.RoomHistoryRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -106,6 +105,8 @@ class InsightsViewModel @JvmOverloads constructor(
             RoomAccountRepository(WalletDatabaseProvider.get(application)),
             EncryptedPreferencesCredentialStore(application)
         )
+    private val historySource: HistoryRepository = injectedHistoryRepository
+        ?: RoomHistoryRepository(WalletDatabaseProvider.get(application))
     private var accountCollectionJob: Job? = null
     private var loadDataJob: Job? = null
 
@@ -174,9 +175,9 @@ class InsightsViewModel @JvmOverloads constructor(
             ) }
 
             try {
-                val summaries = DailySummaryStore.getSummaries(getApplication())
-                val repositoryRecords = injectedHistoryRepository?.let { readAllHistory(it, accounts) }
-                val allRaw = repositoryRecords ?: RawRecordStore.getAllRecords(getApplication())
+                val summaries = historySource.summaries()
+                val repositoryRecords = readAllHistory(historySource, accounts)
+                val allRaw = repositoryRecords
                 val currencies = (summaries.map { it.currency } + allRaw.map { it.currency }).distinct()
 
                 val currency = _uiState.value.selectedCurrency.let {
@@ -188,15 +189,14 @@ class InsightsViewModel @JvmOverloads constructor(
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-                val recentRaw = repositoryRecords?.filter { it.timestamp >= cutoff }
-                    ?: RawRecordStore.getRecordsSince(getApplication(), cutoff)
+                val recentRaw = repositoryRecords.filter { it.timestamp >= cutoff }
                 val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
 
                 // ── Daily: 长期日历天视图 ──
                 val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
-                val todayRaw = repositoryRecords?.filter {
+                val todayRaw = repositoryRecords.filter {
                     Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
-                } ?: RawRecordStore.getTodayRecords(getApplication())
+                }
                 val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
                 // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──

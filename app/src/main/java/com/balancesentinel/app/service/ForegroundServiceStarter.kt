@@ -133,7 +133,7 @@ private object RefreshLogServiceStartDiagnosticSink : ServiceStartDiagnosticSink
         Logger.w("ServiceStarter", message)
         try {
             val now = System.currentTimeMillis()
-            RefreshLogStore.addEntry(
+            com.balancesentinel.app.data.repository.appendRoomEvent(
                 context,
                 RefreshLogEntry(
                     id = now,

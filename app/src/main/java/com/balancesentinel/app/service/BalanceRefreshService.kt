@@ -20,7 +20,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.NotificationHelper
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
@@ -91,7 +91,7 @@ class BalanceRefreshService : Service() {
         if (!isLoopRunning) {
             try {
                 val now = System.currentTimeMillis()
-                RefreshLogStore.addEntry(this, RefreshLogEntry(
+                appendRoomEvent(this, RefreshLogEntry(
                     id = now, type = RefreshLogType.SERVICE_START, timestamp = now,
                     message = "前台刷新服务已启动", alarmMethod = "foreground_service"
                 ))

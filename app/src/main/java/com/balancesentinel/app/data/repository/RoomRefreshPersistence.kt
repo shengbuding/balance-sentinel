@@ -55,7 +55,7 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
         recordIds: List<Long>
     ) = database.withTransaction {
         database.historyDao().upsertSummaries(summaries.map { it.toEntity() })
-        if (recordIds.isNotEmpty()) database.historyDao().deleteByIds(recordIds)
+        recordIds.chunked(500).forEach { ids -> database.historyDao().deleteByIds(ids) }
     }
 
     private fun snapshotId(snapshot: UsageSnapshot, discriminator: String): String = UUID.nameUUIDFromBytes(

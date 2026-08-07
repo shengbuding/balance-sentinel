@@ -204,7 +204,7 @@ class RoomHistoryRepository(
         recordIds: List<Long>
     ) = database.withTransaction {
         database.historyDao().upsertSummaries(summaries.map { it.toEntity() })
-        if (recordIds.isNotEmpty()) database.historyDao().deleteByIds(recordIds)
+        recordIds.chunked(500).forEach { ids -> database.historyDao().deleteByIds(ids) }
     }
     override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
         if (records.isEmpty()) return 0

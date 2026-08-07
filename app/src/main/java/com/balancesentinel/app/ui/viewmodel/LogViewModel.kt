@@ -9,7 +9,8 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.LogExporter
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.repository.RoomEventLogRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
 data class LogUiState(
     val refreshLogs: List<RefreshLogEntry> = emptyList(),
     val missedCount: Int = 0,
-    val logMaxEntries: Int = RefreshLogStore.DEFAULT_MAX_ENTRIES,
+    val logMaxEntries: Int = 100,
     val crashLogs: List<CrashLogger.CrashEntry> = emptyList(),
     val exportResult: String? = null,
     val selectedLogType: RefreshLogType? = null
@@ -50,7 +51,7 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadLogs() {
         try {
-            allLogs = RefreshLogStore.getEntries(getApplication())
+            allLogs = kotlinx.coroutines.runBlocking { RoomEventLogRepository(WalletDatabaseProvider.get(getApplication())).newest(1000) }
             applyFilter()
             _uiState.value = _uiState.value.copy(
                 missedCount = allLogs.count { it.type == RefreshLogType.MISSED }
@@ -75,7 +76,7 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearLogs() {
         try {
-            RefreshLogStore.clear(getApplication())
+            kotlinx.coroutines.runBlocking { WalletDatabaseProvider.get(getApplication()).eventLogDao().clearAll() }
             allLogs = emptyList()
             _uiState.value = _uiState.value.copy(refreshLogs = emptyList(), missedCount = 0)
         } catch (e: Exception) { Logger.w("LogViewModel", "operation failed", e) }

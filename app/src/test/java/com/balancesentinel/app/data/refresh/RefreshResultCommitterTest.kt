@@ -52,5 +52,21 @@ class RefreshResultCommitterTest {
         assertEquals(1, db.eventLogDao().countLogs())
     }
 
+    @Test fun `default committer wiring rolls back Room rows when account FK rejects write`() {
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = AccountInfo(accountId, "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { }
+        )
+        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        assertTrue(result is AccountRefreshResult.Failed)
+        runBlocking { assertEquals(0, db.historyDao().countRecords()); assertEquals(0, db.usageDao().countSnapshots()); assertEquals(0, db.eventLogDao().countLogs()) }
+    }
+
     private fun accountEntity() = AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED)
 }

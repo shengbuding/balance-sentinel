@@ -43,6 +43,12 @@ class RoomEventLogRepository(
         database.eventLogDao().newest(limit.coerceAtLeast(0)).map(::toDomain)
 }
 
+fun appendRoomEvent(context: Context, entry: RefreshLogEntry) {
+    kotlinx.coroutines.runBlocking {
+        RoomEventLogRepository(com.balancesentinel.app.data.local.WalletDatabaseProvider.get(context)).append(listOf(entry))
+    }
+}
+
 private fun toEntity(entry: RefreshLogEntry) = EventLogEntity(
     id = entry.id,
     eventType = EventLogType.valueOf(entry.type.name),

@@ -88,7 +88,7 @@ class KeepAliveReceiver(
             is ServiceStartResult.Failed -> "keepalive_service_start_failed"
         }
         try {
-            RefreshLogStore.addEntry(
+            com.balancesentinel.app.data.repository.appendRoomEvent(
                 context,
                 RefreshLogEntry(
                     id = now,
