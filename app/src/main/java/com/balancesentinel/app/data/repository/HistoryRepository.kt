@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.balancesentinel.app.data.engine.RecordAggregator
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
@@ -198,6 +199,13 @@ class LegacyHistoryRepository(
 class RoomHistoryRepository(
     private val database: WalletDatabase
 ) : HistoryRepository {
+    internal suspend fun archiveAndDelete(
+        summaries: List<DailySummary>,
+        recordIds: List<Long>
+    ) = database.withTransaction {
+        database.historyDao().upsertSummaries(summaries.map { it.toEntity() })
+        if (recordIds.isNotEmpty()) database.historyDao().deleteByIds(recordIds)
+    }
     override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
         if (records.isEmpty()) return 0
         var written = 0

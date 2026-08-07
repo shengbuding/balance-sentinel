@@ -36,11 +36,7 @@ object CleanupScheduler {
     private const val MAX_REASON_LENGTH = 160
 
     suspend fun runCleanup(context: Context): CleanupReport = withContext(Dispatchers.IO) {
-        runCleanupInternal(
-            context = context,
-            now = System.currentTimeMillis(),
-            zoneId = ZoneId.systemDefault()
-        )
+        runRoomCleanup(context, System.currentTimeMillis(), ZoneId.systemDefault())
     }
 
     suspend fun runCleanup(
@@ -48,7 +44,7 @@ object CleanupScheduler {
         now: Long,
         zoneId: ZoneId = ZoneId.systemDefault()
     ): CleanupReport = withContext(Dispatchers.IO) {
-        runCleanupInternal(context, now, zoneId)
+        runRoomCleanup(context, now, zoneId)
     }
 
     suspend fun runCleanup(
@@ -57,7 +53,47 @@ object CleanupScheduler {
         zoneId: ZoneId,
         historyRepository: HistoryRepository
     ): CleanupReport = withContext(Dispatchers.IO) {
-        runCleanupInternal(context, now, zoneId, historyRepository)
+        if (historyRepository is RoomHistoryRepository) runRoomCleanup(context, now, zoneId, historyRepository)
+        else runCleanupInternal(context, now, zoneId, historyRepository)
+    }
+
+    private suspend fun runRoomCleanup(
+        context: Context,
+        now: Long,
+        zoneId: ZoneId,
+        repository: RoomHistoryRepository = RoomHistoryRepository(
+            com.balancesentinel.app.data.local.WalletDatabaseProvider.get(context)
+        )
+    ): CleanupReport {
+        val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
+        val all = mutableListOf<HistoryRecord>()
+        var cursor: HistoryCursor? = null
+        while (true) {
+            val page = repository.pageAll(after = cursor, limit = HistoryRepository.MAX_PAGE_SIZE)
+            if (page.records.isEmpty()) break
+            all += page.records
+            cursor = page.nextCursor ?: break
+        }
+        val archived = linkedSetOf<String>()
+        val failures = mutableListOf<CleanupFailure>()
+        var deleted = 0
+        all.groupBy { dateOf(it.value.timestamp, zoneId) }
+            .filterKeys { it != today.toString() }
+            .toSortedMap()
+            .forEach { (date, rows) ->
+                val normalized = rows.map { if (it.value.currency == it.value.currency.uppercase(Locale.ROOT)) it.value else it.value.copy(currency = it.value.currency.uppercase(Locale.ROOT)) }
+                val summaries = RecordAggregator.aggregate(normalized, date).map { it.canonicalized() }
+                try {
+                    val cutoff = now - RETENTION_MS
+                    val ids = rows.filter { it.value.timestamp < cutoff }.map { it.id }
+                    repository.archiveAndDelete(summaries, ids)
+                    archived += date
+                    deleted += ids.size
+                } catch (throwable: Exception) {
+                    failures += failure(date, CleanupStage.WRITE_SUMMARY, throwable.message ?: "Room transaction failed")
+                }
+            }
+        return CleanupReport(archived, deleted, all.size - deleted, failures)
     }
 
     private suspend fun runCleanupInternal(
