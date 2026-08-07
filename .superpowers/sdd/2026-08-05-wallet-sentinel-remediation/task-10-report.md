@@ -26,6 +26,9 @@ RED observed before GREEN: old implementation failed the existing-Room-baseline 
 .\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationTest" --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationLargeDatasetTest" --rerun-tasks --no-parallel
 BUILD SUCCESSFUL in 59s (8 focused tests)
 
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+BUILD SUCCESSFUL in 29s
+
 .\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationTest" --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationLargeDatasetTest" --rerun-tasks --no-parallel
 BUILD SUCCESSFUL in 53s
 Executed 3 focused tests (2 in `LegacyDataMigrationTest`, 1 in `LegacyDataMigrationLargeDatasetTest`).
