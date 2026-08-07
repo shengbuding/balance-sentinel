@@ -11,6 +11,7 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.LogExporter
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.repository.RoomEventLogRepository
+import com.balancesentinel.app.data.repository.EventLogRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +28,10 @@ data class LogUiState(
     val selectedLogType: RefreshLogType? = null
 )
 
-class LogViewModel(application: Application) : AndroidViewModel(application) {
+class LogViewModel(
+    application: Application,
+    private val eventLogRepository: EventLogRepository = RoomEventLogRepository(WalletDatabaseProvider.get(application))
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(LogUiState())
     val uiState: StateFlow<LogUiState> = _uiState.asStateFlow()
@@ -51,7 +55,9 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadLogs() {
         try {
-            allLogs = kotlinx.coroutines.runBlocking { RoomEventLogRepository(WalletDatabaseProvider.get(getApplication())).newest(1000) }
+            allLogs = kotlinx.coroutines.runBlocking {
+                eventLogRepository.newest(_uiState.value.logMaxEntries.coerceIn(1, 100))
+            }
             applyFilter()
             _uiState.value = _uiState.value.copy(
                 missedCount = allLogs.count { it.type == RefreshLogType.MISSED }

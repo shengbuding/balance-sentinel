@@ -22,11 +22,7 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.repository.ConfigManager
-import com.balancesentinel.app.data.repository.DailySummaryStore
-import com.balancesentinel.app.data.repository.RawRecordStore
-import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
-import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.data.api.balance.WebOrigin
@@ -120,6 +116,7 @@ class DataManagementViewModel @JvmOverloads constructor(
         )
     private val mutationCoordinator: AccountMutationCoordinator = injectedAccountMutationCoordinator
         ?: AccountLifecycleManager(application).mutationCoordinator()
+    private val database = WalletDatabaseProvider.get(application)
     private var accountCollectionJob: Job? = null
 
     init {
@@ -169,31 +166,35 @@ class DataManagementViewModel @JvmOverloads constructor(
 
     fun loadStats() {
         val ctx = getApplication<Application>()
-        val raw = RawRecordStore.getAllRecords(ctx)
-        val summaries = DailySummaryStore.getSummaries(ctx)
-        val snapshots = UsageDataStore.getAllSnapshots(ctx)
-        val logs = RefreshLogStore.getEntries(ctx)
-        val widgetErrors = WidgetErrorLogger.getLogs(ctx)
-        val balances = BalanceWidgetDataStore.getAllBalances(ctx)
-        val state = RefreshScheduler.getState(ctx)
-        val crashes = CrashLogger.getCrashes(ctx)
-
-        _uiState.value = _uiState.value.copy(
-            rawRecordCount = raw.size,
-            rawRecordDistinctDates = RawRecordStore.getDistinctDates(ctx).size,
-            dailySummaryCount = summaries.size,
-            usageSnapshotCount = snapshots.size,
-            refreshLogCount = logs.size,
-            widgetErrorCount = widgetErrors.size,
-            widgetBalanceCount = balances.size,
-            alarmCounters = AlarmCounterSnapshot(
-                totalSet = state.totalAlarmsSet,
-                totalFired = state.totalAlarmsFired,
-                totalCancelled = state.totalCancelled,
-                totalDropped = state.totalDropped
-            ),
-            crashCount = crashes.size
-        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val rawCount = database.historyDao().countRecords()
+            val distinctDates = database.historyDao().countDistinctDates()
+            val summaryCount = database.historyDao().countSummaries()
+            val snapshotCount = database.usageDao().countSnapshots()
+            val logCount = database.eventLogDao().countLogs()
+            val widgetErrors = WidgetErrorLogger.getLogs(ctx).size
+            val balances = BalanceWidgetDataStore.getSummaryBalances(ctx).size
+            val state = RefreshScheduler.getState(ctx)
+            val crashes = CrashLogger.getCrashes(ctx).size
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    rawRecordCount = rawCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    rawRecordDistinctDates = distinctDates.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    dailySummaryCount = summaryCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    usageSnapshotCount = snapshotCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    refreshLogCount = logCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    widgetErrorCount = widgetErrors,
+                    widgetBalanceCount = balances,
+                    alarmCounters = AlarmCounterSnapshot(
+                        totalSet = state.totalAlarmsSet,
+                        totalFired = state.totalAlarmsFired,
+                        totalCancelled = state.totalCancelled,
+                        totalDropped = state.totalDropped
+                    ),
+                    crashCount = crashes
+                )
+            }
+        }
     }
 
     // ── 对话框 ──
@@ -429,19 +430,19 @@ class DataManagementViewModel @JvmOverloads constructor(
             val res = ctx.resources
             val message: String = when (action) {
                 PendingAction.ClearRawRecords -> {
-                    RawRecordStore.clear(ctx)
+                    database.historyDao().clearRecords()
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ClearDailySummaries -> {
-                    DailySummaryStore.clear(ctx)
+                    database.historyDao().clearSummaries()
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ClearUsageSnapshots -> {
-                    UsageDataStore.clear(ctx)
+                    database.usageDao().clearSnapshots()
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ClearRefreshLogs -> {
-                    RefreshLogStore.clear(ctx)
+                    database.eventLogDao().clearAll()
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ClearWidgetErrors -> {
@@ -470,10 +471,10 @@ class DataManagementViewModel @JvmOverloads constructor(
                 }
                 PendingAction.ResetEntireApp -> {
                     val accounts = readyAccounts() ?: return@launch
-                    RawRecordStore.clear(ctx)
-                    DailySummaryStore.clear(ctx)
-                    UsageDataStore.clear(ctx)
-                    RefreshLogStore.clear(ctx)
+                    database.historyDao().clearRecords()
+                    database.historyDao().clearSummaries()
+                    database.usageDao().clearSnapshots()
+                    database.eventLogDao().clearAll()
                     WidgetErrorLogger.clear(ctx)
                     CrashLogger.clear(ctx)
                     BalanceWidgetDataStore.clearAll(ctx)

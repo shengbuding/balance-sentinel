@@ -239,8 +239,17 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM balance_records")
     suspend fun countRecords(): Long
 
+    @Query("SELECT COUNT(DISTINCT date(recorded_at / 1000, 'unixepoch', 'localtime')) FROM balance_records")
+    suspend fun countDistinctDates(): Long
+
     @Query("SELECT COUNT(*) FROM daily_summaries")
     suspend fun countSummaries(): Long
+
+    @Query("DELETE FROM balance_records")
+    suspend fun clearRecords(): Int
+
+    @Query("DELETE FROM daily_summaries")
+    suspend fun clearSummaries(): Int
 
     @Query("SELECT COUNT(*) FROM balance_records WHERE source = 'LEGACY_MIGRATION'")
     suspend fun countLegacyRecords(): Long

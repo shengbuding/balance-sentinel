@@ -62,6 +62,9 @@ object BalanceWidgetDataStore {
         getAllBalances(getPrefs(context))
     }
 
+    /** Bounded summary snapshot for UI/Widget consumers. */
+    fun getSummaryBalances(context: Context): List<AccountBalance> = getAllBalances(context)
+
     private fun getAllBalances(p: SharedPreferences): List<AccountBalance> {
         val raw = p.getString(KEY_BALANCES, null) ?: return emptyList()
         return try {

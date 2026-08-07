@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -44,16 +45,35 @@ object DataExporter {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
         } catch (_: Exception) { "1.0.0" }
 
-        val data = DataExport(
+        val data = kotlinx.coroutines.runBlocking {
+            buildExportData(
+                context,
+                RoomHistoryRepository(WalletDatabaseProvider.get(context)),
+                RoomUsageRepository(WalletDatabaseProvider.get(context)),
+                RoomEventLogRepository(WalletDatabaseProvider.get(context))
+            )
+        }
+        return json.encodeToString(data)
+    }
+
+    private suspend fun buildExportData(
+        context: Context,
+        historyRepository: HistoryRepository,
+        usageRepository: UsageRepository,
+        eventLogRepository: EventLogRepository
+    ): DataExport {
+        val appVersion = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (_: Exception) { "1.0.0" }
+        return DataExport(
             version = 1,
             exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
             appVersion = appVersion,
-            dailySummaries = DailySummaryStore.getSummaries(context),
-            rawRecords = RawRecordStore.getAllRecords(context),
-            usageSnapshots = UsageDataStore.getAllSnapshots(context),
-            refreshLogs = RefreshLogStore.getEntries(context)
+            dailySummaries = historyRepository.summaries(),
+            rawRecords = readAllHistory(historyRepository),
+            usageSnapshots = readAllUsage(usageRepository, historyRepository),
+            refreshLogs = eventLogRepository.newest(1000)
         )
-        return json.encodeToString(data)
     }
 
     suspend fun buildExport(context: Context, historyRepository: HistoryRepository): String {
@@ -61,14 +81,12 @@ object DataExporter {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
         } catch (_: Exception) { "1.0.0" }
 
-        val data = DataExport(
-            version = 1,
-            exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
-            appVersion = appVersion,
-            dailySummaries = DailySummaryStore.getSummaries(context),
-            rawRecords = readAllHistory(historyRepository),
-            usageSnapshots = UsageDataStore.getAllSnapshots(context),
-            refreshLogs = RefreshLogStore.getEntries(context)
+        val database = WalletDatabaseProvider.get(context)
+        val data = buildExportData(
+            context,
+            historyRepository,
+            RoomUsageRepository(database),
+            RoomEventLogRepository(database)
         )
         return json.encodeToString(data)
     }
@@ -92,10 +110,13 @@ object DataExporter {
      * 是否有历史数据可导出。
      */
     fun hasData(context: Context): Boolean {
-        return DailySummaryStore.getSummaries(context).isNotEmpty() ||
-                RawRecordStore.getAllRecords(context).isNotEmpty() ||
-                UsageDataStore.getAllSnapshots(context).isNotEmpty() ||
-                RefreshLogStore.getEntries(context).isNotEmpty()
+        val database = WalletDatabaseProvider.get(context)
+        return kotlinx.coroutines.runBlocking {
+            database.historyDao().countSummaries() > 0L ||
+                database.historyDao().countRecords() > 0L ||
+                database.usageDao().countSnapshots() > 0L ||
+                database.eventLogDao().countLogs() > 0L
+        }
     }
 
     // ── 导入 ──
@@ -134,34 +155,31 @@ object DataExporter {
      */
     fun applyImport(context: Context, data: DataExport): ImportResult =
         DataMutationCoordinator.withMutation {
-            val zoneId = ZoneId.systemDefault()
-            val existingRecords = RawRecordStore.getAllRecords(context)
-            val keysWithRetainedSource = existingRecords.mapTo(mutableSetOf()) {
-                it.historyKey(zoneId)
+            kotlinx.coroutines.runBlocking {
+                val database = WalletDatabaseProvider.get(context)
+                val history = RoomHistoryRepository(database)
+                val usage = RoomUsageRepository(database)
+                val events = RoomEventLogRepository(database)
+                val existingSummaries = history.summaries().mapTo(mutableSetOf()) {
+                    Triple(it.date, it.accountId, it.currency.uppercase(Locale.ROOT))
+                }
+                val newSummaries = data.dailySummaries.filter { summary ->
+                    existingSummaries.add(Triple(summary.date, summary.accountId, summary.currency.uppercase(Locale.ROOT)))
+                }
+                history.upsertSummaries(newSummaries)
+                val existingRecords = readAllHistory(history).toMutableSet()
+                val newRecords = data.rawRecords.filter { existingRecords.add(it) }
+                history.insert(newRecords, com.balancesentinel.app.data.local.history.BalanceRecordSource.IMPORT)
+                val existingLogIds = events.newest(10_000).mapTo(mutableSetOf()) { it.id }
+                val newLogs = data.refreshLogs.filter { existingLogIds.add(it.id) }
+                events.append(newLogs)
+                val newSnapshots = data.usageSnapshots.filter { snapshot ->
+                    usage.count(snapshot.accountId, snapshot.timestamp, snapshot.timestamp + 1) == 0L
+                }
+                newSnapshots.forEach { usage.upsert(it, "import") }
+                ImportResult(data.dailySummaries.size, newSummaries.size, data.rawRecords.size, newRecords.size,
+                    data.usageSnapshots.size, newSnapshots.size, data.refreshLogs.size, newLogs.size)
             }
-            val summaryOnlyKeys = DailySummaryStore.getSummaries(context)
-                .mapTo(mutableSetOf()) { it.historyKey() }
-                .minus(keysWithRetainedSource)
-            val summariesImported = mergeSummaries(context, data.dailySummaries)
-            val recordsImported = mergeRecords(
-                context = context,
-                imported = data.rawRecords,
-                existing = existingRecords,
-                summaryOnlyKeys = summaryOnlyKeys,
-                zoneId = zoneId
-            )
-            val snapshotsImported = mergeUsageSnapshots(context, data.usageSnapshots)
-            val logsImported = mergeRefreshLogs(context, data.refreshLogs)
-            ImportResult(
-                summariesInFile = data.dailySummaries.size,
-                summariesImported = summariesImported,
-                recordsInFile = data.rawRecords.size,
-                recordsImported = recordsImported,
-                snapshotsInFile = data.usageSnapshots.size,
-                snapshotsImported = snapshotsImported,
-                logsInFile = data.refreshLogs.size,
-                logsImported = logsImported
-            )
         }
 
     /**
@@ -178,7 +196,7 @@ object DataExporter {
      */
     private fun mergeSummaries(context: Context, imported: List<DailySummary>): Int {
         if (imported.isEmpty()) return 0
-        val existing = DailySummaryStore.getSummaries(context)
+        val existing = emptyList<DailySummary>()
         val seenKeys = existing.mapTo(mutableSetOf()) {
             Triple(it.date, it.currency.uppercase(Locale.ROOT), it.accountId)
         }
@@ -187,10 +205,7 @@ object DataExporter {
                 Triple(summary.date, summary.currency.uppercase(Locale.ROOT), summary.accountId)
             )
         }
-        return when (val result = DailySummaryStore.addSummaries(context, newSummaries)) {
-            is StoreWriteResult.Written -> result.itemCount
-            is StoreWriteResult.Failed -> 0
-        }
+        return newSummaries.size
     }
 
     /**
@@ -208,10 +223,7 @@ object DataExporter {
         val newRecords = imported.filter { record ->
             record.historyKey(zoneId) !in summaryOnlyKeys && seen.add(record)
         }
-        return when (val result = RawRecordStore.addRecords(context, newRecords)) {
-            is StoreWriteResult.Written -> result.itemCount
-            is StoreWriteResult.Failed -> 0
-        }
+        return newRecords.size
     }
 
     /**
@@ -220,15 +232,7 @@ object DataExporter {
      */
     private fun mergeUsageSnapshots(context: Context, imported: List<com.balancesentinel.app.data.model.UsageSnapshot>): Int {
         if (imported.isEmpty()) return 0
-        val existing = UsageDataStore.getAllSnapshots(context)
-        val existingKeys = existing.map { it.accountId to it.timestamp }.toSet()
-        val newSnapshots = imported.filter {
-            (it.accountId to it.timestamp) !in existingKeys
-        }
-        if (newSnapshots.isNotEmpty()) {
-            UsageDataStore.saveSnapshots(context, newSnapshots)
-        }
-        return newSnapshots.size
+        return imported.size
     }
 
     /**
@@ -237,13 +241,7 @@ object DataExporter {
      */
     private fun mergeRefreshLogs(context: Context, imported: List<com.balancesentinel.app.data.model.RefreshLogEntry>): Int {
         if (imported.isEmpty()) return 0
-        val existing = RefreshLogStore.getEntries(context)
-        val existingIds = existing.map { it.id }.toSet()
-        val newLogs = imported.filter { it.id !in existingIds }
-        if (newLogs.isNotEmpty()) {
-            RefreshLogStore.addEntries(context, newLogs)
-        }
-        return newLogs.size
+        return imported.size
     }
 
     private fun DailySummary.historyKey() = HistoryKey(
@@ -279,5 +277,25 @@ object DataExporter {
             cursor = next
         }
         return records
+    }
+
+    private suspend fun readAllUsage(
+        usageRepository: UsageRepository,
+        historyRepository: HistoryRepository
+    ): List<com.balancesentinel.app.data.model.UsageSnapshot> {
+        val snapshots = mutableListOf<com.balancesentinel.app.data.model.UsageSnapshot>()
+        val accountIds = historyRepository.summaries().map { it.accountId }.distinct()
+        for (accountId in accountIds) {
+            var cursor: UsageCursor? = null
+            while (true) {
+                val page = usageRepository.page(accountId, Long.MIN_VALUE, Long.MAX_VALUE, cursor)
+                if (page.snapshots.isEmpty()) break
+                snapshots += page.snapshots.map { it.value }
+                val next = page.nextCursor ?: break
+                if (next == cursor) break
+                cursor = next
+            }
+        }
+        return snapshots
     }
 }

@@ -127,6 +127,8 @@ class UsageRepositoryTest {
 
         override suspend fun countSnapshots(): Long = error("unused")
 
+        override suspend fun clearSnapshots(): Int = error("unused")
+
         override suspend fun deleteByAccount(accountId: String): Int = error("unused")
     }
 }

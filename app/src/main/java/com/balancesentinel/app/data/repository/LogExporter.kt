@@ -4,6 +4,7 @@ import android.content.Context
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import java.io.File
 import java.text.SimpleDateFormat
@@ -75,7 +76,9 @@ object LogExporter {
             sb.appendLine()
 
             // ── 刷新日志 ──
-            val entries = RefreshLogStore.getEntries(context)
+            val entries = kotlinx.coroutines.runBlocking {
+                RoomEventLogRepository(WalletDatabaseProvider.get(context)).newest(1000)
+            }
             sb.appendLine("── 刷新日志 (${entries.size} 条) ──")
             entries.forEach { entry ->
                 sb.appendLine(entry.toLogLine(dateFmt))

@@ -124,6 +124,9 @@ interface UsageDao {
     @Query("SELECT COUNT(*) FROM usage_snapshots")
     suspend fun countSnapshots(): Long
 
+    @Query("DELETE FROM usage_snapshots")
+    suspend fun clearSnapshots(): Int
+
 
     @Query("DELETE FROM usage_snapshots WHERE account_id = :accountId")
     suspend fun deleteByAccount(accountId: String): Int

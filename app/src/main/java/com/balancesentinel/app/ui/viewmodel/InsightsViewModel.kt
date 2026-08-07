@@ -175,28 +175,39 @@ class InsightsViewModel @JvmOverloads constructor(
             ) }
 
             try {
-                val summaries = historySource.summaries()
-                val repositoryRecords = readAllHistory(historySource, accounts)
-                val allRaw = repositoryRecords
-                val currencies = (summaries.map { it.currency } + allRaw.map { it.currency }).distinct()
-
+                val accountId = _uiState.value.selectedAccountId
+                val rangeDays = _uiState.value.rangeDays
+                val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
+                val historyFrom = today.minusDays(365).toString()
+                val historyTo = today.toString()
+                val scopedSummaries = historySource.summaries(
+                    accountId = accountId,
+                    fromDateInclusive = historyFrom,
+                    toDateInclusive = historyTo
+                )
+                val currencies = (historySource.distinctCurrencies() + scopedSummaries.map { it.currency })
+                    .distinct().sorted()
                 val currency = _uiState.value.selectedCurrency.let {
                     if (it.isNotEmpty() && currencies.contains(it)) it
                     else currencies.firstOrNull() ?: ""
                 }
-                val accountId = _uiState.value.selectedAccountId
-                val rangeDays = _uiState.value.rangeDays
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-                val recentRaw = repositoryRecords.filter { it.timestamp >= cutoff }
+                val scopedAccounts = accountId?.let { id -> accounts.filter { it.id == id } } ?: accounts
+                val recentRaw = readHistoryWindow(historySource, scopedAccounts, currency, cutoff, Long.MAX_VALUE)
                 val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
 
                 // ── Daily: 长期日历天视图 ──
-                val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
-                val todayRaw = repositoryRecords.filter {
+                val todayRaw = recentRaw.filter {
                     Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
                 }
+                val summaries = if (accountId == null) scopedSummaries else historySource.summaries(
+                    accountId = accountId,
+                    currency = currency.takeIf { it.isNotEmpty() },
+                    fromDateInclusive = historyFrom,
+                    toDateInclusive = historyTo
+                )
                 val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
                 // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──
@@ -221,30 +232,31 @@ class InsightsViewModel @JvmOverloads constructor(
     // 计算辅助：单账户走引擎，null=全部账户走逐账户引擎+合并
     // ═══════════════════════════════════════════════════════════
 
-    private suspend fun readAllHistory(
+    private suspend fun readHistoryWindow(
         repository: HistoryRepository,
-        accounts: List<AccountInfo>
+        accounts: List<AccountInfo>,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long
     ): List<RawRecord> {
+        if (currency.isBlank()) return emptyList()
         val records = mutableListOf<RawRecord>()
-        val currencies = repository.distinctCurrencies()
         for (account in accounts) {
-            for (currency in currencies) {
-                var cursor: com.balancesentinel.app.data.repository.HistoryCursor? = null
-                while (true) {
-                    val page = repository.page(
-                        accountId = account.id,
-                        currency = currency,
-                        fromInclusive = Long.MIN_VALUE,
-                        toExclusive = Long.MAX_VALUE,
-                        after = cursor,
-                        limit = HistoryRepository.MAX_PAGE_SIZE
-                    )
-                    if (page.records.isEmpty()) break
-                    records += page.records.map { it.value }
-                    val next = page.nextCursor ?: break
-                    if (next == cursor) break
-                    cursor = next
-                }
+            var cursor: com.balancesentinel.app.data.repository.HistoryCursor? = null
+            while (true) {
+                val page = repository.page(
+                    accountId = account.id,
+                    currency = currency,
+                    fromInclusive = fromInclusive,
+                    toExclusive = toExclusive,
+                    after = cursor,
+                    limit = HistoryRepository.MAX_PAGE_SIZE
+                )
+                if (page.records.isEmpty()) break
+                records += page.records.map { it.value }
+                val next = page.nextCursor ?: break
+                if (next == cursor) break
+                cursor = next
             }
         }
         return records

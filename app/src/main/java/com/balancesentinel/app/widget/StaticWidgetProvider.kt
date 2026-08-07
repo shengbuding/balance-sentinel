@@ -266,11 +266,11 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         val config = WidgetConfigStore.getConfig(context, widgetId)
         val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
             // 总余额模式：仅聚合当前有效账户
-            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
+            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         } else if (config != null) {
             // 仅显示选定账户+币种
-            val accountBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
+            val accountBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
             val matching = accountBalances.filter {
                 it.accountId == config.accountId && it.currency == config.currency
             }
@@ -288,7 +288,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             } else null
         } else {
             // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
-            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
+            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         }
 
@@ -301,7 +301,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
                     context.getString(R.string.widget_title_total)
                 config != null -> {
-                    val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+                    val accountBalances = BalanceWidgetDataStore.getSummaryBalances(context)
                     val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
                     accLabel.ifEmpty { context.getString(R.string.widget_default_title) }
                 }
@@ -325,7 +325,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                     config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
                         context.getString(R.string.widget_title_total)
                     config != null -> {
-                        val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+                        val accountBalances = BalanceWidgetDataStore.getSummaryBalances(context)
                         val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
                         accLabel.ifEmpty { context.getString(R.string.widget_title_compact) }
                     }
