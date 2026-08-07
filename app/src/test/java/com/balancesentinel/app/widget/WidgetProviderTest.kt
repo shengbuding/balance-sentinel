@@ -41,6 +41,11 @@ class WidgetProviderTest {
         }
     }
 
+    @Test
+    fun `widget provider does not read accounts through ApiKeyManager`() {
+        assertTrue(StaticWidgetProvider::class.java.declaredFields.none { it.type.name.endsWith("ApiKeyManager") })
+    }
+
     // Finding 5 RED: WidgetRefreshDispatcher must guarantee finish callback
     // on both success and failure. On current inert shell (empty dispatch()),
     // these tests FAIL because action/finish are never called.

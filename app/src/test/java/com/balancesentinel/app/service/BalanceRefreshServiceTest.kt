@@ -2,6 +2,7 @@ package com.balancesentinel.app.service
 
 import android.content.Context
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -19,6 +20,11 @@ class BalanceRefreshServiceTest {
         service.onTaskRemoved(null)
 
         assertEquals(1, starter.calls)
+    }
+
+    @Test
+    fun `service does not retain legacy ApiKeyManager account reader`() {
+        assertTrue(BalanceRefreshService::class.java.declaredFields.none { it.type.name.endsWith("ApiKeyManager") })
     }
 
     private class RecordingStarter : ServiceStarter {
