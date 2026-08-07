@@ -19,7 +19,6 @@ import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
-import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.NotificationHelper
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
@@ -44,7 +43,6 @@ class BalanceRefreshService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var refreshGateway: RefreshGateway
-    private lateinit var apiKeyManager: ApiKeyManager
     private lateinit var widgetPrefs: WidgetPrefs
     private var isLoopRunning = false
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
@@ -71,7 +69,6 @@ class BalanceRefreshService : Service() {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.breadcrumb(TAG, "Service onCreate")
-        apiKeyManager = ApiKeyManager(this)
         widgetPrefs = WidgetPrefs(this)
         notificationHelper = NotificationHelper(this)
         refreshGateway = RefreshRuntime.from(this)
@@ -178,24 +175,18 @@ class BalanceRefreshService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:refresh")
         wl.setReferenceCounted(false)
-        val accounts = apiKeyManager.getAccounts()
-        val wakeLockTimeout = (accounts.size * 10_000L + 30_000L)  // 动态计算
+        val wakeLockTimeout = 90_000L
         try {
             wl.acquire(wakeLockTimeout)
         } catch (_: Exception) {}
 
         refreshScope.launch {
             try {
-                if (accounts.isEmpty()) {
-                    notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_add_key))
-                    return@launch
-                }
-
                 val deadlineLifecycle = object : RefreshDeadlineLifecycle {
                     override fun markStarted() {
                         RefreshScheduler.markRefreshStarted(
                             this@BalanceRefreshService,
-                            accounts.size
+                            0
                         )
                     }
 

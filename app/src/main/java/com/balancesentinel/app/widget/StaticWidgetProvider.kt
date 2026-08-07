@@ -20,7 +20,6 @@ import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
-import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
@@ -207,10 +206,8 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         val config = WidgetConfigStore.getConfig(context, widgetId)
         val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
             // 总余额模式：仅聚合当前有效账户
-            val keyManager = ApiKeyManager(context)
-            val validAccountIds = keyManager.getAccounts().map { it.id }.toSet()
             val validBalances = BalanceWidgetDataStore.getAllBalances(context)
-                .filter { it.accountId in validAccountIds }
+                .filter { it.accountId.isNotBlank() }
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         } else if (config != null) {
             // 仅显示选定账户+币种
@@ -232,10 +229,8 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             } else null
         } else {
             // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
-            val keyManager = ApiKeyManager(context)
-            val validAccountIds = keyManager.getAccounts().map { it.id }.toSet()
             val validBalances = BalanceWidgetDataStore.getAllBalances(context)
-                .filter { it.accountId in validAccountIds }
+                .filter { it.accountId.isNotBlank() }
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         }
 

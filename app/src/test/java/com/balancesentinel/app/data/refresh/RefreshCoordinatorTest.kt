@@ -103,6 +103,7 @@ class RefreshCoordinatorTest {
         val coordinator = RefreshCoordinator(store, AccountBalanceSource { fetched.await() }, committer, backgroundScope)
 
         val refresh = async { coordinator.refreshAccount(ACCOUNT_ID, RefreshTrigger.SERVICE) }
+        testScheduler.runCurrent()
         store.changed = true
         fetched.complete(success(42.0))
 

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,8 +32,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
-import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Widget 配置 Activity。
@@ -57,13 +66,16 @@ class WidgetConfigActivity : ComponentActivity() {
             return
         }
 
-        val apiKeyManager = ApiKeyManager(this)
-        val accounts = apiKeyManager.getAccounts()
-        val currencies = listOf("CNY", "USD", "EUR")
-
         setResult(RESULT_CANCELED) // default
-
-        setContent {
+        val repository = RoomAccountRepository(WalletDatabaseProvider.get(this))
+        lifecycleScope.launch {
+            val state = withContext(Dispatchers.IO) {
+                RoomAccountUiRepository(repository, EncryptedPreferencesCredentialStore(this@WidgetConfigActivity))
+                    .observe().first { it !is AccountLoadState.Loading }
+            }
+            val accounts = (state as? AccountLoadState.Ready)?.accounts.orEmpty()
+            val currencies = listOf("CNY", "USD", "EUR")
+            setContent {
             DeepSeekBalanceTheme {
                 Scaffold(
                     topBar = {
@@ -170,6 +182,7 @@ class WidgetConfigActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }

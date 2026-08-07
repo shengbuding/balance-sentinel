@@ -1,7 +1,10 @@
 package com.balancesentinel.app.data.refresh
 
 import android.content.Context
-import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,7 +19,11 @@ object RefreshRuntime {
 
     fun create(context: Context): RefreshGateway {
         val appContext = context.applicationContext
-        val accountStore = ApiKeyRefreshAccountStore(ApiKeyManager(appContext))
+        val accountRepository = RoomAccountRepository(WalletDatabaseProvider.get(appContext))
+        val accountStore = RoomRefreshAccountStore(
+            accountRepository,
+            RoomAccountUiRepository(accountRepository, EncryptedPreferencesCredentialStore(appContext))
+        )
         val source = AccountBalanceRefresher()
         val committer = RefreshResultCommitter(appContext, accountStore)
         return RefreshCoordinator(

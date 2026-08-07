@@ -25,8 +25,12 @@ class RefreshCoordinator(
         trigger: RefreshTrigger
     ): AccountRefreshResult {
         val token = nextToken(accountId)
-        val account = accountStore.getAccount(accountId)
-            ?: return AccountRefreshResult.Skipped(accountId, "Account not found")
+        val account = when (val read = accountStore.readAccount(accountId)) {
+            is AccountStoreRead.Ready -> read.accounts.firstOrNull()
+                ?: return AccountRefreshResult.Skipped(accountId, "Account not found")
+            AccountStoreRead.Missing -> return AccountRefreshResult.Skipped(accountId, "Account not found")
+            is AccountStoreRead.Corrupt -> return AccountRefreshResult.Failed(accountId, RefreshFailure.AccountCorrupt("Account repository is corrupt"))
+        }
         val request = RefreshRequest(
             accountId = account.id,
             revision = account.revision,
@@ -46,8 +50,12 @@ class RefreshCoordinator(
             )
         }
 
+        val current = accountStore.readAccount(accountId)
         return synchronized(lockFor(accountId)) {
             if (!isLatest(accountId, token)) {
+                return@synchronized stale(accountId)
+            }
+            if (current !is AccountStoreRead.Ready || current.accounts.firstOrNull()?.revision != request.revision) {
                 return@synchronized stale(accountId)
             }
             when (fetched) {
@@ -64,10 +72,15 @@ class RefreshCoordinator(
 
     override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> =
         supervisorScope {
-            accountStore.getAccounts().map { account ->
+        val accounts = when (val read = accountStore.readAccounts()) {
+            is AccountStoreRead.Ready -> read.accounts
+            AccountStoreRead.Missing, is AccountStoreRead.Corrupt -> emptyList()
+        }
+        accounts.map { account ->
                 async { refreshAccount(account.id, trigger) }
             }.awaitAll()
         }
+
 
     override fun invalidate(accountId: String) {
         synchronized(lockFor(accountId)) {
