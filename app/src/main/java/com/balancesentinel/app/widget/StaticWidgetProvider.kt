@@ -154,7 +154,7 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         WidgetRefreshCoroutineDispatcher(scope).dispatch(
                 action = {
-                    WidgetRefreshExecution(RefreshRuntime.from(context), serviceStarter).execute(context, decision)
+                    WidgetRefreshExecution(refreshGatewayProvider(context), serviceStarter).execute(context, decision)
                     provider.setRefreshProgress(context, manager, allIds, visible = false)
                     provider.onUpdate(context, manager, widgetIds)
                 },
@@ -190,7 +190,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val state = loadAccountState(context)
+                val state = accountStateLoaderOverride?.invoke(context) ?: loadAccountState(context)
                 withContext(Dispatchers.Main) {
                     appWidgetIds.forEach { id ->
                         updateWidget(context, appWidgetManager, id, appWidgetManager.getAppWidgetOptions(id), state)
@@ -209,7 +209,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val state = loadAccountState(context)
+                val state = accountStateLoaderOverride?.invoke(context) ?: loadAccountState(context)
                 withContext(Dispatchers.Main) {
                     updateWidget(context, appWidgetManager, appWidgetId, newOptions, state)
                 }
