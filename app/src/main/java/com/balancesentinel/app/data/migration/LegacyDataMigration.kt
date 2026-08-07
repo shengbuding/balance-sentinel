@@ -115,7 +115,7 @@ class LegacyDataMigration(
         updateOperation(id, MutationStage.ROOM_WRITTEN, snapshot.records.size.toLong())
     }
 
-    private suspend fun publish(id: String) { database.withTransaction { updateOperation(id, MutationStage.VERIFIED, requireNotNull(database.mutationOperationDao().get(id)).batchCursor); require(database.mutationOperationDao().markPublished(id, now()) == 1) } }
+    private suspend fun publish(id: String) { database.withTransaction { val current = requireNotNull(database.mutationOperationDao().get(id)); if (current.stage == MutationStage.PUBLISHED || current.stage == MutationStage.ACTIVE || current.stage == MutationStage.CLEANED) return@withTransaction; updateOperation(id, MutationStage.VERIFIED, current.batchCursor); require(database.mutationOperationDao().markPublished(id, now()) == 1) } }
     private suspend fun markCleaned(id: String) { require(database.mutationOperationDao().updateStage(id, MutationStage.CLEANED, requireNotNull(database.mutationOperationDao().get(id)).batchCursor, null, null, now()) == 1) }
     private suspend fun fail(id: String, error: Exception) { database.mutationOperationDao().updateStage(id, MutationStage.FAILED, requireNotNull(database.mutationOperationDao().get(id)).batchCursor, "MIGRATION_FAILED", error.message, now()) }
     private suspend fun updateOperation(id: String, stage: MutationStage, cursor: Long) { val current = requireNotNull(database.mutationOperationDao().get(id)); if (current.stage.ordinal < stage.ordinal || cursor > current.batchCursor) database.mutationOperationDao().updateStage(id, stage, cursor, null, null, now()) }
