@@ -12,6 +12,8 @@ import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.local.testAccount
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -189,6 +191,83 @@ class SettingsRepositoryTest {
         accountStorage.edit().clear().commit()
     }
 
+    @Test
+    fun `failed import rollback preserves concurrent Room runtime update`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val accountStorage = context.getSharedPreferences(
+            "settings-round-three-import-${System.nanoTime()}",
+            Context.MODE_PRIVATE
+        )
+        val accountManager = ApiKeyManager(context, accountStorage)
+        val original = com.balancesentinel.app.data.model.AccountInfo(
+            id = accountManager.computeId("sk-round-three-old"),
+            label = "Old",
+            apiKey = "sk-round-three-old"
+        )
+        val imported = original.copy(
+            id = accountManager.computeId("sk-round-three-new"),
+            label = "Imported",
+            apiKey = "sk-round-three-new"
+        )
+        accountManager.replaceAll(listOf(original))
+        database.accountDao().insertCreate(testAccount(original.id))
+        val beforeSettings = SettingsSnapshot(
+            appSettings = AppSettingsEntity(alertEnabled = false, alertThreshold = 1.0, updatedAt = 1),
+            accountAlertSettings = emptyList(),
+            notificationSelections = emptyList(),
+            alertRuntimeStates = emptyList(),
+            snoozes = emptyList()
+        )
+        repository.publishSnapshot(beforeSettings, publishedAt = beforeSettings.appSettings.updatedAt)
+        val concurrentRuntime = AlertRuntimeStateEntity(
+            accountId = original.id,
+            currency = "USD",
+            anchorBalance = 123.0,
+            anchorAt = 456L
+        )
+        val failingRepository = PauseAfterApplyRepository(repository)
+        val planner = BackupImportPlanner(accountManager, WidgetPrefs(context), failingRepository)
+        val plan = BackupImportPlan(
+            mode = ImportMode.REPLACE_ALL,
+            finalAccounts = listOf(imported),
+            matchedUpdatedCount = 0,
+            retainedCredentialCount = 0,
+            createdCount = 1,
+            skippedCount = 0,
+            conflictCount = 0,
+            deletedCount = 1,
+            scriptAuthorizations = emptyList(),
+            canApply = true,
+            blockingReasons = emptyList(),
+            settings = ConfigSettings(
+                refreshIntervalSeconds = 30,
+                alertEnabled = true,
+                alertThreshold = 50f,
+                changeAlertEnabled = false,
+                changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 60,
+                logMaxEntries = 100
+            )
+        )
+
+        val importFailure = async {
+            runCatching { planner.applyAsync(plan, confirmedFullReplace = true) }.exceptionOrNull()
+        }
+        failingRepository.applied.await()
+        repository.updateSnapshot { current ->
+            current.copy(alertRuntimeStates = listOf(concurrentRuntime))
+        }
+        failingRepository.failImport.complete(Unit)
+
+        assertEquals("injected publication failure", importFailure.await()?.message)
+        val afterFailure = repository.readSnapshot()
+        assertEquals(false, afterFailure.appSettings.alertEnabled)
+        assertEquals(1.0, afterFailure.appSettings.alertThreshold, 0.0)
+        assertEquals(listOf(concurrentRuntime), afterFailure.alertRuntimeStates)
+        assertEquals(listOf(original), accountManager.getAccounts())
+        accountStorage.edit().clear().commit()
+    }
+
     private class FailAfterApplyRepository(
         private val delegate: SettingsRepository
     ) : SettingsRepository {
@@ -201,6 +280,26 @@ class SettingsRepositoryTest {
             delegate.updateSnapshot(transform)
         override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {
             delegate.applyConfigSettings(settings)
+            error("injected publication failure")
+        }
+    }
+
+    private class PauseAfterApplyRepository(
+        private val delegate: SettingsRepository
+    ) : SettingsRepository {
+        val applied = CompletableDeferred<Unit>()
+        val failImport = CompletableDeferred<Unit>()
+        override val snapshot = delegate.snapshot
+        override suspend fun readSnapshot(): SettingsSnapshot = delegate.readSnapshot()
+        override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) =
+            delegate.publishSnapshot(snapshot, publishedAt)
+        override suspend fun hasPersistedSnapshot(): Boolean = delegate.hasPersistedSnapshot()
+        override suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot =
+            delegate.updateSnapshot(transform)
+        override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {
+            delegate.applyConfigSettings(settings)
+            applied.complete(Unit)
+            failImport.await()
             error("injected publication failure")
         }
     }
