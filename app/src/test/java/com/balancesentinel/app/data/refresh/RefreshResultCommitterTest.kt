@@ -24,6 +24,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -38,6 +41,49 @@ import org.robolectric.RobolectricTestRunner
 class RefreshResultCommitterTest {
 
     private lateinit var context: Context
+
+    @Test
+    fun `account mutation barrier prevents old coordinator result from writing persistence`() = runBlocking {
+        clearStores(ApplicationProvider.getApplicationContext())
+        val fetchReady = CompletableDeferred<BalanceFetchResult>()
+        val fetchStarted = CompletableDeferred<Unit>()
+        val mutationDone = CompletableDeferred<Unit>()
+        val store = BarrierAccountStore(account(revision = 2))
+        val committer = RefreshResultCommitter(
+            context = ApplicationProvider.getApplicationContext(),
+            accountStore = store,
+            providerCache = ProviderCache(ApplicationProvider.getApplicationContext()),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { }
+        )
+        val coordinator = RefreshCoordinator(
+            store,
+            AccountBalanceSource {
+                fetchStarted.complete(Unit)
+                fetchReady.await()
+            },
+            committer,
+            this@runBlocking
+        )
+        val old = async {
+            coordinator.refreshAccount(ACCOUNT_ID, RefreshTrigger.SERVICE)
+        }
+        fetchStarted.await()
+        val mutation = async {
+            RefreshMutationBarrier.withAccountMutation(ACCOUNT_ID) {
+                store.deleted = true
+                mutationDone.complete(Unit)
+            }
+        }
+        mutationDone.await()
+        fetchReady.complete(success(77.0, completedAt = 100L))
+        mutation.await()
+
+        assertTrue(old.await() is AccountRefreshResult.Stale)
+        assertTrue(BalanceWidgetDataStore.getAllBalances(context).none { it.accountId == ACCOUNT_ID })
+        assertTrue(RawRecordStore.getAllRecords(context).none { it.accountId == ACCOUNT_ID })
+        assertTrue(RefreshLogStore.getEntries(context).none { it.message == ACCOUNT_ID })
+    }
 
     @Before
     fun setUp() {
@@ -529,6 +575,15 @@ class RefreshResultCommitterTest {
             accounts.find { it.id == accountId }
 
         override fun getAccounts(): List<AccountInfo> = accounts.toList()
+    }
+
+    private class BarrierAccountStore(
+        private val account: AccountInfo
+    ) : RefreshAccountStore {
+        @Volatile var deleted = false
+
+        override fun getAccount(accountId: String): AccountInfo? = account
+        override fun getAccounts(): List<AccountInfo> = listOf(account)
     }
 
     private class RecordingPrefsContext(

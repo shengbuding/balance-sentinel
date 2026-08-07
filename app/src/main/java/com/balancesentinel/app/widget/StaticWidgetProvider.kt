@@ -33,6 +33,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import com.balancesentinel.app.data.repository.AccountLoadState
+
+object WidgetBalanceVisibility {
+    fun filter(state: AccountLoadState, balances: List<AccountBalance>): List<AccountBalance> =
+        balances.filter { it.accountId.isNotBlank() }
+}
 
 sealed interface WidgetRefreshDecision {
     data object Ignored : WidgetRefreshDecision

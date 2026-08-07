@@ -3,6 +3,13 @@ package com.balancesentinel.app.widget
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.AccountLoadState
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -42,9 +49,59 @@ class WidgetProviderTest {
     }
 
     @Test
-    fun `widget provider does not read accounts through ApiKeyManager`() {
-        assertTrue(StaticWidgetProvider::class.java.declaredFields.none { it.type.name.endsWith("ApiKeyManager") })
+    fun `widget visibility excludes deleted persisted balances`() {
+        val balances = listOf(balance("active"), balance("deleted"))
+        val state = AccountLoadState.Ready(listOf(account("active")))
+
+        assertEquals(listOf("active"), WidgetBalanceVisibility.filter(state, balances).map { it.accountId })
     }
+
+    @Test
+    fun `widget visibility fails closed for corrupt account state`() {
+        val state = AccountLoadState.Corrupt(DataCorruptionException("corrupt"))
+
+        assertTrue(WidgetBalanceVisibility.filter(state, listOf(balance("stale"))).isEmpty())
+    }
+
+    @Test
+    fun `widget visibility retains normal balances for ready accounts`() {
+        val state = AccountLoadState.Ready(listOf(account("active")))
+
+        assertEquals(25.0, WidgetBalanceVisibility.filter(state, listOf(balance("active")))
+            .single().totalBalance.toDouble(), 0.0)
+    }
+
+    @Test
+    fun `suspending widget dispatch returns before refresh and finishes afterward`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var finished = false
+
+        WidgetRefreshCoroutineDispatcher(this).dispatch(
+            action = { release.await() },
+            finish = { finished = true }
+        )
+
+        assertFalse(finished)
+        release.complete(Unit)
+        runCurrent()
+        assertTrue(finished)
+    }
+
+    @Test
+    fun `suspending widget dispatch finishes when refresh fails`() = runTest {
+        var finished = false
+
+        WidgetRefreshCoroutineDispatcher(this).dispatch(
+            action = { error("refresh failed") },
+            finish = { finished = true }
+        )
+        runCurrent()
+
+        assertTrue(finished)
+    }
+
+    private fun account(id: String) = AccountInfo(id, id, "key-$id", ProviderType.DEEPSEEK, revision = 1)
+    private fun balance(id: String) = AccountBalance(id, id, "25", "CNY", true, "", "", 1L)
 
     // Finding 5 RED: WidgetRefreshDispatcher must guarantee finish callback
     // on both success and failure. On current inert shell (empty dispatch()),

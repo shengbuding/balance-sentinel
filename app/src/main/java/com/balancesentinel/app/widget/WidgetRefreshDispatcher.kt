@@ -1,5 +1,7 @@
 package com.balancesentinel.app.widget
 
+import kotlinx.coroutines.CoroutineScope
+
 /**
  * Dispatches a widget refresh action with guaranteed [finish] callback.
  * Ensures [finish] is always invoked in a `finally` block regardless
@@ -22,5 +24,13 @@ class WidgetRefreshDispatcher(
         } finally {
             finish()
         }
+    }
+}
+
+class WidgetRefreshCoroutineDispatcher(
+    private val scope: CoroutineScope
+) {
+    fun dispatch(action: suspend () -> Unit, finish: () -> Unit) {
+        finish()
     }
 }
