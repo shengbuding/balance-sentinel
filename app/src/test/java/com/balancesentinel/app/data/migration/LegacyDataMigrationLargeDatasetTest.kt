@@ -72,12 +72,12 @@ class LegacyDataMigrationLargeDatasetTest {
 
             val result = LegacyDataMigration(db, source).run()
 
-            assertEquals(90_000, result.records)
-            assertEquals(90_000, db.historyDao().countLegacyRecords())
+            assertEquals(90_000L, result.records)
+            assertEquals(90_000L, db.historyDao().countLegacyRecords())
             val operation = db.mutationOperationDao().listRecoverable().single {
                 it.operationType == MutationOperationType.LEGACY_DATA_MIGRATION
             }
-            assertEquals(90_000, operation.batchCursor)
+            assertEquals(90_000L, operation.batchCursor)
             db.openHelper.readableDatabase.query(
                 "SELECT batch_cursor, record_count FROM record_batch_audit ORDER BY batch_cursor"
             ).use { cursor ->

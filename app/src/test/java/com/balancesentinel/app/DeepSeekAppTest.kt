@@ -287,26 +287,26 @@ class DeepSeekAppTest {
 
             assertTrue("non-empty data migration did not finish", firstDone.await(5, TimeUnit.SECONDS))
             assertNull(firstFailure.get())
-            assertEquals(2, firstResult.get()?.records)
-            assertEquals(2, firstResult.get()?.usage)
-            assertEquals(2, db.eventLogDao().countLogs())
+            assertEquals(2L, firstResult.get()?.records)
+            assertEquals(2L, firstResult.get()?.usage)
+            assertEquals(2L, db.eventLogDao().countLogs())
             val operationId = db.mutationOperationDao().listRecoverable()
                 .single { it.operationType.name == "LEGACY_DATA_MIGRATION" }
                 .id
             assertEquals(
-                2,
+                2L,
                 queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = '$operationId'")
             )
             assertEquals(
-                1,
+                1L,
                 queryLong(db, "SELECT COUNT(*) FROM daily_summaries WHERE migration_operation_id = '$operationId'")
             )
             assertEquals(
-                2,
+                2L,
                 queryLong(db, "SELECT COUNT(*) FROM usage_snapshots WHERE migration_operation_id = '$operationId'")
             )
             assertEquals(
-                1,
+                1L,
                 queryLong(db, "SELECT COUNT(*) FROM event_logs WHERE migration_operation_id = '$operationId'")
             )
 
@@ -317,9 +317,9 @@ class DeepSeekAppTest {
             }
             app.launchLegacyAccountMigration()
             assertTrue("idempotent startup rerun did not finish", secondDone.await(5, TimeUnit.SECONDS))
-            assertEquals(2, queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = '$operationId'"))
-            assertEquals(2, queryLong(db, "SELECT COUNT(*) FROM usage_snapshots WHERE migration_operation_id = '$operationId'"))
-            assertEquals(2, db.eventLogDao().countLogs())
+            assertEquals(2L, queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = '$operationId'"))
+            assertEquals(2L, queryLong(db, "SELECT COUNT(*) FROM usage_snapshots WHERE migration_operation_id = '$operationId'"))
+            assertEquals(2L, db.eventLogDao().countLogs())
         } finally {
             db.close()
         }
