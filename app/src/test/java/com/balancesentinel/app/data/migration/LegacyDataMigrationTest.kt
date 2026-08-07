@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.local.history.BalanceRecordEntity
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.RawRecord
 import kotlinx.coroutines.runBlocking
@@ -80,6 +82,43 @@ class LegacyDataMigrationTest {
             }
             assertTrue(runCatching { LegacyDataMigration(db, source).run() }.isFailure)
             assertTrue(db.appMetadataDao().get()?.legacyMigrationStage !in setOf(com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.ACTIVE, com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.CLEANED))
+        } finally { db.close() }
+    }
+
+    @Test
+    fun existingLegacyRoomRowsAreExcludedByOperationBaseline() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val accountId = "550e8400-e29b-41d4-a716-446655440002"
+            db.accountDao().insertCreate(AccountEntity(accountId, 0, "A", ProviderType.DEEPSEEK, activeCredentialGeneration = "g", state = AccountState.VERIFIED, legacyStorageId = "legacy", createdAt = 1, updatedAt = 1))
+            db.historyDao().insertBalanceBatch(listOf(BalanceRecordEntity(accountId = accountId, currency = "USD", recordedAt = 1, totalBalance = 99.0, source = BalanceRecordSource.LEGACY_MIGRATION)))
+            val source = object : LegacyDataSource {
+                override fun read() = LegacyDataSnapshot(records = listOf(RawRecord("legacy", 2, "USD", 1f, 0f, 0f)))
+                override fun clear(snapshot: LegacyDataSnapshot) = false
+            }
+            val result = LegacyDataMigration(db, source).run()
+            assertEquals(1, result.records)
+        } finally { db.close() }
+    }
+
+    @Test
+    fun sameMillisecondRecordsRemainDistinctAndBothVerify() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val accountId = "550e8400-e29b-41d4-a716-446655440003"
+            db.accountDao().insertCreate(AccountEntity(accountId, 0, "A", ProviderType.DEEPSEEK, activeCredentialGeneration = "g", state = AccountState.VERIFIED, legacyStorageId = "legacy", createdAt = 1, updatedAt = 1))
+            val source = object : LegacyDataSource {
+                override fun read() = LegacyDataSnapshot(records = listOf(
+                    RawRecord("legacy", 3, "USD", 1f, 0f, 0f),
+                    RawRecord("legacy", 3, "USD", 2f, 1f, 1f)
+                ))
+                override fun clear(snapshot: LegacyDataSnapshot) = false
+            }
+            val result = LegacyDataMigration(db, source).run()
+            assertEquals(2, result.records)
+            assertEquals(2, db.historyDao().countLegacyRecords())
         } finally { db.close() }
     }
 }
