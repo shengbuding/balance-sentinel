@@ -17,7 +17,13 @@ import com.balancesentinel.app.data.local.account.AccountEntity
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["account_id", "currency", "date"])]
+    indices = [
+        Index(value = ["account_id", "currency", "date"]),
+        Index(
+            value = ["migration_operation_id", "migration_source_ordinal"],
+            unique = true
+        )
+    ]
 )
 data class DailySummaryEntity(
     val date: String,
@@ -43,5 +49,9 @@ data class DailySummaryEntity(
     @ColumnInfo(name = "granted_balance_close", defaultValue = "0.0")
     val grantedBalanceClose: Double = 0.0,
     @ColumnInfo(name = "generated_at")
-    val generatedAt: Long
+    val generatedAt: Long,
+    @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
+    val migrationOperationId: String? = null,
+    @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")
+    val migrationSourceOrdinal: Int? = null
 )

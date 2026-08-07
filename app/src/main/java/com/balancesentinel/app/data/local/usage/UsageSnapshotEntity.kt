@@ -21,6 +21,10 @@ import com.balancesentinel.app.data.local.account.AccountEntity
         Index(
             value = ["account_id", "captured_at", "identity_discriminator"],
             unique = true
+        ),
+        Index(
+            value = ["migration_operation_id", "migration_source_ordinal"],
+            unique = true
         )
     ]
 )
@@ -32,5 +36,9 @@ data class UsageSnapshotEntity(
     @ColumnInfo(name = "captured_at")
     val capturedAt: Long,
     @ColumnInfo(name = "identity_discriminator", defaultValue = "''")
-    val identityDiscriminator: String = ""
+    val identityDiscriminator: String = "",
+    @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
+    val migrationOperationId: String? = null,
+    @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")
+    val migrationSourceOrdinal: Int? = null
 )

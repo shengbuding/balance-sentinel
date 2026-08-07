@@ -14,7 +14,7 @@ object WalletDatabaseProvider {
             context.applicationContext,
             WalletDatabase::class.java,
             DATABASE_NAME
-        ).addMigrations(WalletDatabase.MIGRATION_1_2)
+        ).addMigrations(WalletDatabase.MIGRATION_1_2, WalletDatabase.MIGRATION_2_3)
             .build().also { instance = it }
     }
 }

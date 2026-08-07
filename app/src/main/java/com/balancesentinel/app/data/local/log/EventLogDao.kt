@@ -10,6 +10,9 @@ interface EventLogDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(entries: List<EventLogEntity>): List<Long>
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMigrationEntries(entries: List<EventLogEntity>): List<Long>
+
     @Query("SELECT * FROM event_logs ORDER BY recorded_at DESC, id DESC LIMIT :limit")
     suspend fun newest(limit: Int): List<EventLogEntity>
 
@@ -35,4 +38,22 @@ interface EventLogDao {
 
     @Query("SELECT COUNT(*) FROM event_logs")
     suspend fun countLogs(): Long
+
+    @Query("SELECT COUNT(*) FROM event_logs WHERE migration_operation_id = :operationId")
+    suspend fun countMigrationLogs(operationId: String): Long
+
+    @Query(
+        """
+        SELECT * FROM event_logs
+        WHERE migration_operation_id = :operationId
+          AND migration_source_ordinal >= :startOrdinal
+        ORDER BY migration_source_ordinal
+        LIMIT :limit
+        """
+    )
+    suspend fun migrationLogPage(
+        operationId: String,
+        startOrdinal: Int,
+        limit: Int
+    ): List<EventLogEntity>
 }

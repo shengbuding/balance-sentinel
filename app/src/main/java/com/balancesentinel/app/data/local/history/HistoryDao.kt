@@ -31,6 +31,9 @@ interface HistoryDao {
     suspend fun insertBalanceBatch(records: List<BalanceRecordEntity>): List<Long>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMigrationBalanceBatch(records: List<BalanceRecordEntity>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSummaries(summaries: List<DailySummaryEntity>)
 
     @Query(
@@ -257,6 +260,42 @@ interface HistoryDao {
         recordedAt: Long,
         afterId: Long
     ): List<BalanceRecordEntity>
+
+    @Query("SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = :operationId")
+    suspend fun countMigrationRecords(operationId: String): Long
+
+    @Query(
+        """
+        SELECT * FROM balance_records
+        WHERE migration_operation_id = :operationId
+          AND migration_source_ordinal >= :startOrdinal
+        ORDER BY migration_source_ordinal
+        LIMIT :limit
+        """
+    )
+    suspend fun migrationRecordPage(
+        operationId: String,
+        startOrdinal: Int,
+        limit: Int
+    ): List<BalanceRecordEntity>
+
+    @Query("SELECT COUNT(*) FROM daily_summaries WHERE migration_operation_id = :operationId")
+    suspend fun countMigrationSummaries(operationId: String): Long
+
+    @Query(
+        """
+        SELECT * FROM daily_summaries
+        WHERE migration_operation_id = :operationId
+          AND migration_source_ordinal >= :startOrdinal
+        ORDER BY migration_source_ordinal
+        LIMIT :limit
+        """
+    )
+    suspend fun migrationSummaryPage(
+        operationId: String,
+        startOrdinal: Int,
+        limit: Int
+    ): List<DailySummaryEntity>
 
     @Query("SELECT DISTINCT currency FROM balance_records ORDER BY currency")
     suspend fun distinctCurrencies(): List<String>

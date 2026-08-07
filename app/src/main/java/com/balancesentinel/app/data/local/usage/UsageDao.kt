@@ -103,6 +103,24 @@ interface UsageDao {
     @Query("SELECT * FROM usage_records WHERE snapshot_id = :snapshotId ORDER BY record_ordinal")
     suspend fun getRecords(snapshotId: String): List<UsageRecordEntity>
 
+    @Query("SELECT COUNT(*) FROM usage_snapshots WHERE migration_operation_id = :operationId")
+    suspend fun countMigrationSnapshots(operationId: String): Long
+
+    @Query(
+        """
+        SELECT * FROM usage_snapshots
+        WHERE migration_operation_id = :operationId
+          AND migration_source_ordinal >= :startOrdinal
+        ORDER BY migration_source_ordinal
+        LIMIT :limit
+        """
+    )
+    suspend fun migrationSnapshotPage(
+        operationId: String,
+        startOrdinal: Int,
+        limit: Int
+    ): List<UsageSnapshotEntity>
+
     @Query("SELECT COUNT(*) FROM usage_snapshots")
     suspend fun countSnapshots(): Long
 

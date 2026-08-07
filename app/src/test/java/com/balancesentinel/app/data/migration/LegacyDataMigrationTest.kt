@@ -148,6 +148,9 @@ class LegacyDataMigrationTest {
             LegacyDataMigration(db, source).run()
             val operation = legacyDataOperation(db)
             db.openHelper.writableDatabase.execSQL(
+                "UPDATE balance_records SET migration_operation_id = NULL, migration_source_ordinal = NULL"
+            )
+            db.openHelper.writableDatabase.execSQL(
                 """
                 UPDATE mutation_operations
                 SET targets_json = ?, manifest_version = 1,

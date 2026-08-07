@@ -60,7 +60,7 @@ import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
         MonitoringStateEntity::class,
         MonitoringSessionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -85,6 +85,36 @@ abstract class WalletDatabase : RoomDatabase() {
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_balance_records_recorded_at_id` " +
                         "ON `balance_records` (`recorded_at`, `id`)"
+                )
+            }
+        }
+
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE `balance_records` ADD COLUMN `migration_operation_id` TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE `balance_records` ADD COLUMN `migration_source_ordinal` INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE `daily_summaries` ADD COLUMN `migration_operation_id` TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE `daily_summaries` ADD COLUMN `migration_source_ordinal` INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE `usage_snapshots` ADD COLUMN `migration_operation_id` TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE `usage_snapshots` ADD COLUMN `migration_source_ordinal` INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE `event_logs` ADD COLUMN `migration_operation_id` TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE `event_logs` ADD COLUMN `migration_source_ordinal` INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE `event_logs` ADD COLUMN `legacy_source_id` INTEGER DEFAULT NULL")
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_balance_records_migration_operation_id_migration_source_ordinal` " +
+                        "ON `balance_records` (`migration_operation_id`, `migration_source_ordinal`)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_daily_summaries_migration_operation_id_migration_source_ordinal` " +
+                        "ON `daily_summaries` (`migration_operation_id`, `migration_source_ordinal`)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_usage_snapshots_migration_operation_id_migration_source_ordinal` " +
+                        "ON `usage_snapshots` (`migration_operation_id`, `migration_source_ordinal`)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_event_logs_migration_operation_id_migration_source_ordinal` " +
+                        "ON `event_logs` (`migration_operation_id`, `migration_source_ordinal`)"
                 )
             }
         }

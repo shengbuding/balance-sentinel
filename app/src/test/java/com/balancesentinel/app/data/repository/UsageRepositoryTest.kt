@@ -117,6 +117,14 @@ class UsageRepositoryTest {
 
         override suspend fun getRecords(snapshotId: String): List<UsageRecordEntity> = error("unused")
 
+        override suspend fun countMigrationSnapshots(operationId: String): Long = error("unused")
+
+        override suspend fun migrationSnapshotPage(
+            operationId: String,
+            startOrdinal: Int,
+            limit: Int
+        ): List<UsageSnapshotEntity> = error("unused")
+
         override suspend fun countSnapshots(): Long = error("unused")
 
         override suspend fun deleteByAccount(accountId: String): Int = error("unused")

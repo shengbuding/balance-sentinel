@@ -40,7 +40,13 @@ enum class EventLogType {
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index(value = ["recorded_at", "id"])]
+    indices = [
+        Index(value = ["recorded_at", "id"]),
+        Index(
+            value = ["migration_operation_id", "migration_source_ordinal"],
+            unique = true
+        )
+    ]
 )
 data class EventLogEntity(
     @PrimaryKey(autoGenerate = true)
@@ -72,5 +78,11 @@ data class EventLogEntity(
     @ColumnInfo(name = "alarm_method", defaultValue = "NULL")
     val alarmMethod: String? = null,
     @ColumnInfo(name = "miss_reason", defaultValue = "NULL")
-    val missReason: String? = null
+    val missReason: String? = null,
+    @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
+    val migrationOperationId: String? = null,
+    @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")
+    val migrationSourceOrdinal: Int? = null,
+    @ColumnInfo(name = "legacy_source_id", defaultValue = "NULL")
+    val legacySourceId: Long? = null
 )

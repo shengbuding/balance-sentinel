@@ -31,7 +31,11 @@ enum class BalanceRecordSource {
     ],
     indices = [
         Index(value = ["account_id", "currency", "recorded_at", "id"]),
-        Index(value = ["recorded_at", "id"])
+        Index(value = ["recorded_at", "id"]),
+        Index(
+            value = ["migration_operation_id", "migration_source_ordinal"],
+            unique = true
+        )
     ]
 )
 data class BalanceRecordEntity(
@@ -49,5 +53,9 @@ data class BalanceRecordEntity(
     @ColumnInfo(name = "topped_up_balance", defaultValue = "0.0")
     val toppedUpBalance: Double = 0.0,
     @ColumnInfo(defaultValue = "'REFRESH'")
-    val source: BalanceRecordSource = BalanceRecordSource.REFRESH
+    val source: BalanceRecordSource = BalanceRecordSource.REFRESH,
+    @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
+    val migrationOperationId: String? = null,
+    @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")
+    val migrationSourceOrdinal: Int? = null
 )
