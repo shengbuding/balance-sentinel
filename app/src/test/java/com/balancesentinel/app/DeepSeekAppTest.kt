@@ -301,6 +301,12 @@ class DeepSeekAppTest {
                 1L,
                 queryLong(db, "SELECT COUNT(*) FROM daily_summaries WHERE migration_operation_id = '$operationId'")
             )
+            assertEquals(2L, db.historyDao().countSummaries())
+            assertEquals(
+                999.0,
+                requireNotNull(db.historyDao().getSummary("2026-08-02", accountId, "USD")).closeBalance,
+                0.0
+            )
             assertEquals(
                 2L,
                 queryLong(db, "SELECT COUNT(*) FROM usage_snapshots WHERE migration_operation_id = '$operationId'")

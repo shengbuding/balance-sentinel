@@ -105,3 +105,41 @@ Remaining concerns after Fix Round 4:
 - The v2-to-v3 compatibility test executes the production migration over populated v2-shaped tables rather than opening the complete exported v2 schema through `MigrationTestHelper`; the separate exact v3 runtime/export contract test passes.
 - The full repository `testDebugUnitTest` suite was not run. Verification was limited to the Task 10 focused suites, the non-empty DeepSeekApp startup behavior, WalletDatabase v3 migration tests, and production Kotlin compilation.
 - SharedPreferences cleanup still performs four sequential commits with captured-preimage restoration; that pre-existing platform limitation is unchanged.
+
+## Fix Round 5
+
+Finding: `daily_summaries` still used `(date, account_id, currency)` as its primary key and `HistoryDao.upsertSummaries` used `REPLACE`. `LegacyDataMigration.writeRemaining` therefore deleted an existing non-migration summary when an imported summary shared the same business key. The Round 4 startup fixture constructed this collision but did not assert preservation of the old row.
+
+RED:
+
+- Added `LegacyDataMigrationTest.migrationSummaryConflictPreservesExistingSummaryAndPersistsScopedCopy`, using a real Room in-memory database and the production `LegacyDataMigration` path. It preloads a complete non-migration summary, imports a summary with the same date/account/currency, then asserts every old field remains, ordinary `getSummary`/`querySummaries` still select the old row, and the imported row is independently readable by operation/source identity.
+- Strengthened the real `DeepSeekApp` startup migration test with the same preservation/count assertions.
+- Command: `.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationTest" --rerun-tasks --no-parallel`
+- RED output: `14 tests completed, 1 failed`; only `migrationSummaryConflictPreservesExistingSummaryAndPersistsScopedCopy` failed at the old-summary assertion (`LegacyDataMigrationTest.kt:138`), demonstrating the pre-fix `REPLACE` deletion.
+
+GREEN:
+
+- Room schema v4 adds non-null `identity_discriminator` to `daily_summaries` and makes `(date, account_id, currency, identity_discriminator)` the primary key. Ordinary summaries retain the empty discriminator; migration summaries use the stable `legacy|<operation_id>|<source_ordinal>` discriminator while retaining nullable operation/source columns and their unique index.
+- `MIGRATION_3_4` rebuilds the summary table, preserves all v3 values, maps old ordinary rows to the empty discriminator and old scoped rows to their stable discriminator, then recreates the normal and operation/source indexes. `WalletDatabaseProvider` now registers `1->2`, `2->3`, and `3->4`, preserving v2/v3 upgrade paths.
+- `HistoryDao.getSummary` and `querySummaries` select one logical row per business key, preferring the ordinary row and falling back to the newest deterministic migration row when no ordinary row exists. Existing ordinary upserts continue to replace only the ordinary identity.
+- `app/schemas/com.balancesentinel.app.data.local.WalletDatabase/4.json` is generated and the exact v4 schema/hash is asserted by `WalletDatabaseTest`.
+
+Test evidence:
+
+```text
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationTest" --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationLargeDatasetTest" --tests "com.balancesentinel.app.data.local.WalletDatabaseTest" --tests "com.balancesentinel.app.DeepSeekAppTest.startup data runner migrates scoped non-empty data and is idempotent" --rerun-tasks --no-parallel
+BUILD SUCCESSFUL in 2m 12s
+20 tests: 20 passed, 0 failed (14 + 1 + 4 + 1). The large-dataset fixture materialized 90,000 rows and retained 500-row commits.
+
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+BUILD SUCCESSFUL in 31s
+
+git diff --check
+no whitespace errors
+```
+
+Remaining risks:
+
+- The schema migration tests exercise the production `MIGRATION_2_3`/`MIGRATION_3_4` code over populated v2/v3-shaped SQLite fixtures; the full repository unit-test suite was not run.
+- Multiple migration operations for the same business key remain physically stored, with ordinary queries deterministically preferring the ordinary row and then the newest generated row. The existing operation-scoped verifier remains the source of truth for migration reads.
+- SharedPreferences cleanup still uses four sequential commits with captured-preimage restoration; this pre-existing limitation is unchanged.

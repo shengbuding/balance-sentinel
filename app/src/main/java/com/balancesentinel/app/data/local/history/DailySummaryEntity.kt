@@ -8,7 +8,7 @@ import com.balancesentinel.app.data.local.account.AccountEntity
 
 @Entity(
     tableName = "daily_summaries",
-    primaryKeys = ["date", "account_id", "currency"],
+    primaryKeys = ["date", "account_id", "currency", "identity_discriminator"],
     foreignKeys = [
         ForeignKey(
             entity = AccountEntity::class,
@@ -50,6 +50,8 @@ data class DailySummaryEntity(
     val grantedBalanceClose: Double = 0.0,
     @ColumnInfo(name = "generated_at")
     val generatedAt: Long,
+    @ColumnInfo(name = "identity_discriminator", defaultValue = "''")
+    val identityDiscriminator: String = "",
     @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
     val migrationOperationId: String? = null,
     @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")

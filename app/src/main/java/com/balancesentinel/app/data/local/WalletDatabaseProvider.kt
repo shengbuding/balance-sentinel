@@ -14,7 +14,11 @@ object WalletDatabaseProvider {
             context.applicationContext,
             WalletDatabase::class.java,
             DATABASE_NAME
-        ).addMigrations(WalletDatabase.MIGRATION_1_2, WalletDatabase.MIGRATION_2_3)
+        ).addMigrations(
+            WalletDatabase.MIGRATION_1_2,
+            WalletDatabase.MIGRATION_2_3,
+            WalletDatabase.MIGRATION_3_4
+        )
             .build().also { instance = it }
     }
 }

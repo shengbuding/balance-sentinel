@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
+import com.balancesentinel.app.data.local.history.DailySummaryEntity
 import com.balancesentinel.app.data.local.log.EventLogEntity
 import com.balancesentinel.app.data.local.log.EventLogType
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
@@ -130,6 +131,78 @@ class LegacyDataMigrationTest {
             val result = LegacyDataMigration(db, source).run()
             assertEquals(2, result.records)
             assertEquals(2, db.historyDao().countLegacyRecords())
+        } finally { db.close() }
+    }
+
+    @Test
+    fun migrationSummaryConflictPreservesExistingSummaryAndPersistsScopedCopy() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val accountId = "550e8400-e29b-41d4-a716-446655440016"
+            insertLegacyAccount(db, accountId)
+            val existing = DailySummaryEntity(
+                date = "2026-08-04",
+                accountId = accountId,
+                currency = "USD",
+                openBalance = 101.0,
+                closeBalance = 92.0,
+                consumedBalance = 13.0,
+                toppedUpBalance = 4.0,
+                grantedBalance = 5.0,
+                averageBalance = 96.5,
+                sampleCount = 8,
+                toppedUpBalanceClose = 44.0,
+                grantedBalanceClose = 55.0,
+                generatedAt = 9001
+            )
+            db.historyDao().upsertSummaries(listOf(existing))
+            val imported = DailySummary(
+                accountId = "legacy",
+                date = "2026-08-04",
+                currency = "usd",
+                open = 12f,
+                close = 8f,
+                consumed = 6f,
+                toppedUp = 2f,
+                granted = 1f,
+                avgBalance = 9.5f,
+                sampleCount = 4,
+                toppedUpBalanceClose = 20f,
+                grantedBalanceClose = 3f,
+                generatedAt = 1234
+            )
+
+            LegacyDataMigration(
+                db,
+                retainingSource(LegacyDataSnapshot(summaries = listOf(imported)))
+            ).run()
+
+            val operation = legacyDataOperation(db)
+            assertEquals(existing, db.historyDao().getSummary("2026-08-04", accountId, "USD"))
+            assertEquals(listOf(existing), db.historyDao().querySummaries(accountId, "USD", null, null))
+            assertEquals(2L, db.historyDao().countSummaries())
+            assertEquals(
+                DailySummaryEntity(
+                    date = "2026-08-04",
+                    accountId = accountId,
+                    currency = "USD",
+                    openBalance = 12.0,
+                    closeBalance = 8.0,
+                    consumedBalance = 6.0,
+                    toppedUpBalance = 2.0,
+                    grantedBalance = 1.0,
+                    averageBalance = 9.5,
+                    sampleCount = 4,
+                    toppedUpBalanceClose = 20.0,
+                    grantedBalanceClose = 3.0,
+                    generatedAt = 1234,
+                    identityDiscriminator = "legacy|${operation.id}|0",
+                    migrationOperationId = operation.id,
+                    migrationSourceOrdinal = 0
+                ),
+                db.historyDao().migrationSummaryPage(operation.id, 0, 1).single()
+            )
         } finally { db.close() }
     }
 

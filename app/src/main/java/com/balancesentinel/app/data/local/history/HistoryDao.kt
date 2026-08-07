@@ -303,17 +303,35 @@ interface HistoryDao {
     @Query("DELETE FROM balance_records WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive")
     suspend fun deleteRawForDate(fromInclusive: Long, toExclusive: Long): Int
 
-    @Query("SELECT * FROM daily_summaries WHERE date = :date AND account_id = :accountId AND currency = :currency")
+    @Query(
+        """
+        SELECT * FROM daily_summaries
+        WHERE date = :date AND account_id = :accountId AND currency = :currency
+        ORDER BY CASE WHEN identity_discriminator = '' THEN 0 ELSE 1 END,
+            generated_at DESC, identity_discriminator
+        LIMIT 1
+        """
+    )
     suspend fun getSummary(date: String, accountId: String, currency: String): DailySummaryEntity?
 
     @Query(
         """
-        SELECT * FROM daily_summaries
-        WHERE (:accountId IS NULL OR account_id = :accountId)
-          AND (:currency IS NULL OR currency = :currency)
-          AND (:fromDateInclusive IS NULL OR date >= :fromDateInclusive)
-          AND (:toDateInclusive IS NULL OR date <= :toDateInclusive)
-        ORDER BY date, account_id, currency
+        SELECT summary.* FROM daily_summaries AS summary
+        WHERE (:accountId IS NULL OR summary.account_id = :accountId)
+          AND (:currency IS NULL OR summary.currency = :currency)
+          AND (:fromDateInclusive IS NULL OR summary.date >= :fromDateInclusive)
+          AND (:toDateInclusive IS NULL OR summary.date <= :toDateInclusive)
+          AND summary.identity_discriminator = (
+            SELECT candidate.identity_discriminator
+            FROM daily_summaries AS candidate
+            WHERE candidate.date = summary.date
+              AND candidate.account_id = summary.account_id
+              AND candidate.currency = summary.currency
+            ORDER BY CASE WHEN candidate.identity_discriminator = '' THEN 0 ELSE 1 END,
+              candidate.generated_at DESC, candidate.identity_discriminator
+            LIMIT 1
+          )
+        ORDER BY summary.date, summary.account_id, summary.currency
         """
     )
     suspend fun querySummaries(

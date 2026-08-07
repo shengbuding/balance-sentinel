@@ -43,26 +43,26 @@ class WalletDatabaseTest {
     }
 
     @Test
-    fun `runtime pragma schema is the literal v3 contract`() = runTest {
+    fun `runtime pragma schema is the literal v4 contract`() = runTest {
         assertEquals(EXPECTED_SCHEMA, database.pragmaSchemaSnapshot())
     }
 
     @Test
-    fun `committed Room export is the exact v3 contract`() {
+    fun `committed Room export is the exact v4 contract`() {
         val schemaFile = walletSchemaFile()
         val databaseJson = Json.parseToJsonElement(schemaFile.readText())
             .jsonObject.getValue("database").jsonObject
 
-        assertEquals(3, databaseJson.getValue("version").jsonPrimitive.content.toInt())
+        assertEquals(4, databaseJson.getValue("version").jsonPrimitive.content.toInt())
         assertEquals(
-            "f40b59097e0550d3339bb2f9a496e246",
+            "464f2403aa5bd84c3a352d1e49b4786c",
             databaseJson.getValue("identityHash").jsonPrimitive.content
         )
         assertEquals(EXPECTED_SCHEMA, exportedSchemaSnapshot(databaseJson))
     }
 
     @Test
-    fun `migration 2 to 3 preserves legacy rows with unclaimed identity`() {
+    fun `migration 2 to 4 preserves legacy rows with unclaimed identity`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "wallet-v2-to-v3-${System.nanoTime()}.db"
         val helper = FrameworkSQLiteOpenHelperFactory().create(
@@ -70,11 +70,24 @@ class WalletDatabaseTest {
                 .name(name)
                 .callback(object : SupportSQLiteOpenHelper.Callback(2) {
                     override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE accounts (id TEXT PRIMARY KEY NOT NULL)")
                         db.execSQL(
                             "CREATE TABLE balance_records (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, total_balance REAL NOT NULL)"
                         )
                         db.execSQL(
-                            "CREATE TABLE daily_summaries (date TEXT NOT NULL, account_id TEXT NOT NULL, currency TEXT NOT NULL, close_balance REAL NOT NULL, PRIMARY KEY(date, account_id, currency))"
+                            """
+                            CREATE TABLE daily_summaries (
+                                date TEXT NOT NULL, account_id TEXT NOT NULL, currency TEXT NOT NULL,
+                                open_balance REAL NOT NULL, close_balance REAL NOT NULL,
+                                consumed_balance REAL NOT NULL, topped_up_balance REAL NOT NULL,
+                                granted_balance REAL NOT NULL DEFAULT 0.0, average_balance REAL NOT NULL,
+                                sample_count INTEGER NOT NULL,
+                                topped_up_balance_close REAL NOT NULL DEFAULT 0.0,
+                                granted_balance_close REAL NOT NULL DEFAULT 0.0,
+                                generated_at INTEGER NOT NULL,
+                                PRIMARY KEY(date, account_id, currency)
+                            )
+                            """.trimIndent()
                         )
                         db.execSQL(
                             "CREATE TABLE usage_snapshots (id TEXT PRIMARY KEY NOT NULL, captured_at INTEGER NOT NULL)"
@@ -90,17 +103,26 @@ class WalletDatabaseTest {
         )
         try {
             val sqlite = helper.writableDatabase
+            sqlite.execSQL("INSERT INTO accounts(id) VALUES ('legacy')")
             sqlite.execSQL("INSERT INTO balance_records(total_balance) VALUES (12.5)")
             sqlite.execSQL(
-                "INSERT INTO daily_summaries(date, account_id, currency, close_balance) VALUES ('2026-08-03', 'legacy', 'USD', 8.5)"
+                """
+                INSERT INTO daily_summaries(
+                    date, account_id, currency, open_balance, close_balance,
+                    consumed_balance, topped_up_balance, granted_balance, average_balance,
+                    sample_count, topped_up_balance_close, granted_balance_close, generated_at
+                ) VALUES ('2026-08-03', 'legacy', 'USD', 9.5, 8.5, 1.0, 2.0, 3.0, 9.0, 4, 5.0, 6.0, 7)
+                """.trimIndent()
             )
             sqlite.execSQL("INSERT INTO usage_snapshots(id, captured_at) VALUES ('usage-old', 33)")
             sqlite.execSQL("INSERT INTO event_logs(message) VALUES ('log-old')")
 
             WalletDatabase.MIGRATION_2_3.migrate(sqlite)
+            WalletDatabase.MIGRATION_3_4.migrate(sqlite)
 
             assertEquals(12.5, queryDouble(sqlite, "SELECT total_balance FROM balance_records"), 0.0)
             assertEquals(8.5, queryDouble(sqlite, "SELECT close_balance FROM daily_summaries"), 0.0)
+            assertEquals("", queryText(sqlite, "SELECT identity_discriminator FROM daily_summaries"))
             assertEquals("usage-old", queryText(sqlite, "SELECT id FROM usage_snapshots"))
             assertEquals("log-old", queryText(sqlite, "SELECT message FROM event_logs"))
             listOf("balance_records", "daily_summaries", "usage_snapshots", "event_logs").forEach { table ->
@@ -122,6 +144,84 @@ class WalletDatabaseTest {
         }
     }
 
+    @Test
+    fun `migration 3 to 4 preserves normal and scoped summary identities`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "wallet-v3-to-v4-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(3) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE accounts (id TEXT PRIMARY KEY NOT NULL)")
+                        db.execSQL(
+                            """
+                            CREATE TABLE daily_summaries (
+                                date TEXT NOT NULL, account_id TEXT NOT NULL, currency TEXT NOT NULL,
+                                open_balance REAL NOT NULL, close_balance REAL NOT NULL,
+                                consumed_balance REAL NOT NULL, topped_up_balance REAL NOT NULL,
+                                granted_balance REAL NOT NULL DEFAULT 0.0, average_balance REAL NOT NULL,
+                                sample_count INTEGER NOT NULL,
+                                topped_up_balance_close REAL NOT NULL DEFAULT 0.0,
+                                granted_balance_close REAL NOT NULL DEFAULT 0.0,
+                                generated_at INTEGER NOT NULL,
+                                migration_operation_id TEXT DEFAULT NULL,
+                                migration_source_ordinal INTEGER DEFAULT NULL,
+                                PRIMARY KEY(date, account_id, currency)
+                            )
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        try {
+            val sqlite = helper.writableDatabase
+            sqlite.execSQL("INSERT INTO accounts(id) VALUES ('legacy')")
+            sqlite.execSQL(
+                """
+                INSERT INTO daily_summaries(
+                    date, account_id, currency, open_balance, close_balance,
+                    consumed_balance, topped_up_balance, granted_balance, average_balance,
+                    sample_count, topped_up_balance_close, granted_balance_close, generated_at
+                ) VALUES ('2026-08-03', 'legacy', 'USD', 9.5, 8.5, 1.0, 2.0, 3.0, 9.0, 4, 5.0, 6.0, 7)
+                """.trimIndent()
+            )
+            sqlite.execSQL(
+                """
+                INSERT INTO daily_summaries(
+                    date, account_id, currency, open_balance, close_balance,
+                    consumed_balance, topped_up_balance, granted_balance, average_balance,
+                    sample_count, topped_up_balance_close, granted_balance_close, generated_at,
+                    migration_operation_id, migration_source_ordinal
+                ) VALUES ('2026-08-04', 'legacy', 'USD', 19.5, 18.5, 11.0, 12.0, 13.0, 19.0, 14, 15.0, 16.0, 17, 'operation-3', 6)
+                """.trimIndent()
+            )
+
+            WalletDatabase.MIGRATION_3_4.migrate(sqlite)
+
+            assertEquals(2L, queryLong(sqlite, "SELECT COUNT(*) FROM daily_summaries"))
+            assertEquals(
+                "",
+                queryText(sqlite, "SELECT identity_discriminator FROM daily_summaries WHERE date = '2026-08-03'")
+            )
+            assertEquals(
+                "legacy|operation-3|6",
+                queryText(sqlite, "SELECT identity_discriminator FROM daily_summaries WHERE date = '2026-08-04'")
+            )
+            assertEquals(
+                18.5,
+                queryDouble(sqlite, "SELECT close_balance FROM daily_summaries WHERE date = '2026-08-04'"),
+                0.0
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     companion object {
         private val EXPECTED_SCHEMA = """
             account_alert_settings|account_id:TEXT:1:<null>:1,currency:TEXT:1:<null>:2,balance_alert_enabled:INTEGER:1:0:0,change_alert_enabled:INTEGER:1:0:0||account_id->accounts(id):CASCADE:NO ACTION
@@ -130,7 +230,7 @@ class WalletDatabaseTest {
             app_metadata|id:INTEGER:1:0:1,local_revision:INTEGER:1:0:0,active_data_generation:TEXT:1:'LEGACY':0,legacy_migration_stage:TEXT:1:'NONE':0,updated_at:INTEGER:1:<null>:0||
             app_settings|id:INTEGER:1:0:1,background_refresh_interval_seconds:INTEGER:0:900:0,foreground_monitoring_interval_seconds:INTEGER:1:30:0,alert_enabled:INTEGER:1:0:0,alert_threshold:REAL:1:0.0:0,change_alert_enabled:INTEGER:1:0:0,change_alert_threshold:REAL:1:0.0:0,change_alert_period_minutes:INTEGER:1:0:0,log_max_entries:INTEGER:1:100:0,snooze_duration_minutes:INTEGER:1:60:0,show_total_balance_in_notification:INTEGER:1:1:0,updated_at:INTEGER:1:<null>:0||
             balance_records|id:INTEGER:1:<null>:1,account_id:TEXT:1:<null>:0,currency:TEXT:1:<null>:0,recorded_at:INTEGER:1:<null>:0,total_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,topped_up_balance:REAL:1:0.0:0,source:TEXT:1:'REFRESH':0,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0|index_balance_records_account_id_currency_recorded_at_id:0:account_id+currency+recorded_at+id,index_balance_records_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal,index_balance_records_recorded_at_id:0:recorded_at+id|account_id->accounts(id):CASCADE:NO ACTION
-            daily_summaries|date:TEXT:1:<null>:1,account_id:TEXT:1:<null>:2,currency:TEXT:1:<null>:3,open_balance:REAL:1:<null>:0,close_balance:REAL:1:<null>:0,consumed_balance:REAL:1:<null>:0,topped_up_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,average_balance:REAL:1:<null>:0,sample_count:INTEGER:1:<null>:0,topped_up_balance_close:REAL:1:0.0:0,granted_balance_close:REAL:1:0.0:0,generated_at:INTEGER:1:<null>:0,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0|index_daily_summaries_account_id_currency_date:0:account_id+currency+date,index_daily_summaries_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal|account_id->accounts(id):CASCADE:NO ACTION
+            daily_summaries|date:TEXT:1:<null>:1,account_id:TEXT:1:<null>:2,currency:TEXT:1:<null>:3,open_balance:REAL:1:<null>:0,close_balance:REAL:1:<null>:0,consumed_balance:REAL:1:<null>:0,topped_up_balance:REAL:1:<null>:0,granted_balance:REAL:1:0.0:0,average_balance:REAL:1:<null>:0,sample_count:INTEGER:1:<null>:0,topped_up_balance_close:REAL:1:0.0:0,granted_balance_close:REAL:1:0.0:0,generated_at:INTEGER:1:<null>:0,identity_discriminator:TEXT:1:'':4,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0|index_daily_summaries_account_id_currency_date:0:account_id+currency+date,index_daily_summaries_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal|account_id->accounts(id):CASCADE:NO ACTION
             download_operations|id:TEXT:1:<null>:1,owner_id:TEXT:1:<null>:0,tag:TEXT:1:<null>:0,source_url:TEXT:1:<null>:0,temporary_path:TEXT:1:<null>:0,target_path:TEXT:1:<null>:0,state:TEXT:1:'QUEUED':0,downloaded_bytes:INTEGER:1:0:0,total_bytes:INTEGER:0:NULL:0,error_code:TEXT:0:NULL:0,error_message:TEXT:0:NULL:0,active_tag:TEXT:0:NULL:0,active_target_path:TEXT:0:NULL:0,created_at:INTEGER:1:<null>:0,updated_at:INTEGER:1:<null>:0,completed_at:INTEGER:0:NULL:0|index_download_operations_active_tag:1:active_tag,index_download_operations_active_target_path:1:active_target_path|
             event_logs|id:INTEGER:1:<null>:1,account_id:TEXT:0:NULL:0,refresh_run_id:TEXT:0:NULL:0,event_type:TEXT:1:<null>:0,total_balance_text:TEXT:1:'':0,currency_text:TEXT:1:'':0,is_available:INTEGER:1:0:0,granted_balance_text:TEXT:1:'':0,topped_up_balance_text:TEXT:1:'':0,recorded_at:INTEGER:1:<null>:0,message:TEXT:1:'':0,interval_seconds:INTEGER:0:NULL:0,expected_at:INTEGER:0:NULL:0,alarm_method:TEXT:0:NULL:0,miss_reason:TEXT:0:NULL:0,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0,legacy_source_id:INTEGER:0:NULL:0|index_event_logs_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal,index_event_logs_recorded_at_id:0:recorded_at+id|account_id->accounts(id):CASCADE:NO ACTION,refresh_run_id->refresh_runs(id):SET NULL:NO ACTION
             maintenance_checkpoint|id:INTEGER:1:0:1,last_completed_date:TEXT:0:NULL:0,zone_id:TEXT:1:'UTC':0,last_success_at:INTEGER:0:NULL:0||
@@ -252,8 +352,8 @@ private suspend fun WalletDatabase.pragmaSchemaSnapshot(): String = withContext(
 private fun walletSchemaFile(): File {
     val root = File(System.getProperty("user.dir"))
     return listOf(
-        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/3.json"),
-        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/3.json")
+        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/4.json"),
+        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/4.json")
     ).first { it.isFile }
 }
 
@@ -317,6 +417,12 @@ private fun queryDouble(database: SupportSQLiteDatabase, sql: String): Double =
     database.query(sql).use { cursor ->
         check(cursor.moveToFirst())
         cursor.getDouble(0)
+    }
+
+private fun queryLong(database: SupportSQLiteDatabase, sql: String): Long =
+    database.query(sql).use { cursor ->
+        check(cursor.moveToFirst())
+        cursor.getLong(0)
     }
 
 private fun queryText(database: SupportSQLiteDatabase, sql: String): String =

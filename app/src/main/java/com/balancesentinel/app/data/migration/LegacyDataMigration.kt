@@ -243,6 +243,7 @@ class LegacyDataMigration(
                         toppedUpBalanceClose = summary.toppedUpBalanceClose.toDouble(),
                         grantedBalanceClose = summary.grantedBalanceClose.toDouble(),
                         generatedAt = summary.generatedAt,
+                        identityDiscriminator = summaryIdentity(id, indexed.index),
                         migrationOperationId = id,
                         migrationSourceOrdinal = indexed.index
                     )
@@ -402,6 +403,9 @@ class LegacyDataMigration(
         "legacy|${requireMapping(usage.accountId, mappings)}|${usage.timestamp}|$operationId|$sourceOrdinal"
             .toByteArray(StandardCharsets.UTF_8)
     ).toString()
+
+    private fun summaryIdentity(operationId: String, sourceOrdinal: Int) =
+        "legacy|$operationId|$sourceOrdinal"
 
     private fun validateMappings(snapshot: LegacyDataSnapshot, mappings: Map<String, String>) {
         (snapshot.records.map { it.accountId } +
