@@ -76,3 +76,55 @@ No configuration import/export, account lifecycle, service, receiver, widget, or
 - `BackupImportPlanner.applyAsync` still performs credential replacement before publishing settings, so credentials and settings are not one cross-repository atomic mutation. This is recorded as a follow-up risk rather than claimed as solved by Task 7.
 - The compatibility `AlertChecker.check`/`checkChange` path still reads legacy preferences for older callers/tests. Production refresh code uses the published-snapshot methods; complete removal requires migrating those external callers and fixtures.
 - Repository-wide legacy tests that assert `WidgetPrefs` mirror behavior remain stale under the intentional no-dual-write contract; the focused Task 7 suite is green.
+
+## Fix Round 1 Evidence
+
+Fix mapping:
+
+- Import atomicity: `BackupImportPlanner.applyAsync` requires the Room repository before writes, publishes settings after account replacement, and restores the previous account list when publication fails. The synchronous compatibility entry point fails before mutating either source.
+- Room-only alert evaluation: production `AlertChecker` no longer reads or writes `WidgetPrefs`; compatibility methods forward to the published Room snapshot APIs, including runtime-state updates.
+- Room-backed compatibility export: `ConfigManager` export overloads obtain their settings from the Room snapshot rather than reconstructing settings from legacy preferences.
+- Bounded import: `ConfigManager.importFromUri` streams UTF-8 input and rejects payloads above 1 MiB before decoding.
+- Loading UI: `AlertSettingsScreen` shows a tagged loading card while the settings snapshot is not ready and keeps all settings controls inside the Ready branch. JVM assertions cover the loading/ready decision and the Compose behavior test is compiled in `androidTest`.
+
+RED command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --rerun-tasks --no-parallel
+```
+
+Result: 6 tests executed, 6 expected production-behavior failures, 0 compilation/fixture/environment failures. The RED assertions covered rollback, sync-import bypass, Room-only alert state, compatibility export, and the bounded-import contract. The Compose loading behavior test was added under `androidTest` and compiled separately.
+
+GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest" --tests "com.balancesentinel.app.data.migration.LegacySettingsMigrationTest" --tests "com.balancesentinel.app.data.repository.AlertCheckerTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --rerun-tasks --no-parallel
+```
+
+Result: 37 tests executed, 0 failures, 0 errors, 0 skipped. XML suites independently report `SettingsRepositoryTest` 4, `LegacySettingsMigrationTest` 3, `AlertCheckerTest` 20, `BalanceRefreshServiceTest` 3, and `SettingsFixRound1RedTest` 7; no first failure exists.
+
+Android test compilation:
+
+```powershell
+.\gradlew.bat compileDebugAndroidTestKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; the Compose loading behavior test compiled successfully.
+
+Required production compile:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 17 actionable tasks executed. Existing Room foreign-key index warnings and unrelated Kotlin/deprecation warnings remain.
+
+Static checks:
+
+- No `WidgetPrefs` references remain in production `AlertChecker`.
+- `ConfigManager` retains `WidgetPrefs` only in source-compatible parameter signatures; production reads use Room snapshots.
+- Account writes in `BackupImportPlanner` are confined to the async try/rollback path.
+- No production `runBlocking`, `allowMainThreadQueries`, or `body.string` were introduced.
+- `git diff --check d573a5f7739f41d5d100595a7f91be8299f501a6..HEAD` passed with no whitespace errors after the GREEN commit `bd37662`.
+
+Fix Round 1 self-review found no additional regressions in the focused scope. Remaining concerns are the unrelated unbounded `readBytes()` calls in `ConsoleScreen.kt:1102` and `DataExporter.kt:107`, plus repository-wide legacy tests that still assert the intentionally removed `WidgetPrefs` mirror behavior.
