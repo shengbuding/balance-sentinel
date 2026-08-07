@@ -337,14 +337,20 @@ class DataManagementViewModel @JvmOverloads constructor(
         plan: BackupImportPlan,
         confirmedFullReplace: Boolean
     ): Boolean = try {
-        viewModelScope.launch {
-            runCatching { importPlanner.applyAsync(plan, confirmedFullReplace) }
-                .onFailure {
-                    _uiState.value = _uiState.value.copy(
-                        replaceConfirmationRequired = false,
-                        importError = true
-                    )
-                }
+        if (importPlanner.usesAtomicSettingsPublication) {
+            viewModelScope.launch {
+                runCatching { importPlanner.applyAsync(plan, confirmedFullReplace) }
+                    .onFailure {
+                        _uiState.value = _uiState.value.copy(
+                            replaceConfirmationRequired = false,
+                            importError = true
+                        )
+                    }
+            }
+        } else {
+            // Legacy storage has no Room transaction boundary. Preserve its existing
+            // synchronous UI contract while production imports use applyAsync above.
+            importPlanner.apply(plan, confirmedFullReplace)
         }
         pendingImportConfig = null
         _uiState.value = _uiState.value.copy(
@@ -452,11 +458,14 @@ class DataManagementViewModel @JvmOverloads constructor(
                     res.getString(R.string.data_reset_toast)
                 }
                 PendingAction.ResetSettings -> {
-                    SettingsRepositoryProvider.get(ctx).publishSnapshot(
-                        SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
-                        System.currentTimeMillis()
-                    )
+                    WidgetPrefs(ctx).resetAll()
                     WidgetConfigStore.clearAll(ctx)
+                    runCatching {
+                        SettingsRepositoryProvider.get(ctx).publishSnapshot(
+                            SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
+                            System.currentTimeMillis()
+                        )
+                    }
                     res.getString(R.string.data_reset_toast)
                 }
                 PendingAction.ResetEntireApp -> {

@@ -16,6 +16,9 @@ interface SettingsRepository {
 
     suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot
 
+    /** Monotonic Room-backed revision used to invalidate stale import previews. */
+    suspend fun currentRevision(): Long = 0L
+
     suspend fun applyConfigImport(
         settings: ConfigSettings,
         persistAccounts: suspend () -> Unit

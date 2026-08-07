@@ -84,11 +84,22 @@ class RoomSettingsRepository(
             database.settingsDao().replaceNotificationSelections(notificationRows)
             database.settingsDao().replaceAlertRuntimeStates(snapshot.alertRuntimeStates)
             database.settingsDao().replaceSnoozes(snapshot.snoozes.filter { it.snoozedUntil > 0L })
+            val metadataDao = database.appMetadataDao()
+            val metadata = metadataDao.get() ?: run {
+                metadataDao.ensureSingleton(publishedAt)
+                requireNotNull(metadataDao.get())
+            }
+            check(metadataDao.incrementRevisionIfCurrent(metadata.localRevision, publishedAt) == 1) {
+                "Settings publication has a stale local revision"
+            }
         }
         state.value = SettingsSnapshotState.Ready(loadSnapshot())
     }
 
     override suspend fun hasPersistedSnapshot(): Boolean = database.appSettingsDao().get() != null
+
+    override suspend fun currentRevision(): Long =
+        database.appMetadataDao().get()?.localRevision ?: 0L
 
     override suspend fun updateSnapshot(
         transform: (SettingsSnapshot) -> SettingsSnapshot
@@ -106,6 +117,7 @@ class RoomSettingsRepository(
         persistAccounts: suspend () -> Unit
     ): SettingsSnapshot = writeMutex.withLock {
         val previous = loadSnapshot()
+        val previousRevision = database.appMetadataDao().get()?.localRevision ?: 0L
         try {
             persistAccounts()
             publishSnapshotLocked(previous.withConfigSettings(settings), System.currentTimeMillis())
@@ -113,6 +125,7 @@ class RoomSettingsRepository(
         } catch (failure: Throwable) {
             runCatching {
                 publishSnapshotLocked(previous, previous.appSettings.updatedAt)
+                database.appMetadataDao().restoreRevision(previousRevision, previous.appSettings.updatedAt)
             }.onFailure { rollbackError -> failure.addSuppressed(rollbackError) }
             throw failure
         }

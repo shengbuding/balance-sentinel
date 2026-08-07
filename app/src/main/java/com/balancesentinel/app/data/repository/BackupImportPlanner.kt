@@ -23,8 +23,12 @@ data class BackupImportPlan(
     val scriptAuthorizations: List<ScriptAuthorization>,
     val canApply: Boolean,
     val blockingReasons: List<String>,
-    val settings: ConfigSettings
+    val settings: ConfigSettings,
+    val baselineRevision: Long = 0L,
+    val fingerprint: String = ""
 )
+
+class StalePlanException(message: String = "Import preview is stale; preview again") : IllegalStateException(message)
 
 data class ScriptAuthorization(
     val accountId: String,
@@ -44,6 +48,9 @@ class BackupImportPlanner(
         widgetPrefs: WidgetPrefs,
         inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection
     ) : this(apiKeyManager, widgetPrefs, null, inspectScript)
+
+    internal val usesAtomicSettingsPublication: Boolean
+        get() = settingsRepository != null
 
     suspend fun plan(
         config: AppConfig,
@@ -131,7 +138,9 @@ class BackupImportPlanner(
             val prepared = incoming.copy(
                 apiKey = incoming.apiKey.trim(),
                 usageScriptEnabled = false,
-                authorizedScriptOrigins = emptySet()
+                authorizedScriptOrigins = emptySet(),
+                // The backup revision is source metadata; local account revisions remain local.
+                revision = if (localIndex >= 0) localAccounts[localIndex].revision else 0L
             )
             prepared.usageScript?.takeIf { it.isNotBlank() }?.let { code ->
                 val inspection = runCatching {
@@ -187,6 +196,7 @@ class BackupImportPlanner(
             emptyList()
         }
 
+        val baselineRevision = settingsRepository?.currentRevision() ?: 0L
         return BackupImportPlan(
             mode = mode,
             finalAccounts = finalAccounts.toList(),
@@ -199,7 +209,9 @@ class BackupImportPlanner(
             scriptAuthorizations = scriptAuthorizations.toList(),
             canApply = blockingReasons.isEmpty(),
             blockingReasons = blockingReasons,
-            settings = config.settings
+            settings = config.settings,
+            baselineRevision = baselineRevision,
+            fingerprint = ImportFingerprint.sha256(localAccounts, config.settings, baselineRevision)
         )
     }
 
@@ -234,17 +246,51 @@ class BackupImportPlanner(
      * Keep the source-compatible entry point, but fail before touching either
      * account credentials or configuration settings.
      */
-    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean): Nothing {
+    fun apply(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
         validateApply(plan, confirmedFullReplace)
+        // Legacy callers constructed without a Room repository have no settings
+        // publication seam. Preserve their synchronous account/settings adapter,
+        // while keeping the injected Room path async-only so it cannot bypass the
+        // atomic publication protocol.
+        if (settingsRepository == null) {
+            val before = apiKeyManager.getAccounts()
+            apiKeyManager.replaceAll(plan.finalAccounts)
+            try {
+                widgetPrefs.refreshIntervalSeconds = plan.settings.refreshIntervalSeconds
+            } catch (failure: Throwable) {
+                runCatching { apiKeyManager.replaceAll(before) }
+                    .onFailure { failure.addSuppressed(it) }
+                throw failure
+            }
+            return
+        }
         error("Synchronous configuration imports are not supported; use applyAsync")
     }
 
     suspend fun applyAsync(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
         validateApply(plan, confirmedFullReplace)
-        val repository = checkNotNull(settingsRepository) {
-            "Room SettingsRepository is required for imports"
+        val repository = settingsRepository
+        if (repository == null) {
+            // Source-compatible tests and legacy callers have no Room seam. Keep this
+            // adapter deliberately narrow; production constructors always inject Room.
+            val before = apiKeyManager.getAccounts()
+            apiKeyManager.replaceAll(plan.finalAccounts)
+            try {
+                widgetPrefs.refreshIntervalSeconds = plan.settings.refreshIntervalSeconds
+            } catch (failure: Throwable) {
+                runCatching { apiKeyManager.replaceAll(before) }
+                    .onFailure { failure.addSuppressed(it) }
+                throw failure
+            }
+            return
         }
         val previousAccounts = apiKeyManager.getAccounts()
+        val currentRevision = repository.currentRevision()
+        if (currentRevision != plan.baselineRevision ||
+            ImportFingerprint.sha256(previousAccounts, plan.settings, currentRevision) != plan.fingerprint
+        ) {
+            throw StalePlanException()
+        }
         try {
             repository.applyConfigImport(plan.settings) {
                 apiKeyManager.replaceAll(plan.finalAccounts)

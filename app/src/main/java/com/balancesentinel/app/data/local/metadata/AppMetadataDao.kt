@@ -26,6 +26,9 @@ abstract class AppMetadataDao {
     )
     abstract suspend fun incrementRevisionIfCurrent(expectedRevision: Long, updatedAt: Long): Int
 
+    @Query("UPDATE app_metadata SET local_revision = :revision, updated_at = :updatedAt WHERE id = 0")
+    abstract suspend fun restoreRevision(revision: Long, updatedAt: Long): Int
+
     @Query(
         """
         UPDATE app_metadata SET

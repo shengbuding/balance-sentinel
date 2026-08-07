@@ -8,8 +8,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -189,9 +187,9 @@ object ConfigManager {
     fun importFromUri(context: Context, uri: Uri): AppConfig? {
         return try {
             val content = context.contentResolver.openInputStream(uri)?.use {
-                readBoundedUtf8(it)
+                ConfigImportParser().parse(it)
             } ?: return null
-            decodeConfig(content)
+            content
         } catch (e: Exception) {
             Logger.w(TAG, "Failed to parse imported config: ${e.message}")
             null
@@ -239,7 +237,7 @@ object ConfigManager {
         }
     }
 
-    private fun decodeConfig(content: String): AppConfig {
+    internal fun decodeConfig(content: String): AppConfig {
         val root = json.parseToJsonElement(content).jsonObject
         val decoded = json.decodeFromString<AppConfig>(content)
         return if ("version" !in root) decoded.copy(version = 1) else decoded
@@ -253,19 +251,4 @@ object ConfigManager {
         }
     }
 
-    private fun readBoundedUtf8(input: InputStream): String {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(16 * 1024)
-        var total = 0
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            total += count
-            if (total > MAX_IMPORT_BYTES) error("Imported configuration exceeds $MAX_IMPORT_BYTES bytes")
-            output.write(buffer, 0, count)
-        }
-        return output.toString(Charsets.UTF_8.name())
-    }
-
-    private const val MAX_IMPORT_BYTES = 1_048_576
 }

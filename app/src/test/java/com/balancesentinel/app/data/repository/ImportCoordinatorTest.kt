@@ -7,6 +7,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ImportCoordinatorTest {
+    @Test fun `preview samples one revision for baseline and fingerprint`() = runTest {
+        var revisionReads = 0L
+        val accounts = listOf(AccountInfo("a", "A", "k"))
+        val settings = ConfigSettings(30, false, 0f, false, 0f, 0, 10)
+        val coordinator = ImportCoordinator(
+            readAccounts = { accounts },
+            readSettings = { settings },
+            persistAccounts = {},
+            publishSettings = {},
+            readRevision = { ++revisionReads }
+        )
+
+        val plan = coordinator.preview(accounts, settings)
+
+        assertEquals(1L, revisionReads)
+        assertEquals(1L, plan.baselineRevision)
+        assertEquals(ImportFingerprint.sha256(plan), plan.fingerprint)
+    }
+
     @Test fun `changed account or settings makes plan stale until repreview`() = runTest {
         var accounts = listOf(AccountInfo("a", "A", "k"))
         var settings = ConfigSettings(30, false, 0f, false, 0f, 0, 10)

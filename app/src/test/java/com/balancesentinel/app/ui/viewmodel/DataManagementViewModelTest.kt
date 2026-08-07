@@ -16,6 +16,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
@@ -28,6 +29,11 @@ import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.RoomSettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepository
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshot
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
@@ -35,6 +41,7 @@ import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
@@ -58,12 +65,14 @@ class DataManagementViewModelTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         app = context as Application
+        SettingsRepositoryProvider.factory = { InMemorySettingsRepository() }
         clearAllStores()
     }
 
     @After
     fun tearDown() {
         clearAllStores()
+        SettingsRepositoryProvider.factory = { RoomSettingsRepository.from(it) }
     }
 
     private fun clearAllStores() {
@@ -418,6 +427,31 @@ class DataManagementViewModelTest {
         // Reload
         viewModel.loadStats()
         assertEquals(1, viewModel.uiState.value.rawRecordCount)
+    }
+
+    private class InMemorySettingsRepository : SettingsRepository {
+        private val state = MutableStateFlow<SettingsSnapshotState>(
+            SettingsSnapshotState.Ready(SettingsSnapshot(AppSettingsEntity(updatedAt = 0L)))
+        )
+        override val snapshot: StateFlow<SettingsSnapshotState> = state
+
+        override suspend fun readSnapshot(): SettingsSnapshot =
+            (state.value as SettingsSnapshotState.Ready).value
+
+        override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) {
+            state.value = SettingsSnapshotState.Ready(snapshot)
+        }
+
+        override suspend fun hasPersistedSnapshot(): Boolean = true
+
+        override suspend fun updateSnapshot(
+            transform: (SettingsSnapshot) -> SettingsSnapshot
+        ): SettingsSnapshot = transform(readSnapshot()).also {
+            state.value = SettingsSnapshotState.Ready(it)
+        }
+
+        override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot =
+            readSnapshot()
     }
 
     @Test
