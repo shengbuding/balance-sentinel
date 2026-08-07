@@ -20,8 +20,8 @@ import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
-import com.balancesentinel.app.data.repository.DailySummaryStore
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.RoomHistoryRepository
+import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
@@ -351,7 +351,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         // Sparkline 迷你趋势线（仅 expanded layout）
         if (isExpanded && agg != null) {
             try {
-                val summaries = DailySummaryStore.getSummariesForCurrency(context, agg.currency)
+                val summaries = kotlinx.coroutines.runBlocking { RoomHistoryRepository(WalletDatabaseProvider.get(context)).summaries(currency = agg.currency) }
                 if (summaries.size >= 2) {
                     val recent = summaries.takeLast(7)
                     val values = recent.map { it.close }
@@ -450,7 +450,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     private fun logSchedule(context: Context, intervalSec: Int, triggerTime: Long, method: String, message: String) {
         try {
-            RefreshLogStore.addEntry(context, RefreshLogEntry(
+            appendRoomEvent(context, RefreshLogEntry(
                 id = System.currentTimeMillis(), type = RefreshLogType.SCHEDULE,
                 timestamp = System.currentTimeMillis(), message = message,
                 intervalSeconds = intervalSec, expectedTime = triggerTime, alarmMethod = method
