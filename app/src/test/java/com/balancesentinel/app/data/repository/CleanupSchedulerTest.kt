@@ -39,7 +39,9 @@ class CleanupSchedulerTest {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         db.historyDao().upsertSummaries(listOf(com.balancesentinel.app.data.local.history.DailySummaryEntity("1970-01-01", "acct", "USD", 1.0, 1.0, 0.0, 0.0, averageBalance = 1.0, sampleCount = 1, generatedAt = 1L)))
         CleanupScheduler.runCleanup(context, 4 * 86_400_000L, java.time.ZoneOffset.UTC, RoomHistoryRepository(db))
-        assertEquals(2, db.historyDao().querySummaries("acct", "USD", "1970-01-02", "1970-01-03").size)
+        val carry = db.historyDao().querySummaries("acct", "USD", "1970-01-02", "1970-01-03")
+        assertEquals(2, carry.size)
+        assertTrue(carry.all { it.openBalance == 1.0 && it.closeBalance == 1.0 && it.averageBalance == 1.0 })
     }
 
     @Test fun `cleanup deletes more than sqlite bind limit in chunks`() = runBlocking {

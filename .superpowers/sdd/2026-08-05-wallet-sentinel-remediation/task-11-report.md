@@ -59,3 +59,11 @@ Residual audit: DataExporter, DataManagementViewModel, StaticWidgetProvider and 
 Removed the `RefreshResultCommitter` legacy writer constructor/branch entirely; its production path now has only the Room atomic persistence boundary. Restored provider-cache clearing after account deletion and chunked cleanup deletion. Task 12 consumer paths (DataExporter, DataManagementViewModel and related UI/export consumers) remain explicitly deferred.
 
 Final focused command passed with `BUILD SUCCESSFUL`; `:app:compileDebugKotlin --rerun-tasks --no-parallel` passed; `git diff --check` passed.
+
+## Fix Round 2
+
+- Continuity generation now groups by account/currency, de-duplicates missing dates, and carries previous close/open/average plus topped-up/granted close fields instead of zeroing balances.
+- Cleanup retained count is re-read from Room after archive/delete, so late arrivals are reflected in the report.
+- Added non-zero continuity assertions and retained-count/large-delete/late-arrival coverage while keeping Task 12 consumer migrations deferred.
+
+Focused tests passed with `BUILD SUCCESSFUL`; compile and diff checks passed. Fix Round 2 changes are pending final commit.

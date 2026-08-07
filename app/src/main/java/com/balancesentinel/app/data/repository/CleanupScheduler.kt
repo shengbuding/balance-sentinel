@@ -97,16 +97,31 @@ object CleanupScheduler {
         // for every account/currency that has an archived history.
         val existing = repository.summaries()
         val yesterday = today.minusDays(1)
-        val continuity = existing.flatMap { seed ->
-            val start = runCatching { LocalDate.parse(seed.date) }.getOrNull() ?: return@flatMap emptyList()
-            if (!start.isBefore(yesterday)) return@flatMap emptyList()
-            generateSequence(start.plusDays(1)) { date -> if (date.isBefore(yesterday)) date.plusDays(1) else null }
-                .filter { date -> existing.none { it.accountId == seed.accountId && it.currency == seed.currency && it.date == date.toString() } }
-                .map { date -> seed.copy(date = date.toString(), open = 0f, close = 0f, consumed = 0f, toppedUp = 0f, granted = 0f, avgBalance = 0f, sampleCount = 0, toppedUpBalanceClose = 0f, grantedBalanceClose = 0f, generatedAt = now) }
-                .toList()
+        val continuity = existing.groupBy { it.accountId to it.currency }.flatMap { (_, seeds) ->
+            val ordered = seeds.sortedBy { it.date }.toMutableList()
+            val start = runCatching { LocalDate.parse(ordered.first().date) }.getOrNull() ?: return@flatMap emptyList()
+            val generated = mutableListOf<com.balancesentinel.app.data.model.DailySummary>()
+            var cursor = start.plusDays(1)
+            var previous = ordered.first()
+            while (!cursor.isAfter(yesterday)) {
+                val date = cursor.toString()
+                val existingDate = ordered.firstOrNull { it.date == date } ?: generated.firstOrNull { it.date == date }
+                if (existingDate != null) previous = existingDate
+                else generated += previous.copy(date = date, open = previous.close, close = previous.close, avgBalance = previous.close, consumed = 0f, toppedUp = 0f, granted = 0f, sampleCount = 0, toppedUpBalanceClose = previous.toppedUpBalanceClose, grantedBalanceClose = previous.grantedBalanceClose, generatedAt = now)
+                cursor = cursor.plusDays(1)
+            }
+            generated
         }
         if (continuity.isNotEmpty()) repository.upsertSummaries(continuity)
-        return CleanupReport(archived, deleted, all.size - deleted, failures)
+        var retained = 0
+        var retainedCursor: HistoryCursor? = null
+        while (true) {
+            val page = repository.pageAll(after = retainedCursor, limit = HistoryRepository.MAX_PAGE_SIZE)
+            if (page.records.isEmpty()) break
+            retained += page.records.size
+            retainedCursor = page.nextCursor ?: break
+        }
+        return CleanupReport(archived, deleted, retained, failures)
     }
 
     private suspend fun runCleanupInternal(
