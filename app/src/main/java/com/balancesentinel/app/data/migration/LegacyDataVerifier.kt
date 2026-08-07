@@ -18,26 +18,39 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
         mappings: Map<String, String>
     ): LegacyDataVerification {
         val mappedRecords = snapshot.records.map { it.mapAccount(mappings) }
-        val recordCount = database.historyDao().countRecords()
+        val recordCount = database.historyDao().countLegacyRecords()
         require(recordCount == mappedRecords.size.toLong()) { "Migrated record count mismatch" }
-        val summaryCount = database.historyDao().countSummaries()
-        require(summaryCount == snapshot.summaries.size.toLong()) { "Migrated summary count mismatch" }
-        val usageCount = database.usageDao().countSnapshots()
-        require(usageCount == snapshot.usage.size.toLong()) { "Migrated usage count mismatch" }
-        val logCount = database.eventLogDao().countLogs()
-        require(logCount == snapshot.logs.size.toLong()) { "Migrated log count mismatch" }
-        mappedRecords.firstOrNull()?.let { expected ->
+        mappedRecords.forEach { expected ->
             val actual = database.historyDao().range(
                 expected.accountId,
                 expected.currency.uppercase(Locale.ROOT),
                 expected.timestamp,
                 expected.timestamp + 1
             ).firstOrNull()
-            require(actual != null && actual.totalBalance == expected.totalBalance.toDouble()) {
+            require(actual != null && actual.totalBalance == expected.totalBalance.toDouble() && actual.grantedBalance == expected.grantedBalance.toDouble() && actual.toppedUpBalance == expected.toppedUpBalance.toDouble()) {
                 "Migrated record fields do not match source"
             }
         }
-        return LegacyDataVerification(recordCount, summaryCount, usageCount, logCount)
+        snapshot.summaries.forEach { expected ->
+            val actual = database.historyDao().getSummary(expected.date, mappings[expected.accountId] ?: error("Missing mapping"), expected.currency.uppercase(Locale.ROOT))
+            require(actual != null && actual.openBalance == expected.open.toDouble() && actual.closeBalance == expected.close.toDouble() && actual.sampleCount == expected.sampleCount) { "Migrated summary fields do not match source" }
+        }
+        val usageCount = database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM usage_snapshots WHERE identity_discriminator = 'legacy-migration'"
+        ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        require(usageCount == snapshot.usage.size.toLong()) { "Migrated usage count mismatch" }
+        snapshot.usage.forEach { expected ->
+            val id = java.util.UUID.nameUUIDFromBytes("legacy|${mappings[expected.accountId] ?: error("Missing mapping")}|${expected.timestamp}".toByteArray()).toString()
+            val actual = database.usageDao().getRecords(id)
+            require(actual.size == expected.records.size && actual.firstOrNull()?.totalTokens == expected.records.firstOrNull()?.total_tokens) { "Migrated usage fields do not match source" }
+        }
+        val logCount = database.eventLogDao().countLogs()
+        require(logCount >= snapshot.logs.size) { "Migrated log count mismatch" }
+        snapshot.logs.forEach { expected ->
+            val actual = database.eventLogDao().get(expected.id)
+            require(actual != null && actual.recordedAt == expected.timestamp && actual.message == expected.message) { "Migrated log fields do not match source" }
+        }
+        return LegacyDataVerification(recordCount, snapshot.summaries.size.toLong(), usageCount, snapshot.logs.size.toLong())
     }
 
     private fun RawRecord.mapAccount(mappings: Map<String, String>) =

@@ -239,6 +239,9 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM daily_summaries")
     suspend fun countSummaries(): Long
 
+    @Query("SELECT COUNT(*) FROM balance_records WHERE source = 'LEGACY_MIGRATION'")
+    suspend fun countLegacyRecords(): Long
+
     @Query("SELECT DISTINCT currency FROM balance_records ORDER BY currency")
     suspend fun distinctCurrencies(): List<String>
 

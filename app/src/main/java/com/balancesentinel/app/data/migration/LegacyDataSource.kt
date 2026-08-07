@@ -21,7 +21,8 @@ data class LegacyDataSnapshot(
 /** Injectable seam for migration tests and alternate legacy storage implementations. */
 interface LegacyDataSource {
     fun read(): LegacyDataSnapshot
-    fun clear(): Boolean
+    fun clear(snapshot: LegacyDataSnapshot): Boolean = clear()
+    fun clear(): Boolean = true
 }
 
 /** Production adapter delegating reads and cleanup to the existing legacy stores. */
@@ -35,13 +36,17 @@ class LegacyStoresDataSource(context: Context) : LegacyDataSource {
         logs = RefreshLogStore.getEntriesStrict(appContext)
     )
 
-    override fun clear(): Boolean = try {
+    override fun clear(snapshot: LegacyDataSnapshot): Boolean = try {
         RawRecordStore.clear(appContext)
         DailySummaryStore.clear(appContext)
         UsageDataStore.clear(appContext)
         RefreshLogStore.clearStrict(appContext)
         true
     } catch (_: Exception) {
+        runCatching { RawRecordStore.restoreRecords(appContext, snapshot.records) }
+        runCatching { DailySummaryStore.restoreSummaries(appContext, snapshot.summaries) }
+        runCatching { UsageDataStore.restoreAll(appContext, snapshot.usage) }
+        runCatching { RefreshLogStore.restoreEntries(appContext, snapshot.logs) }
         false
     }
 }

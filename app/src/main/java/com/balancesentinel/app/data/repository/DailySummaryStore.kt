@@ -98,6 +98,10 @@ object DailySummaryStore {
     internal fun getSummariesForCleanup(context: Context): List<DailySummary> =
         synchronized(storeLock) { getSummariesInternal(context).toList() }
 
+    internal fun restoreSummaries(context: Context, summaries: List<DailySummary>) {
+        synchronized(storeLock) { check(persistSummaries(context, summaries)) }
+    }
+
     fun getSummariesForCurrency(context: Context, currency: String): List<DailySummary> {
         val canonical = canonicalCurrency(currency)
         return getSummaries(context).filter { canonicalCurrency(it.currency) == canonical }
