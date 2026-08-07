@@ -5,20 +5,33 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SettingsDao {
     @Query("SELECT * FROM account_alert_settings ORDER BY account_id, currency")
     suspend fun getAccountAlertSettings(): List<AccountAlertSettingEntity>
 
+    @Query("SELECT * FROM account_alert_settings ORDER BY account_id, currency")
+    fun observeAccountAlertSettings(): Flow<List<AccountAlertSettingEntity>>
+
     @Query("SELECT * FROM notification_wallet_selections ORDER BY display_order")
     suspend fun getNotificationSelections(): List<NotificationWalletSelectionEntity>
+
+    @Query("SELECT * FROM notification_wallet_selections ORDER BY display_order")
+    fun observeNotificationSelections(): Flow<List<NotificationWalletSelectionEntity>>
 
     @Query("SELECT * FROM alert_runtime_state ORDER BY account_id, currency")
     suspend fun getAlertRuntimeStates(): List<AlertRuntimeStateEntity>
 
+    @Query("SELECT * FROM alert_runtime_state ORDER BY account_id, currency")
+    fun observeAlertRuntimeStates(): Flow<List<AlertRuntimeStateEntity>>
+
     @Query("SELECT * FROM snooze_state ORDER BY account_id")
     suspend fun getSnoozes(): List<SnoozeStateEntity>
+
+    @Query("SELECT * FROM snooze_state ORDER BY account_id")
+    fun observeSnoozes(): Flow<List<SnoozeStateEntity>>
 
     @Query("DELETE FROM account_alert_settings")
     suspend fun clearAccountAlertSettings()
