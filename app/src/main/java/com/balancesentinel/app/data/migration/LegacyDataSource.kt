@@ -42,11 +42,14 @@ class LegacyStoresDataSource(context: Context) : LegacyDataSource {
         UsageDataStore.clear(appContext)
         RefreshLogStore.clearStrict(appContext)
         true
-    } catch (_: Exception) {
-        runCatching { RawRecordStore.restoreRecords(appContext, snapshot.records) }
-        runCatching { DailySummaryStore.restoreSummaries(appContext, snapshot.summaries) }
-        runCatching { UsageDataStore.restoreAll(appContext, snapshot.usage) }
-        runCatching { RefreshLogStore.restoreEntries(appContext, snapshot.logs) }
+    } catch (failure: Exception) {
+        val restored = listOf(
+            runCatching { RawRecordStore.restoreRecords(appContext, snapshot.records).let { true } }.getOrDefault(false),
+            runCatching { DailySummaryStore.restoreSummaries(appContext, snapshot.summaries).let { true } }.getOrDefault(false),
+            runCatching { UsageDataStore.restoreAll(appContext, snapshot.usage).let { true } }.getOrDefault(false),
+            runCatching { RefreshLogStore.restoreEntries(appContext, snapshot.logs).let { true } }.getOrDefault(false)
+        ).all { it }
+        if (!restored) throw IllegalStateException("Legacy cleanup preimage restore failed", failure)
         false
     }
 }

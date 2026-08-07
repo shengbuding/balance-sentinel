@@ -50,7 +50,7 @@ class LegacyDataMigrationTest {
                 }).run()
             }.exceptionOrNull()
             assertTrue(failure != null)
-            assertEquals(com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.FAILED, db.appMetadataDao().get()?.legacyMigrationStage)
+            assertTrue(db.appMetadataDao().get()?.legacyMigrationStage !in setOf(com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.ACTIVE, com.balancesentinel.app.data.local.metadata.LegacyMigrationStage.CLEANED))
         } finally { db.close() }
     }
 

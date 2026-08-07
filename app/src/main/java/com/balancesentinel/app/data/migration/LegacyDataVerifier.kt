@@ -18,6 +18,7 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
         mappings: Map<String, String>
     ): LegacyDataVerification {
         val mappedRecords = snapshot.records.map { it.mapAccount(mappings) }
+        require(mappedRecords.map { Triple(it.accountId, it.timestamp, it.currency.uppercase(Locale.ROOT)) }.toSet().size == mappedRecords.size) { "Duplicate migrated record identity" }
         val recordCount = database.historyDao().countLegacyRecords()
         require(recordCount == mappedRecords.size.toLong()) { "Migrated record count mismatch" }
         mappedRecords.forEach { expected ->
@@ -31,6 +32,7 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
                 "Migrated record fields do not match source"
             }
         }
+        require(snapshot.summaries.map { Triple(it.date, mappings[it.accountId] ?: error("Missing mapping"), it.currency.uppercase(Locale.ROOT)) }.toSet().size == snapshot.summaries.size) { "Duplicate migrated summary identity" }
         snapshot.summaries.forEach { expected ->
             val actual = database.historyDao().getSummary(expected.date, mappings[expected.accountId] ?: error("Missing mapping"), expected.currency.uppercase(Locale.ROOT))
             require(actual != null && actual.openBalance == expected.open.toDouble() && actual.closeBalance == expected.close.toDouble() && actual.sampleCount == expected.sampleCount) { "Migrated summary fields do not match source" }
@@ -39,13 +41,13 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
             "SELECT COUNT(*) FROM usage_snapshots WHERE identity_discriminator = 'legacy-migration'"
         ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
         require(usageCount == snapshot.usage.size.toLong()) { "Migrated usage count mismatch" }
+        require(snapshot.usage.map { Pair(mappings[it.accountId] ?: error("Missing mapping"), it.timestamp) }.toSet().size == snapshot.usage.size) { "Duplicate migrated usage identity" }
         snapshot.usage.forEach { expected ->
             val id = java.util.UUID.nameUUIDFromBytes("legacy|${mappings[expected.accountId] ?: error("Missing mapping")}|${expected.timestamp}".toByteArray()).toString()
             val actual = database.usageDao().getRecords(id)
             require(actual.size == expected.records.size && actual.firstOrNull()?.totalTokens == expected.records.firstOrNull()?.total_tokens) { "Migrated usage fields do not match source" }
         }
-        val logCount = database.eventLogDao().countLogs()
-        require(logCount >= snapshot.logs.size) { "Migrated log count mismatch" }
+        require(snapshot.logs.map { it.id }.toSet().size == snapshot.logs.size) { "Duplicate migrated log identity" }
         snapshot.logs.forEach { expected ->
             val actual = database.eventLogDao().get(expected.id)
             require(actual != null && actual.recordedAt == expected.timestamp && actual.message == expected.message) { "Migrated log fields do not match source" }

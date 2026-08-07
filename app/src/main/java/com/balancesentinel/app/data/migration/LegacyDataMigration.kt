@@ -37,14 +37,14 @@ class LegacyDataMigration(
             throw error
         }
         if (snapshot.records.isEmpty() && snapshot.summaries.isEmpty() && snapshot.usage.isEmpty() && snapshot.logs.isEmpty()) {
-            database.withTransaction { database.appMetadataDao().resetFailedLegacyMigration(now()) }
+            resetFailedMetadata()
             advanceMetadata(LegacyMigrationStage.DISCOVERED)
             return@withContext LegacyDataVerification(0, 0, 0, 0)
         }
         val operationId = operationId(snapshot)
         val mappings = ensureOperation(operationId)
         try {
-            database.withTransaction { database.appMetadataDao().resetFailedLegacyMigration(now()) }
+            resetFailedMetadata()
             advanceMetadata(LegacyMigrationStage.DISCOVERED)
             advanceMetadata(LegacyMigrationStage.VALIDATED)
             advanceMetadata(LegacyMigrationStage.CREDENTIALS_STAGED)
@@ -72,7 +72,7 @@ class LegacyDataMigration(
     private suspend fun ensureOperation(id: String): Map<String, String> = database.withTransaction {
         database.mutationOperationDao().get(id)?.let {
             if (it.stage == MutationStage.FAILED) {
-                database.mutationOperationDao().updateStage(id, MutationStage.PREPARED, it.batchCursor, null, null, now())
+                require(database.mutationOperationDao().updateStage(id, MutationStage.PREPARED, it.batchCursor, null, null, now()) == 1)
             }
             return@withTransaction decodeMappings(it.targetsJson)
         }
@@ -118,7 +118,7 @@ class LegacyDataMigration(
     private suspend fun publish(id: String) { database.withTransaction { val current = requireNotNull(database.mutationOperationDao().get(id)); if (current.stage == MutationStage.PUBLISHED || current.stage == MutationStage.ACTIVE || current.stage == MutationStage.CLEANED) return@withTransaction; updateOperation(id, MutationStage.VERIFIED, current.batchCursor); require(database.mutationOperationDao().markPublished(id, now()) == 1) } }
     private suspend fun markCleaned(id: String) { require(database.mutationOperationDao().updateStage(id, MutationStage.CLEANED, requireNotNull(database.mutationOperationDao().get(id)).batchCursor, null, null, now()) == 1) }
     private suspend fun fail(id: String, error: Exception) { database.mutationOperationDao().updateStage(id, MutationStage.FAILED, requireNotNull(database.mutationOperationDao().get(id)).batchCursor, "MIGRATION_FAILED", error.message, now()) }
-    private suspend fun updateOperation(id: String, stage: MutationStage, cursor: Long) { val current = requireNotNull(database.mutationOperationDao().get(id)); if (current.stage.ordinal < stage.ordinal || cursor > current.batchCursor) database.mutationOperationDao().updateStage(id, stage, cursor, null, null, now()) }
+    private suspend fun updateOperation(id: String, stage: MutationStage, cursor: Long) { val current = requireNotNull(database.mutationOperationDao().get(id)); if (current.stage.ordinal < stage.ordinal || cursor > current.batchCursor) require(database.mutationOperationDao().updateStage(id, stage, cursor, null, null, now()) == 1) }
     private suspend fun advanceMetadata(stage: LegacyMigrationStage, roomGeneration: Boolean = false) { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); val current = requireNotNull(database.appMetadataDao().get()); if (current.legacyMigrationStage.ordinal < stage.ordinal) require(database.appMetadataDao().advanceMetadataAndRevisionIfCurrent(current.localRevision, current.activeDataGeneration, current.legacyMigrationStage, if (roomGeneration) "ROOM" else current.activeDataGeneration, stage, now()) == 1) } }
     private fun operationId(s: LegacyDataSnapshot): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(Json.encodeToString(s).toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -127,5 +127,6 @@ class LegacyDataMigration(
     private fun decodeMappings(json: String): Map<String, String> = Json.decodeFromString(json)
     private fun usageId(u: UsageSnapshot, mappings: Map<String, String>) = UUID.nameUUIDFromBytes("legacy|${mappings[u.accountId] ?: u.accountId}|${u.timestamp}".toByteArray(StandardCharsets.UTF_8)).toString()
     private fun requireMapping(legacyId: String, mappings: Map<String, String>): String = mappings[legacyId]?.also { UUID.fromString(it) } ?: error("No stable account mapping for legacy id $legacyId")
-    private suspend fun recordReadFailure(error: Exception) { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); val existing = database.mutationOperationDao().get(READ_FAILURE_OPERATION); if (existing == null) { val metadata = requireNotNull(database.appMetadataDao().get()); database.mutationOperationDao().insertPrepared(MutationOperationEntity(READ_FAILURE_OPERATION, MutationOperationType.LEGACY_DATA_MIGRATION, targetsJson = "{}", baselineRevision = metadata.localRevision, createdAt = now(), updatedAt = now())) }; database.mutationOperationDao().updateStage(READ_FAILURE_OPERATION, MutationStage.FAILED, 0, "READ_FAILED", error.message, now()); val current = requireNotNull(database.appMetadataDao().get()); if (current.legacyMigrationStage != LegacyMigrationStage.FAILED) require(database.appMetadataDao().advanceMetadataAndRevisionIfCurrent(current.localRevision, current.activeDataGeneration, current.legacyMigrationStage, current.activeDataGeneration, LegacyMigrationStage.FAILED, now()) == 1) } }
+    private suspend fun recordReadFailure(error: Exception) { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); val existing = database.mutationOperationDao().get(READ_FAILURE_OPERATION); if (existing == null) { val metadata = requireNotNull(database.appMetadataDao().get()); database.mutationOperationDao().insertPrepared(MutationOperationEntity(READ_FAILURE_OPERATION, MutationOperationType.LEGACY_DATA_MIGRATION, targetsJson = "{}", baselineRevision = metadata.localRevision, createdAt = now(), updatedAt = now())) }; require(database.mutationOperationDao().updateStage(READ_FAILURE_OPERATION, MutationStage.FAILED, 0, "READ_FAILED", error.message, now()) == 1); val current = requireNotNull(database.appMetadataDao().get()); if (current.legacyMigrationStage != LegacyMigrationStage.FAILED) require(database.appMetadataDao().advanceMetadataAndRevisionIfCurrent(current.localRevision, current.activeDataGeneration, current.legacyMigrationStage, current.activeDataGeneration, LegacyMigrationStage.FAILED, now()) == 1) } }
+    private suspend fun resetFailedMetadata() { database.withTransaction { database.appMetadataDao().ensureSingleton(now()); if (database.appMetadataDao().get()?.legacyMigrationStage == LegacyMigrationStage.FAILED) require(database.appMetadataDao().resetFailedLegacyMigration(now()) == 1) } }
 }
