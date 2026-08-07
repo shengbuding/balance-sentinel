@@ -50,4 +50,7 @@ abstract class AppMetadataDao {
         newLegacyMigrationStage: LegacyMigrationStage,
         updatedAt: Long
     ): Int
+
+    @Query("UPDATE app_metadata SET legacy_migration_stage = 'DISCOVERED', updated_at = :updatedAt WHERE id = 0 AND legacy_migration_stage = 'FAILED'")
+    abstract suspend fun resetFailedLegacyMigration(updatedAt: Long): Int
 }

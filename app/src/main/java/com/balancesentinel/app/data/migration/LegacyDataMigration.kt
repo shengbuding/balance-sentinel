@@ -31,12 +31,14 @@ class LegacyDataMigration(
     suspend fun run(): LegacyDataVerification = withContext(Dispatchers.IO) {
         val snapshot = source.read()
         if (snapshot.records.isEmpty() && snapshot.summaries.isEmpty() && snapshot.usage.isEmpty() && snapshot.logs.isEmpty()) {
+            database.withTransaction { database.appMetadataDao().resetFailedLegacyMigration(now()) }
             advanceMetadata(LegacyMigrationStage.DISCOVERED)
             return@withContext LegacyDataVerification(0, 0, 0, 0)
         }
         val operationId = operationId(snapshot)
         val mappings = ensureOperation(operationId)
         try {
+            database.withTransaction { database.appMetadataDao().resetFailedLegacyMigration(now()) }
             advanceMetadata(LegacyMigrationStage.DISCOVERED)
             advanceMetadata(LegacyMigrationStage.VALIDATED)
             advanceMetadata(LegacyMigrationStage.CREDENTIALS_STAGED)
@@ -62,7 +64,12 @@ class LegacyDataMigration(
     }
 
     private suspend fun ensureOperation(id: String): Map<String, String> = database.withTransaction {
-        database.mutationOperationDao().get(id)?.let { return@withTransaction decodeMappings(it.targetsJson) }
+        database.mutationOperationDao().get(id)?.let {
+            if (it.stage == MutationStage.FAILED) {
+                database.mutationOperationDao().updateStage(id, MutationStage.PREPARED, it.batchCursor, null, null, now())
+            }
+            return@withTransaction decodeMappings(it.targetsJson)
+        }
         val accounts = database.accountDao().getAllForMigration()
         val mappings = accounts.mapNotNull { account -> account.legacyStorageId?.let { it to account.id } }.toMap()
         database.appMetadataDao().ensureSingleton(now())
