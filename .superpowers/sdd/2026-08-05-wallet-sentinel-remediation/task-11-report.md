@@ -31,6 +31,6 @@ Result: `37 tests completed, 15 failed`. Failures are expected against the pre-T
 
 ## Concerns
 
-- `CleanupScheduler` still uses legacy stores on its default overload; it needs the corresponding Room history transaction wiring and summary-before-delete behavior in the next edit.
+- Cleanup default overload now reads Room history and performs summary upsert plus exact ID deletion in one Room transaction (`e757320`). The explicit `LegacyHistoryRepository` overload remains available for migration compatibility.
 - Existing focused tests are legacy-path tests and must be replaced with Room behavior RED/GREEN tests.
 - The Room refresh transaction currently publishes provider/widget caches after the durable Room commit; those external caches are intentionally not part of the records/usage/logs transaction.
