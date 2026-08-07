@@ -96,7 +96,7 @@ class RefreshResultCommitter(
                     }
                 } else {
                     kotlinx.coroutines.runBlocking {
-                        roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}")
+                        roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}", account.id)
                     }
                 }
 

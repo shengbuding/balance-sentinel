@@ -20,7 +20,8 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
         records: List<RawRecord>,
         snapshots: List<UsageSnapshot>,
         logs: List<RefreshLogEntry>,
-        identityDiscriminator: String
+        identityDiscriminator: String,
+        accountId: String? = null
     ) = database.withTransaction {
         if (records.isNotEmpty()) {
             database.historyDao().insertBalanceBatch(records.map {
@@ -45,7 +46,7 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
             )
         }
         if (logs.isNotEmpty()) {
-            database.eventLogDao().insertAll(logs.map { it.toEntity() })
+            database.eventLogDao().insertAll(logs.map { it.toEntity(accountId) })
         }
     }
 
@@ -62,8 +63,9 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
             .toByteArray(StandardCharsets.UTF_8)
     ).toString()
 
-    private fun RefreshLogEntry.toEntity() = EventLogEntity(
+    private fun RefreshLogEntry.toEntity(accountId: String?) = EventLogEntity(
         id = id,
+        accountId = accountId,
         eventType = EventLogType.valueOf(type.name),
         totalBalanceText = totalBalance,
         currencyText = currency,
