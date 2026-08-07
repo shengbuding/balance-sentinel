@@ -1,5 +1,7 @@
 package com.balancesentinel.app.data.repository
 
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.createWalletTestDatabase
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
@@ -7,8 +9,11 @@ import com.balancesentinel.app.data.local.testAccount
 import com.balancesentinel.app.data.engine.RecordAggregator
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
+import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -91,7 +96,32 @@ class HistoryRepositoryTest {
         assertEquals(expected.consumed, actual.consumed, 0.001f)
         assertEquals(expected.toppedUp, actual.toppedUp, 0.001f)
         assertEquals(expected.granted, actual.granted, 0.001f)
+        assertEquals(expected.avgBalance, actual.avgBalance, 0.001f)
         assertEquals(expected.sampleCount, actual.sampleCount)
+        assertEquals(expected.toppedUpBalanceClose, actual.toppedUpBalanceClose, 0.001f)
+        assertEquals(expected.grantedBalanceClose, actual.grantedBalanceClose, 0.001f)
+    }
+
+    @Test
+    fun `aggregate handles no recharge noninteger jumps and duplicate timestamps`() = runTest {
+        val records = listOf(
+            RawRecord(accountId, 100, "USD", 100f, 1f, 10f),
+            RawRecord(accountId, 100, "USD", 99f, 2f, 11.5f),
+            RawRecord(accountId, 100, "USD", 98f, 2f, 12.25f),
+            RawRecord(accountId, 200, "USD", 95f, 5f, 12.25f)
+        )
+        repository.insert(records, BalanceRecordSource.REFRESH)
+
+        val actual = requireNotNull(repository.aggregate(accountId, "USD", 0, 201))
+        assertEquals(100f, actual.open, 0.001f)
+        assertEquals(95f, actual.close, 0.001f)
+        assertEquals(9f, actual.consumed, 0.001f)
+        assertEquals(0f, actual.toppedUp, 0.001f)
+        assertEquals(4f, actual.granted, 0.001f)
+        assertEquals(98f, actual.avgBalance, 0.001f)
+        assertEquals(4, actual.sampleCount)
+        assertEquals(12.25f, actual.toppedUpBalanceClose, 0.001f)
+        assertEquals(5f, actual.grantedBalanceClose, 0.001f)
     }
 
     @Test
@@ -102,5 +132,118 @@ class HistoryRepositoryTest {
         repository.upsertSummaries(listOf(replacement))
         assertEquals(1, repository.summaries(accountId = accountId, currency = "USD").size)
         assertEquals(9f, repository.summaries(accountId = accountId, currency = "USD", fromDateInclusive = "2026-08-01", toDateInclusive = "2026-08-01").single().close)
+    }
+
+    @Test
+    fun `Insights entry point uses the injected history repository page`() {
+        val entryRepository = RecordingHistoryRepository(
+            records = listOf(HistoryRecord(1, RawRecord(accountId, 100, "USD", 10f, 0f, 0f)))
+        )
+        val accountSource = AccountUiRepository {
+            flowOf(
+                AccountLoadState.Ready(
+                    listOf(AccountInfo(accountId, "History", "key"))
+                )
+            )
+        }
+        val viewModel = InsightsViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            accountSource,
+            entryRepository
+        )
+        val deadline = System.currentTimeMillis() + 5_000
+        while (entryRepository.pageCalls == 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        assertTrue(entryRepository.pageCalls > 0)
+    }
+
+    @Test
+    fun `Cleanup entry point reads history through the injected page repository`() = runTest {
+        val entryRepository = RecordingHistoryRepository(
+            records = listOf(HistoryRecord(1, RawRecord(accountId, 100, "USD", 10f, 0f, 0f)))
+        )
+        CleanupScheduler.runCleanup(
+            ApplicationProvider.getApplicationContext<android.content.Context>(),
+            200_000,
+            java.time.ZoneOffset.UTC,
+            entryRepository
+        )
+        assertTrue(entryRepository.pageAllCalls > 0)
+    }
+
+    @Test
+    fun `DataExporter entry point serializes records obtained from repository pages`() = runTest {
+        val entryRepository = RecordingHistoryRepository(
+            records = listOf(HistoryRecord(1, RawRecord(accountId, 100, "USD", 10f, 0f, 0f)))
+        )
+        val exported = DataExporter.buildExport(
+            ApplicationProvider.getApplicationContext(),
+            entryRepository
+        )
+        val parsed = kotlinx.serialization.json.Json.decodeFromString<DataExport>(exported)
+        assertEquals(listOf(100L), parsed.rawRecords.map { it.timestamp })
+        assertTrue(entryRepository.pageAllCalls > 0)
+    }
+
+    private class RecordingHistoryRepository(
+        private val records: List<HistoryRecord>
+    ) : HistoryRepository {
+        var pageCalls: Int = 0
+            private set
+        var pageAllCalls: Int = 0
+            private set
+
+        override suspend fun insert(
+            records: List<RawRecord>,
+            source: com.balancesentinel.app.data.local.history.BalanceRecordSource
+        ): Int = error("unused")
+
+        override suspend fun page(
+            accountId: String,
+            currency: String,
+            fromInclusive: Long,
+            toExclusive: Long,
+            after: HistoryCursor?,
+            limit: Int
+        ): HistoryPage {
+            pageCalls++
+            return HistoryPage(records, null)
+        }
+
+        override suspend fun pageAll(
+            fromInclusive: Long,
+            toExclusive: Long,
+            after: HistoryCursor?,
+            limit: Int
+        ): HistoryPage {
+            pageAllCalls++
+            return HistoryPage(records, null)
+        }
+
+        override suspend fun aggregate(
+            accountId: String,
+            currency: String,
+            fromInclusive: Long,
+            toExclusive: Long
+        ): HistoryAggregate? = null
+
+        override suspend fun count(
+            accountId: String,
+            currency: String,
+            fromInclusive: Long,
+            toExclusive: Long
+        ): Long = records.size.toLong()
+
+        override suspend fun distinctCurrencies(): List<String> = records.map { it.value.currency }.distinct()
+
+        override suspend fun summaries(
+            accountId: String?,
+            currency: String?,
+            fromDateInclusive: String?,
+            toDateInclusive: String?
+        ): List<DailySummary> = emptyList()
+
+        override suspend fun upsertSummaries(summaries: List<DailySummary>) = Unit
     }
 }
