@@ -186,3 +186,55 @@ Result: passed with no whitespace errors.
 GREEN commit: `07232bc` (`fix(settings): restore Room snapshot after import failure`).
 
 Fix Round 2 self-review confirms that the loading assertion is now executable on the JVM and that the import test crosses URI decoding, planning, account persistence, real Room publication, injected failure, and both rollback assertions. Cross-store atomicity remains compensating rather than a single storage transaction: if the underlying account or Room store also fails during rollback, the original operation can still leave partial state; such rollback failures are retained as suppressed exceptions. The unrelated unbounded reads and stale legacy synchronous-import tests remain outside this fix scope.
+
+## Fix Round 3 Evidence
+
+Finding-to-fix mapping:
+
+- Stale Room preimage: `BackupImportPlanner.applyAsync` no longer reads a settings snapshot before starting the import and no longer republishes that stale snapshot during failure handling.
+- Concurrent Room updates: `SettingsRepository.applyConfigImport` is an atomic repository seam. `RoomSettingsRepository` captures the current Room preimage under `writeMutex`, publishes imported configuration, runs account persistence while the mutex is held, and restores Room before releasing the mutex if the import fails. `publishSnapshot` and `updateSnapshot` use the same mutex, so runtime/UI writes queue until the import rollback is complete.
+- Account compensation: the planner still restores the account preimage independently when the import fails, retaining rollback failures as suppressed exceptions.
+
+RED command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed import rollback preserves concurrent Room runtime update" --rerun-tasks --no-parallel
+```
+
+Result: 1 test executed, 1 expected behavior failure, 0 errors. The concurrent runtime row was requested during the paused import, but the stale rollback restored an empty runtime-state list.
+
+RED commit: `3e7a32c` (`test(settings): cover concurrent import rollback`).
+
+Targeted GREEN command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed import rollback preserves concurrent Room runtime update" --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.failed URI import restores account and Room settings preimages" --rerun-tasks --no-parallel
+```
+
+Result: 2 tests executed, 0 failures, 0 errors, 0 skipped.
+
+GREEN commit: `9c7fd99` (`fix(settings): serialize import rollback with Room updates`).
+
+Focused regression command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest" --tests "com.balancesentinel.app.data.migration.LegacySettingsMigrationTest" --tests "com.balancesentinel.app.data.repository.AlertCheckerTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.repository.SettingsFixRound1RedTest" --tests "com.balancesentinel.app.ui.screen.AlertSettingsLoadingRobolectricTest" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 39 tests executed, 0 failures, 0 errors, 0 skipped. XML suites report `SettingsRepositoryTest` 5, `LegacySettingsMigrationTest` 3, `AlertCheckerTest` 20, `BalanceRefreshServiceTest` 3, `SettingsFixRound1RedTest` 7, and `AlertSettingsLoadingRobolectricTest` 1.
+
+Production compile:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 17 actionable tasks executed. Existing Room foreign-key index and unrelated Kotlin/deprecation warnings remain.
+
+Whitespace check:
+
+```powershell
+git diff --check a692faa..HEAD
+```
+
+The atomic repository seam is intentionally scoped to the Room-backed implementation: custom repositories must opt in explicitly rather than silently receiving a non-atomic fallback. Cross-store behavior remains compensating for catastrophic account rollback failure, but concurrent Room writes no longer share the stale rollback window. The unrelated stale synchronous `BackupImportPlannerTest` cases documented in Round 2 remain outside this fix scope.
