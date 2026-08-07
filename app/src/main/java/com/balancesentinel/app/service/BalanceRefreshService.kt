@@ -197,9 +197,14 @@ class BalanceRefreshService : Service() {
                         RefreshScheduler.clearRefreshDeadline(this@BalanceRefreshService)
                     }
                 }
-                val runner = BalanceRefreshRunner(refreshGateway, deadlineLifecycle) {
-                    BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
-                }
+                val runner = BalanceRefreshRunner(
+                    gateway = refreshGateway,
+                    refreshDeadline = deadlineLifecycle,
+                    accountSnapshotReader = ServiceAccountSnapshotReader { snapshot },
+                    committedBalanceReader = {
+                        BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
+                    }
+                )
                 val committedBalances = runner.refreshBatch().committedBalances
                 val showTotal = widgetPrefs.showTotalBalanceInNotification
                 val notification = BalanceNotificationDeriver.derive(

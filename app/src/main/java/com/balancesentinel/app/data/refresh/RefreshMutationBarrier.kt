@@ -16,7 +16,7 @@ object RefreshMutationBarrier {
     }
 
     fun <T> withRefreshCommit(block: () -> T): T {
-        if (commitDepth.get() > 0) return block()
+        if ((commitDepth.get() ?: 0) > 0) return block()
         permit.acquire()
         commitDepth.set(1)
         return try {
