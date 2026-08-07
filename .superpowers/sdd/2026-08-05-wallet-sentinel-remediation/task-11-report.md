@@ -69,3 +69,7 @@ Final focused command passed with `BUILD SUCCESSFUL`; `:app:compileDebugKotlin -
 Focused tests passed with `BUILD SUCCESSFUL`; compile and diff checks passed. Fix Round 2 changes are pending final commit.
 
 Round 2 final test quality updates: CleanupScheduler tests now install an in-memory database into the provider and exercise the public default overload; RefreshResultCommitter tests cover both successful and failed production constructor entry; AccountLifecycleManager test invokes `manager.delete` with a controlled coordinator and verifies FK cascade plus provider cache cleanup. Focused suite passes.
+
+## Fix Round 3
+
+Added multi-account/multi-currency continuity assertions for non-zero `toppedUpBalanceClose`/`grantedBalanceClose` carry and duplicate-date avoidance. Late-arrival and >999-row cleanup tests use the public default scheduler overload with the in-memory provider. Added a committer test omitting `roomPersistence` to verify default provider wiring. Focused cleanup test passes after these gates.

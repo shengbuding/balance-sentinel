@@ -27,6 +27,7 @@ class CleanupSchedulerTest {
 
     @Test fun `cleanup writes summary before deleting exact archived raw ids`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.accountDao().insertCreate(AccountEntity("other", 1, "Other", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         db.historyDao().insertBalanceBatch(listOf(
             BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
             BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 2_000L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
@@ -39,18 +40,23 @@ class CleanupSchedulerTest {
 
     @Test fun `cleanup preserves continuity through yesterday`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
-        db.historyDao().upsertSummaries(listOf(com.balancesentinel.app.data.local.history.DailySummaryEntity("1970-01-01", "acct", "USD", 1.0, 1.0, 0.0, 0.0, averageBalance = 1.0, sampleCount = 1, generatedAt = 1L)))
-        CleanupScheduler.runCleanup(context, 4 * 86_400_000L, java.time.ZoneOffset.UTC, RoomHistoryRepository(db))
+        db.accountDao().insertCreate(AccountEntity("other", 1, "Other", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().upsertSummaries(listOf(
+            com.balancesentinel.app.data.local.history.DailySummaryEntity("1970-01-01", "acct", "USD", 5.0, 5.0, 0.0, 2.0, grantedBalance = 1.0, averageBalance = 5.0, sampleCount = 1, toppedUpBalanceClose = 2.0, grantedBalanceClose = 1.0, generatedAt = 1L),
+            com.balancesentinel.app.data.local.history.DailySummaryEntity("1970-01-01", "other", "CNY", 8.0, 8.0, 0.0, 3.0, grantedBalance = 2.0, averageBalance = 8.0, sampleCount = 1, toppedUpBalanceClose = 3.0, grantedBalanceClose = 2.0, generatedAt = 1L)
+        ))
+        CleanupScheduler.runCleanup(context, 4 * 86_400_000L, java.time.ZoneOffset.UTC)
         val carry = db.historyDao().querySummaries("acct", "USD", "1970-01-02", "1970-01-03")
         assertEquals(2, carry.size)
-        assertTrue(carry.all { it.openBalance == 1.0 && it.closeBalance == 1.0 && it.averageBalance == 1.0 })
+        assertTrue(carry.all { it.openBalance == 5.0 && it.closeBalance == 5.0 && it.averageBalance == 5.0 && it.toppedUpBalanceClose == 2.0 && it.grantedBalanceClose == 1.0 })
+        assertEquals(2, db.historyDao().querySummaries("other", "CNY", "1970-01-02", "1970-01-03").size)
     }
 
     @Test fun `cleanup deletes more than sqlite bind limit in chunks`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         val rows = (1..1200).map { BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = it.toLong(), totalBalance = it.toDouble(), source = com.balancesentinel.app.data.local.history.BalanceRecordSource.REFRESH) }
         rows.chunked(500).forEach { db.historyDao().insertBalanceBatch(it) }
-        val report = CleanupScheduler.runCleanup(context, 3 * 86_400_000L, java.time.ZoneOffset.UTC, RoomHistoryRepository(db))
+        val report = CleanupScheduler.runCleanup(context, 3 * 86_400_000L, java.time.ZoneOffset.UTC)
         assertEquals(1200, report.deletedRecordCount)
         assertEquals(0, db.historyDao().countRecords())
     }
@@ -59,10 +65,10 @@ class CleanupSchedulerTest {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         val ids = db.historyDao().insertBalanceBatch(listOf(
             BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
-            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 2L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 20 * 3_600_000L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
         ))
-        RoomHistoryRepository(db).archiveAndDelete(listOf(com.balancesentinel.app.data.model.DailySummary("acct", "1970-01-01", "USD", 10f, 9f, 1f, 0f, avgBalance = 9.5f, sampleCount = 2)), listOf(ids.first()))
-        assertEquals(1, db.historyDao().countRecords())
+        val report = CleanupScheduler.runCleanup(context, 36 * 3_600_000L, java.time.ZoneOffset.UTC)
+        assertEquals(1, report.retainedRecordCount)
     }
 
     private class RoomTestContext(base: Context, val database: WalletDatabase) : android.content.ContextWrapper(base)

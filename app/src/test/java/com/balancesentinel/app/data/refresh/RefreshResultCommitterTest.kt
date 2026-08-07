@@ -14,6 +14,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +26,7 @@ class RefreshResultCommitterTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
 
+    @Before fun installRoom() = com.balancesentinel.app.data.local.WalletDatabaseProvider.installForTests(db)
     @After fun close() = db.close()
 
     @Test fun `refresh records usage and logs commit atomically`() = runBlocking {
@@ -77,6 +79,16 @@ class RefreshResultCommitterTest {
         val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
         assertTrue(result is AccountRefreshResult.Committed)
         runBlocking { assertEquals(1, db.historyDao().countRecords()); assertEquals(1, db.usageDao().countSnapshots()); assertEquals(1, db.eventLogDao().countLogs()) }
+    }
+
+    @Test fun `default committer constructor uses installed Room database`() {
+        runBlocking { db.accountDao().insertCreate(accountEntity()) }
+        val committer = RefreshResultCommitter(context, object : RefreshAccountStore {
+            override fun getAccount(accountId: String) = AccountInfo(accountId, "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
+            override fun getAccounts() = emptyList<AccountInfo>()
+        }, alertDispatcher = RefreshAlertDispatcher { _, _ -> }, widgetRedrawNotifier = WidgetRedrawNotifier { })
+        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        assertTrue(result is AccountRefreshResult.Committed)
     }
 
     private fun accountEntity() = AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED)
