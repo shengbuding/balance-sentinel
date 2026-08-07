@@ -78,3 +78,45 @@
 
 - The mutation barrier is process-local and assumes the app's current single-process architecture. A future secondary Android process that mutates Room would need a database-level compare-and-commit token rather than this in-process permit.
 - Three pre-existing Robolectric Widget `RemoteViews` rendering tests remain skipped because AndroidKeyStore is unavailable. Typed visibility and pending-result behavior are covered in unit tests, but final device-level rendering remains an instrumentation concern.
+
+## Fix Round 2
+
+### Scope and Commits
+
+- Review base: `cb433eba884c7cbadb99d2bfbf3cc0c615e130f3`.
+- RED: `f65f40b` (`test(task6): add widget entrypoint red coverage`).
+- GREEN: `8a69303` (`fix(task6): wire widget entrypoints to typed async dependencies`).
+- This round addresses only the fresh RED-quality finding. `progress.md` and Task 7 were not changed.
+
+### Finding and Fix
+
+- The Widget tests asserted `WidgetBalanceVisibility` and `WidgetRefreshCoroutineDispatcher` directly, while the only existing provider rendering cases were ignored. They could therefore pass if `StaticWidgetProvider.onUpdate` or `WidgetRefreshReceiver.onReceive` stopped wiring those helpers into Android side effects.
+- RED added real entry-point tests. The provider test creates a Robolectric widget, invokes `onUpdate`, and inspects the rendered `RemoteViews` balance. The receiver tests invoke `onReceive` with a real Robolectric `PendingResult`, then assert the refresh trigger, suspended lifetime, success completion, and failure completion.
+- GREEN routes both provider rendering entry points through an optional typed account-state loader and routes receiver execution through an injectable gateway provider. Production defaults remain the existing Room account-state loader and `RefreshRuntime.from(context)` behavior.
+- The three pre-existing AndroidKeyStore-limited ignored tests remain intact. The new active tests avoid that dependency through typed test inputs and exercise the actual Provider and Receiver entry points.
+
+### RED Evidence
+
+- Command: `./gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.widget.WidgetProviderTest" --rerun-tasks --no-parallel --console=plain`.
+- Result: compilation and fixtures succeeded; 15 tests completed, 3 pre-existing tests skipped, and 3 entry-point tests failed as expected. The provider rendered `Check Balance` instead of the injected ready-account balance, and both receiver tests failed because `onReceive` did not reach the injected gateway.
+- The RED support seams were declarations only and were not used by production paths, so they did not alter product behavior before GREEN.
+
+### GREEN Evidence
+
+- Command: `./gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.widget.WidgetProviderTest" --tests "com.balancesentinel.app.service.BalanceRefreshServiceTest" --tests "com.balancesentinel.app.data.refresh.RefreshResultCommitterTest" --tests "com.balancesentinel.app.data.refresh.RefreshCoordinatorTest" --rerun-tasks --no-parallel --console=plain`.
+- Result: `BUILD SUCCESSFUL`; 33 Gradle tasks executed; 34 tests completed, 3 pre-existing Widget tests skipped, 0 failures. Per-class counts: WidgetProvider 15 (3 skipped), BalanceRefreshService 3, RefreshResultCommitter 12, RefreshCoordinator 4.
+- Command: `./gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel --console=plain`.
+- Result: `BUILD SUCCESSFUL`; 17 Gradle tasks executed.
+- Command: `git diff --check cb433eba884c7cbadb99d2bfbf3cc0c615e130f3..HEAD`.
+- Result: passed with no whitespace errors.
+
+### Self Review
+
+- Removing or bypassing provider loader wiring makes the real rendered balance assertion fail closed to `Check Balance`; removing or bypassing receiver gateway wiring prevents the real `onReceive` tests from observing the refresh attempt.
+- The receiver tests use the production coroutine dispatcher and observe its actual pending-result lifecycle rather than invoking the dispatcher helper directly.
+- Test overrides are reset after every test. With no override, both provider entry points retain the Room/encrypted-credential read and the receiver retains the application-scoped refresh gateway.
+- No production `runBlocking`, `allowMainThreadQueries`, or unbounded account read was introduced.
+
+### Remaining Concerns
+
+- Three pre-existing AndroidKeyStore-dependent Robolectric rendering tests remain intentionally skipped and unchanged. The new active `RemoteViews` test covers inherited provider rendering through one concrete variant; final device and all-size visual rendering remain instrumentation concerns.
