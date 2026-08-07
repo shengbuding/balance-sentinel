@@ -107,8 +107,8 @@ class RoomSettingsRepository(
     ): SettingsSnapshot = writeMutex.withLock {
         val previous = loadSnapshot()
         try {
-            publishSnapshotLocked(previous.withConfigSettings(settings), System.currentTimeMillis())
             persistAccounts()
+            publishSnapshotLocked(previous.withConfigSettings(settings), System.currentTimeMillis())
             loadSnapshot().also { state.value = SettingsSnapshotState.Ready(it) }
         } catch (failure: Throwable) {
             runCatching {
