@@ -20,6 +20,10 @@ class RoomSettingsRepository(
 
     override suspend fun readSnapshot(): SettingsSnapshot = loadSnapshot()
 
+    override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) {
+        throw UnsupportedOperationException("Room settings publication is not wired")
+    }
+
     private suspend fun loadSnapshot(): SettingsSnapshot {
         val app = database.appSettingsDao().get()
             ?: com.balancesentinel.app.data.local.settings.AppSettingsEntity(updatedAt = 0L)

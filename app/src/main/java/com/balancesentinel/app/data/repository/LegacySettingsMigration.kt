@@ -1,7 +1,7 @@
 package com.balancesentinel.app.data.repository
 
 /** Read-only adapter over the legacy preference store used by the migration seam. */
-interface LegacySettingsSource {
+fun interface LegacySettingsSource {
     fun read(): LegacySettings
 }
 

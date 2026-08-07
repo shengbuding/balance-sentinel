@@ -7,6 +7,8 @@ interface SettingsRepository {
     val snapshot: StateFlow<SettingsSnapshotState>
 
     suspend fun readSnapshot(): SettingsSnapshot
+
+    suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long)
 }
 
 fun funSettingsRepositoryFactory(block: (Context) -> SettingsRepository): (Context) -> SettingsRepository = block
