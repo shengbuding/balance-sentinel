@@ -10,6 +10,7 @@ import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +22,7 @@ import java.time.ZoneOffset
 class CleanupSchedulerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+    @Before fun installRoom() = com.balancesentinel.app.data.local.WalletDatabaseProvider.installForTests(db)
     @After fun close() = db.close()
 
     @Test fun `cleanup writes summary before deleting exact archived raw ids`() = runBlocking {
@@ -29,7 +31,7 @@ class CleanupSchedulerTest {
             BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
             BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 2_000L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
         ))
-        val report = CleanupScheduler.runCleanup(RoomTestContext(context, db), 3 * 86_400_000L, ZoneOffset.UTC, RoomHistoryRepository(db))
+        val report = CleanupScheduler.runCleanup(context, 3 * 86_400_000L, ZoneOffset.UTC)
         assertTrue(report.archivedDates.contains("1970-01-01"))
         assertEquals(0, db.historyDao().countRecords())
         assertTrue(db.historyDao().countSummaries() >= 1)

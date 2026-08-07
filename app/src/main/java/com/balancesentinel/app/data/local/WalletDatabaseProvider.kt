@@ -21,4 +21,13 @@ object WalletDatabaseProvider {
         )
             .build().also { instance = it }
     }
+
+    internal fun installForTests(database: WalletDatabase) {
+        instance = database
+    }
+
+    internal fun clearForTests() {
+        instance?.close()
+        instance = null
+    }
 }

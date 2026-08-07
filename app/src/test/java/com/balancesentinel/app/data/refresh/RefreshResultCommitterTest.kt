@@ -68,5 +68,16 @@ class RefreshResultCommitterTest {
         runBlocking { assertEquals(0, db.historyDao().countRecords()); assertEquals(0, db.usageDao().countSnapshots()); assertEquals(0, db.eventLogDao().countLogs()) }
     }
 
+    @Test fun `production committer entry writes all Room tables`() {
+        runBlocking { db.accountDao().insertCreate(accountEntity()) }
+        val committer = RefreshResultCommitter(context, object : RefreshAccountStore {
+            override fun getAccount(accountId: String) = AccountInfo(accountId, "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
+            override fun getAccounts() = emptyList<AccountInfo>()
+        }, roomPersistence = RoomRefreshPersistence(db), alertDispatcher = RefreshAlertDispatcher { _, _ -> }, widgetRedrawNotifier = WidgetRedrawNotifier { })
+        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        assertTrue(result is AccountRefreshResult.Committed)
+        runBlocking { assertEquals(1, db.historyDao().countRecords()); assertEquals(1, db.usageDao().countSnapshots()); assertEquals(1, db.eventLogDao().countLogs()) }
+    }
+
     private fun accountEntity() = AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED)
 }

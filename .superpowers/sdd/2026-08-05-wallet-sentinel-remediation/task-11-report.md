@@ -67,3 +67,5 @@ Final focused command passed with `BUILD SUCCESSFUL`; `:app:compileDebugKotlin -
 - Added non-zero continuity assertions and retained-count/large-delete/late-arrival coverage while keeping Task 12 consumer migrations deferred.
 
 Focused tests passed with `BUILD SUCCESSFUL`; compile and diff checks passed. Fix Round 2 changes are pending final commit.
+
+Round 2 final test quality updates: CleanupScheduler tests now install an in-memory database into the provider and exercise the public default overload; RefreshResultCommitter tests cover both successful and failed production constructor entry; AccountLifecycleManager test invokes `manager.delete` with a controlled coordinator and verifies FK cascade plus provider cache cleanup. Focused suite passes.
