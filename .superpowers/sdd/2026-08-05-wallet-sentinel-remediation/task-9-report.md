@@ -56,6 +56,37 @@ Additional command:
 
 Result: `BUILD SUCCESSFUL`. `git diff --check` is clean.
 
+## Fix Round 1
+
+- RED: `5ad4980` (`test(task9): cover repository paging and batch boundaries`)
+  - Added behavior-level coverage for 501 usage records, aggregate edge cases,
+    and repository-backed Insights, cleanup, and export entry points.
+  - The first focused run failed only on the intended missing DAO constructor,
+    `pageAll`, and consumer injection seams.
+- GREEN: `f403e8d` (`feat(task9): harden repository paging seams`)
+  - Usage DAO transactions now write records in fixed 500-row batches.
+  - History repositories expose bounded all-history keyset pages, and the Room
+    DAO provides the corresponding `(recorded_at,id)` query.
+  - Insights uses account/currency repository pages when injected; cleanup and
+    export use repository all-history pages while preserving their legacy
+    default paths for the later consumer-migration tasks.
+
+Fix Round 1 verification:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.local.history.HistoryDaoTest" --tests "com.balancesentinel.app.data.repository.HistoryRepositoryTest" --tests "com.balancesentinel.app.data.repository.UsageRepositoryTest" --tests "com.balancesentinel.app.data.repository.EventLogRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Result: 13 tests completed, 0 failures, 0 errors, 0 skipped.
+The suite includes the 90,000-row history pagination case and the new 500-row
+usage batch assertion.
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; `git diff --check` is clean.
+
 ## Remaining risks and follow-up
 
 - Insights, cleanup, export, and migration consumers still use the legacy
