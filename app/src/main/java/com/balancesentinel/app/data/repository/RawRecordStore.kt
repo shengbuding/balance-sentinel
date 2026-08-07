@@ -54,6 +54,9 @@ object RawRecordStore {
         getRecordsInternal(context)
     }
 
+    internal fun getAllRecordsStrict(context: Context): List<RawRecord> =
+        synchronized(storeLock) { getRecordsInternal(context) }
+
     fun getTodayRecordsForAccount(context: Context, accountId: String): List<RawRecord> {
         val zoneId = ZoneId.systemDefault()
         val today = Instant.now().atZone(zoneId).toLocalDate().toString()

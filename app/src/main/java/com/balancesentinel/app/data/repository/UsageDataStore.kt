@@ -108,6 +108,12 @@ object UsageDataStore {
         }
     }
 
+    internal fun getAllSnapshotsStrict(context: Context): List<UsageSnapshot> =
+        DataMutationCoordinator.withMutation { synchronized(USAGE_LOCK) {
+            val raw = getPrefs(context).getString(KEY_SNAPSHOTS, null) ?: return@synchronized emptyList()
+            json.decodeFromString(ListSerializer(UsageSnapshot.serializer()), raw)
+        } }
+
     /**
      * 读取最近 [days] 天的快照（按账户筛选，null = 全部）。
      */

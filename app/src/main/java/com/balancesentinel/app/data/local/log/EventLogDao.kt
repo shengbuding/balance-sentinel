@@ -32,4 +32,7 @@ interface EventLogDao {
 
     @Query("SELECT * FROM event_logs WHERE id = :id")
     suspend fun get(id: Long): EventLogEntity?
+
+    @Query("SELECT COUNT(*) FROM event_logs")
+    suspend fun countLogs(): Long
 }

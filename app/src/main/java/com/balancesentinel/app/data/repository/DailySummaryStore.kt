@@ -92,6 +92,9 @@ object DailySummaryStore {
         emptyList()
     }
 
+    internal fun getSummariesStrict(context: Context): List<DailySummary> =
+        synchronized(storeLock) { getSummariesInternal(context) }
+
     internal fun getSummariesForCleanup(context: Context): List<DailySummary> =
         synchronized(storeLock) { getSummariesInternal(context).toList() }
 

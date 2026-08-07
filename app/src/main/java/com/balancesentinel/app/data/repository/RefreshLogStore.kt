@@ -58,6 +58,11 @@ object RefreshLogStore {
         readEntries(context)
     }
 
+    internal fun getEntriesStrict(context: Context): List<RefreshLogEntry> = synchronized(LOG_LOCK) {
+        val raw = getPrefs(context).getString(KEY_ENTRIES, null) ?: return@synchronized emptyList()
+        json.decodeFromString(ListSerializer(RefreshLogEntry.serializer()), raw)
+    }
+
     /**
      * 清空所有日志条目。
      * 公共方法：写入失败时不抛出异常，兼容旧调用方。
