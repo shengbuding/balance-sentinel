@@ -69,6 +69,40 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `config import publishes imported account settings after account persistence`() = runTest {
+        val importedAccountId = "imported-account"
+        val settings = ConfigSettings(
+            refreshIntervalSeconds = 30,
+            alertEnabled = true,
+            alertThreshold = 50f,
+            changeAlertEnabled = true,
+            changeAlertThreshold = 5f,
+            changeAlertPeriodMinutes = 60,
+            logMaxEntries = 100,
+            perCurrencyAlertSettings = listOf(
+                PerCurrencyAlertSetting(importedAccountId, "USD", true, true)
+            ),
+            notificationSelectedWallets = listOf(
+                NotificationWalletSelection(importedAccountId, "USD")
+            )
+        )
+
+        repository.applyConfigImport(settings) {
+            database.accountDao().insertCreate(testAccount(importedAccountId))
+        }
+
+        val actual = repository.readSnapshot()
+        assertEquals(
+            listOf(AccountAlertSettingEntity(importedAccountId, "USD", true, true)),
+            actual.accountAlertSettings
+        )
+        assertEquals(
+            listOf(NotificationWalletSelectionEntity(importedAccountId, "USD", 0)),
+            actual.notificationSelections
+        )
+    }
+
+    @Test
     fun `a failed Room transaction leaves all settings rows unchanged`() = runTest {
         database.accountDao().insertCreate(testAccount("acct"))
         val before = SettingsSnapshot(
