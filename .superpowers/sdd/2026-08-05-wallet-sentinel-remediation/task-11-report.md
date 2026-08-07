@@ -27,10 +27,10 @@ Command:
 .\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.refresh.RefreshResultCommitterTest" --tests "com.balancesentinel.app.data.repository.CleanupSchedulerTest" --tests "com.balancesentinel.app.data.repository.AccountLifecycleManagerTest" --rerun-tasks --no-parallel
 ```
 
-Result: `37 tests completed, 15 failed`. Failures are expected against the pre-Task-11 tests because they seed/read legacy stores and assert SharedPreferences rollback/order. The failures identify tests that must be migrated to the Room fixtures and transaction assertions required by the brief.
+Result: `BUILD SUCCESSFUL` (three migrated Room behavior test classes pass).
 
 ## Concerns
 
 - Cleanup default overload now reads Room history and performs summary upsert plus exact ID deletion in one Room transaction (`e757320`). The explicit `LegacyHistoryRepository` overload remains available for migration compatibility.
-- Existing focused tests are legacy-path tests and must be replaced with Room behavior RED/GREEN tests.
+- Legacy stores are no longer exercised by the focused behavior tests; they remain migration-reader compatibility seams.
 - The Room refresh transaction currently publishes provider/widget caches after the durable Room commit; those external caches are intentionally not part of the records/usage/logs transaction.
