@@ -187,6 +187,8 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.room.testing)
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.compose.ui.test.manifest)
 
     // Test (Instrumented / Compose UI)
     androidTestImplementation(libs.compose.ui.test.junit4)

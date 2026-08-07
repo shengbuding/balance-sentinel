@@ -1,7 +1,8 @@
 package com.balancesentinel.app.data.repository
 
-import androidx.room.withTransaction
 import android.content.Context
+import android.net.Uri
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.createWalletTestDatabase
@@ -22,6 +23,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class SettingsRepositoryTest {
@@ -133,46 +135,74 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `transaction failure cannot leave imported prefs newer than Room`() = runTest {
+    fun `failed URI import restores account and Room settings preimages`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val prefs = WidgetPrefs(context)
-        prefs.resetAll()
-        prefs.alertEnabled = false
-        database.appSettingsDao().upsert(
-            backgroundRefreshIntervalSeconds = 900,
-            foregroundMonitoringIntervalSeconds = 30,
-            alertEnabled = false,
-            alertThreshold = 0.0,
-            changeAlertEnabled = false,
-            changeAlertThreshold = 0.0,
-            changeAlertPeriodMinutes = 0,
-            logMaxEntries = 100,
-            snoozeDurationMinutes = 60,
-            showTotalBalanceInNotification = true,
-            updatedAt = 1
+        val accountStorage = context.getSharedPreferences(
+            "settings-round-two-import-${System.nanoTime()}",
+            Context.MODE_PRIVATE
         )
+        val accountManager = ApiKeyManager(context, accountStorage)
+        val original = com.balancesentinel.app.data.model.AccountInfo(
+            id = accountManager.computeId("sk-old-secret"),
+            label = "Old",
+            apiKey = "sk-old-secret"
+        )
+        val imported = original.copy(
+            id = accountManager.computeId("sk-new-secret"),
+            label = "Imported",
+            apiKey = "sk-new-secret"
+        )
+        accountManager.replaceAll(listOf(original))
+        database.accountDao().insertCreate(testAccount(original.id))
 
+        val beforeSettings = SettingsSnapshot(
+            appSettings = AppSettingsEntity(alertEnabled = false, alertThreshold = 1.0, updatedAt = 1),
+            accountAlertSettings = listOf(AccountAlertSettingEntity(original.id, "USD", false, false)),
+            notificationSelections = emptyList(),
+            alertRuntimeStates = emptyList(),
+            snoozes = emptyList()
+        )
+        repository.publishSnapshot(beforeSettings, publishedAt = beforeSettings.appSettings.updatedAt)
+        val beforeAccounts = accountManager.getAccounts()
+        val file = File(context.cacheDir, "settings-round-two-import-${System.nanoTime()}.json")
+        file.writeText(ConfigManager.buildConfig(context, listOf(imported), SettingsSnapshot(
+            appSettings = AppSettingsEntity(alertEnabled = true, alertThreshold = 50.0, updatedAt = 2),
+            accountAlertSettings = emptyList(),
+            notificationSelections = emptyList(),
+            alertRuntimeStates = emptyList(),
+            snoozes = emptyList()
+        ), includeTokens = true))
+
+        val failingRepository = FailAfterApplyRepository(repository)
+        val planner = BackupImportPlanner(accountManager, WidgetPrefs(context), failingRepository)
         try {
-            database.withTransaction {
-                ConfigManager.applySettings(
-                    ConfigSettings(
-                        refreshIntervalSeconds = 30,
-                        alertEnabled = true,
-                        alertThreshold = 10f,
-                        changeAlertEnabled = false,
-                        changeAlertThreshold = 0f,
-                        changeAlertPeriodMinutes = 0,
-                        logMaxEntries = 100
-                    ),
-                    prefs
-                )
-                error("crash after external settings write")
-            }
+            val config = checkNotNull(ConfigManager.importFromUri(context, Uri.fromFile(file)))
+            val plan = planner.plan(config, beforeAccounts, ImportMode.REPLACE_ALL)
+            planner.applyAsync(plan, confirmedFullReplace = true)
         } catch (expected: IllegalStateException) {
-            assertEquals("crash after external settings write", expected.message)
+            assertEquals("injected publication failure", expected.message)
+        } finally {
+            file.delete()
         }
 
-        assertFalse(prefs.alertEnabled)
-        assertFalse(database.appSettingsDao().get()?.alertEnabled ?: true)
+        assertEquals(beforeAccounts, accountManager.getAccounts())
+        assertEquals(beforeSettings, repository.readSnapshot())
+        accountStorage.edit().clear().commit()
+    }
+
+    private class FailAfterApplyRepository(
+        private val delegate: SettingsRepository
+    ) : SettingsRepository {
+        override val snapshot = delegate.snapshot
+        override suspend fun readSnapshot(): SettingsSnapshot = delegate.readSnapshot()
+        override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) =
+            delegate.publishSnapshot(snapshot, publishedAt)
+        override suspend fun hasPersistedSnapshot(): Boolean = delegate.hasPersistedSnapshot()
+        override suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot =
+            delegate.updateSnapshot(transform)
+        override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {
+            delegate.applyConfigSettings(settings)
+            error("injected publication failure")
+        }
     }
 }
