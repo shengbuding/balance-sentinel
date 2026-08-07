@@ -3,6 +3,13 @@ package com.balancesentinel.app.data.refresh
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.repository.AccountRepository
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountUiRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 enum class RefreshTrigger { MANUAL_ALL, MANUAL_ACCOUNT, SERVICE, WIDGET, WATCHDOG }
 
@@ -17,6 +24,7 @@ sealed interface RefreshFailure {
     data class ScriptPolicyDenied(override val message: String) : RefreshFailure
     data class AccountStale(override val message: String) : RefreshFailure
     data class PersistenceFailure(override val message: String) : RefreshFailure
+    data class AccountCorrupt(override val message: String) : RefreshFailure
 }
 
 data class RefreshRequest(
@@ -81,6 +89,17 @@ interface RefreshGateway {
 interface RefreshAccountStore {
     fun getAccount(accountId: String): AccountInfo?
     fun getAccounts(): List<AccountInfo>
+
+    suspend fun readAccount(accountId: String): AccountStoreRead =
+        getAccount(accountId)?.let { AccountStoreRead.Ready(listOf(it)) } ?: AccountStoreRead.Missing
+
+    suspend fun readAccounts(): AccountStoreRead = AccountStoreRead.Ready(getAccounts())
+}
+
+sealed interface AccountStoreRead {
+    data class Ready(val accounts: List<AccountInfo>) : AccountStoreRead
+    data object Missing : AccountStoreRead
+    data class Corrupt(val error: DataCorruptionException) : AccountStoreRead
 }
 
 class ApiKeyRefreshAccountStore(
@@ -88,4 +107,34 @@ class ApiKeyRefreshAccountStore(
 ) : RefreshAccountStore {
     override fun getAccount(accountId: String): AccountInfo? = apiKeyManager.getAccount(accountId)
     override fun getAccounts(): List<AccountInfo> = apiKeyManager.getAccounts()
+}
+
+/** Room metadata plus encrypted credential payload, loaded off the caller thread. */
+class RoomRefreshAccountStore(
+    private val accountRepository: AccountRepository,
+    private val accountUiRepository: AccountUiRepository
+) : RefreshAccountStore {
+    @Volatile private var snapshot: List<AccountInfo> = emptyList()
+
+    override fun getAccount(accountId: String): AccountInfo? = snapshot.firstOrNull { it.id == accountId }
+    override fun getAccounts(): List<AccountInfo> = snapshot
+
+    override suspend fun readAccount(accountId: String): AccountStoreRead =
+        when (val result = readAccounts()) {
+            is AccountStoreRead.Ready -> result.accounts.firstOrNull { it.id == accountId }
+                ?.let { AccountStoreRead.Ready(listOf(it)) } ?: AccountStoreRead.Missing
+            is AccountStoreRead.Corrupt -> result
+            AccountStoreRead.Missing -> AccountStoreRead.Missing
+        }
+
+    override suspend fun readAccounts(): AccountStoreRead = withContext(Dispatchers.IO) {
+        when (val state = accountUiRepository.observe().first { it !is AccountLoadState.Loading }) {
+            is AccountLoadState.Ready -> {
+                snapshot = state.accounts
+                AccountStoreRead.Ready(state.accounts)
+            }
+            is AccountLoadState.Corrupt -> AccountStoreRead.Corrupt(state.error)
+            AccountLoadState.Loading -> error("unreachable")
+        }
+    }
 }

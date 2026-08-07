@@ -95,6 +95,21 @@ class RefreshCoordinatorTest {
         assertTrue(!failure.message.contains("secret"))
     }
 
+    @Test
+    fun `revision change observed from repository makes in flight result stale`() = runTest {
+        val fetched = CompletableDeferred<BalanceFetchResult>()
+        val store = RevisionChangingStore(account())
+        val committer = RecordingCommitter()
+        val coordinator = RefreshCoordinator(store, AccountBalanceSource { fetched.await() }, committer, backgroundScope)
+
+        val refresh = async { coordinator.refreshAccount(ACCOUNT_ID, RefreshTrigger.SERVICE) }
+        store.changed = true
+        fetched.complete(success(42.0))
+
+        assertTrue(refresh.await() is AccountRefreshResult.Stale)
+        assertTrue(committer.committedBalances.isEmpty())
+    }
+
     private fun account(id: String = ACCOUNT_ID) = AccountInfo(
         id = id,
         label = id,
@@ -156,6 +171,14 @@ class RefreshCoordinatorTest {
         }
 
         suspend fun awaitStarted(index: Int) = started[index].await()
+    }
+
+    private class RevisionChangingStore(private val initial: AccountInfo) : RefreshAccountStore {
+        var changed = false
+        override fun getAccount(accountId: String): AccountInfo? = initial
+        override fun getAccounts(): List<AccountInfo> = listOf(initial)
+        override suspend fun readAccount(accountId: String): AccountStoreRead =
+            AccountStoreRead.Ready(listOf(if (changed) initial.copy(revision = initial.revision + 1) else initial))
     }
 
     private companion object {
