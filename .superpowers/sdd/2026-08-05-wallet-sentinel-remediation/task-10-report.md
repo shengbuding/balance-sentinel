@@ -6,6 +6,8 @@ Commits:
 - `2b40f76` test: define resumable legacy data migration behavior
 - `b3addc6` feat: complete resumable legacy data migration
 - `262b19e` fix: allow failed legacy migrations to resume
+- `9eb98ab` test: add task 10 failure and mapping regression coverage (Fix Round 1 RED)
+- `1f603ec` fix: harden legacy migration publication and recovery (Fix Round 1 GREEN)
 
 Commands and actual outputs:
 
@@ -25,6 +27,14 @@ git diff --check
 
 git status --porcelain=v1
 (no output)
+
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationTest" --tests "com.balancesentinel.app.data.migration.LegacyDataMigrationLargeDatasetTest" --rerun-tasks --no-parallel
+BUILD SUCCESSFUL in 51s (3 focused tests)
+
+.\gradlew.bat compileDebugKotlin --no-parallel --rerun-tasks
+BUILD SUCCESSFUL in 27s
+
+Fix Round 1 adds strict metadata CAS checks, content SHA-256 operation identity, operation-scoped record/usage/summary/log field verification, stable UUID mapping rejection, read-failure persistence, and cleanup preimage restoration.
 ```
 
 Focused tests cover the production startup seam, durable stage declarations, empty-source idempotent no-op, and the 90,000/500 batch arithmetic. The 90,000-row behavior is represented by the batch arithmetic test; no full 90,000-row Room fixture is materialized in the checked-in tests. Production code processes records in 500-row transactions with a persisted cursor.
