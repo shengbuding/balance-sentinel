@@ -48,3 +48,45 @@ Result: passed with no whitespace errors.
 - Account credentials are persisted in the legacy credential store while settings are published in Room, so cross-store atomicity is compensating rollback rather than one physical transaction. Rollback failures are retained as suppressed exceptions.
 - Historical unbounded reads outside configuration import and repository-wide legacy tests are outside Task 8 scope and remain for their designated later tasks.
 - Existing Room child-FK index and unrelated compiler/deprecation warnings are unchanged.
+
+## Fix Round 1 Evidence
+
+Reviewer findings addressed:
+
+- Boundary rejection now has an executable import-pipeline test. Each oversized account-count, ordinary-string, script-string, and JSON-depth input is passed through `ConfigManager.importFromUri`; the test conditionally enters the real planner/apply path for accepted inputs and asserts unchanged accounts, API credentials, Room settings, and local revision after every rejected input. Exact JSON depth 30 and depth +1 are covered alongside the existing account/string/script boundaries.
+- Room-backed stale checking now reads the repository's current settings snapshot and canonicalizes it through `ConfigManager.toConfigSettings` before computing the current fingerprint. A real Room test mutates `app_settings` directly without advancing metadata revision; the import is still rejected as `StalePlan` and credentials remain unchanged. Failure-injection repository doubles now delegate `currentRevision`, so their existing rollback tests exercise publication failures instead of being rejected by the stale gate.
+
+Valid RED command for the new behavior tests:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.ConfigImportParserTest.oversized imports leave credentials settings revision and accounts unchanged" --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.Room import rejects a settings change even when metadata revision is unchanged" --no-parallel
+```
+
+Result before the production fix: 2 tests completed, the parser pipeline test passed, and the Room stale-plan test failed at the expected assertion because `applyAsync` did not yet read current settings.
+
+Amended Task 8 focused command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.ConfigImportParserTest" --tests "com.balancesentinel.app.data.repository.BackupImportPlannerTest" --tests "com.balancesentinel.app.data.repository.ImportCoordinatorTest" --tests "com.balancesentinel.app.ui.viewmodel.DataManagementViewModelTest" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 52 tests completed, 0 failures, 0 errors, 0 skipped. Suite counts are Parser 4, Planner 16, Coordinator 3, and ViewModel 29.
+
+Additional real Room regression command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.SettingsRepositoryTest.Room import rejects a settings change even when metadata revision is unchanged" --rerun-tasks --no-parallel
+```
+
+Result: `BUILD SUCCESSFUL`; 1 test completed, 0 failures, 0 errors, 0 skipped.
+
+Production compile and whitespace verification:
+
+```powershell
+.\gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel
+git diff --check 2037095..HEAD
+```
+
+Results: compile `BUILD SUCCESSFUL` with 17 actionable tasks; whitespace check passed. The existing Room FK index and Kotlin/deprecation warnings are unchanged.
+
+The full `SettingsRepositoryTest` class remains outside the Task 8 focused command because its pre-existing global `SettingsRepositoryProvider` observer can outlive Robolectric sandboxes; the targeted real Room regression is isolated and green.

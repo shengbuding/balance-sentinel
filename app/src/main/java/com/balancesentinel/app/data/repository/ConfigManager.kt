@@ -111,8 +111,13 @@ object ConfigManager {
                 authorizedScriptOrigins = emptySet()
             )
         }
+        val settings = toConfigSettings(snapshot)
+        return encodeConfig(context, accounts, settings, includeTokens)
+    }
+
+    internal fun toConfigSettings(snapshot: SettingsSnapshot): ConfigSettings {
         val app = snapshot.appSettings
-        val settings = ConfigSettings(
+        return ConfigSettings(
             refreshIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
             alertEnabled = app.alertEnabled,
             alertThreshold = app.alertThreshold.toFloat(),
@@ -136,7 +141,6 @@ object ConfigManager {
             backgroundRefreshInterval = app.backgroundRefreshIntervalSeconds,
             foregroundMonitoringInterval = app.foregroundMonitoringIntervalSeconds
         )
-        return encodeConfig(context, accounts, settings, includeTokens)
     }
 
     private fun encodeConfig(

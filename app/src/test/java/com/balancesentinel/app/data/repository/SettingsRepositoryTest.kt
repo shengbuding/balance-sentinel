@@ -12,6 +12,7 @@ import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.local.testAccount
+import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -171,6 +173,70 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `Room import rejects a settings change even when metadata revision is unchanged`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val accountStorage = context.getSharedPreferences(
+            "settings-stale-plan-${System.nanoTime()}",
+            Context.MODE_PRIVATE
+        )
+        val accountManager = ApiKeyManager(context, accountStorage)
+        val local = AccountInfo(
+            id = accountManager.computeId("sk-room-stale-old"),
+            label = "Local",
+            apiKey = "sk-room-stale-old"
+        )
+        accountManager.replaceAll(listOf(local))
+        database.accountDao().insertCreate(testAccount(local.id))
+        val settings = ConfigSettings(
+            refreshIntervalSeconds = 30,
+            alertEnabled = false,
+            alertThreshold = 1f,
+            changeAlertEnabled = false,
+            changeAlertThreshold = 0f,
+            changeAlertPeriodMinutes = 60,
+            logMaxEntries = 100,
+            backgroundRefreshInterval = 900,
+            foregroundMonitoringInterval = 30
+        )
+        repository.applyConfigSettings(settings)
+        val planner = BackupImportPlanner(accountManager, WidgetPrefs(context), repository)
+        val plan = planner.plan(
+            AppConfig(
+                exportedAt = "now",
+                appVersion = "test",
+                credentialsIncluded = true,
+                accounts = listOf(local),
+                settings = settings
+            ),
+            accountManager.getAccounts(),
+            ImportMode.MERGE
+        )
+        val baselineRevision = repository.currentRevision()
+        val current = requireNotNull(database.appSettingsDao().get())
+        database.appSettingsDao().upsert(
+            backgroundRefreshIntervalSeconds = current.backgroundRefreshIntervalSeconds,
+            foregroundMonitoringIntervalSeconds = current.foregroundMonitoringIntervalSeconds,
+            alertEnabled = true,
+            alertThreshold = current.alertThreshold,
+            changeAlertEnabled = current.changeAlertEnabled,
+            changeAlertThreshold = current.changeAlertThreshold,
+            changeAlertPeriodMinutes = current.changeAlertPeriodMinutes,
+            logMaxEntries = current.logMaxEntries,
+            snoozeDurationMinutes = current.snoozeDurationMinutes,
+            showTotalBalanceInNotification = current.showTotalBalanceInNotification,
+            updatedAt = current.updatedAt + 1
+        )
+
+        assertEquals(baselineRevision, repository.currentRevision())
+        val failure = runCatching {
+            planner.applyAsync(plan, confirmedFullReplace = false)
+        }.exceptionOrNull()
+        assertTrue(failure is StalePlanException)
+        assertEquals(listOf(local), accountManager.getAccounts())
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
     fun `failed URI import restores account and Room settings preimages`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val accountStorage = context.getSharedPreferences(
@@ -314,6 +380,7 @@ class SettingsRepositoryTest {
         override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) =
             delegate.publishSnapshot(snapshot, publishedAt)
         override suspend fun hasPersistedSnapshot(): Boolean = delegate.hasPersistedSnapshot()
+        override suspend fun currentRevision(): Long = delegate.currentRevision()
         override suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot =
             delegate.updateSnapshot(transform)
         override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {
@@ -339,6 +406,7 @@ class SettingsRepositoryTest {
         override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) =
             delegate.publishSnapshot(snapshot, publishedAt)
         override suspend fun hasPersistedSnapshot(): Boolean = delegate.hasPersistedSnapshot()
+        override suspend fun currentRevision(): Long = delegate.currentRevision()
         override suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot =
             delegate.updateSnapshot(transform)
         override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {

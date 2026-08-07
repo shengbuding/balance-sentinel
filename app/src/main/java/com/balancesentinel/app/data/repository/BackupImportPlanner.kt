@@ -286,8 +286,9 @@ class BackupImportPlanner(
         }
         val previousAccounts = apiKeyManager.getAccounts()
         val currentRevision = repository.currentRevision()
+        val currentSettings = ConfigManager.toConfigSettings(repository.readSnapshot())
         if (currentRevision != plan.baselineRevision ||
-            ImportFingerprint.sha256(previousAccounts, plan.settings, currentRevision) != plan.fingerprint
+            ImportFingerprint.sha256(previousAccounts, currentSettings, currentRevision) != plan.fingerprint
         ) {
             throw StalePlanException()
         }
