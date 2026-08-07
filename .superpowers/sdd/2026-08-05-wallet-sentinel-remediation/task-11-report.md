@@ -53,3 +53,9 @@ git diff --check
 All focused tests and compilation passed; `git diff --check` passed. Commit: `97bbb9d`.
 
 Residual audit: DataExporter, DataManagementViewModel, StaticWidgetProvider and some legacy repository adapters still require a broader Room read/write migration; their call sites remain listed by the full `rg` audit and are not silently classified as complete.
+
+## Fix Round 1 finalization
+
+Removed the `RefreshResultCommitter` legacy writer constructor/branch entirely; its production path now has only the Room atomic persistence boundary. Restored provider-cache clearing after account deletion and chunked cleanup deletion. Task 12 consumer paths (DataExporter, DataManagementViewModel and related UI/export consumers) remain explicitly deferred.
+
+Final focused command passed with `BUILD SUCCESSFUL`; `:app:compileDebugKotlin --rerun-tasks --no-parallel` passed; `git diff --check` passed.

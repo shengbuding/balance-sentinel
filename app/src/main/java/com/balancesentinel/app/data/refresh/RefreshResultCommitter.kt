@@ -13,7 +13,6 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.AlertChecker
 import com.balancesentinel.app.data.repository.DataMutationCoordinator
-import com.balancesentinel.app.data.repository.StoreWriteResult
 import com.balancesentinel.app.data.repository.RoomRefreshPersistence
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.widget.AccountBalance
@@ -40,7 +39,6 @@ class RefreshResultCommitter(
     private val alertDispatcher: RefreshAlertDispatcher = AndroidRefreshAlertDispatcher(context),
     private val widgetRedrawNotifier: WidgetRedrawNotifier = AndroidWidgetRedrawNotifier(context),
     private val wallClock: () -> Long = System::currentTimeMillis,
-    private val rawRecordWriter: ((Context, List<RawRecord>) -> StoreWriteResult)? = null,
     private val roomPersistence: RoomRefreshPersistence =
         RoomRefreshPersistence(WalletDatabaseProvider.get(context)),
     private val afterPersistenceWrite: () -> Unit = {}
@@ -85,19 +83,8 @@ class RefreshResultCommitter(
                     entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)
                 }
                 val usage = UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
-                if (rawRecordWriter != null) {
-                    when (val rawWrite = rawRecordWriter.invoke(context, rawBatch)) {
-                        is StoreWriteResult.Failed -> return@withMutation persistenceFailure(request.accountId)
-                        is StoreWriteResult.Written -> if (rawWrite.itemCount != rawBatch.size) return@withMutation persistenceFailure(request.accountId)
-                    }
-                    kotlinx.coroutines.runBlocking {
-                        com.balancesentinel.app.data.repository.LegacyEventLogRepository(context).append(logs)
-                        com.balancesentinel.app.data.repository.LegacyUsageRepository(context).upsert(usage, "refresh:${fetched.completedAt}")
-                    }
-                } else {
-                    kotlinx.coroutines.runBlocking {
-                        roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}", account.id)
-                    }
+                kotlinx.coroutines.runBlocking {
+                    roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}", account.id)
                 }
 
                 // Cache/widget state is published only after the durable Room transaction succeeds.
