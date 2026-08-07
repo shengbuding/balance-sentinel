@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import kotlinx.coroutines.runBlocking
 
 class AccountLifecycleManager(
     private val context: Context,
@@ -34,32 +35,16 @@ class AccountLifecycleManager(
             mutationInvalidator = { gateway?.invalidate(it) }
         )
 
-    fun save(existingId: String?, draft: AccountDraft): AccountSaveResult =
-        DataMutationCoordinator.withMutation {
-            apiKeyManager.saveAccountLegacy(existingId, draft) { result ->
-                if (result is AccountSaveResult.Replaced) {
-                    gateway?.invalidate(result.before.id)
-                    val migration = mapOf(result.before.id to result.account.id)
-                    RawRecordStore.migrateAccountIds(context, migration)
-                    DailySummaryStore.migrateAccountIds(context, migration)
-                    UsageDataStore.migrateAccountIds(context, migration)
-                    BalanceWidgetDataStore.removeAccountBalance(context, result.before.id)
-                    ProviderCache(context).clear(result.before.providerType, result.before.id)
-                }
-            }
-        }
+    fun save(existingId: String?, draft: AccountDraft): AccountSaveResult = runBlocking {
+        val result = mutationCoordinator().save(existingId, draft)
+        require(result is AccountMutationResult.Saved)
+        result.result
+    }
 
-    fun delete(accountId: String) {
-        DataMutationCoordinator.withMutation {
-            apiKeyManager.removeAccount(accountId) { account ->
-                gateway?.invalidate(accountId)
-                RawRecordStore.removeByAccountId(context, accountId)
-                DailySummaryStore.removeByAccountId(context, accountId)
-                UsageDataStore.removeByAccountId(context, accountId)
-                BalanceWidgetDataStore.removeAccountBalance(context, accountId)
-                ProviderCache(context).clear(account.providerType, accountId)
-                ApiDebugStore.clearEntries(accountId)
-            }
-        }
+    fun delete(accountId: String) = runBlocking {
+        val result = mutationCoordinator().delete(accountId)
+        require(result is AccountMutationResult.Deleted)
+        BalanceWidgetDataStore.removeAccountBalance(context, accountId)
+        ApiDebugStore.clearEntries(accountId)
     }
 }

@@ -13,10 +13,9 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.AlertChecker
 import com.balancesentinel.app.data.repository.DataMutationCoordinator
-import com.balancesentinel.app.data.repository.RawRecordStore
-import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.StoreWriteResult
-import com.balancesentinel.app.data.repository.UsageDataStore
+import com.balancesentinel.app.data.repository.RoomRefreshPersistence
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.widget.AccountBalance
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
@@ -41,8 +40,9 @@ class RefreshResultCommitter(
     private val alertDispatcher: RefreshAlertDispatcher = AndroidRefreshAlertDispatcher(context),
     private val widgetRedrawNotifier: WidgetRedrawNotifier = AndroidWidgetRedrawNotifier(context),
     private val wallClock: () -> Long = System::currentTimeMillis,
-    private val rawRecordWriter: (Context, List<RawRecord>) -> StoreWriteResult =
-        RawRecordStore::addRecords,
+    private val rawRecordWriter: ((Context, List<RawRecord>) -> StoreWriteResult)? = null,
+    private val roomPersistence: RoomRefreshPersistence =
+        RoomRefreshPersistence(WalletDatabaseProvider.get(context)),
     private val afterPersistenceWrite: () -> Unit = {}
 ) : RefreshCommitter {
 
@@ -66,12 +66,6 @@ class RefreshResultCommitter(
         }
 
         try {
-            val providerBefore = providerCache.snapshot(account.providerType, account.id)
-            val widgetBefore = BalanceWidgetDataStore.snapshotAccountBalances(context, account.id)
-            val recordsBefore = RawRecordStore.snapshotRecords(context)
-            val logsBefore = RefreshLogStore.snapshotEntries(context)
-            val usageBefore = UsageDataStore.snapshotAll(context)
-
             val currentAccount = accountStore.getAccount(request.accountId)
             if (
                 !isLatest() ||
@@ -82,12 +76,32 @@ class RefreshResultCommitter(
                 return@withMutation stale(request.accountId)
             }
 
-            var attemptedStage = 0
             try {
-                attemptedStage = 1
-                providerCache.put(account.providerType, account.id, fetched.balance)
+                val rawTimestamp = wallClock()
+                val rawBatch = fetched.balance.balances.map { entry ->
+                    entry.toRawRecord(account.id, rawTimestamp)
+                }
+                val logs = fetched.balance.balances.map { entry ->
+                    entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)
+                }
+                val usage = UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
+                if (rawRecordWriter != null) {
+                    when (val rawWrite = rawRecordWriter.invoke(context, rawBatch)) {
+                        is StoreWriteResult.Failed -> return@withMutation persistenceFailure(request.accountId)
+                        is StoreWriteResult.Written -> if (rawWrite.itemCount != rawBatch.size) return@withMutation persistenceFailure(request.accountId)
+                    }
+                    kotlinx.coroutines.runBlocking {
+                        com.balancesentinel.app.data.repository.LegacyEventLogRepository(context).append(logs)
+                        com.balancesentinel.app.data.repository.LegacyUsageRepository(context).upsert(usage, "refresh:${fetched.completedAt}")
+                    }
+                } else {
+                    kotlinx.coroutines.runBlocking {
+                        roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}")
+                    }
+                }
 
-                attemptedStage = 2
+                // Cache/widget state is published only after the durable Room transaction succeeds.
+                providerCache.put(account.providerType, account.id, fetched.balance)
                 BalanceWidgetDataStore.replaceAccountBalances(
                     context,
                     account.id,
@@ -96,52 +110,8 @@ class RefreshResultCommitter(
                     }
                 )
 
-                attemptedStage = 3
-                val rawTimestamp = wallClock()
-                val rawBatch = fetched.balance.balances.map { entry ->
-                    entry.toRawRecord(account.id, rawTimestamp)
-                }
-                val rawWrite = rawRecordWriter(context, rawBatch)
-                if (
-                    rawWrite is StoreWriteResult.Failed ||
-                    rawWrite is StoreWriteResult.Written && rawWrite.itemCount != rawBatch.size
-                ) {
-                    rollback(
-                        attemptedStage = attemptedStage,
-                        account = account,
-                        providerBefore = providerBefore,
-                        widgetBefore = widgetBefore,
-                        recordsBefore = recordsBefore,
-                        logsBefore = logsBefore,
-                        usageBefore = usageBefore
-                    )
-                    return@withMutation persistenceFailure(request.accountId)
-                }
-
-                attemptedStage = 4
-                RefreshLogStore.addEntriesStrict(
-                    context,
-                    fetched.balance.balances.map { entry ->
-                        entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)
-                    }
-                )
-
-                attemptedStage = 5
-                UsageDataStore.saveSnapshot(
-                    context,
-                    UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
-                )
                 afterPersistenceWrite()
             } catch (_: Exception) {
-                rollback(
-                    attemptedStage = attemptedStage,
-                    account = account,
-                    providerBefore = providerBefore,
-                    widgetBefore = widgetBefore,
-                    recordsBefore = recordsBefore,
-                    logsBefore = logsBefore,
-                    usageBefore = usageBefore
-                )
                 return@withMutation persistenceFailure(request.accountId)
             }
 
@@ -153,28 +123,6 @@ class RefreshResultCommitter(
         } catch (_: Exception) {
             persistenceFailure(request.accountId)
         }
-        }
-    }
-
-    private fun rollback(
-        attemptedStage: Int,
-        account: AccountInfo,
-        providerBefore: ProviderCache.CachedBalance?,
-        widgetBefore: List<AccountBalance>,
-        recordsBefore: List<RawRecord>,
-        logsBefore: List<RefreshLogEntry>,
-        usageBefore: List<UsageSnapshot>
-    ) {
-        if (attemptedStage >= 5) runCatching { UsageDataStore.restoreAll(context, usageBefore) }
-        if (attemptedStage >= 4) runCatching { RefreshLogStore.restoreEntries(context, logsBefore) }
-        if (attemptedStage >= 3) runCatching { RawRecordStore.restoreRecords(context, recordsBefore) }
-        if (attemptedStage >= 2) {
-            runCatching {
-                BalanceWidgetDataStore.replaceAccountBalances(context, account.id, widgetBefore)
-            }
-        }
-        if (attemptedStage >= 1) {
-            runCatching { providerCache.restore(account.providerType, account.id, providerBefore) }
         }
     }
 

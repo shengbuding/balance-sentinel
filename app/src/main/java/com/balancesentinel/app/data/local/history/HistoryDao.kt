@@ -303,6 +303,9 @@ interface HistoryDao {
     @Query("DELETE FROM balance_records WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive")
     suspend fun deleteRawForDate(fromInclusive: Long, toExclusive: Long): Int
 
+    @Query("DELETE FROM balance_records WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>): Int
+
     @Query(
         """
         SELECT * FROM daily_summaries
