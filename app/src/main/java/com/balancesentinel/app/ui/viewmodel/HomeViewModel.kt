@@ -34,7 +34,7 @@ import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
 import com.balancesentinel.app.data.repository.MidnightScheduler
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RefreshStats
 import com.balancesentinel.app.data.repository.RefreshStatsStore
@@ -849,7 +849,7 @@ class HomeViewModel @JvmOverloads constructor(
             if (RefreshScheduler.isServiceDead(app)) {
                 val restartCount = RefreshScheduler.getRestartCount(app)
                 val now = System.currentTimeMillis()
-                RefreshLogStore.addEntry(app, RefreshLogEntry(
+                appendRoomEvent(app, RefreshLogEntry(
                     id = now, type = RefreshLogType.SERVICE_DIED, timestamp = now,
                     message = "前台刷新服务已停止（无法自动刷新）",
                     missReason = if (restartCount > 0) {
@@ -862,7 +862,7 @@ class HomeViewModel @JvmOverloads constructor(
 
             val missed = RefreshScheduler.checkMissedRefresh(app)
             if (missed.isNotEmpty()) {
-                missed.forEach { RefreshLogStore.addEntry(app, it) }
+                missed.forEach { appendRoomEvent(app, it) }
             }
         } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }
