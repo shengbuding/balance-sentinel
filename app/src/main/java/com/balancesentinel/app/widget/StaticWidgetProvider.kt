@@ -34,10 +34,27 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object WidgetBalanceVisibility {
     fun filter(state: AccountLoadState, balances: List<AccountBalance>): List<AccountBalance> =
-        balances.filter { it.accountId.isNotBlank() }
+        when (state) {
+            is AccountLoadState.Ready -> {
+                val validIds = state.accounts.map { it.id }.toSet()
+                balances.filter { it.accountId in validIds }
+            }
+            AccountLoadState.Loading, is AccountLoadState.Corrupt -> emptyList()
+        }
 }
 
 sealed interface WidgetRefreshDecision {
@@ -134,15 +151,10 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
         wakeLock?.setReferenceCounted(false)
         try { wakeLock?.acquire(30_000L) } catch (_: Exception) {}
 
-        Thread {
-            WidgetRefreshDispatcher(
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        WidgetRefreshCoroutineDispatcher(scope).dispatch(
                 action = {
-                    kotlinx.coroutines.runBlocking {
-                        WidgetRefreshExecution(
-                            RefreshRuntime.from(context),
-                            serviceStarter
-                        ).execute(context, decision)
-                    }
+                    WidgetRefreshExecution(RefreshRuntime.from(context), serviceStarter).execute(context, decision)
                     provider.setRefreshProgress(context, manager, allIds, visible = false)
                     provider.onUpdate(context, manager, widgetIds)
                 },
@@ -150,9 +162,9 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
                     pendingResult.finish()
                     processingRefresh.set(false)
                     try { if (wakeLock?.isHeld == true) wakeLock.release() } catch (_: Exception) {}
+                    scope.cancel()
                 }
-            ).dispatch()
-        }.start()
+            )
     }
 
     private companion object {
@@ -167,18 +179,37 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        for (id in appWidgetIds) {
-            val options = appWidgetManager.getAppWidgetOptions(id)
-            updateWidget(context, appWidgetManager, id, options)
-        }
         scheduleRefresh(context)
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val state = loadAccountState(context)
+                withContext(Dispatchers.Main) {
+                    appWidgetIds.forEach { id ->
+                        updateWidget(context, appWidgetManager, id, appWidgetManager.getAppWidgetOptions(id), state)
+                    }
+                }
+            } finally {
+                pending.finish()
+            }
+        }
     }
 
     override fun onAppWidgetOptionsChanged(
         context: Context, appWidgetManager: AppWidgetManager,
         appWidgetId: Int, newOptions: Bundle
     ) {
-        updateWidget(context, appWidgetManager, appWidgetId, newOptions)
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val state = loadAccountState(context)
+                withContext(Dispatchers.Main) {
+                    updateWidget(context, appWidgetManager, appWidgetId, newOptions, state)
+                }
+            } finally {
+                pending.finish()
+            }
+        }
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -188,11 +219,26 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    private suspend fun loadAccountState(context: Context): AccountLoadState = runCatching {
+        val repository = RoomAccountRepository(WalletDatabaseProvider.get(context))
+        RoomAccountUiRepository(repository, EncryptedPreferencesCredentialStore(context))
+            .observe().first { it !is AccountLoadState.Loading }
+    }.getOrElse {
+        AccountLoadState.Corrupt(
+            com.balancesentinel.app.data.credentials.DataCorruptionException(
+                "Account state unavailable", it
+            )
+        )
+    }
+
     // ── Widget 渲染（汇总显示） ──
 
     private fun updateWidget(
         context: Context, manager: AppWidgetManager, widgetId: Int,
-        options: Bundle = manager.getAppWidgetOptions(widgetId)
+        options: Bundle = manager.getAppWidgetOptions(widgetId),
+        accountState: AccountLoadState = AccountLoadState.Corrupt(
+            com.balancesentinel.app.data.credentials.DataCorruptionException("Account state unavailable")
+        )
     ) {
         val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 260)
         val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 100)
@@ -212,12 +258,11 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         val config = WidgetConfigStore.getConfig(context, widgetId)
         val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
             // 总余额模式：仅聚合当前有效账户
-            val validBalances = BalanceWidgetDataStore.getAllBalances(context)
-                .filter { it.accountId.isNotBlank() }
+            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         } else if (config != null) {
             // 仅显示选定账户+币种
-            val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+            val accountBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
             val matching = accountBalances.filter {
                 it.accountId == config.accountId && it.currency == config.currency
             }
@@ -235,8 +280,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             } else null
         } else {
             // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
-            val validBalances = BalanceWidgetDataStore.getAllBalances(context)
-                .filter { it.accountId.isNotBlank() }
+            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getAllBalances(context))
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         }
 

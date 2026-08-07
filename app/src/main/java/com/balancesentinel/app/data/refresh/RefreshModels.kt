@@ -84,6 +84,7 @@ interface RefreshGateway {
     suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult
     suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult>
     fun invalidate(accountId: String)
+    suspend fun readAccountSnapshot(): AccountStoreRead = AccountStoreRead.Missing
 }
 
 interface RefreshAccountStore {

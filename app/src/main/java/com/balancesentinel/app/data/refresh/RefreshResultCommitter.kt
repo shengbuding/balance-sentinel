@@ -50,7 +50,8 @@ class RefreshResultCommitter(
         request: RefreshRequest,
         fetched: BalanceFetchResult.Success,
         isLatest: () -> Boolean
-    ): AccountRefreshResult = DataMutationCoordinator.withMutation {
+    ): AccountRefreshResult = RefreshMutationBarrier.withRefreshCommit {
+        DataMutationCoordinator.withMutation {
         if (!isLatest()) return@withMutation stale(request.accountId)
         val account = accountStore.getAccount(request.accountId)
         if (
@@ -151,6 +152,7 @@ class RefreshResultCommitter(
             AccountRefreshResult.Committed(request.accountId, fetched.balance)
         } catch (_: Exception) {
             persistenceFailure(request.accountId)
+        }
         }
     }
 

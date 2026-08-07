@@ -25,6 +25,7 @@ class RefreshCoordinator(
         trigger: RefreshTrigger
     ): AccountRefreshResult {
         val token = nextToken(accountId)
+        RefreshMutationBarrier.register(accountId) { invalidate(accountId) }
         val account = when (val read = accountStore.readAccount(accountId)) {
             is AccountStoreRead.Ready -> read.accounts.firstOrNull()
                 ?: return AccountRefreshResult.Skipped(accountId, "Account not found")
@@ -51,21 +52,22 @@ class RefreshCoordinator(
         }
 
         val current = accountStore.readAccount(accountId)
-        return synchronized(lockFor(accountId)) {
-            if (!isLatest(accountId, token)) {
-                return@synchronized stale(accountId)
-            }
-            if (current !is AccountStoreRead.Ready || current.accounts.firstOrNull()?.revision != request.revision) {
-                return@synchronized stale(accountId)
-            }
-            when (fetched) {
-                is BalanceFetchResult.Success -> committer.commit(request, fetched) {
-                    isLatest(accountId, token)
+        return RefreshMutationBarrier.withRefreshCommit {
+            synchronized(lockFor(accountId)) {
+                if (!isLatest(accountId, token)) {
+                    return@synchronized stale(accountId)
                 }
-                is BalanceFetchResult.Failure -> AccountRefreshResult.Failed(
-                    accountId,
-                    fetched.failure
-                )
+                if (current !is AccountStoreRead.Ready || current.accounts.firstOrNull()?.revision != request.revision) {
+                    return@synchronized stale(accountId)
+                }
+                when (fetched) {
+                    is BalanceFetchResult.Success ->
+                    committer.commit(request, fetched) { isLatest(accountId, token) }
+                    is BalanceFetchResult.Failure -> AccountRefreshResult.Failed(
+                        accountId,
+                        fetched.failure
+                    )
+                }
             }
         }
     }
@@ -87,6 +89,8 @@ class RefreshCoordinator(
             generations.computeIfAbsent(accountId) { AtomicLong(0) }.incrementAndGet()
         }
     }
+
+    override suspend fun readAccountSnapshot(): AccountStoreRead = accountStore.readAccounts()
 
     private fun nextToken(accountId: String): Long = synchronized(lockFor(accountId)) {
         generations.computeIfAbsent(accountId) { AtomicLong(0) }.incrementAndGet()

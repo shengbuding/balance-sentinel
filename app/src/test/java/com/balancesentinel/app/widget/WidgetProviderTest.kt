@@ -8,6 +8,8 @@ import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.repository.AccountLoadState
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -18,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class WidgetProviderTest {
 
     private lateinit var context: Context
@@ -95,6 +98,23 @@ class WidgetProviderTest {
             action = { error("refresh failed") },
             finish = { finished = true }
         )
+        runCurrent()
+
+        assertTrue(finished)
+    }
+
+    @Test
+    fun `suspending widget dispatch finishes when scope is cancelled`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var finished = false
+        val childScope = kotlinx.coroutines.CoroutineScope(coroutineContext + kotlinx.coroutines.SupervisorJob())
+
+        WidgetRefreshCoroutineDispatcher(childScope).dispatch(
+            action = { release.await() },
+            finish = { finished = true }
+        )
+        runCurrent()
+        childScope.cancel()
         runCurrent()
 
         assertTrue(finished)

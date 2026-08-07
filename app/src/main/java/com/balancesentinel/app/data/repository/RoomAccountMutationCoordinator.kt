@@ -23,6 +23,7 @@ import com.balancesentinel.app.data.local.publication.SnoozesWrite
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountSaveResult
+import com.balancesentinel.app.data.refresh.RefreshMutationBarrier
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
@@ -63,14 +64,16 @@ class RoomAccountMutationCoordinator(
     private val database: WalletDatabase,
     private val credentialStore: CredentialStore,
     private val cleanup: AccountMutationCleanup = AccountMutationCleanup.NO_OP,
-    private val now: () -> Long = { System.currentTimeMillis() }
+    private val now: () -> Long = { System.currentTimeMillis() },
+    private val mutationInvalidator: (String) -> Unit = {}
 ) : AccountMutationCoordinator, AccountMutationRecovery {
     private val json = Json { encodeDefaults = true; explicitNulls = true }
 
     override suspend fun save(
         existingId: String?,
         draft: AccountDraft
-    ): AccountMutationResult = GLOBAL_MUTATION_LOCK.withLock {
+    ): AccountMutationResult = RefreshMutationBarrier.withAccountMutation(existingId, mutationInvalidator) {
+        GLOBAL_MUTATION_LOCK.withLock {
         withContext(Dispatchers.IO) {
         val oldPayload = readPayloadOrEmpty(existingId == null)
         val existing = existingId?.let { id ->
@@ -130,9 +133,11 @@ class RoomAccountMutationCoordinator(
         }
             AccountMutationResult.Saved(result)
         }
+        }
     }
 
-    override suspend fun delete(accountId: String): AccountMutationResult = GLOBAL_MUTATION_LOCK.withLock {
+    override suspend fun delete(accountId: String): AccountMutationResult = RefreshMutationBarrier.withAccountMutation(accountId, mutationInvalidator) {
+        GLOBAL_MUTATION_LOCK.withLock {
         withContext(Dispatchers.IO) {
         val oldPayload = readPayload()
         val existing = database.accountDao().get(accountId)
@@ -158,6 +163,7 @@ class RoomAccountMutationCoordinator(
         }
         finishCleanup(operation)
             AccountMutationResult.Deleted(accountId)
+        }
         }
     }
 

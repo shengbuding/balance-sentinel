@@ -40,10 +40,14 @@ class BalanceRefreshRunner(
     private val committedBalanceReader: () -> List<AccountBalance>
 ) {
     suspend fun refreshBatch(): ServiceRefreshBatch {
+        val accountCount = when (val snapshot = accountSnapshotReader?.read()) {
+            is AccountStoreRead.Ready -> snapshot.accounts.size
+            AccountStoreRead.Missing, is AccountStoreRead.Corrupt, null -> 0
+        }
         refreshDeadline.markStarted()
         return try {
             gateway.refreshAll(RefreshTrigger.SERVICE)
-            ServiceRefreshBatch(0, committedBalanceReader())
+            ServiceRefreshBatch(accountCount, if (accountCount == 0) emptyList() else committedBalanceReader())
         } finally {
             refreshDeadline.clear()
         }

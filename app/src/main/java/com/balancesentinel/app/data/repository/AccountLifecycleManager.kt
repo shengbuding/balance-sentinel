@@ -32,7 +32,8 @@ class AccountLifecycleManager(
     internal fun mutationCoordinator(): AccountMutationCoordinator =
         injectedCoordinator ?: RoomAccountMutationCoordinator(
             WalletDatabaseProvider.get(context),
-            EncryptedPreferencesCredentialStore(context)
+            EncryptedPreferencesCredentialStore(context),
+            mutationInvalidator = { gateway?.invalidate(it) }
         )
 
     fun save(existingId: String?, draft: AccountDraft): AccountSaveResult =

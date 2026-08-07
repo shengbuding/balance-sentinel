@@ -175,18 +175,21 @@ class BalanceRefreshService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:refresh")
         wl.setReferenceCounted(false)
-        val wakeLockTimeout = 90_000L
-        try {
-            wl.acquire(wakeLockTimeout)
-        } catch (_: Exception) {}
-
         refreshScope.launch {
             try {
+                val accountReader = ServiceAccountSnapshotReader {
+                    refreshGateway.readAccountSnapshot()
+                }
+                val snapshot = accountReader.read()
+                val accountCount = (snapshot as? com.balancesentinel.app.data.refresh.AccountStoreRead.Ready)
+                    ?.accounts?.size ?: 0
+                val wakeLockTimeout = (accountCount * 10_000L + 30_000L).coerceAtLeast(30_000L)
+                try { wl.acquire(wakeLockTimeout) } catch (_: Exception) {}
                 val deadlineLifecycle = object : RefreshDeadlineLifecycle {
                     override fun markStarted() {
                         RefreshScheduler.markRefreshStarted(
                             this@BalanceRefreshService,
-                            0
+                            accountCount
                         )
                     }
 
@@ -197,7 +200,7 @@ class BalanceRefreshService : Service() {
                 val runner = BalanceRefreshRunner(refreshGateway, deadlineLifecycle) {
                     BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
                 }
-                val committedBalances = runner.refreshAndReadCommitted()
+                val committedBalances = runner.refreshBatch().committedBalances
                 val showTotal = widgetPrefs.showTotalBalanceInNotification
                 val notification = BalanceNotificationDeriver.derive(
                     committedBalances = committedBalances,
