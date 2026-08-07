@@ -56,6 +56,23 @@ object DataExporter {
         return json.encodeToString(data)
     }
 
+    suspend fun buildExport(context: Context, historyRepository: HistoryRepository): String {
+        val appVersion = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (_: Exception) { "1.0.0" }
+
+        val data = DataExport(
+            version = 1,
+            exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+            appVersion = appVersion,
+            dailySummaries = DailySummaryStore.getSummaries(context),
+            rawRecords = readAllHistory(historyRepository),
+            usageSnapshots = UsageDataStore.getAllSnapshots(context),
+            refreshLogs = RefreshLogStore.getEntries(context)
+        )
+        return json.encodeToString(data)
+    }
+
     /**
      * 通过 SAF URI 写入导出文件。
      */
@@ -246,4 +263,21 @@ object DataExporter {
         val accountId: String,
         val currency: String
     )
+
+    private suspend fun readAllHistory(repository: HistoryRepository): List<RawRecord> {
+        val records = mutableListOf<RawRecord>()
+        var cursor: HistoryCursor? = null
+        while (true) {
+            val page = repository.pageAll(
+                after = cursor,
+                limit = HistoryRepository.MAX_PAGE_SIZE
+            )
+            if (page.records.isEmpty()) break
+            records += page.records.map { it.value }
+            val next = page.nextCursor ?: break
+            if (next == cursor) break
+            cursor = next
+        }
+        return records
+    }
 }

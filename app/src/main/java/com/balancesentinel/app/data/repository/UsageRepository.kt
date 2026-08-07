@@ -4,6 +4,7 @@ import android.content.Context
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.usage.UsageDao
 import com.balancesentinel.app.data.local.usage.UsageRecordEntity
 import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
 import kotlinx.coroutines.Dispatchers
@@ -84,8 +85,10 @@ class LegacyUsageRepository(
 }
 
 class RoomUsageRepository(
-    private val database: WalletDatabase
+    private val usageDao: UsageDao
 ) : UsageRepository {
+    constructor(database: WalletDatabase) : this(database.usageDao())
+
     override suspend fun upsert(snapshot: UsageSnapshot, identityDiscriminator: String) {
         require(snapshot.accountId.isNotBlank()) { "accountId must not be blank" }
         val id = usageSnapshotId(snapshot, identityDiscriminator)
@@ -99,7 +102,7 @@ class RoomUsageRepository(
                 completionTokens = record.completion_tokens
             )
         }
-        database.usageDao().upsertSnapshotWithRecords(
+        usageDao.upsertSnapshotWithRecords(
             UsageSnapshotEntity(id, snapshot.accountId, snapshot.timestamp, identityDiscriminator),
             rows
         )
@@ -112,7 +115,7 @@ class RoomUsageRepository(
         after: UsageCursor?,
         limit: Int
     ): UsagePage {
-        val rows = database.usageDao().keysetPage(
+        val rows = usageDao.keysetPage(
             accountId,
             fromInclusive,
             toExclusive,
@@ -127,7 +130,7 @@ class RoomUsageRepository(
                     value = UsageSnapshot(
                         accountId = row.accountId,
                         timestamp = row.capturedAt,
-                        records = database.usageDao().getRecords(row.id).map { item ->
+                        records = usageDao.getRecords(row.id).map { item ->
                             UsageRecord(
                                 model_name = item.modelName,
                                 total_tokens = item.totalTokens,
@@ -143,7 +146,7 @@ class RoomUsageRepository(
     }
 
     override suspend fun count(accountId: String, fromInclusive: Long, toExclusive: Long): Long =
-        database.usageDao().countRange(accountId, fromInclusive, toExclusive)
+        usageDao.countRange(accountId, fromInclusive, toExclusive)
 }
 
 private fun usageSnapshotId(snapshot: UsageSnapshot, identityDiscriminator: String): String =

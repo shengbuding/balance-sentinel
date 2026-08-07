@@ -51,37 +51,57 @@ object CleanupScheduler {
         runCleanupInternal(context, now, zoneId)
     }
 
-    private fun runCleanupInternal(
+    suspend fun runCleanup(
         context: Context,
         now: Long,
-        zoneId: ZoneId
-    ): CleanupReport = DataMutationCoordinator.withMutation {
+        zoneId: ZoneId,
+        historyRepository: HistoryRepository
+    ): CleanupReport = withContext(Dispatchers.IO) {
+        runCleanupInternal(context, now, zoneId, historyRepository)
+    }
+
+    private suspend fun runCleanupInternal(
+        context: Context,
+        now: Long,
+        zoneId: ZoneId,
+        historyRepository: HistoryRepository? = null
+    ): CleanupReport {
+        val repositoryRecords = historyRepository?.let { readAllHistory(it) }
+        return DataMutationCoordinator.withMutation {
         val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
         val archivedDates = linkedSetOf<String>()
         val failures = mutableListOf<CleanupFailure>()
         var deletedRecordCount = 0
 
-        val sourceDates = try {
-            RawRecordStore.getDistinctDatesForCleanup(context, zoneId)
-        } catch (_: Exception) {
-            failures += failure(
-                date = today.toString(),
-                stage = CleanupStage.READ_SOURCE,
-                reason = "LIST_DATES: source read failed"
-            )
-            emptyList()
+        val sourceDates = if (repositoryRecords != null) {
+            repositoryRecords.map { dateOf(it.timestamp, zoneId) }.distinct()
+        } else {
+            try {
+                RawRecordStore.getDistinctDatesForCleanup(context, zoneId)
+            } catch (_: Exception) {
+                failures += failure(
+                    date = today.toString(),
+                    stage = CleanupStage.READ_SOURCE,
+                    reason = "LIST_DATES: source read failed"
+                )
+                emptyList()
+            }
         }
 
         sourceDates.filter { it != today.toString() }.sorted().forEach { date ->
-            val snapshot = try {
-                RawRecordStore.getRecordsForDateForCleanup(context, date, zoneId)
-            } catch (_: Exception) {
-                failures += failure(
-                    date = date,
-                    stage = CleanupStage.READ_SOURCE,
-                    reason = "READ_DATE: source read failed"
-                )
-                return@forEach
+            val snapshot = if (repositoryRecords != null) {
+                repositoryRecords.filter { dateOf(it.timestamp, zoneId) == date }
+            } else {
+                try {
+                    RawRecordStore.getRecordsForDateForCleanup(context, date, zoneId)
+                } catch (_: Exception) {
+                    failures += failure(
+                        date = date,
+                        stage = CleanupStage.READ_SOURCE,
+                        reason = "READ_DATE: source read failed"
+                    )
+                    return@forEach
+                }
             }
             if (snapshot.isEmpty()) return@forEach
 
@@ -140,15 +160,19 @@ object CleanupScheduler {
 
         fillContinuity(context, today, failures)
 
-        val retainedRecordCount = try {
-            RawRecordStore.getAllRecordsForCleanup(context).size
-        } catch (_: Exception) {
-            failures += failure(
-                date = today.toString(),
-                stage = CleanupStage.READ_SOURCE,
-                reason = "COUNT_RETAINED: source read failed"
-            )
-            0
+        val retainedRecordCount = if (repositoryRecords != null) {
+            repositoryRecords.size
+        } else {
+            try {
+                RawRecordStore.getAllRecordsForCleanup(context).size
+            } catch (_: Exception) {
+                failures += failure(
+                    date = today.toString(),
+                    stage = CleanupStage.READ_SOURCE,
+                    reason = "COUNT_RETAINED: source read failed"
+                )
+                0
+            }
         }
         CleanupReport(
             archivedDates = archivedDates,
@@ -156,7 +180,28 @@ object CleanupScheduler {
             retainedRecordCount = retainedRecordCount,
             failures = failures
         )
+        }
     }
+
+    private suspend fun readAllHistory(repository: HistoryRepository): List<com.balancesentinel.app.data.model.RawRecord> {
+        val records = mutableListOf<com.balancesentinel.app.data.model.RawRecord>()
+        var cursor: HistoryCursor? = null
+        while (true) {
+            val page = repository.pageAll(
+                after = cursor,
+                limit = HistoryRepository.MAX_PAGE_SIZE
+            )
+            if (page.records.isEmpty()) break
+            records += page.records.map { it.value }
+            val next = page.nextCursor ?: break
+            if (next == cursor) break
+            cursor = next
+        }
+        return records
+    }
+
+    private fun dateOf(timestamp: Long, zoneId: ZoneId): String =
+        Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().toString()
 
     private fun fillContinuity(
         context: Context,

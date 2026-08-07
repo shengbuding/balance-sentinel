@@ -11,9 +11,14 @@ import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -23,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class HistoryRepositoryTest {
     private lateinit var database: WalletDatabase
@@ -31,6 +37,7 @@ class HistoryRepositoryTest {
 
     @Before
     fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
         database = createWalletTestDatabase()
         runBlocking { database.accountDao().insertCreate(testAccount(accountId)) }
         runBlocking { database.accountDao().insertCreate(testAccount("other-account", displayOrder = 1)) }
@@ -40,6 +47,7 @@ class HistoryRepositoryTest {
     @After
     fun tearDown() {
         database.close()
+        Dispatchers.resetMain()
     }
 
     @Test
@@ -189,9 +197,9 @@ class HistoryRepositoryTest {
     private class RecordingHistoryRepository(
         private val records: List<HistoryRecord>
     ) : HistoryRepository {
-        var pageCalls: Int = 0
+        @Volatile var pageCalls: Int = 0
             private set
-        var pageAllCalls: Int = 0
+        @Volatile var pageAllCalls: Int = 0
             private set
 
         override suspend fun insert(

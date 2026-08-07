@@ -8,6 +8,10 @@ import androidx.room.Transaction
 
 @Dao
 interface UsageDao {
+    companion object {
+        const val RECORD_BATCH_SIZE = 500
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSnapshot(snapshot: UsageSnapshotEntity)
 
@@ -24,7 +28,9 @@ interface UsageDao {
     ) {
         upsertSnapshot(snapshot)
         deleteRecords(snapshot.id)
-        if (records.isNotEmpty()) upsertRecords(records)
+        records.chunked(RECORD_BATCH_SIZE).forEach { batch ->
+            upsertRecords(batch)
+        }
     }
 
     @Query(

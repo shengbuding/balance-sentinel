@@ -84,6 +84,27 @@ interface HistoryDao {
     @Query(
         """
         SELECT * FROM balance_records
+        WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive
+          AND (
+            :afterRecordedAt IS NULL
+            OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId)
+          )
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun keysetPageAll(
+        fromInclusive: Long,
+        toExclusive: Long,
+        afterRecordedAt: Long?,
+        afterId: Long?,
+        limit: Int
+    ): List<BalanceRecordEntity>
+
+    @Query(
+        """
+        SELECT * FROM balance_records
         WHERE account_id = :accountId AND currency = :currency
           AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive
         ORDER BY recorded_at DESC, id DESC

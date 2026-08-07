@@ -26,9 +26,13 @@ import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.RoomAccountRepository
 import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.HistoryRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +41,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.time.Instant
+import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /**
@@ -80,11 +86,20 @@ data class InsightsUiState(
  */
 class InsightsViewModel @JvmOverloads constructor(
     application: Application,
-    private val injectedAccountUiRepository: AccountUiRepository? = null
+    private val injectedAccountUiRepository: AccountUiRepository? = null,
+    private val injectedHistoryRepository: HistoryRepository? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(InsightsUiState())
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
+
+    private val workScope: CoroutineScope by lazy {
+        if (injectedHistoryRepository != null) {
+            CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        } else {
+            viewModelScope
+        }
+    }
 
     private val accountSource: AccountUiRepository = injectedAccountUiRepository
         ?: RoomAccountUiRepository(
@@ -100,7 +115,7 @@ class InsightsViewModel @JvmOverloads constructor(
 
     private fun observeAccounts() {
         accountCollectionJob?.cancel()
-        accountCollectionJob = viewModelScope.launch {
+        accountCollectionJob = workScope.launch {
             accountSource.observe()
                 .catch { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
@@ -152,7 +167,7 @@ class InsightsViewModel @JvmOverloads constructor(
             AccountLoadState.Loading -> return
         }
         loadDataJob?.cancel()
-        loadDataJob = viewModelScope.launch(Dispatchers.Default) {
+        loadDataJob = workScope.launch(Dispatchers.Default) {
             _uiState.update { current -> current.copy(
                 isLoading = true,
                 expandedDate = null
@@ -160,7 +175,8 @@ class InsightsViewModel @JvmOverloads constructor(
 
             try {
                 val summaries = DailySummaryStore.getSummaries(getApplication())
-                val allRaw = RawRecordStore.getAllRecords(getApplication())
+                val repositoryRecords = injectedHistoryRepository?.let { readAllHistory(it, accounts) }
+                val allRaw = repositoryRecords ?: RawRecordStore.getAllRecords(getApplication())
                 val currencies = (summaries.map { it.currency } + allRaw.map { it.currency }).distinct()
 
                 val currency = _uiState.value.selectedCurrency.let {
@@ -172,11 +188,15 @@ class InsightsViewModel @JvmOverloads constructor(
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-                val recentRaw = RawRecordStore.getRecordsSince(getApplication(), cutoff)
+                val recentRaw = repositoryRecords?.filter { it.timestamp >= cutoff }
+                    ?: RawRecordStore.getRecordsSince(getApplication(), cutoff)
                 val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
 
                 // ── Daily: 长期日历天视图 ──
-                val todayRaw = RawRecordStore.getTodayRecords(getApplication())
+                val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
+                val todayRaw = repositoryRecords?.filter {
+                    Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
+                } ?: RawRecordStore.getTodayRecords(getApplication())
                 val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
                 // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──
@@ -200,6 +220,40 @@ class InsightsViewModel @JvmOverloads constructor(
     // ═══════════════════════════════════════════════════════════
     // 计算辅助：单账户走引擎，null=全部账户走逐账户引擎+合并
     // ═══════════════════════════════════════════════════════════
+
+    private suspend fun readAllHistory(
+        repository: HistoryRepository,
+        accounts: List<AccountInfo>
+    ): List<RawRecord> {
+        val records = mutableListOf<RawRecord>()
+        val currencies = repository.distinctCurrencies()
+        for (account in accounts) {
+            for (currency in currencies) {
+                var cursor: com.balancesentinel.app.data.repository.HistoryCursor? = null
+                while (true) {
+                    val page = repository.page(
+                        accountId = account.id,
+                        currency = currency,
+                        fromInclusive = Long.MIN_VALUE,
+                        toExclusive = Long.MAX_VALUE,
+                        after = cursor,
+                        limit = HistoryRepository.MAX_PAGE_SIZE
+                    )
+                    if (page.records.isEmpty()) break
+                    records += page.records.map { it.value }
+                    val next = page.nextCursor ?: break
+                    if (next == cursor) break
+                    cursor = next
+                }
+            }
+        }
+        return records
+    }
+
+    override fun onCleared() {
+        if (injectedHistoryRepository != null) workScope.cancel()
+        super.onCleared()
+    }
 
     private fun computeIntraday(
         records: List<RawRecord>,

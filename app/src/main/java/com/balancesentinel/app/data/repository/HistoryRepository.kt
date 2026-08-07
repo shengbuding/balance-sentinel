@@ -26,6 +26,13 @@ interface HistoryRepository {
         limit: Int = MAX_PAGE_SIZE
     ): HistoryPage
 
+    suspend fun pageAll(
+        fromInclusive: Long = Long.MIN_VALUE,
+        toExclusive: Long = Long.MAX_VALUE,
+        after: HistoryCursor? = null,
+        limit: Int = MAX_PAGE_SIZE
+    ): HistoryPage
+
     suspend fun aggregate(
         accountId: String,
         currency: String,
@@ -85,6 +92,31 @@ class LegacyHistoryRepository(
                 it.currency.uppercase(Locale.ROOT) == canonicalCurrency &&
                     it.timestamp >= fromInclusive && it.timestamp < toExclusive
             }
+            .sortedByDescending { it.timestamp }
+        val identified = ordered.mapIndexed { index, record ->
+            HistoryRecord(id = (ordered.size - index).toLong(), value = record)
+        }
+        val selected = identified.asSequence()
+            .filter { row ->
+                after == null || row.value.timestamp < after.recordedAt ||
+                    (row.value.timestamp == after.recordedAt && row.id < after.id)
+            }
+            .take(limit.coerceAtMost(HistoryRepository.MAX_PAGE_SIZE))
+            .toList()
+        HistoryPage(
+            records = selected,
+            nextCursor = selected.lastOrNull()?.let { HistoryCursor(it.value.timestamp, it.id) }
+        )
+    }
+
+    override suspend fun pageAll(
+        fromInclusive: Long,
+        toExclusive: Long,
+        after: HistoryCursor?,
+        limit: Int
+    ): HistoryPage = withContext(Dispatchers.IO) {
+        val ordered = RawRecordStore.getAllRecords(appContext)
+            .filter { it.timestamp >= fromInclusive && it.timestamp < toExclusive }
             .sortedByDescending { it.timestamp }
         val identified = ordered.mapIndexed { index, record ->
             HistoryRecord(id = (ordered.size - index).toLong(), value = record)
@@ -200,6 +232,26 @@ class RoomHistoryRepository(
         val rows = database.historyDao().keysetPage(
             accountId = accountId,
             currency = requireIsoCurrency(currency),
+            fromInclusive = fromInclusive,
+            toExclusive = toExclusive,
+            afterRecordedAt = after?.recordedAt,
+            afterId = after?.id,
+            limit = limit.coerceIn(1, HistoryRepository.MAX_PAGE_SIZE)
+        )
+        return HistoryPage(
+            records = rows.map { it.toHistoryRecord() },
+            nextCursor = rows.lastOrNull()?.let { HistoryCursor(it.recordedAt, it.id) }
+        )
+    }
+
+    override suspend fun pageAll(
+        fromInclusive: Long,
+        toExclusive: Long,
+        after: HistoryCursor?,
+        limit: Int
+    ): HistoryPage {
+        require(toExclusive >= fromInclusive) { "invalid history range" }
+        val rows = database.historyDao().keysetPageAll(
             fromInclusive = fromInclusive,
             toExclusive = toExclusive,
             afterRecordedAt = after?.recordedAt,
