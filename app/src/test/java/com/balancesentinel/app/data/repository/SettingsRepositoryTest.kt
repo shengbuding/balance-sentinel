@@ -13,6 +13,7 @@ import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEn
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.data.local.testAccount
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -254,12 +255,15 @@ class SettingsRepositoryTest {
             runCatching { planner.applyAsync(plan, confirmedFullReplace = true) }.exceptionOrNull()
         }
         failingRepository.applied.await()
-        repository.updateSnapshot { current ->
-            current.copy(alertRuntimeStates = listOf(concurrentRuntime))
+        val concurrentUpdate = async(start = CoroutineStart.UNDISPATCHED) {
+            repository.updateSnapshot { current ->
+                current.copy(alertRuntimeStates = listOf(concurrentRuntime))
+            }
         }
         failingRepository.failImport.complete(Unit)
 
         assertEquals("injected publication failure", importFailure.await()?.message)
+        concurrentUpdate.await()
         val afterFailure = repository.readSnapshot()
         assertEquals(false, afterFailure.appSettings.alertEnabled)
         assertEquals(1.0, afterFailure.appSettings.alertThreshold, 0.0)
@@ -282,6 +286,13 @@ class SettingsRepositoryTest {
             delegate.applyConfigSettings(settings)
             error("injected publication failure")
         }
+        override suspend fun applyConfigImport(
+            settings: ConfigSettings,
+            persistAccounts: suspend () -> Unit
+        ): SettingsSnapshot = delegate.applyConfigImport(settings) {
+            persistAccounts()
+            error("injected publication failure")
+        }
     }
 
     private class PauseAfterApplyRepository(
@@ -298,6 +309,15 @@ class SettingsRepositoryTest {
             delegate.updateSnapshot(transform)
         override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot {
             delegate.applyConfigSettings(settings)
+            applied.complete(Unit)
+            failImport.await()
+            error("injected publication failure")
+        }
+        override suspend fun applyConfigImport(
+            settings: ConfigSettings,
+            persistAccounts: suspend () -> Unit
+        ): SettingsSnapshot = delegate.applyConfigImport(settings) {
+            persistAccounts()
             applied.complete(Unit)
             failImport.await()
             error("injected publication failure")

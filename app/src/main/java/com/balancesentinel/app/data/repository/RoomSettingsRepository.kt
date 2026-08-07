@@ -44,7 +44,9 @@ class RoomSettingsRepository(
     }
 
     override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) {
-        publishSnapshotLocked(snapshot, publishedAt)
+        writeMutex.withLock {
+            publishSnapshotLocked(snapshot, publishedAt)
+        }
     }
 
     private suspend fun publishSnapshotLocked(snapshot: SettingsSnapshot, publishedAt: Long) {
@@ -97,46 +99,65 @@ class RoomSettingsRepository(
     }
 
     override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot =
-        updateSnapshot { current ->
-            val legacyInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
-            val background = settings.backgroundRefreshInterval
-                ?: legacyInterval.coerceAtLeast(MIN_BACKGROUND_INTERVAL_SECONDS)
-            val foreground = settings.foregroundMonitoringInterval
-                ?: if (legacyInterval < MIN_BACKGROUND_INTERVAL_SECONDS) {
-                    legacyInterval
-                } else {
-                    DEFAULT_FOREGROUND_INTERVAL_SECONDS
-                }
-            current.copy(
-                appSettings = current.appSettings.copy(
-                    backgroundRefreshIntervalSeconds = background,
-                    foregroundMonitoringIntervalSeconds = foreground,
-                    alertEnabled = settings.alertEnabled,
-                    alertThreshold = settings.alertThreshold.toDouble(),
-                    changeAlertEnabled = settings.changeAlertEnabled,
-                    changeAlertThreshold = settings.changeAlertThreshold.toDouble(),
-                    changeAlertPeriodMinutes = settings.changeAlertPeriodMinutes,
-                    logMaxEntries = settings.logMaxEntries,
-                    snoozeDurationMinutes = settings.snoozeDurationMinutes,
-                    showTotalBalanceInNotification = settings.showTotalBalance
-                ),
-                accountAlertSettings = settings.perCurrencyAlertSettings.map {
-                    com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(
-                        it.accountId,
-                        it.currency,
-                        it.balanceAlertEnabled,
-                        it.changeAlertEnabled
-                    )
-                },
-                notificationSelections = settings.notificationSelectedWallets.mapIndexed { index, value ->
-                    com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity(
-                        value.accountId,
-                        value.currency,
-                        index
-                    )
-                }
-            )
+        updateSnapshot { current -> current.withConfigSettings(settings) }
+
+    override suspend fun applyConfigImport(
+        settings: ConfigSettings,
+        persistAccounts: suspend () -> Unit
+    ): SettingsSnapshot = writeMutex.withLock {
+        val previous = loadSnapshot()
+        try {
+            publishSnapshotLocked(previous.withConfigSettings(settings), System.currentTimeMillis())
+            persistAccounts()
+            loadSnapshot().also { state.value = SettingsSnapshotState.Ready(it) }
+        } catch (failure: Throwable) {
+            runCatching {
+                publishSnapshotLocked(previous, previous.appSettings.updatedAt)
+            }.onFailure { rollbackError -> failure.addSuppressed(rollbackError) }
+            throw failure
         }
+    }
+
+    private fun SettingsSnapshot.withConfigSettings(settings: ConfigSettings): SettingsSnapshot {
+        val legacyInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
+        val background = settings.backgroundRefreshInterval
+            ?: legacyInterval.coerceAtLeast(MIN_BACKGROUND_INTERVAL_SECONDS)
+        val foreground = settings.foregroundMonitoringInterval
+            ?: if (legacyInterval < MIN_BACKGROUND_INTERVAL_SECONDS) {
+                legacyInterval
+            } else {
+                DEFAULT_FOREGROUND_INTERVAL_SECONDS
+            }
+        return copy(
+            appSettings = appSettings.copy(
+                backgroundRefreshIntervalSeconds = background,
+                foregroundMonitoringIntervalSeconds = foreground,
+                alertEnabled = settings.alertEnabled,
+                alertThreshold = settings.alertThreshold.toDouble(),
+                changeAlertEnabled = settings.changeAlertEnabled,
+                changeAlertThreshold = settings.changeAlertThreshold.toDouble(),
+                changeAlertPeriodMinutes = settings.changeAlertPeriodMinutes,
+                logMaxEntries = settings.logMaxEntries,
+                snoozeDurationMinutes = settings.snoozeDurationMinutes,
+                showTotalBalanceInNotification = settings.showTotalBalance
+            ),
+            accountAlertSettings = settings.perCurrencyAlertSettings.map {
+                com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(
+                    it.accountId,
+                    it.currency,
+                    it.balanceAlertEnabled,
+                    it.changeAlertEnabled
+                )
+            },
+            notificationSelections = settings.notificationSelectedWallets.mapIndexed { index, value ->
+                com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity(
+                    value.accountId,
+                    value.currency,
+                    index
+                )
+            }
+        )
+    }
 
     private suspend fun loadSnapshot(): SettingsSnapshot = database.withTransaction {
         val app = database.appSettingsDao().get() ?: AppSettingsEntity(updatedAt = 0L)

@@ -15,6 +15,11 @@ interface SettingsRepository {
     suspend fun updateSnapshot(transform: (SettingsSnapshot) -> SettingsSnapshot): SettingsSnapshot
 
     suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot
+
+    suspend fun applyConfigImport(
+        settings: ConfigSettings,
+        persistAccounts: suspend () -> Unit
+    ): SettingsSnapshot = error("Atomic configuration import is not supported by this repository")
 }
 
 object SettingsRepositoryProvider {
