@@ -31,6 +31,10 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -140,29 +144,26 @@ object DataExporter {
         limits: HistoryJsonLimits = HistoryJsonLimits()
     ): Boolean {
         val staged = File.createTempFile("history-export-", ".json", context.cacheDir)
-        var backup: File? = null
-        var destinationExisted = false
         try {
-            staged.outputStream().buffered().use { output ->
-                HistoryJsonWriter(limits).write(
-                    output,
-                    HistoryExportHeader(
-                        version = 1,
-                        exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
-                        appVersion = appVersion(context)
-                    ),
-                    source
-                )
+            source.withConsistentSnapshot {
+                staged.outputStream().buffered().use { output ->
+                    HistoryJsonWriter(limits).write(
+                        output,
+                        HistoryExportHeader(
+                            version = 1,
+                            exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+                            appVersion = appVersion(context)
+                        ),
+                        source
+                    )
+                }
             }
             staged.inputStream().buffered().use { input ->
                 HistoryJsonReader(limits).read(input, ValidatingHistoryConsumer)
             }
 
-            storage.openInput(uri)?.use { existing ->
-                destinationExisted = true
-                backup = File.createTempFile("history-export-backup-", ".json", context.cacheDir)
-                backup!!.outputStream().buffered().use { output -> copy(existing, output, cancellable = true) }
-            }
+            storage.replaceAtomically(uri, staged)?.let { return it }
+            if (storage.containsExistingData(uri) != false) return false
 
             try {
                 val output = storage.openOutput(uri) ?: error("Unable to open history export destination")
@@ -172,10 +173,10 @@ object DataExporter {
                 }
                 return true
             } catch (cancelled: CancellationException) {
-                restoreAfterPublicationFailure(uri, storage, destinationExisted, backup)
+                deleteFailedNewDestination(uri, storage)
                 throw cancelled
             } catch (_: Exception) {
-                restoreAfterPublicationFailure(uri, storage, destinationExisted, backup)
+                deleteFailedNewDestination(uri, storage)
                 return false
             }
         } catch (cancelled: CancellationException) {
@@ -184,7 +185,6 @@ object DataExporter {
             return false
         } finally {
             staged.delete()
-            backup?.delete()
         }
     }
 
@@ -336,13 +336,16 @@ object DataExporter {
         RoomHistoryImportConsumer(database)
 
     private class RoomHistoryExportSource(
-        database: WalletDatabase,
+        private val database: WalletDatabase,
         private val limits: HistoryJsonLimits,
         private val pageObserver: (section: String, limit: Int) -> Unit
     ) : HistoryExportSource {
         private val historyDao = database.historyDao()
         private val usageDao = database.usageDao()
         private val eventLogDao = database.eventLogDao()
+
+        override suspend fun <T> withConsistentSnapshot(block: suspend () -> T): T =
+            database.withTransaction { block() }
 
         override suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary> {
             pageObserver("dailySummaries", limit)
@@ -558,36 +561,14 @@ object DataExporter {
         val currency: String
     )
 
-    private suspend fun restoreDestination(
+    private suspend fun deleteFailedNewDestination(
         uri: Uri,
-        storage: HistoryUriStorage,
-        destinationExisted: Boolean,
-        backup: File?
-    ) {
-        if (!destinationExisted) {
-            storage.delete(uri)
-            return
-        }
-        val source = backup ?: return
-        val output = storage.openOutput(uri) ?: return
-        output.use { destination ->
-            source.inputStream().buffered().use { input -> copy(input, destination, cancellable = false) }
-            destination.flush()
-        }
-    }
-
-    private suspend fun restoreAfterPublicationFailure(
-        uri: Uri,
-        storage: HistoryUriStorage,
-        destinationExisted: Boolean,
-        backup: File?
+        storage: HistoryUriStorage
     ) {
         try {
-            withContext(NonCancellable) {
-                restoreDestination(uri, storage, destinationExisted, backup)
-            }
+            withContext(NonCancellable) { storage.delete(uri) }
         } catch (_: Exception) {
-            // The publication error remains the operation's outcome when restoration is impossible.
+            // A failed new document remains a failed export even if its provider rejects cleanup.
         }
     }
 
@@ -624,6 +605,45 @@ object DataExporter {
                 null
             }
             return truncating ?: context.contentResolver.openOutputStream(uri)
+        }
+
+        override fun containsExistingData(uri: Uri): Boolean? {
+            if (uri.scheme == "file") {
+                val target = File(requireNotNull(uri.path))
+                return target.exists() && target.length() > 0L
+            }
+            return super.containsExistingData(uri)
+        }
+
+        override suspend fun replaceAtomically(uri: Uri, staged: File): Boolean? {
+            if (uri.scheme != "file") return null
+            val target = File(requireNotNull(uri.path))
+            val parent = target.parentFile ?: return false
+            val sibling = File.createTempFile(".${target.name}.", ".tmp", parent)
+            return try {
+                staged.inputStream().buffered().use { input ->
+                    FileOutputStream(sibling).use { output ->
+                        copy(input, output, cancellable = true)
+                        output.flush()
+                        output.fd.sync()
+                    }
+                }
+                Files.move(
+                    sibling.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+                true
+            } catch (_: AtomicMoveNotSupportedException) {
+                false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            } finally {
+                sibling.delete()
+            }
         }
 
         override fun delete(uri: Uri): Boolean = try {

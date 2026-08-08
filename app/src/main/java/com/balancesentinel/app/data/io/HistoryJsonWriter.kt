@@ -12,6 +12,7 @@ import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.io.InputStream
 import java.io.OutputStreamWriter
+import java.io.File
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -64,6 +65,7 @@ data class HistoryLogPage(
 )
 
 interface HistoryExportSource {
+    suspend fun <T> withConsistentSnapshot(block: suspend () -> T): T = block()
     suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary>
     suspend fun rawRecordPage(after: HistoryCursor?, limit: Int): HistoryPage
     suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot>
@@ -74,6 +76,12 @@ interface HistoryUriStorage {
     fun openInput(uri: Uri): InputStream?
     fun openOutput(uri: Uri): OutputStream?
     fun delete(uri: Uri): Boolean
+
+    /** Null means unsupported; a non-null implementation must preserve prior bytes on false or failure. */
+    suspend fun replaceAtomically(uri: Uri, staged: File): Boolean? = null
+
+    /** Null means the target cannot be inspected safely and must not be overwritten. */
+    fun containsExistingData(uri: Uri): Boolean? = openInput(uri)?.use { it.read() >= 0 }
 }
 
 data class HistoryJsonWriteCounts(

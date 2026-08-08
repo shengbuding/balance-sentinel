@@ -207,3 +207,92 @@ BUILD FAILED in 6s
 ```
 
 No device instrumentation result is claimed for Fix Round 1.
+
+## Fix Round 2
+
+Baseline: `d4313363686e4f0f011d59e5e013a6135bcb8673`
+
+RED commit: `1d88c46` (`test: expose task 13 atomic publication gaps`)
+
+Round 2 closes the remaining publication and snapshot-consistency findings with a conservative contract:
+
+- Room-backed export generation runs all DAO pages inside one cancellable `withTransaction` snapshot. Staged-file validation and destination publication happen after that read transaction closes.
+- File URIs copy into a sibling file, flush and sync it, then use `ATOMIC_MOVE` with `REPLACE_EXISTING`. If the filesystem cannot provide atomic replacement, export returns false and leaves the old target untouched.
+- Opaque providers have no generic atomic replace primitive. A nonempty or uninspectable target is therefore rejected before any output stream is opened.
+- A known-empty URI returned by `CreateDocument` may be written as a new document. Copy, flush, or close failure returns false and attempts to delete that failed new document in `NonCancellable`; cleanup remains provider-dependent and is not described as guaranteed atomic replacement.
+
+Focused RED command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "*room export reads every DAO page inside one consistent transaction*" --tests "*opaque existing destination is rejected before destructive publication*" --tests "*persistent publication failure cannot corrupt an existing destination*" --tests "*failed new destination publication never reports success and cleans up*" --rerun-tasks --no-parallel
+```
+
+RED output before Round 2 production changes:
+
+```text
+HistoryStreamingLargeDatasetTest > failed new destination publication never reports success and cleans up FAILED
+HistoryStreamingLargeDatasetTest > opaque existing destination is rejected before destructive publication FAILED
+HistoryStreamingLargeDatasetTest > room export reads every DAO page inside one consistent transaction FAILED
+HistoryStreamingLargeDatasetTest > persistent publication failure cannot corrupt an existing destination FAILED
+4 tests completed, 4 failed
+BUILD FAILED in 50s
+```
+
+Final focused JVM command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.DataExporterTest" --tests "com.balancesentinel.app.data.repository.DataExporterImportTest" --tests "com.balancesentinel.app.data.repository.HistoryStreamingLargeDatasetTest" --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+DataExporterImportTest: tests=3 failures=0 errors=0
+DataExporterTest: tests=39 failures=0 errors=0
+HistoryStreamingLargeDatasetTest: tests=14 failures=0 errors=0
+BUILD SUCCESSFUL in 2m 47s
+33 actionable tasks: 33 executed
+```
+
+Repository regression command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.HistoryRepositoryTest" --tests "com.balancesentinel.app.data.repository.UsageRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+BUILD SUCCESSFUL in 1m 41s
+33 actionable tasks: 33 executed
+```
+
+Android test compile command:
+
+```powershell
+.\gradlew.bat compileDebugAndroidTestKotlin --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+BUILD SUCCESSFUL in 29s
+31 actionable tasks: 31 executed
+```
+
+Device availability remained empty:
+
+```text
+> adb devices -l
+List of devices attached
+```
+
+The connected migration command was attempted again and stopped before test execution:
+
+```text
+Execution failed for task ':app:connectedDebugAndroidTest'.
+> com.android.builder.testing.api.DeviceException: No connected devices!
+BUILD FAILED in 5s
+```
+
+No device instrumentation result is claimed for Fix Round 2.

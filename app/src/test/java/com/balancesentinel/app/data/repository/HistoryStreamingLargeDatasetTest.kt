@@ -461,6 +461,12 @@ class HistoryStreamingLargeDatasetTest {
             }
         }
 
+        override suspend fun replaceAtomically(uri: Uri, staged: File): Boolean? {
+            if (!atomicReplace) return null
+            bytes = staged.readBytes()
+            return true
+        }
+
         override fun delete(uri: Uri): Boolean {
             deleteCount++
             bytes = byteArrayOf()
