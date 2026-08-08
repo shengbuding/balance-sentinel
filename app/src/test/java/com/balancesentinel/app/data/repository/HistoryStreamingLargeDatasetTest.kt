@@ -18,7 +18,10 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class HistoryStreamingLargeDatasetTest {
     @Test
     fun `ninety thousand records export in pages and re-import in fixed chunks`() = runBlocking {
@@ -93,14 +96,14 @@ class HistoryStreamingLargeDatasetTest {
             maxSummaries = 2,
             maxUsageSnapshots = 2,
             maxRefreshLogs = 2,
-            maxFieldChars = 8,
+            maxFieldChars = 32,
             maxJsonDepth = 4,
             pageSize = 500,
             chunkSize = 2
         )
 
-        assertEquals(1, readPublishedCount(historyJson("refreshLogs", 1, "12345678"), base))
-        assertRejectedWithoutPublication(historyJson("refreshLogs", 1, "123456789"), base)
+        assertEquals(1, readPublishedCount(historyJson("refreshLogs", 1, "x".repeat(32)), base))
+        assertRejectedWithoutPublication(historyJson("refreshLogs", 1, "x".repeat(33)), base)
 
         val depthBoundary = historyJsonWithUnknownDepth(4)
         assertEquals(0, readPublishedCount(depthBoundary, base))

@@ -30,9 +30,7 @@ import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import com.balancesentinel.app.ui.viewmodel.DataManagementUiState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 备份与迁移子页面 — 历史数据 + 配置的导入导出 + 调试报告。
@@ -64,11 +62,13 @@ fun BackupRestoreScreen(
     ) { uri ->
         if (uri != null) {
             if (DataExporter.hasData(context)) {
-                val ok = DataExporter.exportToUri(context, uri)
-                if (ok) {
-                    Toast.makeText(context, context.getString(R.string.data_export_success), Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, context.getString(R.string.data_export_fail), Toast.LENGTH_SHORT).show()
+                scope.launch {
+                    val ok = viewModel.exportHistory(uri)
+                    if (ok) {
+                        Toast.makeText(context, context.getString(R.string.data_export_success), Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.data_export_fail), Toast.LENGTH_SHORT).show()
+                    }
                 }
             } else {
                 Toast.makeText(context, context.getString(R.string.data_no_data), Toast.LENGTH_SHORT).show()
@@ -83,9 +83,7 @@ fun BackupRestoreScreen(
         if (uri != null) {
             isImporting = true
             scope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    DataExporter.importAndApply(context, uri)
-                }
+                val result = viewModel.importHistory(uri)
                 isImporting = false
                 if (result != null) {
                     val detail = context.getString(
@@ -96,7 +94,6 @@ fun BackupRestoreScreen(
                         result.logsInFile, result.logsImported
                     )
                     Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
-                    viewModel.loadStats()
                 } else {
                     Toast.makeText(context, context.getString(R.string.data_import_history_fail), Toast.LENGTH_SHORT).show()
                 }

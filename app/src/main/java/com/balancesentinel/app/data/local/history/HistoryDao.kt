@@ -36,6 +36,43 @@ interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSummaries(summaries: List<DailySummaryEntity>)
 
+    @Query("SELECT * FROM daily_summaries ORDER BY date, account_id, currency, identity_discriminator LIMIT :limit OFFSET :offset")
+    suspend fun exportSummaryPage(offset: Int, limit: Int): List<DailySummaryEntity>
+
+    @Query("SELECT COUNT(*) FROM daily_summaries WHERE date = :date AND account_id = :accountId AND currency = :currency")
+    suspend fun countSummaryKey(date: String, accountId: String, currency: String): Long
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM balance_records
+        WHERE account_id = :accountId AND currency = :currency AND recorded_at = :recordedAt
+          AND total_balance = :totalBalance AND granted_balance = :grantedBalance
+          AND topped_up_balance = :toppedUpBalance
+        """
+    )
+    suspend fun countExactRecord(
+        accountId: String,
+        currency: String,
+        recordedAt: Long,
+        totalBalance: Double,
+        grantedBalance: Double,
+        toppedUpBalance: Double
+    ): Long
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM balance_records
+        WHERE account_id = :accountId AND currency = :currency
+          AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive
+        """
+    )
+    suspend fun countRecordsForDay(
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): Long
+
     @Query(
         """
         SELECT * FROM balance_records

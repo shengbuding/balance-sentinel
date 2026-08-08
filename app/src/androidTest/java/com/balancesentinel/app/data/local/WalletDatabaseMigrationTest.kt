@@ -36,4 +36,30 @@ class WalletDatabaseMigrationTest {
         }
         context.deleteDatabase(databaseName)
     }
+
+    @Test
+    fun migrationsReachTheCommittedExportedSchema() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "wallet-migration-${System.nanoTime()}"
+        context.deleteDatabase(databaseName)
+        helper.createDatabase(databaseName, 1).close()
+
+        helper.runMigrationsAndValidate(
+            databaseName,
+            WalletDatabase.VERSION,
+            true,
+            WalletDatabase.MIGRATION_1_2,
+            WalletDatabase.MIGRATION_2_3,
+            WalletDatabase.MIGRATION_3_4
+        ).use { sqlite ->
+            val identity = sqlite.query(
+                "SELECT identity_hash FROM room_master_table WHERE id = 42"
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getString(0)
+            }
+            assertEquals(WalletDatabase.SCHEMA_IDENTITY_HASH, identity)
+        }
+        context.deleteDatabase(databaseName)
+    }
 }

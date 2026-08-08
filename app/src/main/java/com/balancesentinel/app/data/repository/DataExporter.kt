@@ -6,6 +6,19 @@ import androidx.room.withTransaction
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.io.HistoryExportHeader
+import com.balancesentinel.app.data.io.HistoryExportSource
+import com.balancesentinel.app.data.io.HistoryJsonConsumer
+import com.balancesentinel.app.data.io.HistoryJsonReader
+import com.balancesentinel.app.data.io.HistoryJsonWriter
+import com.balancesentinel.app.data.io.HistoryLogCursor
+import com.balancesentinel.app.data.io.HistoryLogPage
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
+import com.balancesentinel.app.data.model.RefreshLogEntry
+import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.data.model.UsageRecord
+import com.balancesentinel.app.data.model.UsageSnapshot
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -14,6 +27,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import java.time.LocalDate
 
 /**
  * 历史数据导出（日摘要 + 原始记录）。
@@ -96,14 +111,35 @@ object DataExporter {
      * 通过 SAF URI 写入导出文件。
      */
     fun exportToUri(context: Context, uri: Uri): Boolean {
+        var temporary: File? = null
         return try {
-            val content = buildExport(context)
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                out.write(content.toByteArray(Charsets.UTF_8))
+            val temp = File.createTempFile("history-export-", ".json", context.cacheDir)
+            temporary = temp
+            val database = WalletDatabaseProvider.get(context)
+            kotlinx.coroutines.runBlocking {
+                database.withTransaction {
+                    temp.outputStream().buffered().use { output ->
+                        HistoryJsonWriter().write(
+                            output,
+                            HistoryExportHeader(
+                                version = 1,
+                                exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+                                appVersion = appVersion(context)
+                            ),
+                            RoomHistoryExportSource(database)
+                        )
+                    }
+                }
             }
-            true
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                temp.inputStream().buffered().use { input -> input.copyTo(out) }
+                out.flush()
+                true
+            } ?: false
         } catch (_: Exception) {
             false
+        } finally {
+            temporary?.delete()
         }
     }
 
@@ -208,8 +244,201 @@ object DataExporter {
      * @return [ImportResult]，失败返回 null。
      */
     fun importAndApply(context: Context, uri: Uri): ImportResult? {
-        val data = importFromUri(context, uri) ?: return null
-        return applyImport(context, data)
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return null
+            input.use { stream ->
+                DataMutationCoordinator.withMutation {
+                    kotlinx.coroutines.runBlocking {
+                        val database = WalletDatabaseProvider.get(context)
+                        database.withTransaction {
+                            val result = HistoryJsonReader().read(stream, RoomHistoryImportConsumer(database))
+                            ImportResult(
+                                result.summariesInFile,
+                                result.summariesImported,
+                                result.recordsInFile,
+                                result.recordsImported,
+                                result.snapshotsInFile,
+                                result.snapshotsImported,
+                                result.logsInFile,
+                                result.logsImported
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun appVersion(context: Context): String = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+    } catch (_: Exception) {
+        "1.0.0"
+    }
+
+    private class RoomHistoryExportSource(
+        database: WalletDatabase
+    ) : HistoryExportSource {
+        private val historyDao = database.historyDao()
+        private val usageDao = database.usageDao()
+        private val eventLogDao = database.eventLogDao()
+
+        override suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary> =
+            historyDao.exportSummaryPage(offset, limit).map { entity ->
+                DailySummary(
+                    entity.accountId, entity.date, entity.currency,
+                    entity.openBalance.toFloat(), entity.closeBalance.toFloat(),
+                    entity.consumedBalance.toFloat(), entity.toppedUpBalance.toFloat(),
+                    entity.grantedBalance.toFloat(), entity.averageBalance.toFloat(),
+                    entity.sampleCount, entity.toppedUpBalanceClose.toFloat(),
+                    entity.grantedBalanceClose.toFloat(), entity.generatedAt
+                )
+            }
+
+        override suspend fun rawRecordPage(after: HistoryCursor?, limit: Int): HistoryPage {
+            val rows = historyDao.keysetPageAll(
+                Long.MIN_VALUE,
+                Long.MAX_VALUE,
+                after?.recordedAt,
+                after?.id,
+                limit
+            )
+            val records = rows.map { entity ->
+                HistoryRecord(
+                    entity.id,
+                    RawRecord(
+                        entity.accountId,
+                        entity.recordedAt,
+                        entity.currency,
+                        entity.totalBalance.toFloat(),
+                        entity.grantedBalance.toFloat(),
+                        entity.toppedUpBalance.toFloat()
+                    )
+                )
+            }
+            return HistoryPage(
+                records,
+                records.lastOrNull()?.let { HistoryCursor(it.value.timestamp, it.id) }
+            )
+        }
+
+        override suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot> =
+            usageDao.exportPage(offset, limit).map { snapshot ->
+                UsageSnapshot(
+                    snapshot.accountId,
+                    snapshot.capturedAt,
+                    usageDao.getRecords(snapshot.id).map { record ->
+                        UsageRecord(record.modelName, record.totalTokens, record.promptTokens, record.completionTokens)
+                    }
+                )
+            }
+
+        override suspend fun refreshLogPage(after: HistoryLogCursor?, limit: Int): HistoryLogPage {
+            val rows = eventLogDao.newestPage(after?.recordedAt, after?.id, limit)
+            return HistoryLogPage(
+                rows.map { entity ->
+                    RefreshLogEntry(
+                        entity.id,
+                        RefreshLogType.valueOf(entity.eventType.name),
+                        entity.totalBalanceText,
+                        entity.currencyText,
+                        entity.isAvailable,
+                        entity.grantedBalanceText,
+                        entity.toppedUpBalanceText,
+                        entity.recordedAt,
+                        entity.message,
+                        entity.intervalSeconds ?: 0,
+                        entity.expectedAt ?: 0,
+                        entity.alarmMethod ?: "",
+                        entity.missReason ?: ""
+                    )
+                },
+                rows.lastOrNull()?.let { HistoryLogCursor(it.recordedAt, it.id) }
+            )
+        }
+    }
+
+    private class RoomHistoryImportConsumer(
+        private val database: WalletDatabase
+    ) : HistoryJsonConsumer {
+        private val history = RoomHistoryRepository(database)
+        private val usage = RoomUsageRepository(database)
+        private val events = RoomEventLogRepository(database)
+        private val knownAccounts = mutableMapOf<String, Boolean>()
+        private val importedSummaryKeys = mutableSetOf<HistoryKey>()
+        private val zoneId = ZoneId.systemDefault()
+
+        override suspend fun dailySummaries(items: List<DailySummary>): Int {
+            val fresh = mutableListOf<DailySummary>()
+            items.distinctBy { it.historyKey() }.forEach { summary ->
+                val currency = summary.currency.uppercase(Locale.ROOT)
+                val key = summary.historyKey()
+                if (known(summary.accountId) &&
+                    database.historyDao().countSummaryKey(summary.date, summary.accountId, currency) == 0L
+                ) {
+                    fresh += summary
+                    importedSummaryKeys += key
+                }
+            }
+            history.upsertSummaries(fresh)
+            return fresh.size
+        }
+
+        override suspend fun rawRecords(items: List<RawRecord>): Int {
+            val fresh = mutableListOf<RawRecord>()
+            items.distinct().forEach { record ->
+                val currency = record.currency.uppercase(Locale.ROOT)
+                if (!known(record.accountId)) return@forEach
+                val key = record.historyKey(zoneId)
+                if (key !in importedSummaryKeys && isSummaryOnly(key)) return@forEach
+                if (database.historyDao().countExactRecord(
+                        record.accountId,
+                        currency,
+                        record.timestamp,
+                        record.totalBalance.toDouble(),
+                        record.grantedBalance.toDouble(),
+                        record.toppedUpBalance.toDouble()
+                    ) == 0L
+                ) fresh += record
+            }
+            history.insert(fresh, BalanceRecordSource.IMPORT)
+            return fresh.size
+        }
+
+        override suspend fun usageSnapshots(items: List<UsageSnapshot>): Int {
+            var imported = 0
+            items.forEach { snapshot ->
+                if (known(snapshot.accountId) &&
+                    usage.count(snapshot.accountId, snapshot.timestamp, snapshot.timestamp + 1) == 0L
+                ) {
+                    usage.upsert(snapshot, "import")
+                    imported++
+                }
+            }
+            return imported
+        }
+
+        override suspend fun refreshLogs(items: List<RefreshLogEntry>): Int {
+            val fresh = items.distinctBy { it.id }.filter { database.eventLogDao().get(it.id) == null }
+            events.append(fresh)
+            return fresh.size
+        }
+
+        private suspend fun known(accountId: String): Boolean {
+            knownAccounts[accountId]?.let { return it }
+            val value = accountId.isNotBlank() && database.accountDao().get(accountId) != null
+            knownAccounts[accountId] = value
+            return value
+        }
+
+        private suspend fun isSummaryOnly(key: HistoryKey): Boolean {
+            if (database.historyDao().countSummaryKey(key.date, key.accountId, key.currency) == 0L) return false
+            val date = LocalDate.parse(key.date)
+            val start = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val end = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+            return database.historyDao().countRecordsForDay(key.accountId, key.currency, start, end) == 0L
+        }
     }
 
     private fun DailySummary.historyKey() = HistoryKey(

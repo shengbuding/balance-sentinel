@@ -22,6 +22,7 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.repository.ConfigManager
+import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -66,8 +67,11 @@ data class DataManagementUiState(
     val enabledImportedScripts: Set<String> = emptySet(),
     val authorizedImportOrigins: Map<String, Set<WebOrigin>> = emptyMap(),
     val replaceConfirmationRequired: Boolean = false,
-    val importError: Boolean = false
+    val importError: Boolean = false,
+    val historyOperationState: HistoryOperationState = HistoryOperationState.IDLE
 )
+
+enum class HistoryOperationState { IDLE, ACTIVE, SUCCEEDED, FAILED }
 
 data class AlarmCounterSnapshot(
     val totalSet: Int = 0,
@@ -386,6 +390,37 @@ class DataManagementViewModel @JvmOverloads constructor(
                 accounts,
                 settings,
                 includeTokens
+            )
+        }
+    }
+
+    suspend fun exportHistory(uri: Uri): Boolean {
+        _uiState.value = _uiState.value.copy(historyOperationState = HistoryOperationState.ACTIVE)
+        var succeeded = false
+        try {
+            succeeded = withContext(Dispatchers.IO) {
+                DataExporter.exportToUri(getApplication(), uri)
+            }
+            return succeeded
+        } finally {
+            _uiState.value = _uiState.value.copy(
+                historyOperationState = if (succeeded) HistoryOperationState.SUCCEEDED else HistoryOperationState.FAILED
+            )
+        }
+    }
+
+    suspend fun importHistory(uri: Uri): DataExporter.ImportResult? {
+        _uiState.value = _uiState.value.copy(historyOperationState = HistoryOperationState.ACTIVE)
+        var result: DataExporter.ImportResult? = null
+        try {
+            result = withContext(Dispatchers.IO) {
+                DataExporter.importAndApply(getApplication(), uri)
+            }
+            if (result != null) loadStats()
+            return result
+        } finally {
+            _uiState.value = _uiState.value.copy(
+                historyOperationState = if (result != null) HistoryOperationState.SUCCEEDED else HistoryOperationState.FAILED
             )
         }
     }

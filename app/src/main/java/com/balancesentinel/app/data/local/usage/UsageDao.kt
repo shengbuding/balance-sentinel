@@ -127,6 +127,9 @@ interface UsageDao {
     @Query("SELECT DISTINCT account_id FROM usage_snapshots ORDER BY account_id")
     suspend fun accountIds(): List<String>
 
+    @Query("SELECT * FROM usage_snapshots ORDER BY captured_at, id LIMIT :limit OFFSET :offset")
+    suspend fun exportPage(offset: Int, limit: Int): List<UsageSnapshotEntity>
+
     @Query("DELETE FROM usage_snapshots")
     suspend fun clearSnapshots(): Int
 

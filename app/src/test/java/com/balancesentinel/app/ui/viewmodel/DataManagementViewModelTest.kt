@@ -114,6 +114,18 @@ class DataManagementViewModelTest {
         ShadowLooper.idleMainLooper()
     }
 
+    @Test
+    fun `failed streaming history import never leaves operation active`() = runBlocking {
+        val file = java.io.File(context.filesDir, "failed-history-${System.nanoTime()}.json")
+        file.writeText(
+            """{"version":1,"exportedAt":"now","appVersion":"test","dailySummaries":[],"rawRecords":["""
+        )
+        val viewModel = newDataManagementViewModel()
+
+        assertNull(viewModel.importHistory(Uri.fromFile(file)))
+        assertEquals(HistoryOperationState.FAILED, viewModel.uiState.value.historyOperationState)
+    }
+
     // ═══════════════════════════════════════════════════════════
     // loadStats — empty state
     // ═══════════════════════════════════════════════════════════

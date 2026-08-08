@@ -617,6 +617,34 @@ class DataExporterTest {
         assertNull("should return null when import fails", result)
     }
 
+    @Test
+    fun `streaming import rolls back early chunks when the JSON tail fails`() = runBlocking {
+        ensureDataExporterRoomAccount("rollback-account")
+        val file = File(context.filesDir, "late-failure-${System.nanoTime()}.json")
+        file.writeText(
+            """{"version":1,"exportedAt":"now","appVersion":"test","dailySummaries":[],"rawRecords":[{"accountId":"rollback-account","timestamp":1,"currency":"USD","totalBalance":1,"grantedBalance":0,"toppedUpBalance":1}],"usageSnapshots":[],"refreshLogs":[]"""
+        )
+
+        assertNull(DataExporter.importAndApply(context, Uri.fromFile(file)))
+        assertTrue(readDataExporterRoomRecords().isEmpty())
+    }
+
+    @Test
+    fun `streaming import is idempotent when the same file is applied twice`() = runBlocking {
+        ensureDataExporterRoomAccount("repeat-account")
+        val file = File(context.filesDir, "repeat-import-${System.nanoTime()}.json")
+        file.writeText(
+            """{"version":1,"exportedAt":"now","appVersion":"test","dailySummaries":[],"rawRecords":[{"accountId":"repeat-account","timestamp":1,"currency":"USD","totalBalance":1,"grantedBalance":0,"toppedUpBalance":1}],"usageSnapshots":[],"refreshLogs":[]}"""
+        )
+
+        val first = DataExporter.importAndApply(context, Uri.fromFile(file))
+        val second = DataExporter.importAndApply(context, Uri.fromFile(file))
+
+        assertEquals(1, first?.recordsImported)
+        assertEquals(0, second?.recordsImported)
+        assertEquals(1, readDataExporterRoomRecords().size)
+    }
+
     @Suppress("DEPRECATION")
     @Test
     fun `applyImport merge all-new items with zero dedup`() {

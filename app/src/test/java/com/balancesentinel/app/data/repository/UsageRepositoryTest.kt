@@ -129,6 +129,9 @@ class UsageRepositoryTest {
 
         override suspend fun accountIds(): List<String> = error("unused")
 
+        override suspend fun exportPage(offset: Int, limit: Int): List<UsageSnapshotEntity> =
+            error("unused")
+
         override suspend fun clearSnapshots(): Int = error("unused")
 
         override suspend fun deleteByAccount(accountId: String): Int = error("unused")

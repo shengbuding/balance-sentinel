@@ -80,6 +80,9 @@ abstract class WalletDatabase : RoomDatabase() {
     abstract fun monitoringSessionDao(): MonitoringSessionDao
 
     companion object {
+        const val VERSION = 4
+        const val SCHEMA_IDENTITY_HASH = "464f2403aa5bd84c3a352d1e49b4786c"
+
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
