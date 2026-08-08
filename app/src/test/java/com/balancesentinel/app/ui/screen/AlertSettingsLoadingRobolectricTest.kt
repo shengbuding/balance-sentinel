@@ -6,6 +6,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.repository.ConfigSettings
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountMutationCoordinator
+import com.balancesentinel.app.data.repository.AccountMutationResult
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
@@ -13,6 +17,7 @@ import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -33,7 +38,14 @@ class AlertSettingsLoadingRobolectricTest {
     fun `loading snapshot renders loading card and hides ready controls`() {
         SettingsRepositoryProvider.factory = { LoadingSettingsRepository() }
         val application = ApplicationProvider.getApplicationContext<Application>()
-        val viewModel = HomeViewModel(application)
+        val viewModel = HomeViewModel(
+            application,
+            injectedAccountUiRepository = AccountUiRepository {
+                flowOf(AccountLoadState.Ready(emptyList()))
+            },
+            injectedAccountMutationCoordinator = NoOpAccountMutationCoordinator,
+            cleanupAction = {}
+        )
 
         composeRule.setContent {
             AlertSettingsScreen(viewModel = viewModel, onBack = {})
@@ -53,5 +65,14 @@ class AlertSettingsLoadingRobolectricTest {
             error("not ready")
         override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot =
             error("not ready")
+    }
+
+    private object NoOpAccountMutationCoordinator : AccountMutationCoordinator {
+        override suspend fun save(
+            existingId: String?,
+            draft: com.balancesentinel.app.data.model.AccountDraft
+        ): AccountMutationResult = error("not used")
+
+        override suspend fun delete(accountId: String): AccountMutationResult = error("not used")
     }
 }

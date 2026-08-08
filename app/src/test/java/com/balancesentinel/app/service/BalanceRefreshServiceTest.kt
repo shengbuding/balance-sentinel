@@ -7,10 +7,14 @@ import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.testing.MutableSettingsRepository
 import com.balancesentinel.app.widget.AccountBalance
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -18,6 +22,16 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class BalanceRefreshServiceTest {
+    @Before
+    fun setUp() {
+        val settingsRepository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { settingsRepository }
+    }
+
+    @After
+    fun tearDown() {
+        SettingsRepositoryProvider.resetForTests()
+    }
 
     @Test
     fun `task removal restart delegates to foreground service starter`() {

@@ -13,7 +13,9 @@ import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RoomEventLogRepository
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.testing.MutableSettingsRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -29,6 +31,7 @@ class LogViewModelTest {
     private lateinit var viewModel: LogViewModel
     private lateinit var context: Context
     private lateinit var database: WalletDatabase
+    private lateinit var settingsRepository: MutableSettingsRepository
     private var originalHandler: Thread.UncaughtExceptionHandler? = null
 
     @Before
@@ -39,14 +42,15 @@ class LogViewModelTest {
         application = context as Application
         database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
         WalletDatabaseProvider.installForTests(database)
+        settingsRepository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { settingsRepository }
         runBlocking { database.accountDao().insertCreate(logRoomAccount()) }
-        val prefs = WidgetPrefs(context)
-        prefs.logMaxEntries = 100
         viewModel = LogViewModel(application)
     }
 
     @After
     fun tearDown() {
+        SettingsRepositoryProvider.resetForTests()
         WalletDatabaseProvider.clearForTests()
         CrashLogger.clear(application)
         CrashLogger.resetForTests()
@@ -245,9 +249,12 @@ class LogViewModelTest {
     }
 
     @Test
-    fun `init sets logMaxEntries from WidgetPrefs`() {
-        val prefs = WidgetPrefs(context)
-        prefs.logMaxEntries = 200
+    fun `init sets logMaxEntries from settings repository`() {
+        runBlocking {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(appSettings = current.appSettings.copy(logMaxEntries = 200))
+            }
+        }
         val vm = LogViewModel(application)
         assertEquals(200, vm.uiState.value.logMaxEntries)
     }
