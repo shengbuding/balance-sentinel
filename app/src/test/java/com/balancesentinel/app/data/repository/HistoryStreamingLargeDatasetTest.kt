@@ -94,6 +94,19 @@ class HistoryStreamingLargeDatasetTest {
     }
 
     @Test
+    fun `room export reads every DAO page inside one consistent transaction`() = runBlocking {
+        val transactionStates = mutableListOf<Boolean>()
+        val source = DataExporter.roomHistoryExportSource(database) { _, _ ->
+            transactionStates += database.inTransaction()
+        }
+        val storage = MemoryUriStorage(byteArrayOf(), atomicReplace = true)
+
+        assertTrue(DataExporter.exportToUri(context, TEST_URI, source = source, storage = storage))
+        assertTrue(transactionStates.isNotEmpty())
+        assertTrue(transactionStates.all { it })
+    }
+
+    @Test
     fun `required top level sections reject missing duplicate and unsupported schema`() = runBlocking {
         val invalid = listOf(
             "{}",
@@ -192,8 +205,8 @@ class HistoryStreamingLargeDatasetTest {
     }
 
     @Test
-    fun `failed destination write restores previous bytes`() = runBlocking {
-        val storage = MemoryUriStorage("previous-json".toByteArray(), failFirstOutputAfter = 12)
+    fun `opaque existing destination is rejected before destructive publication`() = runBlocking {
+        val storage = MemoryUriStorage("previous-json".toByteArray())
         val result = DataExporter.exportToUri(
             context,
             TEST_URI,
@@ -203,13 +216,34 @@ class HistoryStreamingLargeDatasetTest {
 
         assertFalse(result)
         assertEquals("previous-json", storage.text())
-        assertEquals(2, storage.outputOpenCount)
+        assertEquals(0, storage.outputOpenCount)
+    }
+
+    @Test
+    fun `persistent publication failure cannot corrupt an existing destination`() = runBlocking {
+        val storage = MemoryUriStorage(
+            "previous-json".toByteArray(),
+            failEveryOutputAfter = 12
+        )
+
+        assertFalse(DataExporter.exportToUri(context, TEST_URI, GeneratedRawSource(2), storage))
+        assertEquals("previous-json", storage.text())
+        assertEquals(0, storage.outputOpenCount)
+    }
+
+    @Test
+    fun `failed new destination publication never reports success and cleans up`() = runBlocking {
+        val storage = MemoryUriStorage(byteArrayOf(), failEveryOutputAfter = 12)
+
+        assertFalse(DataExporter.exportToUri(context, TEST_URI, GeneratedRawSource(2), storage))
+        assertEquals("", storage.text())
+        assertEquals(1, storage.deleteCount)
     }
 
     @Test
     fun `writer boundaries publish only complete output and plus one preserves target`() = runBlocking {
         val limits = smallLimits(maxRawRecords = 2)
-        val boundary = MemoryUriStorage("old".toByteArray())
+        val boundary = MemoryUriStorage("old".toByteArray(), atomicReplace = true)
         assertTrue(DataExporter.exportToUri(context, TEST_URI, GeneratedRawSource(2), boundary, limits))
         assertNotEquals("old", boundary.text())
 
@@ -399,10 +433,13 @@ class HistoryStreamingLargeDatasetTest {
 
     private class MemoryUriStorage(
         initial: ByteArray,
-        private val failFirstOutputAfter: Int? = null
+        val atomicReplace: Boolean = false,
+        private val failEveryOutputAfter: Int? = null
     ) : HistoryUriStorage {
         private var bytes = initial.copyOf()
         var outputOpenCount = 0
+            private set
+        var deleteCount = 0
             private set
 
         override fun openInput(uri: Uri) = ByteArrayInputStream(bytes)
@@ -414,7 +451,7 @@ class HistoryStreamingLargeDatasetTest {
             return object : OutputStream() {
                 private var written = 0
                 override fun write(value: Int) {
-                    if (outputOpenCount == 1 && failFirstOutputAfter != null && written >= failFirstOutputAfter) {
+                    if (failEveryOutputAfter != null && written >= failEveryOutputAfter) {
                         throw java.io.IOException("injected publication failure")
                     }
                     target.write(value)
@@ -425,6 +462,7 @@ class HistoryStreamingLargeDatasetTest {
         }
 
         override fun delete(uri: Uri): Boolean {
+            deleteCount++
             bytes = byteArrayOf()
             return true
         }
