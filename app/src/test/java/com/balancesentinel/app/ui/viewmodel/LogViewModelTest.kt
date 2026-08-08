@@ -162,6 +162,18 @@ class LogViewModelTest {
     }
 
     @Test
+    fun `loadLogs honors the supported one thousand entry limit`() {
+        viewModel.setLogMax(1_000)
+        addRoomLogs((1L..101L).map { id ->
+            RefreshLogEntry(id = id, type = RefreshLogType.AUTO, timestamp = id)
+        })
+
+        viewModel.loadLogs()
+
+        assertEquals(101, viewModel.uiState.value.refreshLogs.size)
+    }
+
+    @Test
     fun `clearExportResult clears export message`() {
         viewModel.clearExportResult()
         assertNull(viewModel.uiState.value.exportResult)
@@ -242,6 +254,10 @@ class LogViewModelTest {
 
     private fun addRoomLog(entry: RefreshLogEntry) = runBlocking {
         RoomEventLogRepository(database).append(listOf(entry))
+    }
+
+    private fun addRoomLogs(entries: List<RefreshLogEntry>) = runBlocking {
+        RoomEventLogRepository(database).append(entries)
     }
 
     private fun logRoomAccount() = AccountEntity(

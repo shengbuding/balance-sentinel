@@ -39,6 +39,9 @@ interface EventLogDao {
     @Query("SELECT COUNT(*) FROM event_logs")
     suspend fun countLogs(): Long
 
+    @Query("SELECT id FROM event_logs")
+    suspend fun allIds(): List<Long>
+
     @Query("DELETE FROM event_logs")
     suspend fun clearAll(): Int
 

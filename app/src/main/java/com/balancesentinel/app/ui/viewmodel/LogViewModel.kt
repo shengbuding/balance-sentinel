@@ -59,7 +59,7 @@ class LogViewModel(
     fun loadLogs() {
         try {
             allLogs = kotlinx.coroutines.runBlocking {
-                eventLogRepository.newest(_uiState.value.logMaxEntries.coerceIn(1, 100))
+                eventLogRepository.newest(_uiState.value.logMaxEntries.coerceIn(10, 1000))
             }
             applyFilter()
             _uiState.value = _uiState.value.copy(

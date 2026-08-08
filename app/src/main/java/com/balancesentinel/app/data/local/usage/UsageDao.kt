@@ -124,6 +124,9 @@ interface UsageDao {
     @Query("SELECT COUNT(*) FROM usage_snapshots")
     suspend fun countSnapshots(): Long
 
+    @Query("SELECT DISTINCT account_id FROM usage_snapshots ORDER BY account_id")
+    suspend fun accountIds(): List<String>
+
     @Query("DELETE FROM usage_snapshots")
     suspend fun clearSnapshots(): Int
 

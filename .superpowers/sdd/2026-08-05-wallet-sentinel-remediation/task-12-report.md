@@ -46,3 +46,31 @@ Implemented the Task 12 consumer migration on baseline `2330369`.
 - `compileDebugKotlin --rerun-tasks --no-parallel`: PASS.
 - `git diff --check`: PASS.
 - Static search across the six Task 12 production consumers and the migrated consumer/exporter test files found no legacy store calls.
+
+## Fix Round 1
+
+### Changes
+
+- `DataExporter.applyImport` snapshots pre-import summary keys before adding incoming summaries, so a fresh same-day summary and raw record are both retained.
+- Imports skip blank or locally unknown account IDs before Room writes, and all accepted import writes run in one Room transaction.
+- Usage export discovers account IDs from usage snapshots as well as daily summaries, preserving usage-only accounts.
+- Event-log import deduplicates against all persisted log IDs, not only the newest 10,000 entries.
+- `LogViewModel` now accepts the same 10..1000 log-entry preference range as `WidgetPrefs` and the UI.
+
+### TDD Evidence
+
+- Each RED and GREEN invocation used `./gradlew.bat testDebugUnitTest --tests "<fully-qualified test name>" --rerun-tasks --no-parallel`.
+- RED: `DataExporterTest.buildExport includes usage for an account without summaries` failed 1/1 because usage export derived accounts only from summaries.
+- RED: `DataExporterTest.applyImport keeps raw records paired with newly imported same-day summaries` failed 1/1 because the imported raw record was suppressed.
+- RED: `DataExporterTest.applyImport skips unknown accounts without aborting known records` failed 1/1 with `SQLiteConstraintException` from the Room foreign key.
+- RED: `DataExporterTest.applyImport ignores duplicate logs older than the latest ten thousand` failed 1/1 with `SQLiteConstraintException` from the duplicate primary key.
+- RED: `LogViewModelTest.loadLogs honors the supported one thousand entry limit` failed 1/1 because the list was capped at 100.
+- GREEN: each of the five commands above passed 1/1 after the minimal production changes. The first usage-only GREEN compile exposed one test-only `UsageDao` recording fake missing the new `accountIds()` method; it was added before the successful rerun.
+
+### Verification
+
+- Brief focused command run serially with `--rerun-tasks --no-parallel`: `InsightsViewModelTest` 48/48, `DataManagementViewModelTest` 29/29, `WidgetProviderTest` 15 passed/3 skipped, `LogViewModelTest` 15/15; 0 failures.
+- `DataExporterTest`: 37/37 pass. `LogExporterTest`: 20/20 pass.
+- `./gradlew.bat compileDebugKotlin --rerun-tasks --no-parallel`: PASS.
+- `git diff --check`: PASS.
+- Six-consumer static scan for `RawRecordStore`, `DailySummaryStore`, `UsageDataStore`, `RefreshLogStore`, and `getAll*` returned zero matches.

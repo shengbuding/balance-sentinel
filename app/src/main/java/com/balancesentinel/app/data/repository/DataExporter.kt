@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
@@ -157,31 +158,48 @@ object DataExporter {
         DataMutationCoordinator.withMutation {
             kotlinx.coroutines.runBlocking {
                 val database = WalletDatabaseProvider.get(context)
-                val zoneId = ZoneId.systemDefault()
-                val history = RoomHistoryRepository(database)
-                val usage = RoomUsageRepository(database)
-                val events = RoomEventLogRepository(database)
-                val existingSummaries = history.summaries().mapTo(mutableSetOf()) { it.historyKey() }
-                val newSummaries = data.dailySummaries.filter { summary ->
-                    existingSummaries.add(summary.historyKey())
+                database.withTransaction {
+                    val zoneId = ZoneId.systemDefault()
+                    val history = RoomHistoryRepository(database)
+                    val usage = RoomUsageRepository(database)
+                    val events = RoomEventLogRepository(database)
+                    val accountIds = buildSet {
+                        addAll(data.dailySummaries.map { it.accountId })
+                        addAll(data.rawRecords.map { it.accountId })
+                        addAll(data.usageSnapshots.map { it.accountId })
+                    }
+                    val knownAccountIds = accountIds.filterTo(mutableSetOf()) { accountId ->
+                        accountId.isNotBlank() && database.accountDao().get(accountId) != null
+                    }
+                    val existingSummaries = history.summaries().mapTo(mutableSetOf()) { it.historyKey() }
+                    val preImportSummaryKeys = existingSummaries.toSet()
+                    val newSummaries = data.dailySummaries.filter { summary ->
+                        summary.accountId in knownAccountIds && existingSummaries.add(summary.historyKey())
+                    }
+                    val existingRecords = readAllHistory(history).toMutableSet()
+                    val existingRecordKeys = existingRecords.mapTo(mutableSetOf()) { it.historyKey(zoneId) }
+                    val summaryOnlyKeys = preImportSummaryKeys.filterTo(mutableSetOf()) {
+                        it !in existingRecordKeys
+                    }
+                    val newRecords = data.rawRecords.filter { record ->
+                        record.accountId in knownAccountIds &&
+                            record.historyKey(zoneId) !in summaryOnlyKeys &&
+                            existingRecords.add(record)
+                    }
+                    val existingLogIds = database.eventLogDao().allIds().toMutableSet()
+                    val newLogs = data.refreshLogs.filter { existingLogIds.add(it.id) }
+                    val newSnapshots = data.usageSnapshots.filter { snapshot ->
+                        snapshot.accountId in knownAccountIds &&
+                            usage.count(snapshot.accountId, snapshot.timestamp, snapshot.timestamp + 1) == 0L
+                    }
+
+                    history.upsertSummaries(newSummaries)
+                    history.insert(newRecords, com.balancesentinel.app.data.local.history.BalanceRecordSource.IMPORT)
+                    events.append(newLogs)
+                    newSnapshots.forEach { usage.upsert(it, "import") }
+                    ImportResult(data.dailySummaries.size, newSummaries.size, data.rawRecords.size, newRecords.size,
+                        data.usageSnapshots.size, newSnapshots.size, data.refreshLogs.size, newLogs.size)
                 }
-                history.upsertSummaries(newSummaries)
-                val existingRecords = readAllHistory(history).toMutableSet()
-                val existingRecordKeys = existingRecords.mapTo(mutableSetOf()) { it.historyKey(zoneId) }
-                val summaryOnlyKeys = existingSummaries.filterTo(mutableSetOf()) { it !in existingRecordKeys }
-                val newRecords = data.rawRecords.filter { record ->
-                    record.historyKey(zoneId) !in summaryOnlyKeys && existingRecords.add(record)
-                }
-                history.insert(newRecords, com.balancesentinel.app.data.local.history.BalanceRecordSource.IMPORT)
-                val existingLogIds = events.newest(10_000).mapTo(mutableSetOf()) { it.id }
-                val newLogs = data.refreshLogs.filter { existingLogIds.add(it.id) }
-                events.append(newLogs)
-                val newSnapshots = data.usageSnapshots.filter { snapshot ->
-                    usage.count(snapshot.accountId, snapshot.timestamp, snapshot.timestamp + 1) == 0L
-                }
-                newSnapshots.forEach { usage.upsert(it, "import") }
-                ImportResult(data.dailySummaries.size, newSummaries.size, data.rawRecords.size, newRecords.size,
-                    data.usageSnapshots.size, newSnapshots.size, data.refreshLogs.size, newLogs.size)
             }
         }
 
@@ -234,7 +252,7 @@ object DataExporter {
         historyRepository: HistoryRepository
     ): List<com.balancesentinel.app.data.model.UsageSnapshot> {
         val snapshots = mutableListOf<com.balancesentinel.app.data.model.UsageSnapshot>()
-        val accountIds = historyRepository.summaries().map { it.accountId }.distinct()
+        val accountIds = (historyRepository.summaries().map { it.accountId } + usageRepository.accountIds()).distinct()
         for (accountId in accountIds) {
             var cursor: UsageCursor? = null
             while (true) {

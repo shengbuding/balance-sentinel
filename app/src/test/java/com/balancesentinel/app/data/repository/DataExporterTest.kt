@@ -130,6 +130,20 @@ class DataExporterTest {
     }
 
     @Test
+    fun `buildExport includes usage for an account without summaries`() {
+        val snapshot = UsageSnapshot(
+            accountId = "usage-only",
+            timestamp = 1_752_009_600_000L,
+            records = listOf(UsageRecord(model_name = "deepseek-chat", total_tokens = 500))
+        )
+        addDataExporterRoomUsage(snapshot)
+
+        val parsed = json.decodeFromString<DataExport>(DataExporter.buildExport(context))
+
+        assertEquals(listOf(snapshot), parsed.usageSnapshots)
+    }
+
+    @Test
     fun `buildExport includes refreshLogs`() {
         val entry = RefreshLogEntry(
             id = 1L,
@@ -417,6 +431,43 @@ class DataExporterTest {
     }
 
     @Test
+    fun `applyImport keeps raw records paired with newly imported same-day summaries`() {
+        val date = LocalDate.parse("2026-08-05")
+        val raw = RawRecord(
+            accountId = "fresh-pair",
+            timestamp = date.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            currency = "CNY",
+            totalBalance = 8f,
+            grantedBalance = 0f,
+            toppedUpBalance = 8f
+        )
+        val summary = DailySummary(
+            accountId = "fresh-pair",
+            date = date.toString(),
+            currency = "CNY",
+            open = 10f,
+            close = 8f,
+            consumed = 2f,
+            toppedUp = 0f,
+            avgBalance = 9f,
+            sampleCount = 2
+        )
+
+        val result = applyDataExporterRoomImport(
+            DataExport(
+                exportedAt = "2026-08-06T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = listOf(summary),
+                rawRecords = listOf(raw)
+            )
+        )
+
+        assertEquals(1, result.summariesImported)
+        assertEquals(1, result.recordsImported)
+        assertEquals(listOf(raw), readDataExporterRoomRecords())
+    }
+
+    @Test
     fun `applyImport handles all-empty import`() {
         val importedData = DataExport(
             version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
@@ -625,6 +676,52 @@ class DataExporterTest {
         assertEquals(1, result.logsImported)
     }
 
+    @Test
+    fun `applyImport skips unknown accounts without aborting known records`() {
+        val known = RawRecord("known-account", 1_000L, "USD", 5f, 0f, 5f)
+        val unknown = RawRecord("unknown-account", 2_000L, "USD", 4f, 0f, 4f)
+        runBlocking { ensureDataExporterRoomAccount(known.accountId) }
+
+        val result = applyDataExporterRoomImport(
+            DataExport(
+                exportedAt = "2026-08-06T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = emptyList(),
+                rawRecords = listOf(known, unknown)
+            ),
+            seedAccounts = false
+        )
+
+        assertEquals(2, result.recordsInFile)
+        assertEquals(1, result.recordsImported)
+        assertEquals(listOf(known), readDataExporterRoomRecords())
+    }
+
+    @Test
+    fun `applyImport ignores duplicate logs older than the latest ten thousand`() {
+        addDataExporterRoomLogs(
+            (1L..10_001L).map { id ->
+                RefreshLogEntry(id = id, type = RefreshLogType.AUTO, timestamp = id)
+            }
+        )
+
+        val result = applyDataExporterRoomImport(
+            DataExport(
+                exportedAt = "2026-08-06T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = emptyList(),
+                rawRecords = emptyList(),
+                refreshLogs = listOf(
+                    RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO, timestamp = 1L),
+                    RefreshLogEntry(id = 10_002L, type = RefreshLogType.MANUAL, timestamp = 10_002L)
+                )
+            )
+        )
+
+        assertEquals(1, result.logsImported)
+        assertEquals(10_002L, runBlocking { database.eventLogDao().countLogs() })
+    }
+
     // Mutation caught: deduplicating raw imports by account and timestamp without currency.
     @Test
     fun `applyImport preserves same-account same-timestamp records in different currencies`() {
@@ -644,9 +741,9 @@ class DataExporterTest {
         assertEquals(listOf(cny, usd), readDataExporterRoomRecords().sortedBy { it.currency })
     }
 
-    // Room rejects malformed imported history instead of reporting a successful write.
+    // Imported malformed history is skipped before it reaches Room constraints.
     @Test
-    fun `applyImport rejects raw records with a blank account`() {
+    fun `applyImport skips raw records with a blank account`() {
         val incoming = RawRecord("", 100L, "USD", 2f, 0f, 2f)
         val imported = DataExport(
             exportedAt = "2026-08-03T00:00:00",
@@ -655,13 +752,14 @@ class DataExporterTest {
             rawRecords = listOf(incoming)
         )
 
-        assertThrows(Exception::class.java) { applyDataExporterRoomImport(imported) }
+        val result = applyDataExporterRoomImport(imported)
+        assertEquals(0, result.recordsImported)
         assertTrue(readDataExporterRoomRecords().isEmpty())
     }
 
-    // Room enforces account foreign keys for imported summaries.
+    // Imported unknown summaries are skipped before they can violate Room foreign keys.
     @Test
-    fun `applyImport rejects summaries for an unknown account`() {
+    fun `applyImport skips summaries for an unknown account`() {
         val incoming = DailySummary(
             accountId = "unknown-account",
             date = "2026-08-01",
@@ -680,7 +778,8 @@ class DataExporterTest {
             rawRecords = emptyList()
         )
 
-        assertThrows(Exception::class.java) { applyDataExporterRoomImport(imported, seedAccounts = false) }
+        val result = applyDataExporterRoomImport(imported, seedAccounts = false)
+        assertEquals(0, result.summariesImported)
         assertTrue(readDataExporterRoomSummaries().isEmpty())
     }
 

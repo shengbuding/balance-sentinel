@@ -27,6 +27,8 @@ data class UsagePage(
 interface UsageRepository {
     suspend fun upsert(snapshot: UsageSnapshot, identityDiscriminator: String)
 
+    suspend fun accountIds(): List<String>
+
     suspend fun page(
         accountId: String,
         fromInclusive: Long,
@@ -46,6 +48,10 @@ class LegacyUsageRepository(
 
     override suspend fun upsert(snapshot: UsageSnapshot, identityDiscriminator: String) {
         withContext(Dispatchers.IO) { UsageDataStore.saveSnapshot(appContext, snapshot) }
+    }
+
+    override suspend fun accountIds(): List<String> = withContext(Dispatchers.IO) {
+        UsageDataStore.getAllSnapshots(appContext).map { it.accountId }.distinct()
     }
 
     override suspend fun page(
@@ -107,6 +113,8 @@ class RoomUsageRepository(
             rows
         )
     }
+
+    override suspend fun accountIds(): List<String> = usageDao.accountIds()
 
     override suspend fun page(
         accountId: String,
