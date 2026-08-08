@@ -6,10 +6,13 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Looper
 import android.widget.TextView
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
@@ -40,6 +43,7 @@ import java.util.concurrent.TimeUnit
 class WidgetProviderTest {
 
     private lateinit var context: Context
+    private lateinit var database: WalletDatabase
     private val providerClasses = listOf(
         StaticWidgetProvider_2x1::class.java,
         StaticWidgetProvider_2x2::class.java,
@@ -51,6 +55,8 @@ class WidgetProviderTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
         SettingsRepositoryProvider.factory = { MutableSettingsRepository() }
         BalanceWidgetDataStore.clearAll(context)
         WidgetConfigStore.clearAll(context)
@@ -58,9 +64,10 @@ class WidgetProviderTest {
 
     @After
     fun tearDown() {
-        SettingsRepositoryProvider.resetForTests()
         StaticWidgetProvider.accountStateLoaderOverride = null
         WidgetRefreshReceiver.resetTestOverrides()
+        SettingsRepositoryProvider.resetForTests()
+        WalletDatabaseProvider.clearForTests()
         BalanceWidgetDataStore.clearAll(context)
         WidgetConfigStore.clearAll(context)
     }
@@ -98,6 +105,9 @@ class WidgetProviderTest {
 
     @Test
     fun `provider entrypoint renders only balances from loaded accounts`() {
+        StaticWidgetProvider.accountStateLoaderOverride = {
+            AccountLoadState.Ready(listOf(account("active")))
+        }
         val manager = AppWidgetManager.getInstance(context)
         val widgetId = Shadows.shadowOf(manager).createWidget(
             StaticWidgetProvider_2x1::class.java,
@@ -110,24 +120,23 @@ class WidgetProviderTest {
         BalanceWidgetDataStore.saveAccountBalance(
             context, "deleted", "Deleted", "75.00", "CNY", true, "", ""
         )
-        StaticWidgetProvider.accountStateLoaderOverride = {
-            AccountLoadState.Ready(listOf(account("active")))
-        }
+        val provider = StaticWidgetProvider_2x1()
+        val pending = attachPendingResult(provider)
 
-        StaticWidgetProvider_2x1().onUpdate(context, manager, intArrayOf(widgetId))
-
+        provider.onUpdate(context, manager, intArrayOf(widgetId))
         val rendered = awaitWidgetBalance(manager, widgetId) { it.contains("25.00") }
+        pending.future.get(2, TimeUnit.SECONDS)
         assertFalse("deleted balance must not affect the rendered aggregate", rendered.contains("100.00"))
     }
 
     @Test
     fun `receiver entrypoint returns while refresh is suspended and finishes afterward`() {
+        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
         val manager = AppWidgetManager.getInstance(context)
         Shadows.shadowOf(manager).createWidget(
             StaticWidgetProvider_2x1::class.java,
             R.layout.widget_balance_compact
         )
-        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
         val started = CountDownLatch(1)
         val release = CompletableDeferred<Unit>()
         var observedTrigger: RefreshTrigger? = null
@@ -154,12 +163,12 @@ class WidgetProviderTest {
 
     @Test
     fun `receiver entrypoint finishes its async result when refresh fails`() {
+        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
         val manager = AppWidgetManager.getInstance(context)
         Shadows.shadowOf(manager).createWidget(
             StaticWidgetProvider_2x1::class.java,
             R.layout.widget_balance_compact
         )
-        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
         val attempted = CountDownLatch(1)
         WidgetRefreshReceiver.refreshGatewayProvider = {
             gateway {

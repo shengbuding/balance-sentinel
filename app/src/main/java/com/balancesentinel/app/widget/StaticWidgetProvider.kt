@@ -198,7 +198,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                     }
                 }
             } finally {
-                pending.finish()
+                pending?.finish()
             }
         }
     }
@@ -215,7 +215,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                     updateWidget(context, appWidgetManager, appWidgetId, newOptions, state)
                 }
             } finally {
-                pending.finish()
+                pending?.finish()
             }
         }
     }
