@@ -237,6 +237,64 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `fresh Room import may replace current settings`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val accountStorage = context.getSharedPreferences(
+            "settings-fresh-import-${System.nanoTime()}",
+            Context.MODE_PRIVATE
+        )
+        val accountManager = ApiKeyManager(context, accountStorage)
+        val local = AccountInfo(
+            id = accountManager.computeId("sk-fresh-import"),
+            label = "Local",
+            apiKey = "sk-fresh-import"
+        )
+        accountManager.replaceAll(listOf(local))
+        database.accountDao().insertCreate(testAccount(local.id))
+        repository.applyConfigSettings(
+            ConfigSettings(
+                refreshIntervalSeconds = 30,
+                alertEnabled = false,
+                alertThreshold = 1f,
+                changeAlertEnabled = false,
+                changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 60,
+                logMaxEntries = 100,
+                backgroundRefreshInterval = 900,
+                foregroundMonitoringInterval = 30
+            )
+        )
+        val importedSettings = ConfigSettings(
+            refreshIntervalSeconds = 45,
+            alertEnabled = true,
+            alertThreshold = 50f,
+            changeAlertEnabled = true,
+            changeAlertThreshold = 5f,
+            changeAlertPeriodMinutes = 120,
+            logMaxEntries = 250,
+            backgroundRefreshInterval = 1800,
+            foregroundMonitoringInterval = 45
+        )
+        val planner = BackupImportPlanner(accountManager, WidgetPrefs(context), repository)
+        val plan = planner.plan(
+            AppConfig(
+                exportedAt = "now",
+                appVersion = "test",
+                credentialsIncluded = true,
+                accounts = listOf(local),
+                settings = importedSettings
+            ),
+            accountManager.getAccounts(),
+            ImportMode.MERGE
+        )
+
+        planner.applyAsync(plan, confirmedFullReplace = false)
+
+        assertEquals(importedSettings, ConfigManager.toConfigSettings(repository.readSnapshot()))
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
     fun `failed URI import restores account and Room settings preimages`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val accountStorage = context.getSharedPreferences(
