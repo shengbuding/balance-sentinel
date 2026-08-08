@@ -27,7 +27,7 @@ class RefreshResultCommitterTest {
     private val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
 
     @Before fun installRoom() = com.balancesentinel.app.data.local.WalletDatabaseProvider.installForTests(db)
-    @After fun close() = db.close()
+    @After fun close() = com.balancesentinel.app.data.local.WalletDatabaseProvider.clearForTests()
 
     @Test fun `refresh records usage and logs commit atomically`() = runBlocking {
         db.accountDao().insertCreate(accountEntity())

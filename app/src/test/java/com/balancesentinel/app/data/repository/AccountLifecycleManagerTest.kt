@@ -28,7 +28,7 @@ class AccountLifecycleManagerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
     @Before fun installRoom() = com.balancesentinel.app.data.local.WalletDatabaseProvider.installForTests(db)
-    @After fun close() = db.close()
+    @After fun close() = com.balancesentinel.app.data.local.WalletDatabaseProvider.clearForTests()
 
     @Test fun `account deletion uses foreign key cascade for all owned Room rows`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
