@@ -24,6 +24,7 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.testing.MutableSettingsRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -39,7 +40,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
-@Config(application = DeepSeekApp::class)
+@Config(application = DeepSeekTestApplication::class)
 class DeepSeekAppTest {
 
     private lateinit var context: Context
@@ -343,4 +344,14 @@ class DeepSeekAppTest {
             check(cursor.moveToFirst())
             cursor.getLong(0)
         }
+}
+
+class DeepSeekTestApplication : DeepSeekApp() {
+    override fun onCreate() {
+        WalletDatabaseProvider.installForTests(
+            Room.inMemoryDatabaseBuilder(this, WalletDatabase::class.java).build()
+        )
+        SettingsRepositoryProvider.factory = { MutableSettingsRepository() }
+        super.onCreate()
+    }
 }

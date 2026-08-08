@@ -16,6 +16,8 @@ import com.balancesentinel.app.data.refresh.AccountStoreRead
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.testing.MutableSettingsRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -49,12 +51,14 @@ class WidgetProviderTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        SettingsRepositoryProvider.factory = { MutableSettingsRepository() }
         BalanceWidgetDataStore.clearAll(context)
         WidgetConfigStore.clearAll(context)
     }
 
     @After
     fun tearDown() {
+        SettingsRepositoryProvider.resetForTests()
         StaticWidgetProvider.accountStateLoaderOverride = null
         WidgetRefreshReceiver.resetTestOverrides()
         BalanceWidgetDataStore.clearAll(context)

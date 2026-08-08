@@ -33,7 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
-class DeepSeekApp : Application() {
+open class DeepSeekApp : Application() {
 
     internal var legacyMigrationRunner: suspend () -> Unit = {
         legacyAccountMigration().run()
