@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.history.DailySummaryEntity
@@ -22,6 +23,7 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -49,6 +51,11 @@ class DeepSeekAppTest {
 
     @After
     fun tearDown() {
+        runBlocking {
+            (context as DeepSeekApp).cancelStartupMigrationsForTests()
+        }
+        SettingsRepositoryProvider.resetForTests()
+        WalletDatabaseProvider.clearForTests()
         // Clean up test APK files
         val apkDir = File(context.cacheDir, "apk")
         if (apkDir.exists()) apkDir.deleteRecursively()

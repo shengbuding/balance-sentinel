@@ -30,6 +30,7 @@ import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
 class DeepSeekApp : Application() {
@@ -50,7 +51,12 @@ class DeepSeekApp : Application() {
         legacySettingsMigration().migrate()
     }
 
-    private val startupMigrationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val startupMigrationJob = SupervisorJob()
+    private val startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
+
+    internal suspend fun cancelStartupMigrationsForTests() {
+        startupMigrationJob.cancelAndJoin()
+    }
 
     lateinit var refreshGateway: RefreshGateway
         private set
