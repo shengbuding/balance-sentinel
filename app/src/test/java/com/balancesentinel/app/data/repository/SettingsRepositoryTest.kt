@@ -42,6 +42,8 @@ class SettingsRepositoryTest {
 
     @After
     fun tearDown() {
+        repository.close()
+        SettingsRepositoryProvider.resetForTests()
         database.close()
     }
 
@@ -162,11 +164,15 @@ class SettingsRepositoryTest {
     @Test
     fun `configuration export distinguishes background and foreground cadences`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val prefs = WidgetPrefs(context)
-        prefs.resetAll()
-        prefs.refreshIntervalSeconds = 30
+        val snapshot = SettingsSnapshot(
+            AppSettingsEntity(
+                backgroundRefreshIntervalSeconds = 900,
+                foregroundMonitoringIntervalSeconds = 30,
+                updatedAt = 0L
+            )
+        )
 
-        val json = ConfigManager.buildConfig(context, emptyList(), prefs)
+        val json = ConfigManager.buildConfig(context, emptyList(), snapshot)
 
         assertTrue(json.contains("\"backgroundRefreshInterval\": 900"))
         assertTrue(json.contains("\"foregroundMonitoringInterval\": 30"))
@@ -386,19 +392,7 @@ class SettingsRepositoryTest {
         )
         val failingRepository = PauseAfterApplyRepository(repository)
         val planner = BackupImportPlanner(accountManager, WidgetPrefs(context), failingRepository)
-        val plan = BackupImportPlan(
-            mode = ImportMode.REPLACE_ALL,
-            finalAccounts = listOf(imported),
-            matchedUpdatedCount = 0,
-            retainedCredentialCount = 0,
-            createdCount = 1,
-            skippedCount = 0,
-            conflictCount = 0,
-            deletedCount = 1,
-            scriptAuthorizations = emptyList(),
-            canApply = true,
-            blockingReasons = emptyList(),
-            settings = ConfigSettings(
+        val importedSettings = ConfigSettings(
                 refreshIntervalSeconds = 30,
                 alertEnabled = true,
                 alertThreshold = 50f,
@@ -406,7 +400,17 @@ class SettingsRepositoryTest {
                 changeAlertThreshold = 0f,
                 changeAlertPeriodMinutes = 60,
                 logMaxEntries = 100
-            )
+        )
+        val plan = planner.plan(
+            AppConfig(
+                exportedAt = "now",
+                appVersion = "test",
+                credentialsIncluded = true,
+                accounts = listOf(imported),
+                settings = importedSettings
+            ),
+            accountManager.getAccounts(),
+            ImportMode.REPLACE_ALL
         )
 
         val importFailure = async {

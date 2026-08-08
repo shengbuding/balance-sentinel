@@ -3,6 +3,7 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.util.Logger
 import androidx.core.content.ContextCompat
@@ -93,7 +94,10 @@ class HomeViewModel @JvmOverloads constructor(
     // Tests provide a deterministic gateway; production resolves the Application singleton.
     private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null,
     private val injectedAccountUiRepository: AccountUiRepository? = null,
-    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
+    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null,
+    private val cleanupAction: suspend (Context) -> Unit = { context ->
+        CleanupScheduler.runCleanup(context)
+    }
 ) : AndroidViewModel(application) {
 
     private val settingsRepository: SettingsRepository = SettingsRepositoryProvider.get(application)
@@ -286,7 +290,7 @@ class HomeViewModel @JvmOverloads constructor(
         try {
             MidnightScheduler.schedule(getApplication())
             viewModelScope.launch {
-                CleanupScheduler.runCleanup(getApplication())
+                cleanupAction(getApplication())
             }
         } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }

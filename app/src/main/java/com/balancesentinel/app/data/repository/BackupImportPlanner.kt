@@ -197,6 +197,10 @@ class BackupImportPlanner(
         }
 
         val baselineRevision = settingsRepository?.currentRevision() ?: 0L
+        val baselineSettings = settingsRepository
+            ?.readSnapshot()
+            ?.let(ConfigManager::toConfigSettings)
+            ?: config.settings
         return BackupImportPlan(
             mode = mode,
             finalAccounts = finalAccounts.toList(),
@@ -211,7 +215,7 @@ class BackupImportPlanner(
             blockingReasons = blockingReasons,
             settings = config.settings,
             baselineRevision = baselineRevision,
-            fingerprint = ImportFingerprint.sha256(localAccounts, config.settings, baselineRevision)
+            fingerprint = ImportFingerprint.sha256(localAccounts, baselineSettings, baselineRevision)
         )
     }
 

@@ -7,12 +7,15 @@ import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -20,23 +23,25 @@ import kotlinx.coroutines.sync.withLock
 class RoomSettingsRepository(
     private val database: WalletDatabase,
     private val scope: CoroutineScope? = null
-) : SettingsRepository {
+) : SettingsRepository, AutoCloseable {
     private val writeMutex = Mutex()
     private val state = MutableStateFlow<SettingsSnapshotState>(SettingsSnapshotState.Loading)
     override val snapshot: StateFlow<SettingsSnapshotState> = state
 
-    init {
-        scope?.launch {
-            merge(
-                database.appSettingsDao().observe().map { Unit },
-                database.settingsDao().observeAccountAlertSettings().map { Unit },
-                database.settingsDao().observeNotificationSelections().map { Unit },
-                database.settingsDao().observeAlertRuntimeStates().map { Unit },
-                database.settingsDao().observeSnoozes().map { Unit }
-            ).collect {
-                state.value = SettingsSnapshotState.Ready(loadSnapshot())
-            }
+    private val observerJob: Job? = scope?.launch {
+        merge(
+            database.appSettingsDao().observe().map { Unit },
+            database.settingsDao().observeAccountAlertSettings().map { Unit },
+            database.settingsDao().observeNotificationSelections().map { Unit },
+            database.settingsDao().observeAlertRuntimeStates().map { Unit },
+            database.settingsDao().observeSnoozes().map { Unit }
+        ).collect {
+            state.value = SettingsSnapshotState.Ready(loadSnapshot())
         }
+    }
+
+    override fun close() {
+        runBlocking { observerJob?.cancelAndJoin() }
     }
 
     override suspend fun readSnapshot(): SettingsSnapshot = loadSnapshot().also {

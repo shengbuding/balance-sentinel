@@ -6,6 +6,9 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
+import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.serialization.encodeToString
@@ -23,7 +26,7 @@ class ConfigManagerTest {
 
     private lateinit var context: Context
     private lateinit var mockKeyMgr: ApiKeyManager
-    private lateinit var prefs: WidgetPrefs
+    private lateinit var snapshot: SettingsSnapshot
     private val testJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     private val realKey = "sk-abc123def456ghi789jkl012mno345pqr678stu901"
@@ -31,8 +34,7 @@ class ConfigManagerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        prefs = WidgetPrefs(context)
-        prefs.resetAll()
+        snapshot = SettingsSnapshot(AppSettingsEntity(updatedAt = 0L))
 
         // Mock ApiKeyManager — EncryptedSharedPreferences 在 Robolectric 中不可用
         mockKeyMgr = mockk()
@@ -104,7 +106,7 @@ class ConfigManagerTest {
         every { mockKeyMgr.getAccounts() } returns listOf(account)
 
         val exported = testJson.decodeFromString<AppConfig>(
-            ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+            buildConfig(includeTokens = false)
         )
 
         assertEquals(2, exported.version)
@@ -125,7 +127,7 @@ class ConfigManagerTest {
 
     @Test
     fun `buildConfig with tokens preserves full API keys`() {
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = true)
+        val json = buildConfig(includeTokens = true)
         val exported = testJson.decodeFromString<AppConfig>(json)
 
         assertEquals(2, exported.version)
@@ -143,7 +145,7 @@ class ConfigManagerTest {
 
     @Test
     fun `buildConfig produces valid JSON with expected structure`() {
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        val json = buildConfig(includeTokens = false)
 
         assertTrue("Missing version", json.contains("\"version\": 2"))
         assertTrue("Missing credential marker", json.contains("\"credentialsIncluded\": false"))
@@ -156,7 +158,7 @@ class ConfigManagerTest {
 
     @Test
     fun `buildConfig includes account labels`() {
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        val json = buildConfig(includeTokens = false)
 
         assertTrue("Missing 主账户 label", json.contains("主账户"))
         assertTrue("Missing 测试 label", json.contains("测试"))
@@ -168,12 +170,16 @@ class ConfigManagerTest {
 
     @Test
     fun `buildConfig reflects custom widgetPrefs settings`() {
-        prefs.refreshIntervalSeconds = 120
-        prefs.alertEnabled = true
-        prefs.alertThreshold = 50f
-        prefs.snoozeDurationMinutes = 30
+        snapshot = snapshot.copy(
+            appSettings = snapshot.appSettings.copy(
+                foregroundMonitoringIntervalSeconds = 120,
+                alertEnabled = true,
+                alertThreshold = 50.0,
+                snoozeDurationMinutes = 30
+            )
+        )
 
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        val json = buildConfig(includeTokens = false)
         assertTrue(json.contains("\"refreshIntervalSeconds\": 120"))
         assertTrue(json.contains("\"alertEnabled\": true"))
         assertTrue(json.contains("\"snoozeDurationMinutes\": 30"))
@@ -181,18 +187,21 @@ class ConfigManagerTest {
 
     @Test
     fun `buildConfig includes perCurrencyAlertSettings`() {
-        prefs.setBalanceAlertEnabled("acc1", "CNY", true)
-        prefs.setChangeAlertEnabled("acc1", "CNY", false)
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        snapshot = snapshot.copy(
+            accountAlertSettings = listOf(AccountAlertSettingEntity("acc1", "CNY", true, false))
+        )
+        val json = buildConfig(includeTokens = false)
         assertTrue(json.contains("\"perCurrencyAlertSettings\""))
         assertTrue(json.contains("\"balanceAlertEnabled\": true"))
     }
 
     @Test
     fun `buildConfig includes notificationSelectedWallets`() {
-        prefs.showTotalBalanceInNotification = false
-        prefs.setNotificationWalletSelected("acc1", "CNY", true)
-        val json = ConfigManager.buildConfig(context, mockKeyMgr, prefs, includeTokens = false)
+        snapshot = snapshot.copy(
+            appSettings = snapshot.appSettings.copy(showTotalBalanceInNotification = false),
+            notificationSelections = listOf(NotificationWalletSelectionEntity("acc1", "CNY", 0))
+        )
+        val json = buildConfig(includeTokens = false)
         assertTrue(json.contains("\"notificationSelectedWallets\""))
         assertTrue(json.contains("\"showTotalBalance\": false"))
     }
@@ -205,7 +214,7 @@ class ConfigManagerTest {
     fun `buildConfig with no accounts produces empty accounts array`() {
         val emptyKeyMgr = mockk<ApiKeyManager>()
         every { emptyKeyMgr.getAccounts() } returns emptyList()
-        val json = ConfigManager.buildConfig(context, emptyKeyMgr, prefs, includeTokens = false)
+        val json = buildConfig(emptyKeyMgr, includeTokens = false)
         assertTrue(json.contains("\"accounts\": []"))
     }
 
@@ -218,7 +227,7 @@ class ConfigManagerTest {
         val exportFile = File(context.filesDir, "export-test-${System.nanoTime()}.json")
         val uri = Uri.fromFile(exportFile)
 
-        val result = ConfigManager.exportToUri(context, uri, mockKeyMgr, prefs, includeTokens = false)
+        val result = exportToUri(uri, includeTokens = false)
 
         assertTrue("export should succeed", result)
         assertTrue("export file should exist", exportFile.exists())
@@ -233,7 +242,7 @@ class ConfigManagerTest {
         val exportFile = File(context.filesDir, "export-token-${System.nanoTime()}.json")
         val uri = Uri.fromFile(exportFile)
 
-        ConfigManager.exportToUri(context, uri, mockKeyMgr, prefs, includeTokens = true)
+        exportToUri(uri, includeTokens = true)
 
         val content = exportFile.readText()
         assertTrue("should contain real key", content.contains(realKey))
@@ -244,7 +253,7 @@ class ConfigManagerTest {
     fun `exportToUri returns false on exception`() {
         // URIs without a scheme cause an exception in openOutputStream
         val badUri = Uri.parse("content://nonexistent.authority.xyz/file.json")
-        val result = ConfigManager.exportToUri(context, badUri, mockKeyMgr, prefs)
+        val result = exportToUri(badUri, includeTokens = false)
         // In Robolectric, this may succeed or fail depending on shadow behavior
         // The code catches Exception, so either outcome is valid
         // We test that no crash occurs
@@ -338,5 +347,24 @@ class ConfigManagerTest {
 
         assertNull("should return null for empty content", result)
     }
+
+    private fun buildConfig(
+        keyManager: ApiKeyManager = mockKeyMgr,
+        includeTokens: Boolean
+    ): String = ConfigManager.buildConfig(
+        context,
+        keyManager.getAccounts(),
+        snapshot,
+        includeTokens
+    )
+
+    private fun exportToUri(uri: Uri, includeTokens: Boolean): Boolean =
+        ConfigManager.exportToUri(
+            context,
+            uri,
+            mockKeyMgr.getAccounts(),
+            snapshot,
+            includeTokens
+        )
 
 }

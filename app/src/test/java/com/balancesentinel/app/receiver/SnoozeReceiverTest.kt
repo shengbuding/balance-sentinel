@@ -5,12 +5,18 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.repository.NotificationHelper
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshotState
+import com.balancesentinel.app.testing.MutableSettingsRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -20,18 +26,23 @@ import org.robolectric.Shadows
 class SnoozeReceiverTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
+    private lateinit var settingsRepository: MutableSettingsRepository
+
+    @Before
+    fun setUp() {
+        settingsRepository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { settingsRepository }
+    }
 
     @After
     fun tearDown() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancelAll()
-        WidgetPrefs(context).resetAll()
+        SettingsRepositoryProvider.resetForTests()
     }
 
     @Test
     fun `currency snooze cancels only that pair while snoozing the account`() {
-        val prefs = WidgetPrefs(context)
-        prefs.resetAll()
         val helper = NotificationHelper(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancelAll()
@@ -54,7 +65,7 @@ class SnoozeReceiverTest {
             }
         )
 
-        assertTrue(prefs.getSnoozeUntil("acct") >= before + 60 * 60_000L)
+        assertTrue(awaitSnooze("acct") >= before + 60 * 60_000L)
         assertNull(shadow.getNotification(helper.alertNotificationId("acct", "CNY")))
         assertNull(shadow.getNotification(helper.changeNotificationId("acct", "CNY")))
         assertNotNull(shadow.getNotification(helper.alertNotificationId("acct", "USD")))
@@ -63,8 +74,6 @@ class SnoozeReceiverTest {
 
     @Test
     fun `currency action still snoozes its intended account with account wide storage`() {
-        val prefs = WidgetPrefs(context)
-        prefs.resetAll()
         val receiver = SnoozeReceiver()
         val before = System.currentTimeMillis()
         val intent = Intent().apply {
@@ -74,8 +83,8 @@ class SnoozeReceiverTest {
 
         receiver.onReceive(context, intent)
 
-        assertTrue(prefs.getSnoozeUntil("test-account-123") >= before + 60 * 60_000L)
-        assertEquals(0L, prefs.getSnoozeUntil("other-account"))
+        assertTrue(awaitSnooze("test-account-123") >= before + 60 * 60_000L)
+        assertEquals(0L, currentSnooze("other-account"))
     }
 
     @Test
@@ -83,5 +92,20 @@ class SnoozeReceiverTest {
         val receiver = SnoozeReceiver()
         val intent = Intent() // no account_id
         receiver.onReceive(context, intent)
+    }
+
+    private fun awaitSnooze(accountId: String): Long = runBlocking {
+        withTimeout(5_000) {
+            val ready = settingsRepository.snapshot.first { state ->
+                state is SettingsSnapshotState.Ready &&
+                    state.value.snoozes.any { it.accountId == accountId }
+            } as SettingsSnapshotState.Ready
+            ready.value.snoozes.single { it.accountId == accountId }.snoozedUntil
+        }
+    }
+
+    private fun currentSnooze(accountId: String): Long {
+        val ready = settingsRepository.snapshot.value as SettingsSnapshotState.Ready
+        return ready.value.snoozes.firstOrNull { it.accountId == accountId }?.snoozedUntil ?: 0L
     }
 }

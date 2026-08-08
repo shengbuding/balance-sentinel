@@ -41,7 +41,7 @@ class SnoozeReceiver : BroadcastReceiver() {
             } catch (error: Exception) {
                 Logger.w("SnoozeReceiver", "Failed to persist snooze: ${error.message}")
             } finally {
-                pending.finish()
+                pending?.finish()
             }
         }
 

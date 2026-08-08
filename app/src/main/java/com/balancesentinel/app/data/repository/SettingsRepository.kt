@@ -26,17 +26,19 @@ interface SettingsRepository {
 }
 
 object SettingsRepositoryProvider {
-    @Volatile
-    private var repositoryFactory: (Context) -> SettingsRepository = { context ->
+    private val defaultRepositoryFactory: (Context) -> SettingsRepository = { context ->
         RoomSettingsRepository.from(context)
     }
+
+    @Volatile
+    private var repositoryFactory: (Context) -> SettingsRepository = defaultRepositoryFactory
 
     var factory: (Context) -> SettingsRepository
         get() = repositoryFactory
         set(value) {
             synchronized(this) {
+                closeInstanceLocked()
                 repositoryFactory = value
-                instance = null
             }
         }
 
@@ -48,6 +50,15 @@ object SettingsRepositoryProvider {
     }
 
     internal fun resetForTests() {
-        synchronized(this) { instance = null }
+        synchronized(this) {
+            closeInstanceLocked()
+            repositoryFactory = defaultRepositoryFactory
+        }
+    }
+
+    private fun closeInstanceLocked() {
+        val current = instance
+        instance = null
+        if (current is AutoCloseable) runCatching { current.close() }
     }
 }

@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.testing.MutableSettingsRepository
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -17,16 +19,20 @@ import org.robolectric.RobolectricTestRunner
 class RefreshLogStoreTest {
 
     private lateinit var context: Context
+    private lateinit var settingsRepository: MutableSettingsRepository
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        settingsRepository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { settingsRepository }
         RefreshLogStore.clear(context)
     }
 
     @After
     fun tearDown() {
         RefreshLogStore.clear(context)
+        SettingsRepositoryProvider.resetForTests()
     }
 
     @Test
@@ -67,8 +73,11 @@ class RefreshLogStoreTest {
     @Test
     fun `entries respect max limit`() {
         // logMaxEntries coerces to range 10..1000, so use minimum 10
-        val prefs = WidgetPrefs(context)
-        prefs.logMaxEntries = 10
+        runBlocking {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(appSettings = current.appSettings.copy(logMaxEntries = 10))
+            }
+        }
 
         // Add 15 entries — only 10 should be kept
         repeat(15) { i ->

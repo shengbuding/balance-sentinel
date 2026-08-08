@@ -20,7 +20,6 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.AccountLoadState
-import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
 import com.balancesentinel.app.data.repository.AccountMutationResult
 import com.balancesentinel.app.data.repository.AccountUiRepository
@@ -28,7 +27,12 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
 import com.balancesentinel.app.data.repository.RawRecordStore
-import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshot
+import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
+import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
+import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
+import com.balancesentinel.app.testing.MutableSettingsRepository
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -39,6 +43,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -61,6 +66,7 @@ class HomeViewModelTest {
     private lateinit var apiKeyManager: ApiKeyManager
     private lateinit var mockRepository: BalanceRepository
     private lateinit var mainDispatcher: TestDispatcher
+    private lateinit var settingsRepository: MutableSettingsRepository
 
     @Before
     fun setUp() {
@@ -69,6 +75,8 @@ class HomeViewModelTest {
         accountPrefs = context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE)
         apiKeyManager = ApiKeyManager(context, accountPrefs)
         mockRepository = mockk(relaxed = true)
+        settingsRepository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { settingsRepository }
         mainDispatcher = UnconfinedTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
     }
@@ -76,6 +84,7 @@ class HomeViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        SettingsRepositoryProvider.resetForTests()
         ApiDebugStore.clearAll()
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE).edit().clear().commit()
     }
@@ -87,7 +96,8 @@ class HomeViewModelTest {
             mockRepository,
             null,
             LegacyAccountUiRepository(apiKeyManager),
-            ImmediateLegacyAccountMutationCoordinator(AccountLifecycleManager(context, apiKeyManager))
+            LegacyTestAccountMutationCoordinator(context, apiKeyManager, settingsRepository),
+            cleanupAction = {}
         )
     }
 
@@ -95,6 +105,25 @@ class HomeViewModelTest {
         mainDispatcher.scheduler.advanceUntilIdle()
         ShadowLooper.idleMainLooper()
         mainDispatcher.scheduler.advanceUntilIdle()
+    }
+
+    private fun updateSettings(
+        transform: (SettingsSnapshot) -> SettingsSnapshot
+    ) = runBlocking {
+        settingsRepository.updateSnapshot(transform)
+    }
+
+    private fun currentSettings(): SettingsSnapshot = runBlocking {
+        settingsRepository.readSnapshot()
+    }
+
+    private fun setSnooze(accountId: String) {
+        updateSettings { current ->
+            current.copy(
+                snoozes = current.snoozes.filterNot { it.accountId == accountId } +
+                    SnoozeStateEntity(accountId, System.currentTimeMillis() + 3_600_000L)
+            )
+        }
     }
 
     private fun createViewModel(
@@ -106,7 +135,8 @@ class HomeViewModelTest {
         mockRepository,
         null,
         accountRepository,
-        coordinator
+        coordinator,
+        cleanupAction = {}
     )
 
 
@@ -115,11 +145,11 @@ class HomeViewModelTest {
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `initial state has default settings from WidgetPrefs`() {
+    fun `initial state has default settings from repository`() {
         val vm = createViewModel()
         val state = vm.uiState.value
         assertFalse(state.isLoading)
-        assertEquals(WidgetPrefs.DEFAULT_INTERVAL, state.refreshIntervalSeconds)
+        assertEquals(30, state.refreshIntervalSeconds)
         assertTrue(state.accounts.isEmpty())
     }
 
@@ -145,9 +175,14 @@ class HomeViewModelTest {
             usageScriptEnabled = false
         )
         apiKeyManager.replaceAll(listOf(imported))
-        val prefs = WidgetPrefs(context)
-        prefs.refreshIntervalSeconds = 77
-        prefs.alertEnabled = true
+        updateSettings { current ->
+            current.copy(
+                appSettings = current.appSettings.copy(
+                    foregroundMonitoringIntervalSeconds = 77,
+                    alertEnabled = true
+                )
+            )
+        }
 
         vm.loadCachedBalances()
         drainMain()
@@ -222,7 +257,8 @@ class HomeViewModelTest {
             mockRepository,
             gateway,
             source,
-            RecordingMutationCoordinator()
+            RecordingMutationCoordinator(),
+            cleanupAction = {}
         )
         vm.refreshBalance()
         assertTrue(vm.uiState.value.accountBalances.containsKey(account.id))
@@ -251,7 +287,8 @@ class HomeViewModelTest {
             mockRepository,
             gateway,
             source,
-            RecordingMutationCoordinator()
+            RecordingMutationCoordinator(),
+            cleanupAction = {}
         )
         assertTrue(accountPrefs.edit().putString("accounts", "{ corrupt legacy JSON").commit())
 
@@ -451,15 +488,22 @@ class HomeViewModelTest {
     @Test
     fun `removeAccount clears account caches debug records and alert state`() {
         val account = apiKeyManager.addAccount("A", "sk-key-a")
-        val widgetPrefs = WidgetPrefs(context)
         val cache = ProviderCache(context)
         cache.put(
             ProviderType.DEEPSEEK,
             account.id,
             UnifiedBalance(ProviderType.DEEPSEEK, account.id, true, emptyList())
         )
-        widgetPrefs.setBalanceAlertEnabled(account.id, "USD", true)
-        widgetPrefs.setNotificationWalletSelected(account.id, "USD", true)
+        updateSettings { current ->
+            current.copy(
+                accountAlertSettings = listOf(
+                    AccountAlertSettingEntity(account.id, "USD", true, false)
+                ),
+                notificationSelections = listOf(
+                    NotificationWalletSelectionEntity(account.id, "USD", 0)
+                )
+            )
+        }
         ApiDebugStore.addEntry(
             ApiDebugEntry(
                 account.id,
@@ -481,22 +525,29 @@ class HomeViewModelTest {
         assertTrue(vm.uiState.value.accounts.isEmpty())
         assertNull(cache.get(ProviderType.DEEPSEEK, account.id))
         assertTrue(ApiDebugStore.getEntries(account.id).isEmpty())
-        assertFalse(widgetPrefs.isBalanceAlertEnabled(account.id, "USD"))
-        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${account.id}_USD"))
+        assertTrue(currentSettings().accountAlertSettings.none { it.accountId == account.id })
+        assertTrue(currentSettings().notificationSelections.none { it.accountId == account.id })
     }
 
     @Test
     fun `removeAccountWithData clears account caches debug records and alert state`() {
         val account = apiKeyManager.addAccount("Account", "delete-key")
-        val widgetPrefs = WidgetPrefs(context)
         val cache = ProviderCache(context)
         cache.put(
             ProviderType.DEEPSEEK,
             account.id,
             UnifiedBalance(ProviderType.DEEPSEEK, account.id, true, emptyList())
         )
-        widgetPrefs.setBalanceAlertEnabled(account.id, "USD", true)
-        widgetPrefs.setNotificationWalletSelected(account.id, "USD", true)
+        updateSettings { current ->
+            current.copy(
+                accountAlertSettings = listOf(
+                    AccountAlertSettingEntity(account.id, "USD", true, false)
+                ),
+                notificationSelections = listOf(
+                    NotificationWalletSelectionEntity(account.id, "USD", 0)
+                )
+            )
+        }
         ApiDebugStore.addEntry(
             ApiDebugEntry(account.id, "https://api.example.com", "GET", emptyMap(), null, 200, emptyMap(), "{}", 1L, 1L)
         )
@@ -507,8 +558,8 @@ class HomeViewModelTest {
         assertNull(apiKeyManager.getAccount(account.id))
         assertNull(cache.get(ProviderType.DEEPSEEK, account.id))
         assertTrue(ApiDebugStore.getEntries(account.id).isEmpty())
-        assertFalse(widgetPrefs.isBalanceAlertEnabled(account.id, "USD"))
-        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${account.id}_USD"))
+        assertTrue(currentSettings().accountAlertSettings.none { it.accountId == account.id })
+        assertTrue(currentSettings().notificationSelections.none { it.accountId == account.id })
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -578,9 +629,16 @@ class HomeViewModelTest {
             providerType = ProviderType.CUSTOM,
             extraSettings = mapOf("baseUrl" to "https://old.example.com")
         )
-        val widgetPrefs = WidgetPrefs(context)
-        widgetPrefs.setBalanceAlertEnabled(original.id, "USD", true)
-        widgetPrefs.setNotificationWalletSelected(original.id, "USD", true)
+        updateSettings { current ->
+            current.copy(
+                accountAlertSettings = listOf(
+                    AccountAlertSettingEntity(original.id, "USD", true, false)
+                ),
+                notificationSelections = listOf(
+                    NotificationWalletSelectionEntity(original.id, "USD", 0)
+                )
+            )
+        }
         val vm = createViewModel()
 
         vm.editAccount(
@@ -594,9 +652,9 @@ class HomeViewModelTest {
         )
 
         val newId = apiKeyManager.computeId("new-key")
-        assertTrue(widgetPrefs.isBalanceAlertEnabled(newId, "USD"))
-        assertTrue(widgetPrefs.getNotificationWalletOrder().contains("${newId}_USD"))
-        assertFalse(widgetPrefs.getNotificationWalletOrder().contains("${original.id}_USD"))
+        assertTrue(currentSettings().accountAlertSettings.any { it.accountId == newId && it.currency == "USD" })
+        assertTrue(currentSettings().notificationSelections.any { it.accountId == newId && it.currency == "USD" })
+        assertTrue(currentSettings().notificationSelections.none { it.accountId == original.id })
     }
 
     @Test
@@ -729,7 +787,8 @@ class HomeViewModelTest {
             mockRepository,
             gateway,
             source,
-            RecordingMutationCoordinator()
+            RecordingMutationCoordinator(),
+            cleanupAction = {}
         )
 
         vm.refreshSingleAccount(account.id)
@@ -773,7 +832,8 @@ class HomeViewModelTest {
             mockRepository,
             gateway,
             source,
-            RecordingMutationCoordinator()
+            RecordingMutationCoordinator(),
+            cleanupAction = {}
         )
 
         vm.refreshBalance()
@@ -840,9 +900,7 @@ class HomeViewModelTest {
     @Test
     fun `clearAllSnooze updates snoozeInfo in state`() {
         val vm = createViewModel()
-        // Set a snooze on the default widget_prefs (HomeViewModel creates WidgetPrefs(application))
-        val defaultPrefs = WidgetPrefs(context)
-        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+        setSnooze("any-account")
         vm.refreshSnoozeInfo()
         assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
 
@@ -853,8 +911,7 @@ class HomeViewModelTest {
     @Test
     fun `refreshSnoozeInfo updates snooze info from prefs`() {
         val vm = createViewModel()
-        val defaultPrefs = WidgetPrefs(context)
-        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+        setSnooze("any-account")
 
         vm.refreshSnoozeInfo()
         assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
@@ -896,8 +953,7 @@ class HomeViewModelTest {
     @Test
     fun `setAlertThreshold clears snooze and updates info`() {
         val vm = createViewModel()
-        val defaultPrefs = WidgetPrefs(context)
-        defaultPrefs.setSnoozeUntil("any-account", System.currentTimeMillis() + 3600_000L)
+        setSnooze("any-account")
         vm.refreshSnoozeInfo()
         assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
 
@@ -909,8 +965,7 @@ class HomeViewModelTest {
     @Test
     fun `setChangeAlertThreshold clears snooze and updates info`() {
         val vm = createViewModel()
-        val defaultPrefs = WidgetPrefs(context)
-        defaultPrefs.setSnoozeUntil("account-x", System.currentTimeMillis() + 3600_000L)
+        setSnooze("account-x")
         vm.refreshSnoozeInfo()
         assertTrue(vm.uiState.value.snoozeInfo.anySnoozed)
 
@@ -947,7 +1002,8 @@ class HomeViewModelTest {
             mockRepository,
             gateway,
             LegacyAccountUiRepository(apiKeyManager),
-            ImmediateLegacyAccountMutationCoordinator(AccountLifecycleManager(context, apiKeyManager, gateway))
+            LegacyTestAccountMutationCoordinator(context, apiKeyManager, settingsRepository),
+            cleanupAction = {}
         )
     }
 
@@ -1291,20 +1347,63 @@ class HomeViewModelTest {
         }
     }
 
-    /** Keeps the real legacy lifecycle behavior while making old synchronous fixtures deterministic. */
-    private class ImmediateLegacyAccountMutationCoordinator(
-        private val lifecycleManager: AccountLifecycleManager
+    private class LegacyTestAccountMutationCoordinator(
+        private val context: Context,
+        private val apiKeyManager: ApiKeyManager,
+        private val settingsRepository: MutableSettingsRepository
     ) : AccountMutationCoordinator {
         override suspend fun save(
             existingId: String?,
             draft: AccountDraft
-        ): AccountMutationResult = AccountMutationResult.Saved(
-            lifecycleManager.save(existingId, draft)
-        )
+        ): AccountMutationResult {
+            val result = apiKeyManager.saveAccountLegacy(existingId, draft) { }
+            if (result is AccountSaveResult.Replaced) {
+                migrateSettings(result.before.id, result.account.id)
+            }
+            return AccountMutationResult.Saved(result)
+        }
 
         override suspend fun delete(accountId: String): AccountMutationResult {
-            lifecycleManager.delete(accountId)
+            val account = apiKeyManager.getAccount(accountId)
+                ?: return AccountMutationResult.Deleted(accountId)
+            apiKeyManager.removeAccount(accountId)
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    accountAlertSettings = current.accountAlertSettings.filterNot {
+                        it.accountId == accountId
+                    },
+                    notificationSelections = current.notificationSelections.filterNot {
+                        it.accountId == accountId
+                    },
+                    alertRuntimeStates = current.alertRuntimeStates.filterNot {
+                        it.accountId == accountId
+                    },
+                    snoozes = current.snoozes.filterNot { it.accountId == accountId }
+                )
+            }
+            BalanceWidgetDataStore.removeAccountBalance(context, accountId)
+            ProviderCache(context).clear(account.providerType, accountId)
+            ApiDebugStore.clearEntries(accountId)
             return AccountMutationResult.Deleted(accountId)
+        }
+
+        private suspend fun migrateSettings(oldId: String, newId: String) {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    accountAlertSettings = current.accountAlertSettings.map {
+                        if (it.accountId == oldId) it.copy(accountId = newId) else it
+                    },
+                    notificationSelections = current.notificationSelections.map {
+                        if (it.accountId == oldId) it.copy(accountId = newId) else it
+                    },
+                    alertRuntimeStates = current.alertRuntimeStates.map {
+                        if (it.accountId == oldId) it.copy(accountId = newId) else it
+                    },
+                    snoozes = current.snoozes.map {
+                        if (it.accountId == oldId) it.copy(accountId = newId) else it
+                    }
+                )
+            }
         }
     }
 
