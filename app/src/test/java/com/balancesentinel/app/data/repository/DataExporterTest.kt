@@ -29,7 +29,10 @@ class DataExporterTest {
 
     private lateinit var context: Context
     private lateinit var database: WalletDatabase
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     @Before
     fun setUp() {
@@ -508,7 +511,7 @@ class DataExporterTest {
 
     @Suppress("DEPRECATION")
     @Test
-    fun `exportToUri writes data to file URI`() {
+    fun `exportToUri writes data to file URI`() = runBlocking {
         addDataExporterRoomSummaries(listOf(
             DailySummary(accountId = "a1", date = "2026-07-08", currency = "CNY",
                 open = 10f, close = 10f, consumed = 0f, toppedUp = 0f, avgBalance = 10f, sampleCount = 1)
@@ -525,7 +528,7 @@ class DataExporterTest {
 
     @Suppress("DEPRECATION")
     @Test
-    fun `exportToUri produces valid JSON at file URI`() {
+    fun `exportToUri produces valid JSON at file URI`() = runBlocking {
         addDataExporterRoomRecords(listOf(
             RawRecord(accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
                 totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)
@@ -589,7 +592,7 @@ class DataExporterTest {
 
     @Suppress("DEPRECATION")
     @Test
-    fun `importAndApply imports and merges data from file URI`() {
+    fun `importAndApply imports and merges data from file URI`() = runBlocking {
         val data = DataExport(
             version = 1, exportedAt = "2026-07-09T12:00:00", appVersion = "1.2.0",
             dailySummaries = listOf(DailySummary(accountId = "iaa1", date = "2026-07-08",
@@ -611,7 +614,7 @@ class DataExporterTest {
     }
 
     @Test
-    fun `importAndApply returns null when importFromUri fails`() {
+    fun `importAndApply returns null when importFromUri fails`() = runBlocking {
         val badUri = Uri.parse("content://nonexistent.authority/path")
         val result = DataExporter.importAndApply(context, badUri)
         assertNull("should return null when import fails", result)

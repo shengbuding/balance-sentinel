@@ -12,6 +12,8 @@ import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 interface HistoryJsonConsumer {
     suspend fun dailySummaries(items: List<DailySummary>): Int
@@ -49,10 +51,23 @@ class HistoryJsonReader(
         var recordCounts = 0 to 0
         var usageCounts = 0 to 0
         var logCounts = 0 to 0
+        val seen = mutableSetOf<String>()
+        val required = setOf(
+            "version",
+            "exportedAt",
+            "appVersion",
+            "dailySummaries",
+            "rawRecords",
+            "usageSnapshots",
+            "refreshLogs"
+        )
 
         beginObject(reader)
         while (reader.hasNext()) {
-            when (nextName(reader)) {
+            currentCoroutineContext().ensureActive()
+            val name = nextName(reader)
+            if (name in required) require(seen.add(name)) { "Duplicate top-level field: $name" }
+            when (name) {
                 "version" -> version = reader.nextInt()
                 "exportedAt" -> exportedAt = nextString(reader)
                 "appVersion" -> appVersion = nextString(reader)
@@ -85,6 +100,8 @@ class HistoryJsonReader(
         }
         endObject(reader)
         require(reader.peek() == JsonToken.END_DOCUMENT) { "Trailing JSON content" }
+        require(seen.containsAll(required)) { "Missing top-level fields: ${required - seen}" }
+        require(version == SUPPORTED_VERSION) { "Unsupported history schema version: $version" }
         return HistoryJsonReadResult(
             HistoryExportHeader(version, exportedAt, appVersion),
             summaryCounts.first,
@@ -109,6 +126,7 @@ class HistoryJsonReader(
         val chunk = ArrayList<T>(limits.chunkSize)
         beginArray(reader)
         while (reader.hasNext()) {
+            currentCoroutineContext().ensureActive()
             require(inFile < maximum) { "JSON array exceeds record limit $maximum" }
             chunk += readItem(reader)
             inFile++
@@ -189,7 +207,12 @@ class HistoryJsonReader(
             "timestamp" -> timestamp = reader.nextLong()
             "records" -> {
                 beginArray(reader)
-                while (reader.hasNext()) records += readUsageRecord(reader)
+                while (reader.hasNext()) {
+                    require(records.size < limits.maxUsageRecordsPerSnapshot) {
+                        "Usage snapshot exceeds record limit ${limits.maxUsageRecordsPerSnapshot}"
+                    }
+                    records += readUsageRecord(reader)
+                }
                 endArray(reader)
             }
             else -> skipValue(reader)
@@ -307,6 +330,10 @@ class HistoryJsonReader(
             JsonToken.NULL -> reader.nextNull()
             else -> throw IllegalArgumentException("Unexpected JSON token ${reader.peek()}")
         }
+    }
+
+    private companion object {
+        const val SUPPORTED_VERSION = 1
     }
 }
 

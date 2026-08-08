@@ -129,3 +129,81 @@ Output: exit code 0; only Git CRLF conversion warnings were printed.
 
 - `WalletDatabaseMigrationTest` compiled but was not executed on-device because no emulator/device was connected.
 - The legacy compatibility APIs `buildExport` and `importFromUri` still materialize `DataExport` for existing small-object callers/tests. The user-facing URI export/import path used for large history is fully streaming.
+
+## Fix Round 1
+
+Baseline: `e1e9db003032144e57f1ff58687eef505182cb4d`
+
+RED commit: `f45b02e` (`test: expose task 13 streaming publication defects`)
+
+The review findings were reproduced with behavior-level tests, then fixed by:
+
+- requiring exactly one of every known top-level section and schema version 1;
+- propagating coroutine cancellation through export/import and relying on the Room transaction for import rollback;
+- staging and validating exports before publication, with backup restoration on failed or cancelled destination writes;
+- enforcing nested usage-record limits and reading Room usage rows in bounded DAO pages;
+- exercising an actual 90,000-row Room export/import with fixed 500-row export requests;
+- comparing the runtime Room identity directly with the committed exported schema asset instead of a production constant.
+
+Focused JVM command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.DataExporterTest" --tests "com.balancesentinel.app.data.repository.DataExporterImportTest" --tests "com.balancesentinel.app.data.repository.HistoryStreamingLargeDatasetTest" --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+DataExporterImportTest: tests=3 failures=0 errors=0
+DataExporterTest: tests=39 failures=0 errors=0
+HistoryStreamingLargeDatasetTest: tests=11 failures=0 errors=0
+BUILD SUCCESSFUL in 2m 40s
+33 actionable tasks: 33 executed
+```
+
+Repository regression command:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --tests "com.balancesentinel.app.data.repository.HistoryRepositoryTest" --tests "com.balancesentinel.app.data.repository.UsageRepositoryTest" --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+BUILD SUCCESSFUL in 1m 52s
+33 actionable tasks: 33 executed
+```
+
+Android test compile command:
+
+```powershell
+.\gradlew.bat compileDebugAndroidTestKotlin --rerun-tasks --no-parallel
+```
+
+Output:
+
+```text
+BUILD SUCCESSFUL in 30s
+31 actionable tasks: 31 executed
+```
+
+Device availability:
+
+```text
+> adb devices -l
+List of devices attached
+```
+
+The required connected command was attempted and failed before test execution:
+
+```powershell
+.\gradlew.bat connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.balancesentinel.app.data.local.WalletDatabaseMigrationTest" --no-parallel
+```
+
+```text
+Execution failed for task ':app:connectedDebugAndroidTest'.
+> com.android.builder.testing.api.DeviceException: No connected devices!
+BUILD FAILED in 6s
+```
+
+No device instrumentation result is claimed for Fix Round 1.

@@ -3,6 +3,8 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.balancesentinel.app.data.io.HistoryJsonLimits
+import com.balancesentinel.app.data.io.HistoryUriStorage
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
@@ -22,6 +24,13 @@ import com.balancesentinel.app.data.model.UsageSnapshot
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -51,6 +60,7 @@ object DataExporter {
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
     /**
@@ -110,36 +120,71 @@ object DataExporter {
     /**
      * 通过 SAF URI 写入导出文件。
      */
-    fun exportToUri(context: Context, uri: Uri): Boolean {
-        var temporary: File? = null
-        return try {
-            val temp = File.createTempFile("history-export-", ".json", context.cacheDir)
-            temporary = temp
-            val database = WalletDatabaseProvider.get(context)
-            kotlinx.coroutines.runBlocking {
-                database.withTransaction {
-                    temp.outputStream().buffered().use { output ->
-                        HistoryJsonWriter().write(
-                            output,
-                            HistoryExportHeader(
-                                version = 1,
-                                exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
-                                appVersion = appVersion(context)
-                            ),
-                            RoomHistoryExportSource(database)
-                        )
-                    }
-                }
+    suspend fun exportToUri(context: Context, uri: Uri): Boolean {
+        val limits = HistoryJsonLimits()
+        val database = WalletDatabaseProvider.get(context)
+        return exportToUri(
+            context,
+            uri,
+            roomHistoryExportSource(database, limits),
+            ContentResolverHistoryUriStorage(context),
+            limits
+        )
+    }
+
+    suspend fun exportToUri(
+        context: Context,
+        uri: Uri,
+        source: HistoryExportSource,
+        storage: HistoryUriStorage = ContentResolverHistoryUriStorage(context),
+        limits: HistoryJsonLimits = HistoryJsonLimits()
+    ): Boolean {
+        val staged = File.createTempFile("history-export-", ".json", context.cacheDir)
+        var backup: File? = null
+        var destinationExisted = false
+        try {
+            staged.outputStream().buffered().use { output ->
+                HistoryJsonWriter(limits).write(
+                    output,
+                    HistoryExportHeader(
+                        version = 1,
+                        exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+                        appVersion = appVersion(context)
+                    ),
+                    source
+                )
             }
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                temp.inputStream().buffered().use { input -> input.copyTo(out) }
-                out.flush()
-                true
-            } ?: false
+            staged.inputStream().buffered().use { input ->
+                HistoryJsonReader(limits).read(input, ValidatingHistoryConsumer)
+            }
+
+            storage.openInput(uri)?.use { existing ->
+                destinationExisted = true
+                backup = File.createTempFile("history-export-backup-", ".json", context.cacheDir)
+                backup!!.outputStream().buffered().use { output -> copy(existing, output, cancellable = true) }
+            }
+
+            try {
+                val output = storage.openOutput(uri) ?: error("Unable to open history export destination")
+                output.use { destination ->
+                    staged.inputStream().buffered().use { input -> copy(input, destination, cancellable = true) }
+                    destination.flush()
+                }
+                return true
+            } catch (cancelled: CancellationException) {
+                restoreAfterPublicationFailure(uri, storage, destinationExisted, backup)
+                throw cancelled
+            } catch (_: Exception) {
+                restoreAfterPublicationFailure(uri, storage, destinationExisted, backup)
+                return false
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
-            false
+            return false
         } finally {
-            temporary?.delete()
+            staged.delete()
+            backup?.delete()
         }
     }
 
@@ -243,29 +288,33 @@ object DataExporter {
      * 便捷方法：直接从 URI 导入并合并。
      * @return [ImportResult]，失败返回 null。
      */
-    fun importAndApply(context: Context, uri: Uri): ImportResult? {
+    suspend fun importAndApply(
+        context: Context,
+        uri: Uri,
+        database: WalletDatabase = WalletDatabaseProvider.get(context),
+        storage: HistoryUriStorage = ContentResolverHistoryUriStorage(context),
+        limits: HistoryJsonLimits = HistoryJsonLimits(),
+        consumer: HistoryJsonConsumer = roomHistoryImportConsumer(database)
+    ): ImportResult? {
         return try {
-            val input = context.contentResolver.openInputStream(uri) ?: return null
+            val input = storage.openInput(uri) ?: return null
             input.use { stream ->
-                DataMutationCoordinator.withMutation {
-                    kotlinx.coroutines.runBlocking {
-                        val database = WalletDatabaseProvider.get(context)
-                        database.withTransaction {
-                            val result = HistoryJsonReader().read(stream, RoomHistoryImportConsumer(database))
-                            ImportResult(
-                                result.summariesInFile,
-                                result.summariesImported,
-                                result.recordsInFile,
-                                result.recordsImported,
-                                result.snapshotsInFile,
-                                result.snapshotsImported,
-                                result.logsInFile,
-                                result.logsImported
-                            )
-                        }
-                    }
+                database.withTransaction {
+                    val result = HistoryJsonReader(limits).read(stream, consumer)
+                    ImportResult(
+                        result.summariesInFile,
+                        result.summariesImported,
+                        result.recordsInFile,
+                        result.recordsImported,
+                        result.snapshotsInFile,
+                        result.snapshotsImported,
+                        result.logsInFile,
+                        result.logsImported
+                    )
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             null
         }
@@ -277,15 +326,27 @@ object DataExporter {
         "1.0.0"
     }
 
+    internal fun roomHistoryExportSource(
+        database: WalletDatabase,
+        limits: HistoryJsonLimits = HistoryJsonLimits(),
+        pageObserver: (section: String, limit: Int) -> Unit = { _, _ -> }
+    ): HistoryExportSource = RoomHistoryExportSource(database, limits, pageObserver)
+
+    internal fun roomHistoryImportConsumer(database: WalletDatabase): HistoryJsonConsumer =
+        RoomHistoryImportConsumer(database)
+
     private class RoomHistoryExportSource(
-        database: WalletDatabase
+        database: WalletDatabase,
+        private val limits: HistoryJsonLimits,
+        private val pageObserver: (section: String, limit: Int) -> Unit
     ) : HistoryExportSource {
         private val historyDao = database.historyDao()
         private val usageDao = database.usageDao()
         private val eventLogDao = database.eventLogDao()
 
-        override suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary> =
-            historyDao.exportSummaryPage(offset, limit).map { entity ->
+        override suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary> {
+            pageObserver("dailySummaries", limit)
+            return historyDao.exportSummaryPage(offset, limit).map { entity ->
                 DailySummary(
                     entity.accountId, entity.date, entity.currency,
                     entity.openBalance.toFloat(), entity.closeBalance.toFloat(),
@@ -295,8 +356,10 @@ object DataExporter {
                     entity.grantedBalanceClose.toFloat(), entity.generatedAt
                 )
             }
+        }
 
         override suspend fun rawRecordPage(after: HistoryCursor?, limit: Int): HistoryPage {
+            pageObserver("rawRecords", limit)
             val rows = historyDao.keysetPageAll(
                 Long.MIN_VALUE,
                 Long.MAX_VALUE,
@@ -323,18 +386,36 @@ object DataExporter {
             )
         }
 
-        override suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot> =
-            usageDao.exportPage(offset, limit).map { snapshot ->
+        override suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot> {
+            pageObserver("usageSnapshots", limit)
+            return usageDao.exportPage(offset, limit).map { snapshot ->
+                val recordCount = usageDao.countRecords(snapshot.id)
+                require(recordCount <= limits.maxUsageRecordsPerSnapshot.toLong()) {
+                    "Usage snapshot exceeds record limit ${limits.maxUsageRecordsPerSnapshot}"
+                }
+                val records = ArrayList<UsageRecord>(recordCount.toInt())
+                var recordOffset = 0
+                while (recordOffset < recordCount) {
+                    currentCoroutineContext().ensureActive()
+                    val recordLimit = minOf(HistoryJsonLimits.PAGE_SIZE, recordCount.toInt() - recordOffset)
+                    pageObserver("usageRecords", recordLimit)
+                    val page = usageDao.exportRecordPage(snapshot.id, recordOffset, recordLimit)
+                    require(page.isNotEmpty()) { "Usage record page ended before reported count" }
+                    records += page.map { record ->
+                        UsageRecord(record.modelName, record.totalTokens, record.promptTokens, record.completionTokens)
+                    }
+                    recordOffset += page.size
+                }
                 UsageSnapshot(
                     snapshot.accountId,
                     snapshot.capturedAt,
-                    usageDao.getRecords(snapshot.id).map { record ->
-                        UsageRecord(record.modelName, record.totalTokens, record.promptTokens, record.completionTokens)
-                    }
+                    records
                 )
             }
+        }
 
         override suspend fun refreshLogPage(after: HistoryLogCursor?, limit: Int): HistoryLogPage {
+            pageObserver("refreshLogs", limit)
             val rows = eventLogDao.newestPage(after?.recordedAt, after?.id, limit)
             return HistoryLogPage(
                 rows.map { entity ->
@@ -367,11 +448,15 @@ object DataExporter {
         private val events = RoomEventLogRepository(database)
         private val knownAccounts = mutableMapOf<String, Boolean>()
         private val importedSummaryKeys = mutableSetOf<HistoryKey>()
+        private val summaryOnlyKeys = mutableMapOf<HistoryKey, Boolean>()
+        private val fastImportedRecords = mutableSetOf<RawRecord>()
+        private var rawTableInitiallyEmpty: Boolean? = null
         private val zoneId = ZoneId.systemDefault()
 
         override suspend fun dailySummaries(items: List<DailySummary>): Int {
             val fresh = mutableListOf<DailySummary>()
             items.distinctBy { it.historyKey() }.forEach { summary ->
+                currentCoroutineContext().ensureActive()
                 val currency = summary.currency.uppercase(Locale.ROOT)
                 val key = summary.historyKey()
                 if (known(summary.accountId) &&
@@ -387,12 +472,20 @@ object DataExporter {
 
         override suspend fun rawRecords(items: List<RawRecord>): Int {
             val fresh = mutableListOf<RawRecord>()
+            val useEmptyTableFastPath = rawTableInitiallyEmpty ?: (database.historyDao().countRecords() == 0L).also {
+                rawTableInitiallyEmpty = it
+            }
             items.distinct().forEach { record ->
+                currentCoroutineContext().ensureActive()
                 val currency = record.currency.uppercase(Locale.ROOT)
                 if (!known(record.accountId)) return@forEach
                 val key = record.historyKey(zoneId)
-                if (key !in importedSummaryKeys && isSummaryOnly(key)) return@forEach
-                if (database.historyDao().countExactRecord(
+                if (key !in importedSummaryKeys && summaryOnlyKeys.getOrPut(key) { isSummaryOnly(key) }) {
+                    return@forEach
+                }
+                if (useEmptyTableFastPath) {
+                    if (fastImportedRecords.add(record)) fresh += record
+                } else if (database.historyDao().countExactRecord(
                         record.accountId,
                         currency,
                         record.timestamp,
@@ -400,7 +493,9 @@ object DataExporter {
                         record.grantedBalance.toDouble(),
                         record.toppedUpBalance.toDouble()
                     ) == 0L
-                ) fresh += record
+                ) {
+                    fresh += record
+                }
             }
             history.insert(fresh, BalanceRecordSource.IMPORT)
             return fresh.size
@@ -409,6 +504,7 @@ object DataExporter {
         override suspend fun usageSnapshots(items: List<UsageSnapshot>): Int {
             var imported = 0
             items.forEach { snapshot ->
+                currentCoroutineContext().ensureActive()
                 if (known(snapshot.accountId) &&
                     usage.count(snapshot.accountId, snapshot.timestamp, snapshot.timestamp + 1) == 0L
                 ) {
@@ -420,7 +516,10 @@ object DataExporter {
         }
 
         override suspend fun refreshLogs(items: List<RefreshLogEntry>): Int {
-            val fresh = items.distinctBy { it.id }.filter { database.eventLogDao().get(it.id) == null }
+            val fresh = items.distinctBy { it.id }.filter {
+                currentCoroutineContext().ensureActive()
+                database.eventLogDao().get(it.id) == null
+            }
             events.append(fresh)
             return fresh.size
         }
@@ -458,6 +557,82 @@ object DataExporter {
         val accountId: String,
         val currency: String
     )
+
+    private suspend fun restoreDestination(
+        uri: Uri,
+        storage: HistoryUriStorage,
+        destinationExisted: Boolean,
+        backup: File?
+    ) {
+        if (!destinationExisted) {
+            storage.delete(uri)
+            return
+        }
+        val source = backup ?: return
+        val output = storage.openOutput(uri) ?: return
+        output.use { destination ->
+            source.inputStream().buffered().use { input -> copy(input, destination, cancellable = false) }
+            destination.flush()
+        }
+    }
+
+    private suspend fun restoreAfterPublicationFailure(
+        uri: Uri,
+        storage: HistoryUriStorage,
+        destinationExisted: Boolean,
+        backup: File?
+    ) {
+        try {
+            withContext(NonCancellable) {
+                restoreDestination(uri, storage, destinationExisted, backup)
+            }
+        } catch (_: Exception) {
+            // The publication error remains the operation's outcome when restoration is impossible.
+        }
+    }
+
+    private suspend fun copy(input: InputStream, output: OutputStream, cancellable: Boolean) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            if (cancellable) currentCoroutineContext().ensureActive()
+            val read = input.read(buffer)
+            if (read < 0) return
+            output.write(buffer, 0, read)
+        }
+    }
+
+    private object ValidatingHistoryConsumer : HistoryJsonConsumer {
+        override suspend fun dailySummaries(items: List<DailySummary>) = items.size
+        override suspend fun rawRecords(items: List<RawRecord>) = items.size
+        override suspend fun usageSnapshots(items: List<UsageSnapshot>) = items.size
+        override suspend fun refreshLogs(items: List<RefreshLogEntry>) = items.size
+    }
+
+    private class ContentResolverHistoryUriStorage(private val context: Context) : HistoryUriStorage {
+        override fun openInput(uri: Uri): InputStream? = try {
+            if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream() else
+                context.contentResolver.openInputStream(uri)
+        } catch (_: Exception) {
+            null
+        }
+
+        override fun openOutput(uri: Uri): OutputStream? {
+            if (uri.scheme == "file") return File(requireNotNull(uri.path)).outputStream()
+            val truncating = try {
+                context.contentResolver.openOutputStream(uri, "rwt")
+            } catch (_: Exception) {
+                null
+            }
+            return truncating ?: context.contentResolver.openOutputStream(uri)
+        }
+
+        override fun delete(uri: Uri): Boolean = try {
+            if (uri.scheme == "file") File(requireNotNull(uri.path)).delete() else
+                context.contentResolver.delete(uri, null, null) > 0
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private suspend fun readAllHistory(repository: HistoryRepository): List<RawRecord> {
         val records = mutableListOf<RawRecord>()

@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.io
 
 import android.util.JsonWriter
+import android.net.Uri
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -9,8 +10,11 @@ import com.balancesentinel.app.data.repository.HistoryCursor
 import com.balancesentinel.app.data.repository.HistoryPage
 import java.io.FilterOutputStream
 import java.io.OutputStream
+import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class HistoryJsonLimits(
     val maxFileBytes: Long = MAX_FILE_BYTES,
@@ -18,6 +22,7 @@ data class HistoryJsonLimits(
     val maxSummaries: Int = MAX_SUMMARIES,
     val maxUsageSnapshots: Int = MAX_USAGE_SNAPSHOTS,
     val maxRefreshLogs: Int = MAX_REFRESH_LOGS,
+    val maxUsageRecordsPerSnapshot: Int = MAX_USAGE_RECORDS_PER_SNAPSHOT,
     val maxFieldChars: Int = MAX_FIELD_CHARS,
     val maxJsonDepth: Int = MAX_JSON_DEPTH,
     val pageSize: Int = PAGE_SIZE,
@@ -26,7 +31,7 @@ data class HistoryJsonLimits(
     init {
         require(maxFileBytes > 0)
         require(maxRawRecords >= 0 && maxSummaries >= 0)
-        require(maxUsageSnapshots >= 0 && maxRefreshLogs >= 0)
+        require(maxUsageSnapshots >= 0 && maxRefreshLogs >= 0 && maxUsageRecordsPerSnapshot >= 0)
         require(maxFieldChars >= 0 && maxJsonDepth >= 1)
         require(pageSize > 0 && chunkSize > 0)
     }
@@ -37,6 +42,7 @@ data class HistoryJsonLimits(
         const val MAX_SUMMARIES = 50_000
         const val MAX_USAGE_SNAPSHOTS = 10_000
         const val MAX_REFRESH_LOGS = 10_000
+        const val MAX_USAGE_RECORDS_PER_SNAPSHOT = 500
         const val MAX_FIELD_CHARS = 256 * 1024
         const val MAX_JSON_DEPTH = 32
         const val PAGE_SIZE = 500
@@ -62,6 +68,12 @@ interface HistoryExportSource {
     suspend fun rawRecordPage(after: HistoryCursor?, limit: Int): HistoryPage
     suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot>
     suspend fun refreshLogPage(after: HistoryLogCursor?, limit: Int): HistoryLogPage
+}
+
+interface HistoryUriStorage {
+    fun openInput(uri: Uri): InputStream?
+    fun openOutput(uri: Uri): OutputStream?
+    fun delete(uri: Uri): Boolean
 }
 
 data class HistoryJsonWriteCounts(
@@ -96,6 +108,7 @@ class HistoryJsonWriter(
         writer.name("dailySummaries").beginArray()
         var summaryOffset = 0
         while (true) {
+            currentCoroutineContext().ensureActive()
             val page = source.dailySummaryPage(summaryOffset, limits.pageSize)
             require(page.size <= limits.pageSize) { "Summary source exceeded page size" }
             if (page.isEmpty()) break
@@ -110,6 +123,7 @@ class HistoryJsonWriter(
         writer.name("rawRecords").beginArray()
         var historyCursor: HistoryCursor? = null
         while (true) {
+            currentCoroutineContext().ensureActive()
             val page = source.rawRecordPage(historyCursor, limits.pageSize)
             require(page.records.size <= limits.pageSize) { "Raw source exceeded page size" }
             if (page.records.isEmpty()) break
@@ -126,6 +140,7 @@ class HistoryJsonWriter(
         writer.name("usageSnapshots").beginArray()
         var usageOffset = 0
         while (true) {
+            currentCoroutineContext().ensureActive()
             val page = source.usageSnapshotPage(usageOffset, limits.pageSize)
             require(page.size <= limits.pageSize) { "Usage source exceeded page size" }
             if (page.isEmpty()) break
@@ -140,6 +155,7 @@ class HistoryJsonWriter(
         writer.name("refreshLogs").beginArray()
         var logCursor: HistoryLogCursor? = null
         while (true) {
+            currentCoroutineContext().ensureActive()
             val page = source.refreshLogPage(logCursor, limits.pageSize)
             require(page.logs.size <= limits.pageSize) { "Log source exceeded page size" }
             if (page.logs.isEmpty()) break
@@ -199,6 +215,9 @@ class HistoryJsonWriter(
     }
 
     private fun writeUsageSnapshot(writer: JsonWriter, value: UsageSnapshot) {
+        require(value.records.size <= limits.maxUsageRecordsPerSnapshot) {
+            "Usage snapshot exceeds record limit ${limits.maxUsageRecordsPerSnapshot}"
+        }
         writer.beginObject()
         writer.name("accountId").value(field(value.accountId))
         writer.name("timestamp").value(value.timestamp)
