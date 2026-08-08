@@ -5,8 +5,14 @@ import com.balancesentinel.app.data.model.RawRecord
 import kotlinx.serialization.json.Json
 import org.junit.Test
 import org.junit.Assert.*
+import com.balancesentinel.app.data.io.HistoryJsonLimits
 
 class DataExporterImportTest {
+
+    @Test
+    fun `streaming import uses the fixed five hundred row chunk`() {
+        assertEquals(500, HistoryJsonLimits.CHUNK_SIZE)
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
