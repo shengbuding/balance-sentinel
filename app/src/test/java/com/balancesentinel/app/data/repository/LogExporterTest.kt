@@ -3,9 +3,13 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import android.app.Application
+import androidx.room.Room
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -18,16 +22,21 @@ import java.io.File
 class LogExporterTest {
 
     private lateinit var context: Context
+    private lateinit var database: WalletDatabase
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        RefreshLogStore.clear(context)
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
+        RefreshScheduler.resetAlarmCounters(context)
     }
 
     @After
     fun tearDown() {
-        RefreshLogStore.clear(context)
+        RefreshScheduler.resetAlarmCounters(context)
+        WalletDatabaseProvider.clearForTests()
+        database.close()
         CrashLogger.clear(context.applicationContext as Application)
         CrashLogger.resetForTests()
     }
@@ -80,7 +89,7 @@ class LogExporterTest {
             isAvailable = true, timestamp = System.currentTimeMillis(),
             message = "test refresh"
         )
-        RefreshLogStore.addEntries(context, listOf(entry))
+        addLogExporterRoomLogs(listOf(entry))
 
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
@@ -111,7 +120,7 @@ class LogExporterTest {
 
     @Test
     fun `export with refresh log entries shows them in output`() {
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO,
                 totalBalance = "50.00", currency = "USD", timestamp = 1000000L,
                 message = "auto refresh"),
@@ -129,7 +138,7 @@ class LogExporterTest {
     @Test
     fun `export handles various refresh log types`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.MANUAL,
                 totalBalance = "100", currency = "CNY", timestamp = now, message = "m1"),
             RefreshLogEntry(id = 2L, type = RefreshLogType.SCHEDULE,
@@ -161,7 +170,7 @@ class LogExporterTest {
     @Test
     fun `export includes SERVICE_DIED and SERVICE_START type labels`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.SERVICE_DIED,
                 timestamp = now, message = "service died",
                 missReason = "已被系统杀死 3 次"),
@@ -177,7 +186,7 @@ class LogExporterTest {
     @Test
     fun `export includes WATCHDOG type label`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.WATCHDOG,
                 timestamp = now, message = "watchdog check")
         ))
@@ -189,7 +198,7 @@ class LogExporterTest {
     @Test
     fun `export includes interval and expectedTime in log lines`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.SCHEDULE,
                 timestamp = now, message = "scheduled refresh",
                 intervalSeconds = 120, expectedTime = now + 120000)
@@ -203,7 +212,7 @@ class LogExporterTest {
     @Test
     fun `export includes missReason when present`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.MISSED,
                 timestamp = now, message = "missed",
                 missReason = "电池优化已开启")
@@ -216,7 +225,7 @@ class LogExporterTest {
     @Test
     fun `export handles currency symbols for log lines`() {
         val now = System.currentTimeMillis()
-        RefreshLogStore.addEntries(context, listOf(
+        addLogExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO,
                 totalBalance = "200.00", currency = "EUR", timestamp = now,
                 message = "eur balance"),
@@ -278,8 +287,7 @@ class LogExporterTest {
     fun `exported file contains markers and no seeded secrets`() {
         val refreshSecret = "refresh-message-secret"
         val crashSecret = "legacy-crash-secret"
-        RefreshLogStore.addEntry(
-            context,
+        addLogExporterRoomLogs(
             RefreshLogEntry(
                 id = 99,
                 type = RefreshLogType.MANUAL,
@@ -296,5 +304,12 @@ class LogExporterTest {
         assertFalse(content.contains(refreshSecret))
         assertFalse(content.contains(crashSecret))
         assertTrue(content.contains("[REDACTED]"))
+    }
+    private fun addLogExporterRoomLogs(logs: List<RefreshLogEntry>) = runBlocking {
+        RoomEventLogRepository(database).append(logs)
+    }
+
+    private fun addLogExporterRoomLogs(vararg logs: RefreshLogEntry) {
+        addLogExporterRoomLogs(logs.toList())
     }
 }

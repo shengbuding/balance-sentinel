@@ -2,7 +2,9 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyOutput
 import com.balancesentinel.app.data.engine.DailyPoint
@@ -15,10 +17,14 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
-import com.balancesentinel.app.data.repository.DailySummaryStore
-import com.balancesentinel.app.data.repository.RawRecordStore
+import com.balancesentinel.app.data.repository.RoomHistoryRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +35,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -42,6 +49,7 @@ class InsightsViewModelTest {
 
     private lateinit var context: Context
     private lateinit var app: Application
+    private lateinit var database: WalletDatabase
 
     /**
      * Wait for the ViewModel's async coroutine (Dispatchers.Default) to settle.
@@ -62,15 +70,15 @@ class InsightsViewModelTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         app = context as Application
-        RawRecordStore.clear(context)
-        DailySummaryStore.clear(context)
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
+        runBlocking { database.accountDao().insertCreate(insightsRoomAccount()) }
         Dispatchers.setMain(UnconfinedTestDispatcher())
     }
 
     @After
     fun tearDown() {
-        RawRecordStore.clear(context)
-        DailySummaryStore.clear(context)
+        WalletDatabaseProvider.clearForTests()
         Dispatchers.resetMain()
     }
 
@@ -79,13 +87,9 @@ class InsightsViewModelTest {
     @Test
     fun `loadData populates both intraday and daily outputs`() {
         val now = System.currentTimeMillis()
-        RawRecordStore.addRecord(
-            context,
-            RawRecord("acc1", now - 3600_000L, "CNY", 100f, 0f, 100f)
-        )
-        RawRecordStore.addRecord(
-            context,
-            RawRecord("acc1", now, "CNY", 90f, 0f, 90f)
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 3600_000L, "CNY", 100f, 0f, 100f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "CNY", 90f, 0f, 90f)
         )
 
         val viewModel = createViewModel()
@@ -205,10 +209,9 @@ class InsightsViewModelTest {
         val yesterday = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
             .format(java.util.Date(now - 24 * 3600_000L))
 
-        DailySummaryStore.upsert(
-            context,
+        addInsightsRoomSummaries(
             DailySummary(
-                accountId = "acc1",
+                accountId = INSIGHTS_ACCOUNT_ID,
                 date = yesterday,
                 currency = "CNY",
                 open = 100f,
@@ -238,13 +241,9 @@ class InsightsViewModelTest {
     @Test
     fun `selectCurrency triggers reload`() {
         val now = System.currentTimeMillis()
-        RawRecordStore.addRecord(
-            context,
-            RawRecord("acc1", now, "CNY", 100f, 0f, 100f)
-        )
-        RawRecordStore.addRecord(
-            context,
-            RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f)
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "CNY", 100f, 0f, 100f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now + 1000L, "USD", 50f, 0f, 50f)
         )
 
         val viewModel = createViewModel()
@@ -415,8 +414,10 @@ class InsightsViewModelTest {
     @Test
     fun `chartMode preserved but history reset on currency switch`() {
         val now = System.currentTimeMillis()
-        RawRecordStore.addRecord(context, RawRecord("acc1", now, "CNY", 100f, 0f, 100f))
-        RawRecordStore.addRecord(context, RawRecord("acc1", now + 1000L, "USD", 50f, 0f, 50f))
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "CNY", 100f, 0f, 100f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now + 1000L, "USD", 50f, 0f, 50f)
+        )
 
         val viewModel = createViewModel()
         awaitViewModel(viewModel)
@@ -451,10 +452,9 @@ class InsightsViewModelTest {
         val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         for (i in 1..30) {
             val date = dateFormat.format(java.util.Date(now - (30 - i + 1) * 24 * 3600_000L))
-            DailySummaryStore.upsert(
-                context,
+            addInsightsRoomSummaries(
                 DailySummary(
-                    accountId = "acc1", date = date, currency = "CNY",
+                    accountId = INSIGHTS_ACCOUNT_ID, date = date, currency = "CNY",
                     open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
                     granted = 0f, avgBalance = 95f, sampleCount = 5,
                     toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
@@ -1066,7 +1066,35 @@ class InsightsViewModelTest {
 
     private fun createViewModel(): InsightsViewModel = InsightsViewModel(
         app,
-        AccountUiRepository { flowOf(AccountLoadState.Ready(emptyList())) }
+        AccountUiRepository { flowOf(AccountLoadState.Ready(listOf(insightsAccountInfo()))) }
+    )
+
+    private fun addInsightsRoomRecords(vararg records: RawRecord) = runBlocking {
+        RoomHistoryRepository(database).insert(records.toList(), BalanceRecordSource.REFRESH)
+    }
+
+    private fun addInsightsRoomSummaries(vararg summaries: DailySummary) = runBlocking {
+        RoomHistoryRepository(database).upsertSummaries(summaries.toList())
+    }
+
+    private fun insightsAccountInfo() = AccountInfo(
+        id = INSIGHTS_ACCOUNT_ID,
+        label = "Insights test account",
+        apiKey = "sk-insights-test",
+        providerType = ProviderType.DEEPSEEK,
+        revision = 1
+    )
+
+    private fun insightsRoomAccount() = AccountEntity(
+        id = INSIGHTS_ACCOUNT_ID,
+        displayOrder = 0,
+        label = "Insights test account",
+        providerType = ProviderType.DEEPSEEK,
+        activeCredentialGeneration = "test",
+        state = AccountState.VERIFIED,
+        revision = 1,
+        createdAt = 1L,
+        updatedAt = 1L
     )
 
     private class RecordingAccountUiRepository(
@@ -1084,5 +1112,9 @@ class InsightsViewModelTest {
         fun publish(state: AccountLoadState) {
             states.value = state
         }
+    }
+
+    private companion object {
+        const val INSIGHTS_ACCOUNT_ID = "7f4b8b3e-3f71-4d4f-a1c3-6c7e5a9b2d10"
     }
 }

@@ -2,12 +2,19 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.RoomEventLogRepository
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -21,6 +28,7 @@ class LogViewModelTest {
     private lateinit var application: Application
     private lateinit var viewModel: LogViewModel
     private lateinit var context: Context
+    private lateinit var database: WalletDatabase
     private var originalHandler: Thread.UncaughtExceptionHandler? = null
 
     @Before
@@ -29,7 +37,9 @@ class LogViewModelTest {
         CrashLogger.resetForTests()
         context = ApplicationProvider.getApplicationContext()
         application = context as Application
-        RefreshLogStore.clear(context)
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
+        runBlocking { database.accountDao().insertCreate(logRoomAccount()) }
         val prefs = WidgetPrefs(context)
         prefs.logMaxEntries = 100
         viewModel = LogViewModel(application)
@@ -37,7 +47,7 @@ class LogViewModelTest {
 
     @After
     fun tearDown() {
-        RefreshLogStore.clear(context)
+        WalletDatabaseProvider.clearForTests()
         CrashLogger.clear(application)
         CrashLogger.resetForTests()
         val restored = Thread.getDefaultUncaughtExceptionHandler()
@@ -54,11 +64,11 @@ class LogViewModelTest {
 
     @Test
     fun `loadLogs populates state from store`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000,
             totalBalance = "100", currency = "CNY"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 2, type = RefreshLogType.AUTO, timestamp = 2000,
             totalBalance = "90", currency = "CNY"
         ))
@@ -71,13 +81,13 @@ class LogViewModelTest {
 
     @Test
     fun `missedCount counts MISSED entries`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "ok"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 2, type = RefreshLogType.MISSED, timestamp = 2000, message = "missed1"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 3, type = RefreshLogType.MISSED, timestamp = 3000, message = "missed2"
         ))
 
@@ -88,13 +98,13 @@ class LogViewModelTest {
 
     @Test
     fun `selectLogType filters logs`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "m"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 2, type = RefreshLogType.AUTO, timestamp = 2000, message = "a"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 3, type = RefreshLogType.MANUAL, timestamp = 3000, message = "m2"
         ))
 
@@ -109,10 +119,10 @@ class LogViewModelTest {
 
     @Test
     fun `selectLogType with null shows all logs`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "m"
         ))
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 2, type = RefreshLogType.AUTO, timestamp = 2000, message = "a"
         ))
 
@@ -127,7 +137,7 @@ class LogViewModelTest {
 
     @Test
     fun `clearLogs removes all entries from store and state`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "m"
         ))
         viewModel.loadLogs()
@@ -138,7 +148,7 @@ class LogViewModelTest {
         val state = viewModel.uiState.value
         assertTrue(state.refreshLogs.isEmpty())
         assertEquals(0, state.missedCount)
-        assertTrue(RefreshLogStore.getEntries(context).isEmpty())
+        assertEquals(0, runBlocking { database.eventLogDao().countLogs() })
     }
 
     @Test
@@ -201,7 +211,7 @@ class LogViewModelTest {
 
     @Test
     fun `exportLogs writes result to state`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addRoomLog(RefreshLogEntry(
             id = 1, type = RefreshLogType.MANUAL, timestamp = 1000, message = "test"
         ))
         viewModel.loadLogs()
@@ -214,7 +224,6 @@ class LogViewModelTest {
 
     @Test
     fun `exportLogs handles empty store gracefully`() {
-        RefreshLogStore.clear(context)
         viewModel.loadLogs()
         viewModel.exportLogs()
 
@@ -229,5 +238,24 @@ class LogViewModelTest {
         prefs.logMaxEntries = 200
         val vm = LogViewModel(application)
         assertEquals(200, vm.uiState.value.logMaxEntries)
+    }
+
+    private fun addRoomLog(entry: RefreshLogEntry) = runBlocking {
+        RoomEventLogRepository(database).append(listOf(entry))
+    }
+
+    private fun logRoomAccount() = AccountEntity(
+        id = LOG_ACCOUNT_ID,
+        displayOrder = 0,
+        label = "Log test account",
+        providerType = ProviderType.DEEPSEEK,
+        activeCredentialGeneration = "test",
+        state = AccountState.VERIFIED,
+        createdAt = 1L,
+        updatedAt = 1L
+    )
+
+    private companion object {
+        const val LOG_ACCOUNT_ID = "8d4b6f8a-2b3f-4f2b-9f6d-7f8b4a1c2d30"
     }
 }

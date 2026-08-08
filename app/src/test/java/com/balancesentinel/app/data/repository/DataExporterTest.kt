@@ -1,11 +1,17 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
-import android.content.ContextWrapper
-import android.content.SharedPreferences
 import android.net.Uri
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.model.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -22,29 +28,20 @@ import java.time.ZoneId
 class DataExporterTest {
 
     private lateinit var context: Context
+    private lateinit var database: WalletDatabase
     private val json = Json { ignoreUnknownKeys = true }
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
     }
 
     @After
     fun tearDown() {
-        // Clean up all stores after each test
-        clearAllStores()
-    }
-
-    private fun clearAllStores() {
-        // Clear by writing empty lists to each store
-        val prefs = context.getSharedPreferences("daily_summaries", Context.MODE_PRIVATE)
-        prefs.edit().clear().commit()
-        val rawPrefs = context.getSharedPreferences("raw_records", Context.MODE_PRIVATE)
-        rawPrefs.edit().clear().commit()
-        val usagePrefs = context.getSharedPreferences("usage_snapshots", Context.MODE_PRIVATE)
-        usagePrefs.edit().clear().commit()
-        val logPrefs = context.getSharedPreferences("refresh_log_store", Context.MODE_PRIVATE)
-        logPrefs.edit().clear().commit()
+        WalletDatabaseProvider.clearForTests()
+        database.close()
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -74,7 +71,7 @@ class DataExporterTest {
             sampleCount = 5,
             toppedUpBalanceClose = 8.0f
         )
-        DailySummaryStore.addSummaries(context, listOf(summary))
+        addDataExporterRoomSummaries(summary)
 
         val export = DataExporter.buildExport(context)
         val parsed = json.decodeFromString<DataExport>(export)
@@ -94,7 +91,7 @@ class DataExporterTest {
             grantedBalance = 0f,
             toppedUpBalance = 10.5f
         )
-        RawRecordStore.addRecords(context, listOf(record))
+        addDataExporterRoomRecords(record)
 
         val export = DataExporter.buildExport(context)
         val parsed = json.decodeFromString<DataExport>(export)
@@ -110,7 +107,20 @@ class DataExporterTest {
             timestamp = 1752009600000L,
             records = listOf(UsageRecord(model_name = "deepseek-chat", total_tokens = 500))
         )
-        UsageDataStore.saveSnapshots(context, listOf(snapshot))
+        addDataExporterRoomSummaries(
+            DailySummary(
+                accountId = "test-acc",
+                date = "2026-07-08",
+                currency = "CNY",
+                open = 10f,
+                close = 10f,
+                consumed = 0f,
+                toppedUp = 0f,
+                avgBalance = 10f,
+                sampleCount = 1
+            )
+        )
+        addDataExporterRoomUsage(snapshot)
 
         val export = DataExporter.buildExport(context)
         val parsed = json.decodeFromString<DataExport>(export)
@@ -130,7 +140,7 @@ class DataExporterTest {
             timestamp = 1752009600000L,
             message = "test refresh"
         )
-        RefreshLogStore.addEntries(context, listOf(entry))
+        addDataExporterRoomLogs(entry)
 
         val export = DataExporter.buildExport(context)
         val parsed = json.decodeFromString<DataExport>(export)
@@ -152,19 +162,19 @@ class DataExporterTest {
 
     @Test
     fun `buildExport includes all data types simultaneously`() {
-        DailySummaryStore.addSummaries(context, listOf(
+        addDataExporterRoomSummaries(listOf(
             DailySummary(accountId = "a1", date = "2026-07-08", currency = "CNY",
                 open = 10f, close = 10f, consumed = 0f, toppedUp = 0f, avgBalance = 10f, sampleCount = 1)
         ))
-        RawRecordStore.addRecords(context, listOf(
+        addDataExporterRoomRecords(listOf(
             RawRecord(accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
                 totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)
         ))
-        UsageDataStore.saveSnapshots(context, listOf(
+        addDataExporterRoomUsage(listOf(
             UsageSnapshot(accountId = "a1", timestamp = 1752009600000L,
                 records = listOf(UsageRecord(model_name = "m1", total_tokens = 100)))
         ))
-        RefreshLogStore.addEntries(context, listOf(
+        addDataExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO, timestamp = 1752009600000L)
         ))
 
@@ -187,7 +197,7 @@ class DataExporterTest {
 
     @Test
     fun `hasData returns true when dailySummaries exist`() {
-        DailySummaryStore.addSummaries(context, listOf(
+        addDataExporterRoomSummaries(listOf(
             DailySummary(accountId = "a1", date = "2026-07-08", currency = "CNY",
                 open = 10f, close = 10f, consumed = 0f, toppedUp = 0f, avgBalance = 10f, sampleCount = 1)
         ))
@@ -196,7 +206,7 @@ class DataExporterTest {
 
     @Test
     fun `hasData returns true when rawRecords exist`() {
-        RawRecordStore.addRecords(context, listOf(
+        addDataExporterRoomRecords(listOf(
             RawRecord(accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
                 totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)
         ))
@@ -205,7 +215,7 @@ class DataExporterTest {
 
     @Test
     fun `hasData returns true when usageSnapshots exist`() {
-        UsageDataStore.saveSnapshots(context, listOf(
+        addDataExporterRoomUsage(listOf(
             UsageSnapshot(accountId = "a1", timestamp = 1752009600000L)
         ))
         assertTrue(DataExporter.hasData(context))
@@ -213,7 +223,7 @@ class DataExporterTest {
 
     @Test
     fun `hasData returns true when refreshLogs exist`() {
-        RefreshLogStore.addEntries(context, listOf(
+        addDataExporterRoomLogs(listOf(
             RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO, timestamp = 1752009600000L)
         ))
         assertTrue(DataExporter.hasData(context))
@@ -265,7 +275,7 @@ class DataExporterTest {
             open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
             avgBalance = 10f, sampleCount = 1
         )
-        DailySummaryStore.addSummaries(context, listOf(existing))
+        addDataExporterRoomSummaries(existing)
 
         // Import: one duplicate, one new
         val importedData = DataExport(
@@ -281,11 +291,11 @@ class DataExporterTest {
             refreshLogs = emptyList()
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(2, result.summariesInFile)
         assertEquals(1, result.summariesImported) // only the new one
 
-        val allSummaries = DailySummaryStore.getSummaries(context)
+        val allSummaries = readDataExporterRoomSummaries()
         assertEquals(2, allSummaries.size) // existing + 1 new
     }
 
@@ -295,7 +305,7 @@ class DataExporterTest {
             accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
             totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f
         )
-        RawRecordStore.addRecords(context, listOf(existing))
+        addDataExporterRoomRecords(existing)
 
         val importedData = DataExport(
             version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
@@ -309,7 +319,7 @@ class DataExporterTest {
             refreshLogs = emptyList()
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(2, result.recordsInFile)
         assertEquals(1, result.recordsImported)
     }
@@ -332,7 +342,7 @@ class DataExporterTest {
             toppedUpBalanceClose = 9f,
             generatedAt = 123L
         )
-        DailySummaryStore.addSummaries(context, listOf(retained))
+        addDataExporterRoomSummaries(retained)
         val partial = RawRecord(
             accountId = "a1",
             timestamp = sourceDate.atTime(12, 0).atZone(zoneId).toInstant().toEpochMilli(),
@@ -342,8 +352,7 @@ class DataExporterTest {
             toppedUpBalance = 4f
         )
 
-        val result = DataExporter.applyImport(
-            context,
+        val result = applyDataExporterRoomImport(
             DataExport(
                 exportedAt = "2026-08-04T00:00:00",
                 appVersion = "1.0",
@@ -354,7 +363,7 @@ class DataExporterTest {
 
         assertEquals(1, result.recordsInFile)
         assertEquals(0, result.recordsImported)
-        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+        assertTrue(readDataExporterRoomRecords().isEmpty())
     }
 
     @Test
@@ -377,8 +386,7 @@ class DataExporterTest {
             0f,
             9f
         )
-        DailySummaryStore.addSummaries(
-            context,
+        addDataExporterRoomSummaries(
             listOf(
                 DailySummary(
                     accountId = "a1",
@@ -393,10 +401,9 @@ class DataExporterTest {
                 )
             )
         )
-        RawRecordStore.addRecords(context, listOf(early))
+        addDataExporterRoomRecords(early)
 
-        val result = DataExporter.applyImport(
-            context,
+        val result = applyDataExporterRoomImport(
             DataExport(
                 exportedAt = "2026-08-02T00:00:00",
                 appVersion = "1.0",
@@ -406,7 +413,7 @@ class DataExporterTest {
         )
 
         assertEquals(1, result.recordsImported)
-        assertEquals(listOf(early, late), RawRecordStore.getAllRecords(context))
+        assertEquals(listOf(early.copy(currency = "CNY"), late.copy(currency = "CNY")), readDataExporterRoomRecords().sortedBy { it.timestamp })
     }
 
     @Test
@@ -417,7 +424,7 @@ class DataExporterTest {
             usageSnapshots = emptyList(), refreshLogs = emptyList()
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(0, result.summariesInFile)
         assertEquals(0, result.summariesImported)
         assertEquals(0, result.recordsInFile)
@@ -427,7 +434,7 @@ class DataExporterTest {
     @Test
     fun `applyImport merges usageSnapshots with dedup`() {
         val existing = UsageSnapshot(accountId = "a1", timestamp = 1752009600000L)
-        UsageDataStore.saveSnapshots(context, listOf(existing))
+        addDataExporterRoomUsage(existing)
 
         val importedData = DataExport(
             version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
@@ -439,7 +446,7 @@ class DataExporterTest {
             refreshLogs = emptyList()
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(2, result.snapshotsInFile)
         assertEquals(1, result.snapshotsImported)
     }
@@ -451,7 +458,7 @@ class DataExporterTest {
     @Suppress("DEPRECATION")
     @Test
     fun `exportToUri writes data to file URI`() {
-        DailySummaryStore.addSummaries(context, listOf(
+        addDataExporterRoomSummaries(listOf(
             DailySummary(accountId = "a1", date = "2026-07-08", currency = "CNY",
                 open = 10f, close = 10f, consumed = 0f, toppedUp = 0f, avgBalance = 10f, sampleCount = 1)
         ))
@@ -468,7 +475,7 @@ class DataExporterTest {
     @Suppress("DEPRECATION")
     @Test
     fun `exportToUri produces valid JSON at file URI`() {
-        RawRecordStore.addRecords(context, listOf(
+        addDataExporterRoomRecords(listOf(
             RawRecord(accountId = "a1", timestamp = 1752009600000L, currency = "CNY",
                 totalBalance = 10f, grantedBalance = 0f, toppedUpBalance = 10f)
         ))
@@ -545,6 +552,7 @@ class DataExporterTest {
         file.writeText(json.encodeToString(data))
         val uri = Uri.fromFile(file)
 
+        seedDataExporterRoomAccounts(data)
         val result = DataExporter.importAndApply(context, uri)
         assertNotNull("should return ImportResult", result)
         assertEquals(1, result!!.summariesImported)
@@ -572,7 +580,7 @@ class DataExporterTest {
             refreshLogs = listOf(RefreshLogEntry(id = 999L, type = RefreshLogType.AUTO, timestamp = 1752009600000L))
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(1, result.summariesImported)
         assertEquals(1, result.recordsImported)
         assertEquals(1, result.snapshotsImported)
@@ -584,7 +592,7 @@ class DataExporterTest {
         val existing = DailySummary(accountId = "dup1", date = "2026-07-08",
             currency = "CNY", open = 10f, close = 10f, consumed = 0f, toppedUp = 0f,
             avgBalance = 10f, sampleCount = 1, toppedUpBalanceClose = 10f)
-        DailySummaryStore.addSummaries(context, listOf(existing))
+        addDataExporterRoomSummaries(existing)
 
         val importedData = DataExport(
             version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
@@ -592,7 +600,7 @@ class DataExporterTest {
             rawRecords = emptyList(), usageSnapshots = emptyList(), refreshLogs = emptyList()
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(1, result.summariesInFile)
         assertEquals(0, result.summariesImported)
     }
@@ -600,7 +608,7 @@ class DataExporterTest {
     @Test
     fun `applyImport merges refreshLogs with dedup`() {
         val existing = RefreshLogEntry(id = 1L, type = RefreshLogType.AUTO, timestamp = 1752009600000L)
-        RefreshLogStore.addEntries(context, listOf(existing))
+        addDataExporterRoomLogs(existing)
 
         val importedData = DataExport(
             version = 1, exportedAt = "2026-07-09T00:00:00", appVersion = "1.0",
@@ -612,7 +620,7 @@ class DataExporterTest {
             )
         )
 
-        val result = DataExporter.applyImport(context, importedData)
+        val result = applyDataExporterRoomImport(importedData)
         assertEquals(2, result.logsInFile)
         assertEquals(1, result.logsImported)
     }
@@ -622,7 +630,7 @@ class DataExporterTest {
     fun `applyImport preserves same-account same-timestamp records in different currencies`() {
         val cny = RawRecord("acct", 100L, "CNY", 10f, 0f, 10f)
         val usd = RawRecord("acct", 100L, "USD", 2f, 0f, 2f)
-        RawRecordStore.addRecords(context, listOf(cny))
+        addDataExporterRoomRecords(cny)
         val imported = DataExport(
             exportedAt = "2026-08-03T00:00:00",
             appVersion = "1.0",
@@ -630,16 +638,16 @@ class DataExporterTest {
             rawRecords = listOf(usd)
         )
 
-        val result = DataExporter.applyImport(context, imported)
+        val result = applyDataExporterRoomImport(imported)
 
         assertEquals(1, result.recordsImported)
-        assertEquals(listOf(cny, usd), RawRecordStore.getAllRecords(context))
+        assertEquals(listOf(cny, usd), readDataExporterRoomRecords().sortedBy { it.currency })
     }
 
-    // Mutation caught: reporting intended raw items after durable storage rejected the batch.
+    // Room rejects malformed imported history instead of reporting a successful write.
     @Test
-    fun `applyImport reports zero raw imports after failed store write`() {
-        val incoming = RawRecord("acct", 100L, "USD", 2f, 0f, 2f)
+    fun `applyImport rejects raw records with a blank account`() {
+        val incoming = RawRecord("", 100L, "USD", 2f, 0f, 2f)
         val imported = DataExport(
             exportedAt = "2026-08-03T00:00:00",
             appVersion = "1.0",
@@ -647,20 +655,15 @@ class DataExporterTest {
             rawRecords = listOf(incoming)
         )
 
-        val result = DataExporter.applyImport(
-            FailingPrefsContext(context, "raw_records"),
-            imported
-        )
-
-        assertEquals(0, result.recordsImported)
-        assertTrue(RawRecordStore.getAllRecords(context).isEmpty())
+        assertThrows(Exception::class.java) { applyDataExporterRoomImport(imported) }
+        assertTrue(readDataExporterRoomRecords().isEmpty())
     }
 
-    // Mutation caught: reporting intended summaries after durable storage rejected the batch.
+    // Room enforces account foreign keys for imported summaries.
     @Test
-    fun `applyImport reports zero summary imports after failed store write`() {
+    fun `applyImport rejects summaries for an unknown account`() {
         val incoming = DailySummary(
-            accountId = "acct",
+            accountId = "unknown-account",
             date = "2026-08-01",
             currency = "USD",
             open = 2f,
@@ -677,48 +680,99 @@ class DataExporterTest {
             rawRecords = emptyList()
         )
 
-        val result = DataExporter.applyImport(
-            FailingPrefsContext(context, "daily_summaries"),
-            imported
-        )
-
-        assertEquals(0, result.summariesImported)
-        assertTrue(DailySummaryStore.getSummaries(context).isEmpty())
+        assertThrows(Exception::class.java) { applyDataExporterRoomImport(imported, seedAccounts = false) }
+        assertTrue(readDataExporterRoomSummaries().isEmpty())
     }
 
-    private class FailingPrefsContext(
-        base: Context,
-        private val targetPrefsName: String
-    ) : ContextWrapper(base) {
-        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
-            val delegate = baseContext.getSharedPreferences(name, mode)
-            if (name != targetPrefsName) return delegate
-            return object : SharedPreferences by delegate {
-                override fun edit(): SharedPreferences.Editor {
-                    val editor = delegate.edit()
-                    return object : SharedPreferences.Editor by editor {
-                        override fun putString(
-                            key: String?,
-                            value: String?
-                        ): SharedPreferences.Editor {
-                            editor.putString(key, value)
-                            return this
-                        }
+    private fun addDataExporterRoomSummaries(summaries: List<DailySummary>) = runBlocking {
+        summaries.map { it.accountId }.distinct().forEach { ensureDataExporterRoomAccount(it) }
+        RoomHistoryRepository(database).upsertSummaries(summaries)
+    }
 
-                        override fun remove(key: String?): SharedPreferences.Editor {
-                            editor.remove(key)
-                            return this
-                        }
+    private fun addDataExporterRoomSummaries(vararg summaries: DailySummary) {
+        addDataExporterRoomSummaries(summaries.toList())
+    }
 
-                        override fun clear(): SharedPreferences.Editor {
-                            editor.clear()
-                            return this
-                        }
+    private fun addDataExporterRoomRecords(records: List<RawRecord>) = runBlocking {
+        records.map { it.accountId }.distinct().forEach { ensureDataExporterRoomAccount(it) }
+        RoomHistoryRepository(database).insert(records, BalanceRecordSource.REFRESH)
+    }
 
-                        override fun commit(): Boolean = false
-                    }
-                }
-            }
+    private fun addDataExporterRoomRecords(vararg records: RawRecord) {
+        addDataExporterRoomRecords(records.toList())
+    }
+
+    private fun addDataExporterRoomUsage(snapshots: List<UsageSnapshot>) = runBlocking {
+        snapshots.map { it.accountId }.distinct().forEach { ensureDataExporterRoomAccount(it) }
+        snapshots.forEachIndexed { index, snapshot ->
+            RoomUsageRepository(database).upsert(
+                snapshot,
+                "data-exporter-fixture-$index-${snapshot.accountId}-${snapshot.timestamp}"
+            )
         }
+    }
+
+    private fun addDataExporterRoomUsage(vararg snapshots: UsageSnapshot) {
+        addDataExporterRoomUsage(snapshots.toList())
+    }
+
+    private fun addDataExporterRoomLogs(logs: List<RefreshLogEntry>) = runBlocking {
+        RoomEventLogRepository(database).append(logs)
+    }
+
+    private fun addDataExporterRoomLogs(vararg logs: RefreshLogEntry) {
+        addDataExporterRoomLogs(logs.toList())
+    }
+
+    private fun readDataExporterRoomSummaries(): List<DailySummary> = runBlocking {
+        RoomHistoryRepository(database).summaries()
+    }
+
+    private fun readDataExporterRoomRecords(): List<RawRecord> = runBlocking {
+        val repository = RoomHistoryRepository(database)
+        val records = mutableListOf<RawRecord>()
+        var cursor: HistoryCursor? = null
+        while (true) {
+            val page = repository.pageAll(after = cursor, limit = HistoryRepository.MAX_PAGE_SIZE)
+            if (page.records.isEmpty()) break
+            records += page.records.map { it.value }
+            val next = page.nextCursor ?: break
+            if (next == cursor) break
+            cursor = next
+        }
+        records
+    }
+
+    private fun applyDataExporterRoomImport(
+        data: DataExport,
+        seedAccounts: Boolean = true
+    ): DataExporter.ImportResult {
+        if (seedAccounts) seedDataExporterRoomAccounts(data)
+        return DataExporter.applyImport(context, data)
+    }
+
+    private fun seedDataExporterRoomAccounts(data: DataExport) {
+        val ids = buildSet {
+            addAll(data.dailySummaries.map { it.accountId })
+            addAll(data.rawRecords.map { it.accountId })
+            addAll(data.usageSnapshots.map { it.accountId })
+        }
+        runBlocking { ids.forEach { ensureDataExporterRoomAccount(it) } }
+    }
+
+    private suspend fun ensureDataExporterRoomAccount(accountId: String) {
+        if (accountId.isBlank() || database.accountDao().get(accountId) != null) return
+        database.accountDao().insertCreate(
+            AccountEntity(
+                id = accountId,
+                displayOrder = 0,
+                label = "Data exporter test account $accountId",
+                providerType = ProviderType.DEEPSEEK,
+                activeCredentialGeneration = "fixture",
+                state = AccountState.VERIFIED,
+                createdAt = 1L,
+                updatedAt = 1L
+            )
+        )
     }
 }

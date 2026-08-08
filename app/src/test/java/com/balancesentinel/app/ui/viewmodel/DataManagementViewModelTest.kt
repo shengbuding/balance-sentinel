@@ -3,9 +3,11 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.balance.ScriptInspection
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.WebOrigin
@@ -16,8 +18,12 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
+import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
-import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
@@ -26,15 +32,15 @@ import com.balancesentinel.app.data.repository.BackupImportPlanner
 import com.balancesentinel.app.data.repository.ConfigSettings
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
-import com.balancesentinel.app.data.repository.RawRecordStore
-import com.balancesentinel.app.data.repository.RefreshLogStore
+import com.balancesentinel.app.data.repository.RoomEventLogRepository
+import com.balancesentinel.app.data.repository.RoomHistoryRepository
+import com.balancesentinel.app.data.repository.RoomUsageRepository
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RoomSettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
-import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
@@ -44,6 +50,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -60,26 +67,31 @@ class DataManagementViewModelTest {
 
     private lateinit var context: Context
     private lateinit var app: Application
+    private lateinit var database: WalletDatabase
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         app = context as Application
         SettingsRepositoryProvider.factory = { InMemorySettingsRepository() }
+        database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        WalletDatabaseProvider.installForTests(database)
+        runBlocking { database.accountDao().insertCreate(dataRoomAccount()) }
         clearAllStores()
     }
 
     @After
     fun tearDown() {
+        // The ViewModel starts its Room count query on Dispatchers.IO during init.
+        // Let that bounded read finish before replacing the test database.
+        Thread.sleep(500)
+        ShadowLooper.idleMainLooper()
         clearAllStores()
+        WalletDatabaseProvider.clearForTests()
         SettingsRepositoryProvider.factory = { RoomSettingsRepository.from(it) }
     }
 
     private fun clearAllStores() {
-        RawRecordStore.clear(context)
-        DailySummaryStore.clear(context)
-        UsageDataStore.clear(context)
-        RefreshLogStore.clear(context)
         WidgetErrorLogger.clear(context)
         CrashLogger.clear(app)
         BalanceWidgetDataStore.clearAll(context)
@@ -88,13 +100,27 @@ class DataManagementViewModelTest {
         RefreshScheduler.resetAlarmCounters(context)
     }
 
+    private fun newDataManagementViewModel(): DataManagementViewModel =
+        DataManagementViewModel(app).also {
+            Thread.sleep(150)
+            ShadowLooper.idleMainLooper()
+        }
+
+    private fun awaitDataManagementUpdate() {
+        repeat(40) {
+            ShadowLooper.idleMainLooper()
+            Thread.sleep(25)
+        }
+        ShadowLooper.idleMainLooper()
+    }
+
     // ═══════════════════════════════════════════════════════════
     // loadStats — empty state
     // ═══════════════════════════════════════════════════════════
 
     @Test
     fun `loadStats returns all zeros for empty stores`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
 
         val state = viewModel.uiState.value
         assertEquals(0, state.rawRecordCount)
@@ -118,11 +144,13 @@ class DataManagementViewModelTest {
     @Test
     fun `loadStats reflects raw record count and distinct dates`() {
         val now = System.currentTimeMillis()
-        RawRecordStore.addRecord(context, RawRecord("acc1", now, "CNY", 100f, 0f, 100f))
-        RawRecordStore.addRecord(context, RawRecord("acc1", now + 86_400_000L, "CNY", 90f, 0f, 90f))
-        RawRecordStore.addRecord(context, RawRecord("acc1", now + 3600_000L, "CNY", 95f, 0f, 95f))
+        addDataRoomRecords(
+            RawRecord(DATA_ACCOUNT_ID, now, "CNY", 100f, 0f, 100f),
+            RawRecord(DATA_ACCOUNT_ID, now + 86_400_000L, "CNY", 90f, 0f, 90f),
+            RawRecord(DATA_ACCOUNT_ID, now + 3600_000L, "CNY", 95f, 0f, 95f)
+        )
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         val state = viewModel.uiState.value
         assertEquals(3, state.rawRecordCount)
         assertEquals(2, state.rawRecordDistinctDates)
@@ -130,46 +158,46 @@ class DataManagementViewModelTest {
 
     @Test
     fun `loadStats reflects daily summary count`() {
-        DailySummaryStore.upsert(context, DailySummary(
-            accountId = "acc1", date = "2026-07-01", currency = "CNY",
+        addDataRoomSummaries(DailySummary(
+            accountId = DATA_ACCOUNT_ID, date = "2026-07-01", currency = "CNY",
             open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
             granted = 0f, avgBalance = 95f, sampleCount = 1,
             toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
         ))
-        DailySummaryStore.upsert(context, DailySummary(
-            accountId = "acc1", date = "2026-07-02", currency = "CNY",
+        addDataRoomSummaries(DailySummary(
+            accountId = DATA_ACCOUNT_ID, date = "2026-07-02", currency = "CNY",
             open = 90f, close = 85f, consumed = 5f, toppedUp = 0f,
             granted = 0f, avgBalance = 87f, sampleCount = 1,
             toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(2, viewModel.uiState.value.dailySummaryCount)
     }
 
     @Test
     fun `loadStats reflects usage snapshot count`() {
         val now = System.currentTimeMillis()
-        UsageDataStore.saveSnapshot(context, UsageSnapshot(
-            accountId = "acc1", timestamp = now, records = listOf(
+        addDataRoomUsage(UsageSnapshot(
+            accountId = DATA_ACCOUNT_ID, timestamp = now, records = listOf(
                 UsageRecord("deepseek-chat", 1000, 600, 400)
             )
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.usageSnapshotCount)
     }
 
     @Test
     fun `loadStats reflects refresh log count`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addDataRoomLogs(RefreshLogEntry(
             id = System.currentTimeMillis(),
             type = RefreshLogType.MANUAL,
             timestamp = System.currentTimeMillis(),
             message = "Manual refresh"
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.refreshLogCount)
     }
 
@@ -177,7 +205,7 @@ class DataManagementViewModelTest {
     fun `loadStats reflects widget error count`() {
         WidgetErrorLogger.logMessage(context, "Test error")
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.widgetErrorCount)
     }
 
@@ -188,7 +216,7 @@ class DataManagementViewModelTest {
             true, "50.00", "50.00"
         )
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.widgetBalanceCount)
     }
 
@@ -200,7 +228,7 @@ class DataManagementViewModelTest {
         RefreshScheduler.markDropped(context)
         RefreshScheduler.markDropped(context)
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         val counters = viewModel.uiState.value.alarmCounters
         assertEquals(1, counters.totalSet)
         assertEquals(1, counters.totalFired)
@@ -214,7 +242,7 @@ class DataManagementViewModelTest {
 
     @Test
     fun `requestAction sets pendingAction`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertNull(viewModel.uiState.value.pendingAction)
 
         viewModel.requestAction(PendingAction.ClearRawRecords)
@@ -223,7 +251,7 @@ class DataManagementViewModelTest {
 
     @Test
     fun `dismissAction clears pendingAction`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         viewModel.requestAction(PendingAction.ClearDailySummaries)
         assertNotNull(viewModel.uiState.value.pendingAction)
 
@@ -233,7 +261,7 @@ class DataManagementViewModelTest {
 
     @Test
     fun `clearResultMessage sets resultMessage to null`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         // Simulate setting a resultMessage
         viewModel.requestAction(PendingAction.ClearRawRecords)
         assertNull(viewModel.uiState.value.resultMessage)
@@ -244,7 +272,7 @@ class DataManagementViewModelTest {
 
     @Test
     fun `requestAction overwrites previous pendingAction`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         viewModel.requestAction(PendingAction.ClearRawRecords)
         viewModel.requestAction(PendingAction.ResetSettings)
         assertEquals(PendingAction.ResetSettings, viewModel.uiState.value.pendingAction)
@@ -256,15 +284,16 @@ class DataManagementViewModelTest {
 
     @Test
     fun `executeAction ClearRawRecords clears all records`() {
-        RawRecordStore.addRecord(context, RawRecord("acc1", System.currentTimeMillis(), "CNY", 100f, 0f, 100f))
-        RawRecordStore.addRecord(context, RawRecord("acc1", System.currentTimeMillis() + 1000, "CNY", 90f, 0f, 90f))
+        addDataRoomRecords(
+            RawRecord(DATA_ACCOUNT_ID, System.currentTimeMillis(), "CNY", 100f, 0f, 100f),
+            RawRecord(DATA_ACCOUNT_ID, System.currentTimeMillis() + 1000, "CNY", 90f, 0f, 90f)
+        )
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(2, viewModel.uiState.value.rawRecordCount)
 
         viewModel.executeAction(PendingAction.ClearRawRecords)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         assertEquals(0, viewModel.uiState.value.rawRecordCount)
         assertNotNull(viewModel.uiState.value.resultMessage)
@@ -273,56 +302,53 @@ class DataManagementViewModelTest {
 
     @Test
     fun `executeAction ClearDailySummaries clears all summaries`() {
-        DailySummaryStore.upsert(context, DailySummary(
-            accountId = "acc1", date = "2026-07-01", currency = "CNY",
+        addDataRoomSummaries(DailySummary(
+            accountId = DATA_ACCOUNT_ID, date = "2026-07-01", currency = "CNY",
             open = 100f, close = 90f, consumed = 10f, toppedUp = 0f,
             granted = 0f, avgBalance = 95f, sampleCount = 1,
             toppedUpBalanceClose = 0f, grantedBalanceClose = 0f
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.dailySummaryCount)
 
         viewModel.executeAction(PendingAction.ClearDailySummaries)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         assertEquals(0, viewModel.uiState.value.dailySummaryCount)
     }
 
     @Test
     fun `executeAction ClearUsageSnapshots clears all snapshots`() {
-        UsageDataStore.saveSnapshot(context, UsageSnapshot(
-            accountId = "acc1", timestamp = System.currentTimeMillis(), records = listOf(
+        addDataRoomUsage(UsageSnapshot(
+            accountId = DATA_ACCOUNT_ID, timestamp = System.currentTimeMillis(), records = listOf(
                 UsageRecord("deepseek-chat", 1000, 600, 400)
             )
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.usageSnapshotCount)
 
         viewModel.executeAction(PendingAction.ClearUsageSnapshots)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         assertEquals(0, viewModel.uiState.value.usageSnapshotCount)
     }
 
     @Test
     fun `executeAction ClearRefreshLogs clears all logs`() {
-        RefreshLogStore.addEntry(context, RefreshLogEntry(
+        addDataRoomLogs(RefreshLogEntry(
             id = System.currentTimeMillis(),
             type = RefreshLogType.MANUAL,
             timestamp = System.currentTimeMillis(),
             message = "Test"
         ))
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.refreshLogCount)
 
         viewModel.executeAction(PendingAction.ClearRefreshLogs)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         assertEquals(0, viewModel.uiState.value.refreshLogCount)
     }
@@ -331,12 +357,11 @@ class DataManagementViewModelTest {
     fun `executeAction ClearWidgetErrors clears all errors`() {
         WidgetErrorLogger.logMessage(context, "Test widget error")
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.widgetErrorCount)
 
         viewModel.executeAction(PendingAction.ClearWidgetErrors)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         assertEquals(0, viewModel.uiState.value.widgetErrorCount)
     }
@@ -352,12 +377,11 @@ class DataManagementViewModelTest {
         RefreshScheduler.markCancelled(context)
         RefreshScheduler.markDropped(context)
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(1, viewModel.uiState.value.alarmCounters.totalSet)
 
         viewModel.executeAction(PendingAction.ResetAlarmCounters)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         val counters = viewModel.uiState.value.alarmCounters
         assertEquals(0, counters.totalSet)
@@ -374,11 +398,10 @@ class DataManagementViewModelTest {
         prefs.alertThreshold = 50f
         WidgetConfigStore.saveConfig(context, 1, "acc1", "CNY")
 
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
 
         viewModel.executeAction(PendingAction.ResetSettings)
-        Thread.sleep(200)
-        ShadowLooper.idleMainLooper()
+        awaitDataManagementUpdate()
 
         // Settings restored to defaults
         assertEquals(WidgetPrefs.DEFAULT_INTERVAL, prefs.refreshIntervalSeconds)
@@ -398,7 +421,7 @@ class DataManagementViewModelTest {
 
     @Test
     fun `ResetEntireApp dialog flow works correctly`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
 
         // Request action shows dialog
         viewModel.requestAction(PendingAction.ResetEntireApp)
@@ -415,17 +438,21 @@ class DataManagementViewModelTest {
 
     @Test
     fun `loadStats refreshes after external data changes`() {
-        val viewModel = DataManagementViewModel(app)
+        val viewModel = newDataManagementViewModel()
         assertEquals(0, viewModel.uiState.value.rawRecordCount)
 
         // Add data externally
-        RawRecordStore.addRecord(context, RawRecord("acc1", System.currentTimeMillis(), "CNY", 100f, 0f, 100f))
+        addDataRoomRecords(
+            RawRecord(DATA_ACCOUNT_ID, System.currentTimeMillis(), "CNY", 100f, 0f, 100f)
+        )
 
         // Stats still stale
         assertEquals(0, viewModel.uiState.value.rawRecordCount)
 
         // Reload
         viewModel.loadStats()
+        Thread.sleep(600)
+        ShadowLooper.idleMainLooper()
         assertEquals(1, viewModel.uiState.value.rawRecordCount)
     }
 
@@ -690,6 +717,34 @@ class DataManagementViewModelTest {
         accountStorage.edit().clear().commit()
     }
 
+    private fun addDataRoomRecords(vararg records: RawRecord) = runBlocking {
+        RoomHistoryRepository(database).insert(records.toList(), BalanceRecordSource.REFRESH)
+    }
+
+    private fun addDataRoomSummaries(vararg summaries: DailySummary) = runBlocking {
+        RoomHistoryRepository(database).upsertSummaries(summaries.toList())
+    }
+
+    private fun addDataRoomUsage(snapshot: UsageSnapshot) = runBlocking {
+        RoomUsageRepository(database).upsert(snapshot, "data-management-test-${snapshot.timestamp}")
+    }
+
+    private fun addDataRoomLogs(entry: RefreshLogEntry) = runBlocking {
+        RoomEventLogRepository(database).append(listOf(entry))
+    }
+
+    private fun dataRoomAccount() = AccountEntity(
+        id = DATA_ACCOUNT_ID,
+        displayOrder = 0,
+        label = "Data management test account",
+        providerType = ProviderType.DEEPSEEK,
+        activeCredentialGeneration = "test",
+        state = AccountState.VERIFIED,
+        revision = 1,
+        createdAt = 1L,
+        updatedAt = 1L
+    )
+
     private fun importConfig(
         credentialsIncluded: Boolean,
         accounts: List<AccountInfo>,
@@ -736,6 +791,7 @@ class DataManagementViewModelTest {
     }
 
     private companion object {
+        const val DATA_ACCOUNT_ID = "6a5f4e3d-2c1b-4a9f-8e7d-6c5b4a3f2e10"
         const val LOCAL_KEY = "sk-local-secret"
         const val LOCAL_ID = "96ed403d28356eeb"
         const val NEW_KEY = "sk-new-complete"

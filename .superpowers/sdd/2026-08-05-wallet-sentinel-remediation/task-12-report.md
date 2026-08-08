@@ -31,3 +31,18 @@ Implemented the Task 12 consumer migration on baseline `2330369`.
 
 - Added `LogViewModel` initialization and persistence of `logMaxEntries` through `WidgetPrefs`, preserving the existing user-visible preference while Room supplies log rows.
 - A test-fixture migration attempt using file-local same-name adapters was abandoned before commit because Kotlin generated package symbols conflicted across the three focused test files. No test was deleted or marked expected; the original legacy fixtures remain and must be replaced with uniquely named shared Room fixtures in a follow-up.
+
+## Fixture Migration Follow-up
+
+- Migrated `InsightsViewModelTest`, `DataManagementViewModelTest`, `LogViewModelTest`, `DataExporterTest`, and `LogExporterTest` to per-class in-memory Room databases via `WalletDatabaseProvider.installForTests/clearForTests`, with FK-backed `AccountEntity` fixtures and uniquely named Room fixture helpers.
+- Consumer tests no longer populate `RawRecordStore`, `DailySummaryStore`, `UsageDataStore`, or `RefreshLogStore`. Widget tests intentionally retain `BalanceWidgetDataStore` coverage because the widget summary contract remains a bounded cache.
+- `DataExporterTest` legacy "failed store write" scenarios were replaced with Room invariants: blank-account raw records and unknown-account summaries are rejected by Room constraints.
+- Restored `DataExporter.applyImport` summary-only suppression in the Room path: existing summary keys that lack raw records now suppress raw imports for the same (date, account, currency), matching the pre-Room merge behavior.
+
+## Verification (fixture follow-up)
+
+- Exact brief command: `InsightsViewModelTest` 48/48, `DataManagementViewModelTest` 29/29, `WidgetProviderTest` 15 passed/3 skipped, `LogViewModelTest` 14/14; 0 failures.
+- `DataExporterTest` 33/33 and `LogExporterTest` 20/20 pass.
+- `compileDebugKotlin --rerun-tasks --no-parallel`: PASS.
+- `git diff --check`: PASS.
+- Static search across the six Task 12 production consumers and the migrated consumer/exporter test files found no legacy store calls.

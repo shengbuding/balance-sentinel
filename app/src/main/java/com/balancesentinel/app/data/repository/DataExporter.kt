@@ -157,18 +157,21 @@ object DataExporter {
         DataMutationCoordinator.withMutation {
             kotlinx.coroutines.runBlocking {
                 val database = WalletDatabaseProvider.get(context)
+                val zoneId = ZoneId.systemDefault()
                 val history = RoomHistoryRepository(database)
                 val usage = RoomUsageRepository(database)
                 val events = RoomEventLogRepository(database)
-                val existingSummaries = history.summaries().mapTo(mutableSetOf()) {
-                    Triple(it.date, it.accountId, it.currency.uppercase(Locale.ROOT))
-                }
+                val existingSummaries = history.summaries().mapTo(mutableSetOf()) { it.historyKey() }
                 val newSummaries = data.dailySummaries.filter { summary ->
-                    existingSummaries.add(Triple(summary.date, summary.accountId, summary.currency.uppercase(Locale.ROOT)))
+                    existingSummaries.add(summary.historyKey())
                 }
                 history.upsertSummaries(newSummaries)
                 val existingRecords = readAllHistory(history).toMutableSet()
-                val newRecords = data.rawRecords.filter { existingRecords.add(it) }
+                val existingRecordKeys = existingRecords.mapTo(mutableSetOf()) { it.historyKey(zoneId) }
+                val summaryOnlyKeys = existingSummaries.filterTo(mutableSetOf()) { it !in existingRecordKeys }
+                val newRecords = data.rawRecords.filter { record ->
+                    record.historyKey(zoneId) !in summaryOnlyKeys && existingRecords.add(record)
+                }
                 history.insert(newRecords, com.balancesentinel.app.data.local.history.BalanceRecordSource.IMPORT)
                 val existingLogIds = events.newest(10_000).mapTo(mutableSetOf()) { it.id }
                 val newLogs = data.refreshLogs.filter { existingLogIds.add(it.id) }
@@ -189,59 +192,6 @@ object DataExporter {
     fun importAndApply(context: Context, uri: Uri): ImportResult? {
         val data = importFromUri(context, uri) ?: return null
         return applyImport(context, data)
-    }
-
-    /**
-     * Merge summaries by canonical (date, currency, accountId) without overwriting local history.
-     */
-    private fun mergeSummaries(context: Context, imported: List<DailySummary>): Int {
-        if (imported.isEmpty()) return 0
-        val existing = emptyList<DailySummary>()
-        val seenKeys = existing.mapTo(mutableSetOf()) {
-            Triple(it.date, it.currency.uppercase(Locale.ROOT), it.accountId)
-        }
-        val newSummaries = imported.filter { summary ->
-            seenKeys.add(
-                Triple(summary.date, summary.currency.uppercase(Locale.ROOT), summary.accountId)
-            )
-        }
-        return newSummaries.size
-    }
-
-    /**
-     * Merge raw records by full value so same-timestamp currencies remain distinct.
-     */
-    private fun mergeRecords(
-        context: Context,
-        imported: List<RawRecord>,
-        existing: List<RawRecord>,
-        summaryOnlyKeys: Set<HistoryKey>,
-        zoneId: ZoneId
-    ): Int {
-        if (imported.isEmpty()) return 0
-        val seen = existing.toMutableSet()
-        val newRecords = imported.filter { record ->
-            record.historyKey(zoneId) !in summaryOnlyKeys && seen.add(record)
-        }
-        return newRecords.size
-    }
-
-    /**
-     * 合并用量快照：按 (accountId + timestamp) 去重，批量写入。
-     * 已存在的跳过，不存在的追加。
-     */
-    private fun mergeUsageSnapshots(context: Context, imported: List<com.balancesentinel.app.data.model.UsageSnapshot>): Int {
-        if (imported.isEmpty()) return 0
-        return imported.size
-    }
-
-    /**
-     * 合并刷新日志：按 id 去重，批量写入。
-     * 已存在的跳过，不存在的追加。
-     */
-    private fun mergeRefreshLogs(context: Context, imported: List<com.balancesentinel.app.data.model.RefreshLogEntry>): Int {
-        if (imported.isEmpty()) return 0
-        return imported.size
     }
 
     private fun DailySummary.historyKey() = HistoryKey(
