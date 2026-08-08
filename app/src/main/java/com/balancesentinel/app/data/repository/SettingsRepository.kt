@@ -56,6 +56,9 @@ object SettingsRepositoryProvider {
         }
     }
 
+    internal fun isUsingDefaultFactoryForTests(): Boolean =
+        repositoryFactory === defaultRepositoryFactory
+
     private fun closeInstanceLocked() {
         val current = instance
         instance = null

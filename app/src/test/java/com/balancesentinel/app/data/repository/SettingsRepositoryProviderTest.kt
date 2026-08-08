@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,10 +24,9 @@ class SettingsRepositoryProviderTest {
             SettingsRepositoryProvider.resetForTests()
 
             assertTrue(injected.closed)
-            assertNotSame(injected, SettingsRepositoryProvider.get(context))
+            assertTrue(SettingsRepositoryProvider.isUsingDefaultFactoryForTests())
         } finally {
             injected.close()
-            SettingsRepositoryProvider.factory = { RoomSettingsRepository.from(it) }
             SettingsRepositoryProvider.resetForTests()
         }
     }
