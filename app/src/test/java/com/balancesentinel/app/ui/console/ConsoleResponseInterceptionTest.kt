@@ -132,6 +132,31 @@ class ConsoleResponseInterceptionTest {
     }
 
     @Test
+    fun `encoded console overflow reports the encoded budget reason`() {
+        withHttpsServer { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(HttpURLConnection.HTTP_OK)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(Buffer().write(ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() }))
+            )
+            val entries = mutableListOf<ApiDebugEntry>()
+
+            val response = interceptApiRequest(
+                request = request(server.url("/api/encoded-limit").toString()),
+                tag = "local",
+                policy = ConsoleOriginPolicy(platform(server)),
+                debuggable = true,
+                entrySink = entries::add
+            )
+
+            assertEquals(null, response)
+            assertEquals(1, entries.size)
+            assertTrue(entries.single().error.orEmpty().contains("encoded byte limit"))
+        }
+    }
+
+    @Test
     fun `interception forwards repeated Set-Cookie fields independently and redacts diagnostics`() {
         val certificate = HeldCertificate.Builder()
             .commonName("localhost")

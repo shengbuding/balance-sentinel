@@ -6,15 +6,26 @@ import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
 import com.balancesentinel.app.data.debug.DebugInterceptor
+import com.balancesentinel.app.data.network.NetworkResponseException
 import java.io.IOException
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -155,7 +166,84 @@ class BalanceQueryServiceTest {
             assertFalse(unauthorized.error.message.contains("api-key-secret"))
             assertFalse(limited.error.message.contains("token-secret"))
             assertFalse(unavailable.error.message.contains("raw-response-secret"))
+            assertEquals(401, (unauthorized.error.cause as NetworkResponseException).statusCode)
+            assertEquals("api-key-secret", (unauthorized.error.cause as NetworkResponseException).limitedBody)
+            assertEquals(429, (limited.error.cause as NetworkResponseException).statusCode)
+            assertEquals("token-secret", (limited.error.cause as NetworkResponseException).limitedBody)
+            assertEquals(503, (unavailable.error.cause as NetworkResponseException).statusCode)
+            assertEquals("raw-response-secret", (unavailable.error.cause as NetworkResponseException).limitedBody)
             assertEquals(3, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `non OkHttp factories fail closed instead of bypassing the encoded budget`() = runTest {
+        val server = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(resource("balance/stepfun.json"))
+            )
+            val delegate = OkHttpClient()
+            val factory = object : Call.Factory {
+                override fun newCall(request: Request): Call = delegate.newCall(request)
+            }
+            val service = BalanceQueryService(factory, endpointOverride(server))
+            val config = config(ProviderType.CUSTOM, "https://api.stepfun.com/v1")
+
+            val result = service.queryBalance(config)
+
+            assertTrue(result is ProviderResult.Failure)
+            assertEquals(0, server.requestCount)
+            val contract = checkNotNull(
+                BuiltInBalanceContracts.resolve(ProviderType.CUSTOM, config.baseUrl)
+            )
+            assertThrows(IllegalArgumentException::class.java) {
+                service.callFactoryFor(config, contract)
+            }
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test(timeout = 8_000)
+    fun `cancelling balance query cancels the underlying call and preserves the cancellation`() = runTest {
+        val server = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val cancelled = AtomicBoolean(false)
+            val client = OkHttpClient.Builder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .eventListenerFactory(EventListener.Factory {
+                    object : EventListener() {
+                        override fun canceled(call: Call) {
+                            cancelled.set(true)
+                        }
+                    }
+                })
+                .build()
+            val service = BalanceQueryService(client, endpointOverride(server))
+            val config = config(ProviderType.DEEPSEEK, "https://api.deepseek.com")
+            var observed: Throwable? = null
+            val job = launch(Dispatchers.IO) {
+                try {
+                    service.queryBalance(config)
+                } catch (failure: Throwable) {
+                    observed = failure
+                    throw failure
+                }
+            }
+
+            checkNotNull(server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS))
+            val cancellation = CancellationException("balance cancellation")
+            job.cancel(cancellation)
+            job.join()
+
+            assertTrue(cancelled.get())
+            assertTrue(observed === cancellation)
         } finally {
             server.shutdown()
         }

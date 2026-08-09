@@ -4,6 +4,7 @@ import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.BalanceInfo
 import com.balancesentinel.app.data.model.UsageResponse
+import com.balancesentinel.app.data.network.NetworkResponseException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
@@ -78,6 +79,24 @@ class DeepSeekApiServiceTest {
             fail("Expected IOException")
         } catch (e: IOException) {
             assertTrue(e.message!!.contains("401"))
+        }
+    }
+
+    @Test
+    fun `getBalance preserves bounded non success status and body metadata`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setBody("forbidden-response")
+        )
+
+        try {
+            service.getBalance("sk-test-key")
+            fail("Expected NetworkResponseException")
+        } catch (error: NetworkResponseException) {
+            assertEquals(NetworkResponseException.Reason.HTTP_STATUS, error.reason)
+            assertEquals(403, error.statusCode)
+            assertEquals("forbidden-response", error.limitedBody)
         }
     }
 

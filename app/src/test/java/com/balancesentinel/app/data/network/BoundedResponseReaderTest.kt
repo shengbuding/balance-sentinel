@@ -117,14 +117,47 @@ class BoundedResponseReaderTest {
         }
     }
 
+    @Test
+    fun `json responses require an explicit json content type while text endpoints remain valid`() {
+        val missingContentType = TrackingBody(
+            bytes = "{}".toByteArray(),
+            declaredLength = 2L,
+            opened = AtomicBoolean(false),
+            closed = AtomicBoolean(false),
+            contentType = null
+        )
+        val plainTextForJson = TrackingBody(
+            bytes = "{}".toByteArray(),
+            declaredLength = 2L,
+            opened = AtomicBoolean(false),
+            closed = AtomicBoolean(false),
+            contentType = "text/plain"
+        )
+        val plainText = TrackingBody(
+            bytes = "ok".toByteArray(),
+            declaredLength = 2L,
+            opened = AtomicBoolean(false),
+            closed = AtomicBoolean(false),
+            contentType = "text/plain; charset=utf-8"
+        )
+
+        assertThrows(NetworkResponseException::class.java) {
+            BoundedResponseReader.readText(missingContentType, 128L, "application/json")
+        }
+        assertThrows(NetworkResponseException::class.java) {
+            BoundedResponseReader.readText(plainTextForJson, 128L, "application/json")
+        }
+        assertEquals("ok", BoundedResponseReader.readText(plainText, 128L, "text/plain"))
+    }
+
     private class TrackingBody(
         private val bytes: ByteArray,
         private val declaredLength: Long,
         private val opened: AtomicBoolean,
         private val closed: AtomicBoolean,
-        private val contentType: String = "application/json"
+        private val contentType: String? = "application/json"
     ) : ResponseBody() {
-        override fun contentType() = contentType.toMediaType()
+        override fun contentType() = contentType?.toMediaType()
         override fun contentLength() = declaredLength
         override fun source(): BufferedSource {
             opened.set(true)

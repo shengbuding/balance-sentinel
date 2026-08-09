@@ -4,13 +4,22 @@ package com.balancesentinel.app.data.update
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.GitHubRelease
+import com.balancesentinel.app.data.network.NetworkResponseException
+import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -44,16 +53,17 @@ class UpdateCheckerIntegrationTest {
      * Replace the OkHttpClient in UpdateChecker with one that routes
      * api.github.com calls to our MockWebServer.
      */
-    private fun injectMockServer() {
+    private fun injectMockServer(eventListenerFactory: EventListener.Factory? = null) {
         val mockBase = server.url("/").toString().trimEnd('/')
-        val mockClient = OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .addInterceptor(Interceptor { chain ->
                 val original = chain.request()
                 val newUrl = original.url.toString()
                     .replace("https://api.github.com", mockBase)
                 chain.proceed(original.newBuilder().url(newUrl).build())
             })
-            .build()
+        eventListenerFactory?.let(builder::eventListenerFactory)
+        val mockClient = builder.build()
 
         val clientField = UpdateChecker::class.java.getDeclaredField("client")
         clientField.isAccessible = true
@@ -159,6 +169,55 @@ class UpdateCheckerIntegrationTest {
         val result = checker.checkForUpdate(context)
         assertTrue(result is UpdateResult.Error)
         assertTrue((result as UpdateResult.Error).isNetworkError)
+    }
+
+    @Test
+    fun `checkForUpdate retains bounded non success status and body metadata`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(503)
+                .setBody("github-response-secret")
+        )
+
+        val result = checker.checkForUpdate(context)
+        assertTrue(result is UpdateResult.Error)
+        val error = result as UpdateResult.Error
+        val errorCause = error.javaClass.getDeclaredField("cause").let { field ->
+            field.isAccessible = true
+            field.get(error) as NetworkResponseException
+        }
+        assertEquals(503, errorCause.statusCode)
+        assertEquals("github-response-secret", errorCause.limitedBody)
+    }
+
+    @Test(timeout = 8_000)
+    fun `cancelling update check cancels the underlying call and preserves the cancellation`() = runTest {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val cancelled = AtomicBoolean(false)
+        injectMockServer(EventListener.Factory {
+            object : EventListener() {
+                override fun canceled(call: Call) {
+                    cancelled.set(true)
+                }
+            }
+        })
+        var observed: Throwable? = null
+        val job = launch(Dispatchers.IO) {
+            try {
+                checker.checkForUpdate(context)
+            } catch (failure: Throwable) {
+                observed = failure
+                throw failure
+            }
+        }
+
+        checkNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+        val cancellation = CancellationException("update cancellation")
+        job.cancel(cancellation)
+        job.join()
+
+        assertTrue(cancelled.get())
+        assertTrue(observed === cancellation)
     }
 
     @Test

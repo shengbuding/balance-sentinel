@@ -3,12 +3,22 @@ package com.balancesentinel.app.data.api.balance
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.refresh.RefreshFailure
+import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
@@ -102,6 +112,73 @@ class UsageScriptSecurityTest {
 
         assertSuccess(result)
         assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `non success script responses retain bounded status and body metadata`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(503)
+                .setBody("script-service-secret")
+        )
+
+        val result = execute(
+            requestUrl = "https://api.example.com/balance",
+            baseUrl = "https://api.example.com/v1"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Failure)
+        val failure = (result as ScriptExecutionResult.Failure).failure
+        assertTrue(failure is RefreshFailure.NetworkFailure)
+        val networkFailureCause = failure.javaClass.getDeclaredField("cause").let { field ->
+            field.isAccessible = true
+            field.get(failure) as NetworkResponseException
+        }
+        assertEquals(503, networkFailureCause.statusCode)
+        assertEquals("script-service-secret", networkFailureCause.limitedBody)
+    }
+
+    @Test(timeout = 8_000)
+    fun `cancelling script request cancels the underlying call and preserves the cancellation`() = runTest {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val cancelled = AtomicBoolean(false)
+        val cancellableClient = client.newBuilder()
+            .readTimeout(30, TimeUnit.SECONDS)
+            .eventListenerFactory(EventListener.Factory {
+                object : EventListener() {
+                    override fun canceled(call: Call) {
+                        cancelled.set(true)
+                    }
+                }
+            })
+            .build()
+        val script = UsageScript(
+            """({request:{url:"https://api.example.com/balance"},extractor:function(r){return r;}})""",
+            timeout = 30
+        )
+        var observed: Throwable? = null
+        val job = launch(Dispatchers.IO) {
+            try {
+                UsageScriptExecutor.execute(
+                    script = script,
+                    account = account("https://api.example.com"),
+                    resolver = PUBLIC_RESOLVER,
+                    client = cancellableClient,
+                    connectionUrlOverride = ::routeToTestServer
+                )
+            } catch (failure: Throwable) {
+                observed = failure
+                throw failure
+            }
+        }
+
+        checkNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+        val cancellation = CancellationException("script cancellation")
+        job.cancel(cancellation)
+        job.join()
+
+        assertTrue(cancelled.get())
+        assertTrue(observed === cancellation)
     }
 
     // Mutation caught: ignoring an explicitly authorized canonical public origin.
