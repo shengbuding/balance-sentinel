@@ -4,13 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.work.Constraints
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequest
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import androidx.work.WorkRequest
-import androidx.work.testing.WorkManagerTestInitHelper
 import com.balancesentinel.app.widget.StaticWidgetProvider
 import com.balancesentinel.app.widget.WidgetRefreshActionHandler
 import com.balancesentinel.app.widget.WidgetRefreshDecision
@@ -28,21 +21,19 @@ import org.robolectric.Shadows
 @RunWith(RobolectricTestRunner::class)
 class RefreshWorkSchedulerTest {
     private lateinit var context: Context
-    private lateinit var workManager: WorkManager
+    private lateinit var runtime: RecordingWorkRuntime
     private lateinit var scheduler: RefreshWorkScheduler
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        WorkManagerTestInitHelper.initializeTestWorkManager(context)
-        workManager = WorkManager.getInstance(context)
-        workManager.cancelAllWork().get()
-        scheduler = RefreshWorkScheduler()
+        runtime = RecordingWorkRuntime()
+        scheduler = RefreshWorkScheduler(runtime)
     }
 
     @After
     fun tearDown() {
-        workManager.cancelAllWork().get()
+        runtime.clear()
     }
 
     @Test
@@ -50,25 +41,20 @@ class RefreshWorkSchedulerTest {
         scheduler.reconcile(context, backgroundIntervalSeconds = 1_800)
         scheduler.reconcile(context, backgroundIntervalSeconds = 3_600)
 
-        val infos = workManager
-            .getWorkInfosForUniqueWork(RefreshWorkScheduler.PERIODIC_WORK_NAME)
-            .get()
-
-        assertEquals(1, infos.size)
-        assertEquals(3_600L, infos.single().inputData.getLong(RefreshWorkScheduler.KEY_INTERVAL_SECONDS, -1L))
-        assertEquals(NetworkType.CONNECTED, infos.single().constraints.requiredNetworkType)
+        val specs = runtime.periodic.values.toList()
+        assertEquals(1, specs.size)
+        assertEquals(RefreshWorkScheduler.PERIODIC_WORK_NAME, specs.single().uniqueName)
+        assertEquals(3_600L, specs.single().intervalSeconds)
+        assertTrue(specs.single().requiresNetwork)
     }
 
     @Test
     fun `reconcile after process reconstruction does not create parallel work`() {
         repeat(3) {
-            RefreshWorkScheduler().reconcile(context, backgroundIntervalSeconds = 1_800)
+            RefreshWorkScheduler(runtime).reconcile(context, backgroundIntervalSeconds = 1_800)
         }
 
-        val infos = workManager
-            .getWorkInfosForUniqueWork(RefreshWorkScheduler.PERIODIC_WORK_NAME)
-            .get()
-        assertEquals(1, infos.size)
+        assertEquals(1, runtime.periodic.size)
     }
 
     @Test
@@ -79,10 +65,7 @@ class RefreshWorkSchedulerTest {
             foregroundSessionActive = false
         )
 
-        val info = workManager
-            .getWorkInfosForUniqueWork(RefreshWorkScheduler.PERIODIC_WORK_NAME)
-            .single()
-        assertEquals(900L, info.inputData.getLong(RefreshWorkScheduler.KEY_INTERVAL_SECONDS, -1L))
+        assertEquals(900L, runtime.periodic.values.single().intervalSeconds)
     }
 
     @Test
@@ -106,13 +89,7 @@ class RefreshWorkSchedulerTest {
     fun `widget periodic refresh uses the shared periodic work and manual click remains immediate`() {
         scheduler.reconcile(context, backgroundIntervalSeconds = 1_800, widgetEnabled = true)
 
-        val uniqueNames = workManager
-            .getWorkInfosForUniqueWork(RefreshWorkScheduler.PERIODIC_WORK_NAME)
-            .get()
-            .map { it.tags }
-            .flatten()
-        assertFalse(uniqueNames.any { it.contains("widget", ignoreCase = true) })
-
+        assertEquals(setOf(RefreshWorkScheduler.PERIODIC_WORK_NAME), runtime.periodic.keys)
         val decision = WidgetRefreshActionHandler().decide(
             context,
             StaticWidgetProvider.ACTION_REFRESH_NOW,
@@ -120,5 +97,29 @@ class RefreshWorkSchedulerTest {
         )
         assertEquals(WidgetRefreshDecision.Refresh(watchdog = false), decision)
         assertTrue(WidgetRefreshIntents.manual(context).component != null)
+        assertFalse(runtime.periodic.keys.any { it.contains("widget", ignoreCase = true) })
+    }
+}
+
+private class RecordingWorkRuntime : WorkRuntime {
+    val periodic = linkedMapOf<String, PeriodicWorkSpec>()
+    val oneShot = linkedMapOf<String, OneShotWorkSpec>()
+
+    override fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec) {
+        periodic[spec.uniqueName] = spec
+    }
+
+    override fun enqueueOneShot(context: Context, spec: OneShotWorkSpec) {
+        oneShot[spec.uniqueName] = spec
+    }
+
+    override fun cancelUnique(context: Context, uniqueName: String) {
+        periodic.remove(uniqueName)
+        oneShot.remove(uniqueName)
+    }
+
+    fun clear() {
+        periodic.clear()
+        oneShot.clear()
     }
 }

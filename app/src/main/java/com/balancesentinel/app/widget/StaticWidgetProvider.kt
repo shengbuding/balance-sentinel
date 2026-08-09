@@ -592,6 +592,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
 
     companion object {
+        const val LEGACY_WIDGET_ALARM_REQUEST_CODE = 100
         const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
         const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
         @Volatile private var lastScheduleTime: Long = 0L

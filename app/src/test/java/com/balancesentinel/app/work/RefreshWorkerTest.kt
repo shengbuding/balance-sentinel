@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
+import com.balancesentinel.app.data.api.BalanceEntry
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
@@ -40,7 +42,7 @@ class RefreshWorkerTest {
 
     @Test
     fun `periodic worker invokes unified refresh engine and retries only retryable partial failures`() = runTest {
-        val worker = TestListenableWorkerBuilder<RefreshWorker>(context).build()
+        val worker = TestListenableWorkerBuilder.from(context, RefreshWorker::class.java).build()
 
         val result = worker.doWork()
 
@@ -62,7 +64,7 @@ class RefreshWorkerTest {
                 }
             }
         }
-        val worker = TestListenableWorkerBuilder<RefreshWorker>(context)
+        val worker = TestListenableWorkerBuilder.from(context, RefreshWorker::class.java)
             .setInputData(RefreshWorker.retryInput("permanent", attempt = 1))
             .build()
 
@@ -95,11 +97,5 @@ class RefreshWorkerTest {
         override fun invalidate(accountId: String) = Unit
     }
 
-    private fun fakeBalance() = UnifiedBalance(
-        totalBalance = "1.00",
-        currency = "USD",
-        grantedBalance = "1.00",
-        toppedUpBalance = "0.00",
-        isAvailable = true
-    )
+    private fun fakeBalance() = UnifiedBalance(provider = ProviderType.DEEPSEEK, accountId = "account", isAvailable = true, balances = listOf(BalanceEntry(currency = "USD", totalBalance = 1.0)))
 }

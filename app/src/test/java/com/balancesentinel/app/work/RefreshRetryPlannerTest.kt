@@ -1,5 +1,7 @@
 package com.balancesentinel.app.work
 
+import com.balancesentinel.app.data.api.BalanceEntry
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import org.junit.Assert.assertEquals
@@ -62,12 +64,5 @@ class RefreshRetryPlannerTest {
         assertNull(planner.next("account", failure, previousAttempt = 3))
     }
 
-    private fun fakeBalance() =
-        com.balancesentinel.app.data.api.UnifiedBalance(
-            totalBalance = "1.00",
-            currency = "USD",
-            grantedBalance = "1.00",
-            toppedUpBalance = "0.00",
-            isAvailable = true
-        )
+    private fun fakeBalance() = com.balancesentinel.app.data.api.UnifiedBalance(provider = ProviderType.DEEPSEEK, accountId = "account", isAvailable = true, balances = listOf(BalanceEntry(currency = "USD", totalBalance = 1.0)))
 }
