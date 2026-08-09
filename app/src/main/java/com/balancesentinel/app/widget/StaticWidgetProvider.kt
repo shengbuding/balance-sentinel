@@ -30,6 +30,7 @@ import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
+import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -88,7 +89,9 @@ class WidgetRefreshExecution(
         decision: WidgetRefreshDecision.Refresh
     ): RefreshBatchResult {
         try {
-            return WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
+            val result = WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
+            resultConsumer(result)
+            return result
         } finally {
             if (decision.watchdog) {
                 RefreshScheduler.recordRestart(context)
@@ -100,6 +103,57 @@ class WidgetRefreshExecution(
 
 fun interface WidgetRefreshResultConsumer {
     suspend operator fun invoke(result: RefreshBatchResult)
+}
+
+data class WidgetRefreshStatus(
+    val runId: String,
+    val state: RefreshBatchState,
+    val accountCount: Int,
+    val successCount: Int,
+    val failureCount: Int,
+    val cancelledCount: Int
+)
+
+object WidgetRefreshStatusStore {
+    private const val PREFS_NAME = "widget_refresh_status"
+    private const val KEY_RUN_ID = "run_id"
+    private const val KEY_STATE = "state"
+    private const val KEY_ACCOUNT_COUNT = "account_count"
+    private const val KEY_SUCCESS_COUNT = "success_count"
+    private const val KEY_FAILURE_COUNT = "failure_count"
+    private const val KEY_CANCELLED_COUNT = "cancelled_count"
+
+    fun record(context: Context, result: RefreshBatchResult) {
+        val aggregate = result.aggregate
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_RUN_ID, result.runId)
+            .putString(KEY_STATE, aggregate.state.name)
+            .putInt(KEY_ACCOUNT_COUNT, aggregate.accountCount)
+            .putInt(KEY_SUCCESS_COUNT, aggregate.successCount)
+            .putInt(KEY_FAILURE_COUNT, aggregate.failureCount)
+            .putInt(KEY_CANCELLED_COUNT, aggregate.cancelledCount)
+            .commit()
+    }
+
+    fun read(context: Context): WidgetRefreshStatus? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val runId = prefs.getString(KEY_RUN_ID, null) ?: return null
+        val state = prefs.getString(KEY_STATE, null)?.let { value ->
+            runCatching { RefreshBatchState.valueOf(value) }.getOrNull()
+        } ?: return null
+        return WidgetRefreshStatus(
+            runId = runId,
+            state = state,
+            accountCount = prefs.getInt(KEY_ACCOUNT_COUNT, 0),
+            successCount = prefs.getInt(KEY_SUCCESS_COUNT, 0),
+            failureCount = prefs.getInt(KEY_FAILURE_COUNT, 0),
+            cancelledCount = prefs.getInt(KEY_CANCELLED_COUNT, 0)
+        )
+    }
+
+    internal fun clearForTests(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+    }
 }
 
 object WidgetRefreshIntents {
@@ -164,7 +218,13 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         WidgetRefreshCoroutineDispatcher(scope).dispatch(
                 action = {
-                    WidgetRefreshExecution(refreshGatewayProvider(context), serviceStarter).execute(context, decision)
+                    WidgetRefreshExecution(
+                        gateway = refreshGatewayProvider(context),
+                        serviceStarter = serviceStarter,
+                        resultConsumer = WidgetRefreshResultConsumer { result ->
+                            WidgetRefreshStatusStore.record(context, result)
+                        }
+                    ).execute(context, decision)
                     provider.setRefreshProgress(context, manager, allIds, visible = false)
                     provider.onUpdate(context, manager, widgetIds)
                 },
@@ -273,6 +333,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         // 读取 per-widget 配置
         val config = WidgetConfigStore.getConfig(context, widgetId)
+        val lastRefreshStatus = WidgetRefreshStatusStore.read(context)
+        val lastRefreshFailed = lastRefreshStatus != null &&
+            lastRefreshStatus.state != RefreshBatchState.SUCCEEDED
         val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
             // 总余额模式：仅聚合当前有效账户
             val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
@@ -288,7 +351,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 AggregatedBalance(
                     totalBalance = acc.totalBalance,
                     currency = acc.currency,
-                    isAvailable = acc.isAvailable,
+                    isAvailable = acc.isAvailable && !acc.stale,
                     grantedBalance = acc.grantedBalance,
                     toppedUpBalance = acc.toppedUpBalance,
                     accountCount = 1,
@@ -350,7 +413,10 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         } else {
             views.setTextViewText(R.id.widget_balance, context.getString(R.string.widget_query_balance))
             views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_title_compact))
-            views.setTextViewText(R.id.widget_status, "--")
+            views.setTextViewText(
+                R.id.widget_status,
+                if (lastRefreshFailed) context.getString(R.string.widget_status_partial) else "--"
+            )
             views.setTextViewText(R.id.widget_refresh_time, "")
             if (isExpanded) {
                 views.setViewVisibility(R.id.widget_detail_row, android.view.View.GONE)

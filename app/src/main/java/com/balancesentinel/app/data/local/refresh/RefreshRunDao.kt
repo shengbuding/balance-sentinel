@@ -81,6 +81,7 @@ interface RefreshRunDao {
             failure_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state NOT IN ('RUNNING', 'SUCCEEDED', 'CANCELLED')),
             cancelled_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state = 'CANCELLED')
         WHERE id = :runId
+          AND state = 'RUNNING'
           AND NOT EXISTS (
               SELECT 1 FROM refresh_account_results
               WHERE run_id = :runId AND state = 'RUNNING'

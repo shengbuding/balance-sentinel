@@ -69,7 +69,23 @@ class RefreshCoordinator(
             try {
                 val results = accounts.map { account ->
                     async {
-                        refreshAccountInternal(account.id, trigger, handle?.runId)
+                        try {
+                            refreshAccountInternal(account.id, trigger, handle?.runId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            val failure = AccountRefreshResult.Failed(
+                                account.id,
+                                RefreshFailure.PersistenceFailure("Refresh account could not be completed")
+                            )
+                            runCatching {
+                                recordTerminal(
+                                    handle?.runId,
+                                    requestFor(account.id, trigger, 0L, account.revision, handle?.runId),
+                                    failure
+                                )
+                            }.getOrDefault(failure)
+                        }
                     }
                 }.awaitAll()
                 val aggregate = runRecorder?.finish(runId, clock())

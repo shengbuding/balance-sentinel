@@ -54,28 +54,36 @@ class RefreshResultCommitter(
         isLatest: () -> Boolean
     ): AccountRefreshResult = RefreshMutationBarrier.withRefreshCommitSuspend {
         DataMutationCoordinator.withMutationSuspend {
-        if (!isLatest()) return@withMutationSuspend stale(request.accountId)
-        val account = accountStore.getAccount(request.accountId)
+        if (!isLatest()) return@withMutationSuspend recordTerminal(request, stale(request.accountId))
+        val account = try {
+            accountStore.getAccount(request.accountId)
+        } catch (_: Exception) {
+            return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
+        }
         if (
             account == null ||
             account.id != request.accountId ||
             account.revision != request.revision
         ) {
-            return@withMutationSuspend stale(request.accountId)
+            return@withMutationSuspend recordTerminal(request, stale(request.accountId))
         }
         if (fetched.balance.balances.any { !it.hasPersistableAmounts() }) {
-            return@withMutationSuspend responseSchemaFailure(request.accountId)
+            return@withMutationSuspend recordTerminal(request, responseSchemaFailure(request.accountId))
         }
 
         try {
-            val currentAccount = accountStore.getAccount(request.accountId)
+            val currentAccount = try {
+                accountStore.getAccount(request.accountId)
+            } catch (_: Exception) {
+                return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
+            }
             if (
                 !isLatest() ||
                 currentAccount == null ||
                 currentAccount.id != request.accountId ||
                 currentAccount.revision != request.revision
             ) {
-                return@withMutationSuspend stale(request.accountId)
+                return@withMutationSuspend recordTerminal(request, stale(request.accountId))
             }
 
             try {
@@ -118,34 +126,48 @@ class RefreshResultCommitter(
                 }
 
                 // Cache/widget state is published only after the durable Room transaction succeeds.
-                providerCache.put(account.providerType, account.id, fetched.balance)
-                BalanceWidgetDataStore.replaceAccountBalances(
-                    context,
-                    account.id,
-                    fetched.balance.balances.map { entry ->
-                        entry.toWidgetBalance(account, fetched.balance.isAvailable, fetched.completedAt)
-                    }
-                )
-
-                afterPersistenceWrite()
+                try {
+                    providerCache.put(account.providerType, account.id, fetched.balance)
+                    BalanceWidgetDataStore.replaceAccountBalances(
+                        context,
+                        account.id,
+                        fetched.balance.balances.map { entry ->
+                            entry.toWidgetBalance(account, fetched.balance.isAvailable, fetched.completedAt)
+                        }
+                    )
+                    afterPersistenceWrite()
+                } catch (_: Exception) {
+                    // Durable Room success is terminal. A projection failure must not
+                    // contradict the committed ledger result.
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                return@withMutationSuspend persistenceFailure(request.accountId)
+                return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
             }
 
             fetched.balance.balances.forEach { entry ->
                 runCatching { alertDispatcher.check(account, entry) }
             }
             runCatching { widgetRedrawNotifier.notifyRedraw() }
-            AccountRefreshResult.Committed(request.accountId, fetched.balance)
+            AccountRefreshResult.Committed(request.accountId, fetched.balance, fetched.completedAt)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            persistenceFailure(request.accountId)
+            recordTerminal(request, persistenceFailure(request.accountId))
         }
         }
     }
+
+    private suspend fun recordTerminal(
+        request: RefreshRequest,
+        result: AccountRefreshResult
+    ): AccountRefreshResult =
+        if (runRecorder != null && request.runId != null) {
+            runRecorder.recordAccount(request.runId, request, result)
+        } else {
+            result
+        }
 
     private fun BalanceEntry.toWidgetBalance(
         account: AccountInfo,

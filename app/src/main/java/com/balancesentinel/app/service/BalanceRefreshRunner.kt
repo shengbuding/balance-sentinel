@@ -50,11 +50,7 @@ class BalanceRefreshRunner(
         refreshDeadline.markStarted()
         return try {
             val batch = gateway.refreshAll(RefreshTrigger.SERVICE)
-            val committedBalances = if (accountCount == 0) {
-                emptyList()
-            } else {
-                committedBalanceReader()
-            }
+            val committedBalances = readCommittedBalances()
             ServiceRefreshBatch(accountCount, committedBalances, batch)
         } finally {
             refreshDeadline.clear()
@@ -68,9 +64,19 @@ class BalanceRefreshRunner(
         refreshDeadline.markStarted()
         return try {
             gateway.refreshAll(RefreshTrigger.SERVICE)
-            committedBalanceReader()
+            readCommittedBalances()
         } finally {
             refreshDeadline.clear()
         }
+    }
+
+    private suspend fun readCommittedBalances(): List<AccountBalance> {
+        val committed = committedBalanceReader()
+        val reader = accountSnapshotReader ?: return committed
+        val activeIds = when (val snapshot = reader.read()) {
+            is AccountStoreRead.Ready -> snapshot.accounts.map { it.id }.toSet()
+            AccountStoreRead.Missing, is AccountStoreRead.Corrupt -> emptySet()
+        }
+        return committed.filter { it.accountId in activeIds }
     }
 }

@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.refresh
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
@@ -33,7 +34,7 @@ object RefreshMutationBarrier {
     suspend fun <T> withRefreshCommitSuspend(block: suspend () -> T): T {
         if (coroutineContext[PermitKey] != null) return block()
         return withContext(Dispatchers.IO + PermitElement) {
-            permit.acquire()
+            runInterruptible { permit.acquire() }
             try {
                 block()
             } finally {
@@ -46,19 +47,29 @@ object RefreshMutationBarrier {
         accountId: String?,
         invalidate: (String) -> Unit = {},
         block: suspend () -> T
-    ): T =
-        withContext(Dispatchers.IO) {
-            permit.acquire()
+    ): T {
+        fun invalidateAccount() {
+            accountId?.let { id ->
+                invalidators[id]?.invoke()
+                invalidate(id)
+            }
+        }
+
+        if (coroutineContext[PermitKey] != null) {
+            invalidateAccount()
+            return block()
+        }
+
+        return withContext(Dispatchers.IO + PermitElement) {
+            runInterruptible { permit.acquire() }
             try {
-                accountId?.let { id ->
-                    invalidators[id]?.invoke()
-                    invalidate(id)
-                }
+                invalidateAccount()
                 block()
             } finally {
                 permit.release()
             }
         }
+    }
 
     private object PermitKey : CoroutineContext.Key<PermitElement>
 

@@ -68,6 +68,7 @@ class WidgetProviderTest {
     fun tearDown() {
         StaticWidgetProvider.accountStateLoaderOverride = null
         WidgetRefreshReceiver.resetTestOverrides()
+        WidgetRefreshStatusStore.clearForTests(context)
         SettingsRepositoryProvider.resetForTests()
         WalletDatabaseProvider.clearForTests()
         BalanceWidgetDataStore.clearAll(context)

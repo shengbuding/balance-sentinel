@@ -38,11 +38,13 @@ class StaticWidgetSchedulingTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         schedulerPrefs().edit().clear().commit()
+        WidgetRefreshStatusStore.clearForTests(context)
     }
 
     @After
     fun tearDown() {
         schedulerPrefs().edit().clear().commit()
+        WidgetRefreshStatusStore.clearForTests(context)
     }
 
     @Test
