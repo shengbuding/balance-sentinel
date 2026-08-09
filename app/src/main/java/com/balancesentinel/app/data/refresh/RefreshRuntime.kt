@@ -29,7 +29,6 @@ object RefreshRuntime {
             RoomAccountUiRepository(accountRepository, EncryptedPreferencesCredentialStore(appContext))
         )
         val database = WalletDatabaseProvider.get(appContext)
-        val runRecorder = RoomRefreshRunRecorder(database)
         val ownerSessionId = UUID.randomUUID().toString()
         val source = AccountBalanceRefresher()
         val staleProjection: suspend (String, RefreshFailure) -> AccountRefreshResult = { accountId, failure ->
@@ -39,6 +38,10 @@ object RefreshRuntime {
                 BalanceWidgetDataStore.markAccountStale(appContext, accountId, failure.message)
             }
         }
+        val runRecorder = RoomRefreshRunRecorder(
+            database = database,
+            staleProjection = staleProjection
+        )
         val committer = RefreshResultCommitter(
             context = appContext,
             accountStore = accountStore,

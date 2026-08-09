@@ -136,17 +136,6 @@ class RefreshResultCommitterTest {
 
     @Test fun `persistence failure projects cached data as stale`() = runBlocking {
         db.accountDao().insertCreate(accountEntity())
-        val recorder = RoomRefreshRunRecorder(
-            database = db,
-            beforeResultWrite = { error("injected result-side failure") },
-            clock = { 20L }
-        )
-        val handle = recorder.begin(
-            RefreshTrigger.SERVICE,
-            listOf(accountInfo()),
-            startedAt = 10L,
-            ownerProcessSessionId = "owner"
-        )
         val cached = listOf(
             AccountBalance(
                 accountId = "acct",
@@ -159,6 +148,21 @@ class RefreshResultCommitterTest {
                 lastUpdated = 77L
             )
         )
+        val staleProjection: suspend (String, RefreshFailure) -> AccountRefreshResult = { accountId, failure ->
+            RefreshRuntime.projectStaleFailure(accountId, failure, cached) { }
+        }
+        val recorder = RoomRefreshRunRecorder(
+            database = db,
+            beforeResultWrite = { error("injected result-side failure") },
+            clock = { 20L },
+            staleProjection = staleProjection
+        )
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
         val committer = RefreshResultCommitter(
             context = context,
             accountStore = object : RefreshAccountStore {
@@ -169,9 +173,7 @@ class RefreshResultCommitterTest {
             alertDispatcher = RefreshAlertDispatcher { _, _ -> },
             widgetRedrawNotifier = WidgetRedrawNotifier { },
             runRecorder = recorder,
-            staleProjection = { accountId, failure ->
-                RefreshRuntime.projectStaleFailure(accountId, failure, cached) { }
-            }
+            staleProjection = staleProjection
         )
 
         val result = committer.commit(

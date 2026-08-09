@@ -74,17 +74,25 @@ class RefreshCoordinator(
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Exception) {
-                            val failure = AccountRefreshResult.Failed(
-                                account.id,
-                                RefreshFailure.PersistenceFailure("Refresh account could not be completed")
-                            )
-                            runCatching {
+                            val failure = RefreshFailure.PersistenceFailure("Refresh account could not be completed")
+                            val projected = try {
+                                staleProjection(account.id, failure)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                AccountRefreshResult.Failed(account.id, failure)
+                            }
+                            try {
                                 recordTerminal(
                                     handle?.runId,
                                     requestFor(account.id, trigger, 0L, account.revision, handle?.runId),
-                                    failure
+                                    projected
                                 )
-                            }.getOrDefault(failure)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                projected
+                            }
                         }
                     }
                 }.awaitAll()

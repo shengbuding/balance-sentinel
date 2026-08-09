@@ -16,7 +16,9 @@ class RoomRefreshRunRecorder(
     private val database: WalletDatabase,
     private val beforeResultWrite: () -> Unit = {},
     private val ownerSessionFactory: () -> String = { UUID.randomUUID().toString() },
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val staleProjection: suspend (String, RefreshFailure) -> AccountRefreshResult =
+        { accountId, failure -> AccountRefreshResult.Failed(accountId, failure) }
 ) : RefreshRunRecorder {
     override suspend fun begin(
         trigger: RefreshTrigger,
@@ -65,20 +67,24 @@ class RoomRefreshRunRecorder(
             // The business-side transaction has rolled back. Persist a compensating
             // terminal outcome without invoking the injected result-side hook again,
             // so a failed refresh cannot strand its ledger row in RUNNING.
-            val failure = AccountRefreshResult.Failed(
-                request.accountId,
-                RefreshFailure.PersistenceFailure("Refresh data could not be saved")
-            )
+            val failure = RefreshFailure.PersistenceFailure("Refresh data could not be saved")
+            val projected = try {
+                staleProjection(request.accountId, failure)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                AccountRefreshResult.Failed(request.accountId, failure)
+            }
             runCatching {
                 writeTerminal(
                     runId,
                     request,
-                    failure.toTerminal(request),
+                    projected.toTerminal(request),
                     persist = {},
                     invokeHook = false
                 )
             }
-            return failure
+            return projected
         }
     }
 
