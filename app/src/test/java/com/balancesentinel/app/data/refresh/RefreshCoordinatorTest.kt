@@ -96,6 +96,44 @@ class RefreshCoordinatorTest {
     }
 
     @Test
+    fun `refresh all retains every account result and durable aggregate for success partial and failure`() = runTest {
+        val successGateway = RefreshCoordinator(
+            MutableAccountStore(listOf(account("a"), account("b"))),
+            AccountBalanceSource { current -> success(1.0, current.id) },
+            RecordingCommitter(),
+            backgroundScope
+        )
+        val allSuccess = successGateway.refreshAll(RefreshTrigger.MANUAL_ALL) as Any
+        assertEquals(RefreshBatchResult::class.java, allSuccess::class.java)
+        val successBatch = allSuccess as RefreshBatchResult
+        assertEquals(listOf("a", "b"), successBatch.results.map { it.accountId })
+        assertEquals(RefreshBatchState.SUCCEEDED, successBatch.aggregate.state)
+
+        val partialGateway = RefreshCoordinator(
+            MutableAccountStore(listOf(account("a"), account("b"))),
+            AccountBalanceSource { current ->
+                if (current.id == "a") BalanceFetchResult.Failure(RefreshFailure.AuthenticationFailure("bad key"))
+                else success(2.0, current.id)
+            },
+            RecordingCommitter(),
+            backgroundScope
+        )
+        val partialBatch = partialGateway.refreshAll(RefreshTrigger.MANUAL_ALL) as RefreshBatchResult
+        assertEquals(listOf("a", "b"), partialBatch.results.map { it.accountId })
+        assertEquals(RefreshBatchState.PARTIAL, partialBatch.aggregate.state)
+
+        val failedGateway = RefreshCoordinator(
+            MutableAccountStore(listOf(account("a"), account("b"))),
+            AccountBalanceSource { BalanceFetchResult.Failure(RefreshFailure.AuthenticationFailure("bad key")) },
+            RecordingCommitter(),
+            backgroundScope
+        )
+        val allFailed = failedGateway.refreshAll(RefreshTrigger.MANUAL_ALL) as RefreshBatchResult
+        assertEquals(listOf("a", "b"), allFailed.results.map { it.accountId })
+        assertEquals(RefreshBatchState.FAILED, allFailed.aggregate.state)
+    }
+
+    @Test
     fun `revision change observed from repository makes in flight result stale`() = runTest {
         val fetched = CompletableDeferred<BalanceFetchResult>()
         val store = RevisionChangingStore(account())

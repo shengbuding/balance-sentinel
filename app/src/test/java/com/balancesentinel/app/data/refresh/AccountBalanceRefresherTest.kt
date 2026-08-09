@@ -99,6 +99,33 @@ class AccountBalanceRefresherTest {
         assertFalse(result.failure.message.contains("raw-response-body"))
     }
 
+    @Test
+    fun `network and rate limit failures expose retry metadata`() = runTest {
+        val network = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.NetworkError(ProviderType.DEEPSEEK, IllegalStateException("timeout"))
+                    )
+                )
+            }
+        ).fetch(account()) as BalanceFetchResult.Failure
+        assertTrue(network.failure.retryable)
+        assertEquals(null, network.failure.retryAfter)
+
+        val rateLimited = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.RateLimitError(ProviderType.DEEPSEEK, retryAfter = 17L)
+                    )
+                )
+            }
+        ).fetch(account()) as BalanceFetchResult.Failure
+        assertTrue(rateLimited.failure.retryable)
+        assertEquals(17L, rateLimited.failure.retryAfter)
+    }
+
     // Mutation caught: flattening a typed provider script failure into a response schema failure.
     @Test
     fun `typed script failure survives the provider boundary`() = runTest {

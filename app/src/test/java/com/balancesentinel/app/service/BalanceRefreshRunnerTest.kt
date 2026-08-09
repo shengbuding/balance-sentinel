@@ -79,6 +79,18 @@ class BalanceRefreshRunnerTest {
     }
 
     @Test
+    fun `service runner preserves the real gateway batch aggregate`() = runTest {
+        val gateway = DistinguishingRefreshGateway(
+            AccountRefreshResult.Failed("acc-1", RefreshFailure.AuthenticationFailure("bad key"))
+        )
+        val batch = BalanceRefreshRunner(gateway) { emptyList() }.refreshBatch()
+
+        assertTrue("runner must expose the durable batch result", batch.batch != null)
+        assertEquals(1, batch.batch?.results?.size)
+        assertEquals("acc-1", batch.batch?.results?.single()?.accountId)
+    }
+
+    @Test
     fun `service runner marks deadline immediately before refresh and clears after committed read`() = runTest {
         val events = mutableListOf<String>()
         val gateway = EventGateway(events)

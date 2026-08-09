@@ -6,6 +6,8 @@ import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
+import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
@@ -77,6 +79,19 @@ class BalanceRefreshRunnerTest {
 
         assertEquals("refreshAll must be called even when no accounts exist", 1, gateway.refreshAllCalls.size)
         assertEquals(RefreshTrigger.WIDGET, gateway.refreshAllCalls[0])
+    }
+
+    @Test
+    fun `widget refresh returns the real batch aggregate`() = runTest {
+        val gateway = DistinguishingRefreshGateway(
+            AccountRefreshResult.Failed("acct-1", RefreshFailure.AuthenticationFailure("bad key"))
+        )
+
+        val result = WidgetRefreshRunner(gateway).refreshNow() as Any
+
+        assertEquals(RefreshBatchResult::class.java, result::class.java)
+        assertEquals("acct-1", (result as RefreshBatchResult).results.single().accountId)
+        assertEquals(RefreshBatchState.FAILED, result.aggregate.state)
     }
 
     private fun committed(accountId: String, amount: Double, currency: String) =

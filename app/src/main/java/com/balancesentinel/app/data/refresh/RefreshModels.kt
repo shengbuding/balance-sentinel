@@ -15,10 +15,24 @@ enum class RefreshTrigger { MANUAL_ALL, MANUAL_ACCOUNT, SERVICE, WIDGET, WATCHDO
 
 sealed interface RefreshFailure {
     val message: String
+    /** Whether a subsequent refresh may retry this failure automatically. */
+    val retryable: Boolean
+        get() = false
+    /** Provider-suggested retry delay (milliseconds or provider-native value). */
+    val retryAfter: Long?
+        get() = null
 
-    data class NetworkFailure(override val message: String) : RefreshFailure
+    data class NetworkFailure(
+        override val message: String,
+        override val retryable: Boolean = true,
+        override val retryAfter: Long? = null
+    ) : RefreshFailure
     data class AuthenticationFailure(override val message: String) : RefreshFailure
-    data class RateLimited(override val message: String) : RefreshFailure
+    data class RateLimited(
+        override val message: String,
+        override val retryable: Boolean = true,
+        override val retryAfter: Long? = null
+    ) : RefreshFailure
     data class ResponseSchemaFailure(override val message: String) : RefreshFailure
     data class ScriptTimeout(override val message: String) : RefreshFailure
     data class ScriptPolicyDenied(override val message: String) : RefreshFailure
@@ -32,7 +46,8 @@ data class RefreshRequest(
     val revision: Long,
     val token: Long,
     val trigger: RefreshTrigger,
-    val startedAt: Long
+    val startedAt: Long,
+    val runId: String? = null
 )
 
 sealed interface BalanceFetchResult {
@@ -54,7 +69,10 @@ sealed interface AccountRefreshResult {
 
     data class Failed(
         override val accountId: String,
-        val failure: RefreshFailure
+        val failure: RefreshFailure,
+        val stale: Boolean = false,
+        val dataTimestamp: Long? = null,
+        val lastError: String? = null
     ) : AccountRefreshResult
 
     data class Stale(
@@ -66,6 +84,7 @@ sealed interface AccountRefreshResult {
         override val accountId: String,
         val reason: String
     ) : AccountRefreshResult
+
 }
 
 fun interface AccountBalanceSource {

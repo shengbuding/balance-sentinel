@@ -1,13 +1,16 @@
 package com.balancesentinel.app.service
 
 import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.widget.AccountBalance
 import com.balancesentinel.app.data.refresh.AccountStoreRead
 
 data class ServiceRefreshBatch(
     val accountCount: Int,
-    val committedBalances: List<AccountBalance>
+    val committedBalances: List<AccountBalance>,
+    /** Populated once the gateway exposes the durable batch result. */
+    val batch: RefreshBatchResult? = null
 )
 
 fun interface ServiceAccountSnapshotReader {
