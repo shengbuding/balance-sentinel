@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.time.ZoneOffset
 import java.time.LocalDate
+import java.time.ZoneId
 
 @RunWith(RobolectricTestRunner::class)
 class CleanupSchedulerTest {
@@ -123,6 +124,93 @@ class CleanupSchedulerTest {
 
         assertTrue(observedRanges.isNotEmpty())
         assertTrue(observedRanges.all { it.first == 0L && it.last == 86_400_000L - 1L })
+    }
+
+    @Test fun `next date cleanup preserves frozen summary and sweeps expired retained tail`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(listOf(
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 23 * 3_600_000L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
+        ))
+
+        CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = LocalDate.of(1970, 1, 1),
+            now = 25 * 3_600_000L,
+            zoneId = ZoneOffset.UTC
+        )
+
+        val frozen = requireNotNull(db.historyDao().getSummary("1970-01-01", "acct", "USD"))
+        assertEquals(1, db.historyDao().countRecords())
+
+        val second = CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = LocalDate.of(1970, 1, 2),
+            now = 50 * 3_600_000L,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(1, second.deletedRecordCount)
+        assertEquals(0, db.historyDao().countRecords())
+        val afterSweep = requireNotNull(db.historyDao().getSummary("1970-01-01", "acct", "USD"))
+        assertEquals(frozen, afterSweep)
+    }
+
+    @Test fun `expired sweep only removes raw rows covered by a published summary key`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.accountDao().insertCreate(AccountEntity("other", 1, "Other", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(listOf(
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
+            BalanceRecordEntity(accountId = "other", currency = "USD", recordedAt = 2_000L, totalBalance = 20.0, source = BalanceRecordSource.REFRESH)
+        ))
+        db.historyDao().upsertSummaries(listOf(
+            com.balancesentinel.app.data.local.history.DailySummaryEntity(
+                date = "1970-01-01", accountId = "acct", currency = "USD",
+                openBalance = 10.0, closeBalance = 10.0, consumedBalance = 0.0,
+                toppedUpBalance = 0.0, grantedBalance = 0.0, averageBalance = 10.0,
+                sampleCount = 1, generatedAt = 1L
+            )
+        ))
+
+        val report = CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = LocalDate.of(1970, 1, 2),
+            now = 3 * 86_400_000L,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(1, report.deletedRecordCount)
+        assertEquals(1, db.historyDao().countRecords())
+        assertEquals(1L, db.historyDao().countRange("other", "USD", 0L, 86_400_000L))
+    }
+
+    @Test fun `expired sweep preserves current local date across a 25 hour day`() = runBlocking {
+        val zone = ZoneId.of("America/New_York")
+        val today = LocalDate.of(2026, 11, 1)
+        val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val now = today.atTime(23, 30).atZone(zone).toInstant().toEpochMilli()
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(listOf(
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = start, totalBalance = 10.0, source = BalanceRecordSource.REFRESH)
+        ))
+        db.historyDao().upsertSummaries(listOf(
+            com.balancesentinel.app.data.local.history.DailySummaryEntity(
+                date = today.toString(), accountId = "acct", currency = "USD",
+                openBalance = 10.0, closeBalance = 10.0, consumedBalance = 0.0,
+                toppedUpBalance = 0.0, grantedBalance = 0.0, averageBalance = 10.0,
+                sampleCount = 1, generatedAt = start
+            )
+        ))
+
+        val report = CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = today.minusDays(1),
+            now = now,
+            zoneId = zone
+        )
+
+        assertEquals(0, report.deletedRecordCount)
+        assertEquals(1, db.historyDao().countRecords())
     }
 
     private class RoomTestContext(base: Context, val database: WalletDatabase) : android.content.ContextWrapper(base)

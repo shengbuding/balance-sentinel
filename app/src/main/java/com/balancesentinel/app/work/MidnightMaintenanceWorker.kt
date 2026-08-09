@@ -109,7 +109,7 @@ class MidnightMaintenanceWorker(
         }
 
         if (nextDate.isAfter(yesterday)) {
-            return if (scheduleReconcile(now, zoneId)) {
+            return if (scheduleReconcile(zoneId)) {
                 ListenableWorker.Result.success()
             } else {
                 ListenableWorker.Result.retry()
@@ -137,7 +137,7 @@ class MidnightMaintenanceWorker(
             return retry("active_zone_recheck_failed", error)
         }
         if (zoneAfterCleanup != zoneId) {
-            return if (scheduleReconcile(now, zoneAfterCleanup)) {
+            return if (scheduleReconcile(zoneAfterCleanup)) {
                 ListenableWorker.Result.success()
             } else {
                 ListenableWorker.Result.retry()
@@ -178,7 +178,7 @@ class MidnightMaintenanceWorker(
             return retry("active_zone_schedule_check_failed", error)
         }
         if (schedulingZone != zoneId) {
-            return if (scheduleReconcile(now, schedulingZone)) {
+            return if (scheduleReconcile(schedulingZone)) {
                 ListenableWorker.Result.success()
             } else {
                 ListenableWorker.Result.retry()
@@ -186,7 +186,7 @@ class MidnightMaintenanceWorker(
         }
         val after = nextDate.plusDays(1)
         if (after.isAfter(yesterday)) {
-            return if (scheduleReconcile(now, zoneId)) {
+            return if (scheduleReconcile(zoneId)) {
                 ListenableWorker.Result.success()
             } else {
                 ListenableWorker.Result.retry()
@@ -210,7 +210,7 @@ class MidnightMaintenanceWorker(
                 MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
                     .reconcile(
                         applicationContext,
-                        now,
+                        MidnightMaintenanceDependencies.clock.instant(),
                         activeZone,
                         MidnightWorkPolicy.REPLACE
                     )
@@ -227,7 +227,7 @@ class MidnightMaintenanceWorker(
         false
     }
 
-    private fun scheduleReconcile(now: Instant, zoneId: ZoneId): Boolean = try {
+    private fun scheduleReconcile(zoneId: ZoneId): Boolean = try {
         MidnightWorkSchedulingGate.withLock {
             val activeZone = MidnightMaintenanceDependencies.zoneIdProvider()
             val callback = MidnightMaintenanceDependencies.reenqueue
@@ -237,7 +237,7 @@ class MidnightMaintenanceWorker(
                 MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
                     .reconcile(
                         applicationContext,
-                        now,
+                        MidnightMaintenanceDependencies.clock.instant(),
                         activeZone,
                         MidnightWorkPolicy.REPLACE
                     )

@@ -36,6 +36,14 @@ interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSummaries(summaries: List<DailySummaryEntity>)
 
+    /**
+     * Cleanup publication is immutable across retries. Concurrent workers may
+     * observe the same date, so keep the first canonical row and make later
+     * cleanup writes a no-op; import/restore still uses [upsertSummaries].
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSummariesIfAbsent(summaries: List<DailySummaryEntity>): List<Long>
+
     @Query("SELECT * FROM daily_summaries ORDER BY date, account_id, currency, identity_discriminator LIMIT :limit OFFSET :offset")
     suspend fun exportSummaryPage(offset: Int, limit: Int): List<DailySummaryEntity>
 
@@ -351,6 +359,20 @@ interface HistoryDao {
 
     @Query("DELETE FROM balance_records WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>): Int
+
+    @Query(
+        "DELETE FROM balance_records " +
+            "WHERE account_id = :accountId AND currency = :currency " +
+            "AND recorded_at < :cutoff AND recorded_at >= :fromInclusive " +
+            "AND recorded_at < :toExclusive"
+    )
+    suspend fun deleteExpiredForDate(
+        cutoff: Long,
+        fromInclusive: Long,
+        toExclusive: Long,
+        accountId: String,
+        currency: String
+    ): Int
 
     @Query(
         """

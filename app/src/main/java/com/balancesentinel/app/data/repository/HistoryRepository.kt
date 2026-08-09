@@ -205,9 +205,46 @@ open class RoomHistoryRepository(
         summaries: List<DailySummary>,
         recordIds: List<Long>
     ) = database.withTransaction {
-        database.historyDao().upsertSummaries(summaries.map { it.toEntity() })
+        database.historyDao().insertSummariesIfAbsent(summaries.map { it.toEntity() })
         recordIds.chunked(500).forEach { ids -> database.historyDao().deleteByIds(ids) }
     }
+
+    /**
+     * Removes only expired raw rows for dates that already have a canonical
+     * historical summary. This is separate from date aggregation so a recent
+     * tail can be retained for 24 hours and deleted later without rewriting a
+     * frozen summary from a partial snapshot.
+     */
+    internal suspend fun purgeExpiredSummarizedRecords(
+        now: Long,
+        zoneId: java.time.ZoneId
+    ): Int =
+        database.withTransaction {
+            val today = java.time.Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
+            val cutoff = now - 24L * 3_600_000L
+            database.historyDao()
+                .querySummaries(null, null, null, null)
+                .asSequence()
+                .map { it.date to (it.accountId to it.currency) }
+                .distinct()
+                .mapNotNull { (serializedDate, key) ->
+                    val date = runCatching { java.time.LocalDate.parse(serializedDate) }.getOrNull()
+                        ?: return@mapNotNull null
+                    if (date == today) return@mapNotNull null
+                    val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
+                    val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+                    Triple(from, to, key)
+                }
+                .sumOf { (from, to, key) ->
+                    database.historyDao().deleteExpiredForDate(
+                        cutoff = cutoff,
+                        fromInclusive = from,
+                        toExclusive = to,
+                        accountId = key.first,
+                        currency = key.second
+                    )
+                }
+        }
     override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
         if (records.isEmpty()) return 0
         var written = 0

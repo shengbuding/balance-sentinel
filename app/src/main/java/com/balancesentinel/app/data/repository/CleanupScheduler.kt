@@ -128,6 +128,15 @@ object CleanupScheduler {
                     failures += failure(date, CleanupStage.WRITE_SUMMARY, throwable.message ?: "Room transaction failed")
                 }
             }
+        try {
+            deleted += repository.purgeExpiredSummarizedRecords(now, zoneId)
+        } catch (throwable: Exception) {
+            failures += failure(
+                date = onlyDate ?: today.toString(),
+                stage = CleanupStage.DELETE_SOURCE,
+                reason = throwable.message ?: "Expired raw sweep failed"
+            )
+        }
         // Preserve continuity: materialize zero summaries through yesterday
         // for every account/currency that has an archived history.
         val existing = repository.summaries()

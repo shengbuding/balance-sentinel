@@ -76,6 +76,10 @@ class MidnightMaintenanceReviewRedTest {
         val newZone = ZoneId.of("America/Los_Angeles")
         val cleanupZones = mutableListOf<ZoneId>()
         store.lastCompletedDate = LocalDate.of(2026, 8, 9)
+        MidnightMaintenanceDependencies.clock = Clock.fixed(
+            Instant.parse("2026-08-11T00:30:00Z"),
+            ZoneId.of("UTC")
+        )
         MidnightMaintenanceDependencies.zoneIdProvider = { activeZone }
         MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, cleanupZone ->
             dates += date
@@ -98,6 +102,25 @@ class MidnightMaintenanceReviewRedTest {
         assertEquals("2026-08-11", runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.input?.get(MidnightWorkScheduler.KEY_TARGET_DATE))
         assertEquals(
             Instant.parse("2026-08-11T07:00:00Z").toEpochMilli() - Instant.parse("2026-08-11T00:30:00Z").toEpochMilli(),
+            runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.delayMillis
+        )
+    }
+
+    @Test
+    fun `future reconcile uses fresh scheduling clock instead of eligibility input`() = runTest {
+        store.lastCompletedDate = LocalDate.of(2026, 8, 9)
+        MidnightMaintenanceDependencies.clock = Clock.fixed(
+            Instant.parse("2026-08-10T18:00:00Z"),
+            ZoneId.of("UTC")
+        )
+
+        assertEquals(
+            ListenableWorker.Result.success(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+
+        assertEquals(
+            6 * 3_600_000L,
             runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.delayMillis
         )
     }
