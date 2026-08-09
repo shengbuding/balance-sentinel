@@ -28,4 +28,16 @@ abstract class MaintenanceCheckpointDao {
         """
     )
     abstract suspend fun advanceAfterCompleteDate(date: String, zoneId: String, successAt: Long): Int
+
+    @Query(
+        """
+        UPDATE maintenance_checkpoint SET
+            last_completed_date = :date,
+            zone_id = :zoneId,
+            last_success_at = :successAt
+        WHERE id = 0
+          AND (last_completed_date IS NULL OR last_completed_date < :date)
+        """
+    )
+    abstract suspend fun advanceAfterCompleteDateIfNewer(date: String, zoneId: String, successAt: Long): Int
 }

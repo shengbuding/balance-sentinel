@@ -34,7 +34,7 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
-import com.balancesentinel.app.data.repository.MidnightScheduler
+import com.balancesentinel.app.work.MidnightWorkScheduler
 import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.RefreshStats
@@ -288,7 +288,7 @@ class HomeViewModel @JvmOverloads constructor(
 
     private fun scheduleMidnightAndCheckSummary() {
         try {
-            MidnightScheduler.schedule(getApplication())
+            MidnightWorkScheduler().reconcile(getApplication())
             viewModelScope.launch {
                 cleanupAction(getApplication())
             }

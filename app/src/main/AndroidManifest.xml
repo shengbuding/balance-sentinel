@@ -97,19 +97,21 @@
         </receiver>
 
         <receiver
+            android:name=".receiver.WorkReconcileReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".receiver.KeepAliveReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.balancesentinel.app.KEEPALIVE_PING" />
                 <action android:name="com.balancesentinel.app.SERVICE_START_RETRY" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
-            android:name=".receiver.MidnightReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.balancesentinel.app.MIDNIGHT_AGGREGATE" />
             </intent-filter>
         </receiver>
 

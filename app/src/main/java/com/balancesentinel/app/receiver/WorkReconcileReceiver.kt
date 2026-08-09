@@ -3,6 +3,7 @@ package com.balancesentinel.app.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.balancesentinel.app.work.MidnightWorkScheduler
 
 /** Injectable entry point for process/package/time-zone recovery reconciliation. */
 fun interface WorkReconcileDelegate {
@@ -10,7 +11,9 @@ fun interface WorkReconcileDelegate {
 }
 
 class WorkReconcileReceiver(
-    private val delegate: WorkReconcileDelegate = WorkReconcileDelegate { }
+    private val delegate: WorkReconcileDelegate = WorkReconcileDelegate { context ->
+        runCatching { MidnightWorkScheduler().reconcile(context) }
+    }
 ) : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in RECONCILE_ACTIONS) return
@@ -25,4 +28,3 @@ class WorkReconcileReceiver(
         )
     }
 }
-

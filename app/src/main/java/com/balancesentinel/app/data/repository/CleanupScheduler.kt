@@ -57,13 +57,38 @@ object CleanupScheduler {
         else runCleanupInternal(context, now, zoneId, historyRepository)
     }
 
+    /** Runs the same cleanup pipeline for one date, preserving date-order retries. */
+    suspend fun runCleanupForDate(
+        context: Context,
+        date: LocalDate,
+        now: Long = System.currentTimeMillis(),
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): CleanupReport = withContext(Dispatchers.IO) {
+        runRoomCleanup(context, now, zoneId, onlyDate = date.toString())
+    }
+
+    suspend fun runCleanupForDate(
+        context: Context,
+        date: LocalDate,
+        now: Long,
+        zoneId: ZoneId,
+        historyRepository: HistoryRepository
+    ): CleanupReport = withContext(Dispatchers.IO) {
+        if (historyRepository is RoomHistoryRepository) {
+            runRoomCleanup(context, now, zoneId, historyRepository, onlyDate = date.toString())
+        } else {
+            runCleanupInternal(context, now, zoneId, historyRepository, onlyDate = date.toString())
+        }
+    }
+
     private suspend fun runRoomCleanup(
         context: Context,
         now: Long,
         zoneId: ZoneId,
         repository: RoomHistoryRepository = RoomHistoryRepository(
             com.balancesentinel.app.data.local.WalletDatabaseProvider.get(context)
-        )
+        ),
+        onlyDate: String? = null
     ): CleanupReport {
         val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
         val all = mutableListOf<HistoryRecord>()
@@ -78,7 +103,7 @@ object CleanupScheduler {
         val failures = mutableListOf<CleanupFailure>()
         var deleted = 0
         all.groupBy { dateOf(it.value.timestamp, zoneId) }
-            .filterKeys { it != today.toString() }
+            .filterKeys { it != today.toString() && (onlyDate == null || it == onlyDate) }
             .toSortedMap()
             .forEach { (date, rows) ->
                 val normalized = rows.map { if (it.value.currency == it.value.currency.uppercase(Locale.ROOT)) it.value else it.value.copy(currency = it.value.currency.uppercase(Locale.ROOT)) }
@@ -97,7 +122,7 @@ object CleanupScheduler {
         // for every account/currency that has an archived history.
         val existing = repository.summaries()
         val yesterday = today.minusDays(1)
-        val continuity = existing.groupBy { it.accountId to it.currency }.flatMap { (_, seeds) ->
+        val continuity = if (onlyDate == null) existing.groupBy { it.accountId to it.currency }.flatMap { (_, seeds) ->
             val ordered = seeds.sortedBy { it.date }.toMutableList()
             val start = runCatching { LocalDate.parse(ordered.first().date) }.getOrNull() ?: return@flatMap emptyList()
             val generated = mutableListOf<com.balancesentinel.app.data.model.DailySummary>()
@@ -111,7 +136,7 @@ object CleanupScheduler {
                 cursor = cursor.plusDays(1)
             }
             generated
-        }
+        } else emptyList()
         if (continuity.isNotEmpty()) repository.upsertSummaries(continuity)
         var retained = 0
         var retainedCursor: HistoryCursor? = null
@@ -128,7 +153,8 @@ object CleanupScheduler {
         context: Context,
         now: Long,
         zoneId: ZoneId,
-        historyRepository: HistoryRepository? = null
+        historyRepository: HistoryRepository? = null,
+        onlyDate: String? = null
     ): CleanupReport {
         val repositoryRecords = historyRepository?.let { readAllHistory(it) }
         return DataMutationCoordinator.withMutation {
@@ -152,7 +178,7 @@ object CleanupScheduler {
             }
         }
 
-        sourceDates.filter { it != today.toString() }.sorted().forEach { date ->
+        sourceDates.filter { it != today.toString() && (onlyDate == null || it == onlyDate) }.sorted().forEach { date ->
             val snapshot = if (repositoryRecords != null) {
                 repositoryRecords.filter { dateOf(it.timestamp, zoneId) == date }
             } else {
@@ -222,7 +248,7 @@ object CleanupScheduler {
             }
         }
 
-        fillContinuity(context, today, failures)
+        if (onlyDate == null) fillContinuity(context, today, failures)
 
         val retainedRecordCount = if (repositoryRecords != null) {
             repositoryRecords.size

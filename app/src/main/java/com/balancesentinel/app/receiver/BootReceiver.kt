@@ -7,11 +7,14 @@ import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
+import com.balancesentinel.app.work.MidnightWorkScheduler
 
 /** Starts the refresh foreground service after boot and arms the keepalive. */
 class BootReceiver(
     private val serviceStarter: ServiceStarter = ForegroundServiceStarter(),
-    private val workReconcileDelegate: WorkReconcileDelegate = WorkReconcileDelegate { }
+    private val workReconcileDelegate: WorkReconcileDelegate = WorkReconcileDelegate { context ->
+        runCatching { MidnightWorkScheduler().reconcile(context) }
+    }
 ) : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {

@@ -38,6 +38,7 @@ class MidnightMaintenanceWorkerTest {
             ZoneId.of("UTC")
         )
         MidnightMaintenanceDependencies.checkpointStoreFactory = { checkpoint }
+        MidnightMaintenanceDependencies.reenqueue = { }
         MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->
             executedDates += date
             val failure = if (date == failingDate) {
@@ -115,4 +116,3 @@ class MidnightMaintenanceWorkerTest {
         }
     }
 }
-

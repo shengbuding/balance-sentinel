@@ -37,7 +37,7 @@ class RoomMaintenanceCheckpointStore(
     override suspend fun read(zoneId: ZoneId): MaintenanceCheckpoint {
         val row = dao.getOrCreate(zoneId.id)
         return MaintenanceCheckpoint(
-            lastCompletedDate = row.lastCompletedDate?.let(LocalDate::parse),
+            lastCompletedDate = row.lastCompletedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
             zoneId = runCatching { ZoneId.of(row.zoneId) }.getOrDefault(zoneId),
             lastSuccessAt = row.lastSuccessAt
         )
@@ -48,14 +48,11 @@ class RoomMaintenanceCheckpointStore(
         zoneId: ZoneId,
         successAt: Long
     ): Boolean {
-        val current = dao.getOrCreate(zoneId.id)
-        val previous = current.lastCompletedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        if (previous != null && !date.isAfter(previous)) return false
-        return dao.advanceAfterCompleteDate(
+        dao.getOrCreate(zoneId.id)
+        return dao.advanceAfterCompleteDateIfNewer(
             date = date.toString(),
             zoneId = zoneId.id,
             successAt = successAt
         ) == 1
     }
 }
-

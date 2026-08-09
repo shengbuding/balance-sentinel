@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.time.ZoneOffset
+import java.time.LocalDate
 
 @RunWith(RobolectricTestRunner::class)
 class CleanupSchedulerTest {
@@ -69,6 +70,24 @@ class CleanupSchedulerTest {
         ))
         val report = CleanupScheduler.runCleanup(context, 36 * 3_600_000L, java.time.ZoneOffset.UTC)
         assertEquals(1, report.retainedRecordCount)
+    }
+
+    @Test fun `date scoped cleanup only archives requested date`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(listOf(
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH),
+            BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 86_401_000L, totalBalance = 9.0, source = BalanceRecordSource.REFRESH)
+        ))
+
+        val report = CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = LocalDate.of(1970, 1, 1),
+            now = 4 * 86_400_000L,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(setOf("1970-01-01"), report.archivedDates)
+        assertEquals(1, db.historyDao().countRecords())
     }
 
     private class RoomTestContext(base: Context, val database: WalletDatabase) : android.content.ContextWrapper(base)
