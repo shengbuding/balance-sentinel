@@ -178,6 +178,7 @@ dependencies {
     // Persistence
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     kapt(libs.room.compiler)
 
     // Test (JVM)
@@ -189,6 +190,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.room.testing)
+    testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.room.testing)
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.compose.ui.test.manifest)
