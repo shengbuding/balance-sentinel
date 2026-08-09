@@ -13,6 +13,7 @@ import com.balancesentinel.app.data.repository.RoomRefreshPersistence
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -160,6 +161,44 @@ class RefreshResultCommitterTest {
         ) { true }
 
         assertTrue(result is AccountRefreshResult.Committed)
+        assertEquals(
+            RefreshAccountResultState.SUCCEEDED,
+            db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
+        )
+    }
+
+    @Test fun `post-commit cancellation propagates instead of returning committed`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(database = db, clock = { 20L })
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val cancellation = CancellationException("refresh cancelled after durable commit")
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            afterPersistenceWrite = { throw cancellation },
+            runRecorder = recorder
+        )
+
+        val thrown = runCatching {
+            committer.commit(
+                RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+                BalanceFetchResult.Success(balance("acct"), 15L)
+            ) { true }
+        }.exceptionOrNull()
+
+        assertTrue(thrown is CancellationException)
+        assertEquals(cancellation.message, thrown?.message)
         assertEquals(
             RefreshAccountResultState.SUCCEEDED,
             db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
