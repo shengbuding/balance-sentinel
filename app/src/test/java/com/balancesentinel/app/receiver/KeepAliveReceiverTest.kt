@@ -5,19 +5,24 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.repository.HEARTBEAT_GRACE_MS
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
+import org.junit.FixMethodOrder
 import org.junit.Test
+import org.junit.runners.MethodSorters
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 
 @RunWith(RobolectricTestRunner::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class KeepAliveReceiverTest {
 
     private lateinit var context: Context
@@ -187,6 +192,16 @@ class KeepAliveReceiverTest {
 
         assertEquals(0, starter.calls)
         assertNull(Shadows.shadowOf(context as Application).nextStartedService)
+    }
+
+    @Test
+    fun `zz watchdog diagnostics do not leak beyond their owning test`() = runBlocking {
+        val logCount = runCatching {
+            WalletDatabaseProvider.get(context).eventLogDao().countLogs()
+        }.getOrNull()
+
+        assertNotNull("database fixture should be usable", logCount)
+        assertEquals(0L, logCount)
     }
 
     private class RecordingStarter : ServiceStarter {
