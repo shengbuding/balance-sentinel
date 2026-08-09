@@ -41,6 +41,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+internal fun buildServiceRefreshRunner(
+    gateway: RefreshGateway,
+    accountReader: ServiceAccountSnapshotReader,
+    refreshDeadline: RefreshDeadlineLifecycle = object : RefreshDeadlineLifecycle {
+        override fun markStarted() = Unit
+        override fun clear() = Unit
+    },
+    committedBalanceReader: () -> List<com.balancesentinel.app.widget.AccountBalance>
+): BalanceRefreshRunner = BalanceRefreshRunner(
+    gateway = gateway,
+    refreshDeadline = refreshDeadline,
+    accountSnapshotReader = accountReader,
+    committedBalanceReader = committedBalanceReader
+)
+
 class BalanceRefreshService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -200,10 +215,10 @@ class BalanceRefreshService : Service() {
                         RefreshScheduler.clearRefreshDeadline(this@BalanceRefreshService)
                     }
                 }
-                val runner = BalanceRefreshRunner(
+                val runner = buildServiceRefreshRunner(
                     gateway = refreshGateway,
+                    accountReader = accountReader,
                     refreshDeadline = deadlineLifecycle,
-                    accountSnapshotReader = ServiceAccountSnapshotReader { snapshot },
                     committedBalanceReader = {
                         BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
                     }

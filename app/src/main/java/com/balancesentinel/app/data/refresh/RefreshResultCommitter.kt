@@ -43,7 +43,9 @@ class RefreshResultCommitter(
     private val roomPersistence: RoomRefreshPersistence =
         RoomRefreshPersistence(WalletDatabaseProvider.get(context)),
     private val afterPersistenceWrite: () -> Unit = {},
-    private val runRecorder: RefreshRunRecorder? = null
+    private val runRecorder: RefreshRunRecorder? = null,
+    private val staleProjection: suspend (String, RefreshFailure) -> AccountRefreshResult =
+        { accountId, failure -> AccountRefreshResult.Failed(accountId, failure) }
 ) : RefreshCommitter {
 
     override val recordsRunOutcome: Boolean = runRecorder != null
@@ -58,7 +60,7 @@ class RefreshResultCommitter(
         val account = try {
             accountStore.getAccount(request.accountId)
         } catch (_: Exception) {
-            return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
+            return@withMutationSuspend recordFailure(request, RefreshFailure.PersistenceFailure("Refresh data could not be saved"))
         }
         if (
             account == null ||
@@ -68,14 +70,14 @@ class RefreshResultCommitter(
             return@withMutationSuspend recordTerminal(request, stale(request.accountId))
         }
         if (fetched.balance.balances.any { !it.hasPersistableAmounts() }) {
-            return@withMutationSuspend recordTerminal(request, responseSchemaFailure(request.accountId))
+            return@withMutationSuspend recordFailure(request, RefreshFailure.ResponseSchemaFailure("Balance response schema is invalid"))
         }
 
         try {
             val currentAccount = try {
                 accountStore.getAccount(request.accountId)
             } catch (_: Exception) {
-                return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
+                return@withMutationSuspend recordFailure(request, RefreshFailure.PersistenceFailure("Refresh data could not be saved"))
             }
             if (
                 !isLatest() ||
@@ -145,7 +147,7 @@ class RefreshResultCommitter(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                return@withMutationSuspend recordTerminal(request, persistenceFailure(request.accountId))
+                return@withMutationSuspend recordFailure(request, RefreshFailure.PersistenceFailure("Refresh data could not be saved"))
             }
 
             fetched.balance.balances.forEach { entry ->
@@ -156,7 +158,7 @@ class RefreshResultCommitter(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            recordTerminal(request, persistenceFailure(request.accountId))
+            recordFailure(request, RefreshFailure.PersistenceFailure("Refresh data could not be saved"))
         }
         }
     }
@@ -170,6 +172,20 @@ class RefreshResultCommitter(
         } else {
             result
         }
+
+    private suspend fun recordFailure(
+        request: RefreshRequest,
+        failure: RefreshFailure
+    ): AccountRefreshResult {
+        val projected = try {
+            staleProjection(request.accountId, failure)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            AccountRefreshResult.Failed(request.accountId, failure)
+        }
+        return recordTerminal(request, projected)
+    }
 
     private fun BalanceEntry.toWidgetBalance(
         account: AccountInfo,

@@ -162,10 +162,19 @@ class RefreshCoordinator(
                     when (fetched) {
                         is BalanceFetchResult.Success -> {
                             val committed = committer.commit(request, fetched) { isLatest(accountId, token) }
-                            if (runRecorder != null && !committer.recordsRunOutcome) {
-                                recordTerminal(runId, request, committed)
+                            val projected = if (
+                                committed is AccountRefreshResult.Failed &&
+                                !committed.stale &&
+                                !committer.recordsRunOutcome
+                            ) {
+                                staleProjection(accountId, committed.failure)
                             } else {
                                 committed
+                            }
+                            if (runRecorder != null && !committer.recordsRunOutcome) {
+                                recordTerminal(runId, request, projected)
+                            } else {
+                                projected
                             }
                         }
                         is BalanceFetchResult.Failure -> {
