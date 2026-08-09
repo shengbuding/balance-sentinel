@@ -96,6 +96,43 @@ class RefreshCoordinatorTest {
     }
 
     @Test
+    fun `committer failures receive stale projection before returning`() = runTest {
+        var projected = false
+        val coordinator = RefreshCoordinator(
+            accountStore = MutableAccountStore(listOf(account())),
+            source = AccountBalanceSource { success(9.0) },
+            committer = object : RefreshCommitter {
+                override suspend fun commit(
+                    request: RefreshRequest,
+                    fetched: BalanceFetchResult.Success,
+                    isLatest: () -> Boolean
+                ) = AccountRefreshResult.Failed(
+                    request.accountId,
+                    RefreshFailure.PersistenceFailure("save failed")
+                )
+            },
+            backgroundScope = backgroundScope,
+            staleProjection = { accountId, failure ->
+                projected = true
+                AccountRefreshResult.Failed(
+                    accountId = accountId,
+                    failure = failure,
+                    stale = true,
+                    dataTimestamp = 123L,
+                    lastError = failure.message
+                )
+            }
+        )
+
+        val result = coordinator.refreshAccount(ACCOUNT_ID, RefreshTrigger.SERVICE)
+
+        assertTrue(projected)
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertTrue((result as AccountRefreshResult.Failed).stale)
+        assertEquals(123L, result.dataTimestamp)
+    }
+
+    @Test
     fun `refresh all retains every account result and durable aggregate for success partial and failure`() = runTest {
         val successGateway = RefreshCoordinator(
             MutableAccountStore(listOf(account("a"), account("b"))),
