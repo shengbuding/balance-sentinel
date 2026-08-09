@@ -28,9 +28,11 @@ import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
-import com.balancesentinel.app.work.RefreshWorkScheduler
+import com.balancesentinel.app.work.MidnightWorkSchedulingGate
 import com.balancesentinel.app.work.MidnightWorkScheduler
+import com.balancesentinel.app.work.RefreshWorkScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -78,7 +80,15 @@ open class DeepSeekApp : Application() {
         super.onCreate()
         settingsRepository = SettingsRepositoryProvider.get(this)
         refreshGateway = RefreshRuntime.create(this)
-        runCatching { MidnightWorkScheduler().reconcile(this, policy = MidnightWorkPolicy.KEEP) }
+        runCatching {
+            MidnightWorkSchedulingGate.withLock {
+                MidnightWorkScheduler().reconcile(
+                    this,
+                    zoneId = MidnightMaintenanceDependencies.zoneIdProvider(),
+                    policy = MidnightWorkPolicy.KEEP
+                )
+            }
+        }
             .onFailure { error ->
                 Logger.w("MidnightWorkScheduler", "startup_reconcile_failed", error)
             }

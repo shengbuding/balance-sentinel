@@ -4,7 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.util.Logger
+import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
+import com.balancesentinel.app.work.MidnightWorkSchedulingGate
 import com.balancesentinel.app.work.MidnightWorkScheduler
 
 /** Injectable entry point for process/package/time-zone recovery reconciliation. */
@@ -34,7 +36,14 @@ class WorkReconcileReceiver(
 
         override fun reconcile(context: Context, policy: MidnightWorkPolicy) {
             runCatching {
-                MidnightWorkScheduler().reconcile(context, policy = policy)
+                MidnightWorkSchedulingGate.withLock {
+                    val activeZone = MidnightMaintenanceDependencies.zoneIdProvider()
+                    MidnightWorkScheduler().reconcile(
+                        context,
+                        zoneId = activeZone,
+                        policy = policy
+                    )
+                }
             }.onFailure { error ->
                 Logger.w("WorkReconcileReceiver", "midnight_reconcile_failed", error)
             }

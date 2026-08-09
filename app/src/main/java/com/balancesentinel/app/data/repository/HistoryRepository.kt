@@ -196,7 +196,7 @@ class LegacyHistoryRepository(
     }
 }
 
-class RoomHistoryRepository(
+open class RoomHistoryRepository(
     private val database: WalletDatabase
 ) : HistoryRepository {
     internal suspend fun countRecords(): Long = database.historyDao().countRecords()
@@ -254,7 +254,7 @@ class RoomHistoryRepository(
         )
     }
 
-    override suspend fun pageAll(
+    override open suspend fun pageAll(
         fromInclusive: Long,
         toExclusive: Long,
         after: HistoryCursor?,

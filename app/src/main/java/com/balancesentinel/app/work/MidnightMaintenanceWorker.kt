@@ -201,12 +201,23 @@ class MidnightMaintenanceWorker(
     }
 
     private fun scheduleNext(now: Instant, zoneId: ZoneId, targetDate: LocalDate): Boolean = try {
-        val callback = MidnightMaintenanceDependencies.reenqueue
-        if (callback != null) {
-            callback(applicationContext)
-        } else {
-            MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
-                .enqueueImmediate(applicationContext, now, zoneId, targetDate)
+        MidnightWorkSchedulingGate.withLock {
+            val activeZone = MidnightMaintenanceDependencies.zoneIdProvider()
+            val callback = MidnightMaintenanceDependencies.reenqueue
+            if (callback != null && activeZone == zoneId) {
+                callback(applicationContext)
+            } else if (activeZone != zoneId) {
+                MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
+                    .reconcile(
+                        applicationContext,
+                        now,
+                        activeZone,
+                        MidnightWorkPolicy.REPLACE
+                    )
+            } else {
+                MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
+                    .enqueueImmediate(applicationContext, now, activeZone, targetDate)
+            }
         }
         true
     } catch (cancelled: CancellationException) {
@@ -217,17 +228,20 @@ class MidnightMaintenanceWorker(
     }
 
     private fun scheduleReconcile(now: Instant, zoneId: ZoneId): Boolean = try {
-        val callback = MidnightMaintenanceDependencies.reenqueue
-        if (callback != null) {
-            callback(applicationContext)
-        } else {
-            MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
-                .reconcile(
-                    applicationContext,
-                    now,
-                    zoneId,
-                    MidnightWorkPolicy.REPLACE
-                )
+        MidnightWorkSchedulingGate.withLock {
+            val activeZone = MidnightMaintenanceDependencies.zoneIdProvider()
+            val callback = MidnightMaintenanceDependencies.reenqueue
+            if (callback != null && activeZone == zoneId) {
+                callback(applicationContext)
+            } else {
+                MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
+                    .reconcile(
+                        applicationContext,
+                        now,
+                        activeZone,
+                        MidnightWorkPolicy.REPLACE
+                    )
+            }
         }
         true
     } catch (cancelled: CancellationException) {

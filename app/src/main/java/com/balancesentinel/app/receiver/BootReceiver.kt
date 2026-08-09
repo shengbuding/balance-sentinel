@@ -7,7 +7,9 @@ import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
+import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
+import com.balancesentinel.app.work.MidnightWorkSchedulingGate
 import com.balancesentinel.app.work.MidnightWorkScheduler
 
 /** Starts the refresh foreground service after boot and arms the keepalive. */
@@ -15,7 +17,13 @@ class BootReceiver(
     private val serviceStarter: ServiceStarter = ForegroundServiceStarter(),
     private val workReconcileDelegate: WorkReconcileDelegate = WorkReconcileDelegate { context ->
         runCatching {
-            MidnightWorkScheduler().reconcile(context, policy = MidnightWorkPolicy.KEEP)
+            MidnightWorkSchedulingGate.withLock {
+                MidnightWorkScheduler().reconcile(
+                    context,
+                    zoneId = MidnightMaintenanceDependencies.zoneIdProvider(),
+                    policy = MidnightWorkPolicy.KEEP
+                )
+            }
         }.onFailure { error ->
             Logger.w("BootReceiver", "midnight_reconcile_failed", error)
         }

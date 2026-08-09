@@ -24,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 class MidnightMaintenanceWorkerTest {
     private lateinit var context: Context
     private lateinit var checkpoint: RecordingCheckpointStore
+    private lateinit var runtime: RecordingRuntime
     private val executedDates = mutableListOf<LocalDate>()
     private var failingDate: LocalDate? = null
 
@@ -31,6 +32,7 @@ class MidnightMaintenanceWorkerTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         checkpoint = RecordingCheckpointStore(LocalDate.of(2026, 8, 6))
+        runtime = RecordingRuntime()
         executedDates.clear()
         failingDate = null
         MidnightMaintenanceDependencies.clock = Clock.fixed(
@@ -39,7 +41,8 @@ class MidnightMaintenanceWorkerTest {
         )
         MidnightMaintenanceDependencies.zoneIdProvider = { ZoneId.of("UTC") }
         MidnightMaintenanceDependencies.checkpointStoreFactory = { checkpoint }
-        MidnightMaintenanceDependencies.reenqueue = { }
+        MidnightMaintenanceDependencies.reenqueue = null
+        MidnightMaintenanceDependencies.schedulerFactory = { MidnightWorkScheduler(runtime) }
         MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->
             executedDates += date
             val failure = if (date == failingDate) {
@@ -114,6 +117,28 @@ class MidnightMaintenanceWorkerTest {
             if (lastCompletedDate != null && !date.isAfter(lastCompletedDate)) return false
             lastCompletedDate = date
             return true
+        }
+    }
+
+    private class RecordingRuntime : MidnightWorkRuntime {
+        val specs = linkedMapOf<String, MidnightWorkSpec>()
+        val policies = linkedMapOf<String, MidnightWorkPolicy>()
+
+        override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
+            specs[spec.uniqueName] = spec
+        }
+
+        override fun enqueueOneShot(
+            context: Context,
+            spec: MidnightWorkSpec,
+            policy: MidnightWorkPolicy
+        ) {
+            policies[spec.uniqueName] = policy
+            enqueueOneShot(context, spec)
+        }
+
+        override fun cancelUnique(context: Context, uniqueName: String) {
+            specs.remove(uniqueName)
         }
     }
 }

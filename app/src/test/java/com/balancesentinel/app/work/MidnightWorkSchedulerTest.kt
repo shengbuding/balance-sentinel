@@ -5,6 +5,10 @@ import androidx.test.core.app.ApplicationProvider
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -73,6 +77,51 @@ class MidnightWorkSchedulerTest {
         assertEquals(1, legacyRuntime.replaceCalls)
     }
 
+    @Test
+    fun `timezone replacement waits behind stale enqueue and wins unique queue`() {
+        val runtime = BlockingRuntime()
+        val now = Instant.parse("2026-08-10T12:00:00Z")
+        val staleDone = AtomicReference<Throwable?>(null)
+        val replacementDone = AtomicReference<Throwable?>(null)
+
+        val stale = thread(start = true) {
+            try {
+                MidnightWorkScheduler(runtime).reconcile(
+                    context,
+                    now,
+                    ZoneId.of("UTC"),
+                    MidnightWorkPolicy.REPLACE
+                )
+            } catch (error: Throwable) {
+                staleDone.set(error)
+            }
+        }
+        assertTrue(runtime.firstEnqueueStarted.await(2, TimeUnit.SECONDS))
+
+        val replacement = thread(start = true) {
+            try {
+                MidnightWorkScheduler(runtime).reconcile(
+                    context,
+                    now,
+                    ZoneId.of("America/Los_Angeles"),
+                    MidnightWorkPolicy.REPLACE
+                )
+            } catch (error: Throwable) {
+                replacementDone.set(error)
+            }
+        }
+        runtime.releaseFirstEnqueue.countDown()
+        stale.join(2_000)
+        replacement.join(2_000)
+
+        assertEquals(null, staleDone.get())
+        assertEquals(null, replacementDone.get())
+        assertEquals(
+            "America/Los_Angeles",
+            runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.input?.get(MidnightWorkScheduler.KEY_ZONE_ID)
+        )
+    }
+
     private class RecordingMidnightRuntime : MidnightWorkRuntime {
         val specs = linkedMapOf<String, MidnightWorkSpec>()
         val policies = linkedMapOf<String, MidnightWorkPolicy>()
@@ -97,6 +146,30 @@ class MidnightWorkSchedulerTest {
         override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
             replaceCalls += 1
         }
+
+        override fun cancelUnique(context: Context, uniqueName: String) = Unit
+    }
+
+    private class BlockingRuntime : MidnightWorkRuntime {
+        val specs = linkedMapOf<String, MidnightWorkSpec>()
+        val firstEnqueueStarted = CountDownLatch(1)
+        val releaseFirstEnqueue = CountDownLatch(1)
+        private var first = true
+
+        override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
+            if (first) {
+                first = false
+                firstEnqueueStarted.countDown()
+                check(releaseFirstEnqueue.await(2, TimeUnit.SECONDS))
+            }
+            specs[spec.uniqueName] = spec
+        }
+
+        override fun enqueueOneShot(
+            context: Context,
+            spec: MidnightWorkSpec,
+            policy: MidnightWorkPolicy
+        ) = enqueueOneShot(context, spec)
 
         override fun cancelUnique(context: Context, uniqueName: String) = Unit
     }

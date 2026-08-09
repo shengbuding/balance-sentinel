@@ -74,22 +74,32 @@ class MidnightMaintenanceReviewRedTest {
     fun `timezone change during cleanup prevents stale checkpoint and requeues current zone`() = runTest {
         var activeZone = ZoneId.of("UTC")
         val newZone = ZoneId.of("America/Los_Angeles")
+        val cleanupZones = mutableListOf<ZoneId>()
+        store.lastCompletedDate = LocalDate.of(2026, 8, 9)
         MidnightMaintenanceDependencies.zoneIdProvider = { activeZone }
-        MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->
+        MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, cleanupZone ->
             dates += date
+            cleanupZones += cleanupZone
             activeZone = newZone
             CleanupReport(emptySet(), 0, 0, emptyList())
         }
 
         assertEquals(
             ListenableWorker.Result.success(),
-            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+            worker(inputNow = Instant.parse("2026-08-11T00:30:00Z")).doWork()
         )
 
-        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
+        assertEquals(listOf(LocalDate.of(2026, 8, 10)), dates)
+        assertEquals(listOf(ZoneId.of("UTC")), cleanupZones)
+        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
         assertEquals(ZoneId.of("UTC"), store.zoneId)
         assertEquals(MidnightWorkPolicy.REPLACE, runtime.policies[MidnightWorkScheduler.UNIQUE_WORK_NAME])
         assertEquals(newZone.id, runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.input?.get(MidnightWorkScheduler.KEY_ZONE_ID))
+        assertEquals("2026-08-11", runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.input?.get(MidnightWorkScheduler.KEY_TARGET_DATE))
+        assertEquals(
+            Instant.parse("2026-08-11T07:00:00Z").toEpochMilli() - Instant.parse("2026-08-11T00:30:00Z").toEpochMilli(),
+            runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.delayMillis
+        )
     }
 
     @Test
@@ -124,18 +134,33 @@ class MidnightMaintenanceReviewRedTest {
     }
 
     @Test
+    fun `checkpoint conflict that already advanced returns success without duplicate queue`() = runTest {
+        store.markResult = false
+        store.conflictDate = LocalDate.of(2026, 8, 9)
+
+        assertEquals(
+            ListenableWorker.Result.success(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
+        assertTrue(runtime.policies.isEmpty())
+    }
+
+    @Test
     fun `follow-up enqueue failure retries after durable checkpoint`() = runTest {
+        store.lastCompletedDate = LocalDate.of(2026, 8, 7)
         runtime.enqueueFailure = IllegalStateException("work manager unavailable")
 
         assertEquals(
             ListenableWorker.Result.retry(),
             worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
         )
-        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
+        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
     }
 
     @Test
     fun `follow-up cancellation propagates after durable checkpoint`() = runTest {
+        store.lastCompletedDate = LocalDate.of(2026, 8, 7)
         runtime.enqueueFailure = CancellationException("worker cancelled")
 
         val thrown = runCatching {
@@ -144,7 +169,7 @@ class MidnightMaintenanceReviewRedTest {
 
         assertTrue(thrown is CancellationException)
         assertEquals("worker cancelled", thrown?.message)
-        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
+        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
     }
 
     @Test
@@ -194,6 +219,7 @@ class MidnightMaintenanceReviewRedTest {
         var readFailure: Throwable? = null
         var markFailure: Throwable? = null
         var markResult: Boolean = true
+        var conflictDate: LocalDate? = null
 
         override suspend fun read(zoneId: ZoneId): MaintenanceCheckpoint {
             readFailure?.let { throw it }
@@ -202,7 +228,10 @@ class MidnightMaintenanceReviewRedTest {
 
         override suspend fun markCompleted(date: LocalDate, zoneId: ZoneId, successAt: Long): Boolean {
             markFailure?.let { throw it }
-            if (!markResult) return false
+            if (!markResult) {
+                conflictDate?.let { lastCompletedDate = it }
+                return false
+            }
             lastCompletedDate = date
             this.zoneId = zoneId
             return true

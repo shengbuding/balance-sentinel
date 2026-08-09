@@ -91,5 +91,39 @@ class CleanupSchedulerTest {
         assertEquals(1, db.historyDao().countRecords())
     }
 
+    @Test fun `date scoped cleanup passes local-day bounds to Room repository`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        val target = LocalDate.of(1970, 1, 1)
+        db.historyDao().insertBalanceBatch(
+            listOf(BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH)) +
+                (1..201).map { index ->
+                    BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 86_401_000L + index, totalBalance = index.toDouble(), source = BalanceRecordSource.REFRESH)
+                }
+        )
+        val observedRanges = mutableListOf<LongRange>()
+        val repository = object : RoomHistoryRepository(db) {
+            override suspend fun pageAll(
+                fromInclusive: Long,
+                toExclusive: Long,
+                after: HistoryCursor?,
+                limit: Int
+            ): HistoryPage {
+                observedRanges += fromInclusive until toExclusive
+                return super.pageAll(fromInclusive, toExclusive, after, limit)
+            }
+        }
+
+        CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = target,
+            now = 4 * 86_400_000L,
+            zoneId = ZoneOffset.UTC,
+            historyRepository = repository
+        )
+
+        assertTrue(observedRanges.isNotEmpty())
+        assertTrue(observedRanges.all { it.first == 0L && it.last == 86_400_000L - 1L })
+    }
+
     private class RoomTestContext(base: Context, val database: WalletDatabase) : android.content.ContextWrapper(base)
 }

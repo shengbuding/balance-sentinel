@@ -23,6 +23,17 @@ enum class MidnightWorkPolicy {
     REPLACE
 }
 
+/**
+ * Serializes all in-process unique-work decisions. WorkManager's REPLACE
+ * cancellation is asynchronous, so a stale worker and a timezone broadcast
+ * must not race between choosing a zone and enqueueing the request.
+ */
+object MidnightWorkSchedulingGate {
+    private val monitor = Any()
+
+    fun <T> withLock(block: () -> T): T = synchronized(monitor) { block() }
+}
+
 /** Injectable WorkManager boundary for midnight maintenance. */
 interface MidnightWorkRuntime {
     fun enqueueOneShot(context: Context, spec: MidnightWorkSpec)
@@ -98,21 +109,23 @@ class MidnightWorkScheduler(
         zoneId: ZoneId = ZoneId.systemDefault(),
         policy: MidnightWorkPolicy = MidnightWorkPolicy.KEEP
     ) {
-        val next = nextLocalMidnight(now, zoneId)
-        val targetDate = next.atZone(zoneId).toLocalDate()
-        runtime.enqueueOneShot(
-            context,
-            MidnightWorkSpec(
-                uniqueName = UNIQUE_WORK_NAME,
-                delayMillis = Duration.between(now, next).toMillis().coerceAtLeast(0L),
-                input = mapOf(
-                    KEY_ZONE_ID to zoneId.id,
-                    KEY_RECONCILED_AT to now.toEpochMilli().toString(),
-                    KEY_TARGET_DATE to targetDate.toString()
-                )
-            ),
-            policy
-        )
+        MidnightWorkSchedulingGate.withLock {
+            val next = nextLocalMidnight(now, zoneId)
+            val targetDate = next.atZone(zoneId).toLocalDate()
+            runtime.enqueueOneShot(
+                context,
+                MidnightWorkSpec(
+                    uniqueName = UNIQUE_WORK_NAME,
+                    delayMillis = Duration.between(now, next).toMillis().coerceAtLeast(0L),
+                    input = mapOf(
+                        KEY_ZONE_ID to zoneId.id,
+                        KEY_RECONCILED_AT to now.toEpochMilli().toString(),
+                        KEY_TARGET_DATE to targetDate.toString()
+                    )
+                ),
+                policy
+            )
+        }
     }
 
     fun enqueueImmediate(
@@ -121,23 +134,27 @@ class MidnightWorkScheduler(
         zoneId: ZoneId = ZoneId.systemDefault(),
         targetDate: java.time.LocalDate? = null
     ) {
-        runtime.enqueueOneShot(
-            context,
-            MidnightWorkSpec(
-                uniqueName = UNIQUE_WORK_NAME,
-                delayMillis = 0L,
-                input = buildMap {
-                    put(KEY_ZONE_ID, zoneId.id)
-                    put(KEY_RECONCILED_AT, now.toEpochMilli().toString())
-                    targetDate?.let { put(KEY_TARGET_DATE, it.toString()) }
-                    put(KEY_NOW_MILLIS, now.toEpochMilli().toString())
-                }
-            ),
-            MidnightWorkPolicy.REPLACE
-        )
+        MidnightWorkSchedulingGate.withLock {
+            runtime.enqueueOneShot(
+                context,
+                MidnightWorkSpec(
+                    uniqueName = UNIQUE_WORK_NAME,
+                    delayMillis = 0L,
+                    input = buildMap {
+                        put(KEY_ZONE_ID, zoneId.id)
+                        put(KEY_RECONCILED_AT, now.toEpochMilli().toString())
+                        targetDate?.let { put(KEY_TARGET_DATE, it.toString()) }
+                        put(KEY_NOW_MILLIS, now.toEpochMilli().toString())
+                    }
+                ),
+                MidnightWorkPolicy.REPLACE
+            )
+        }
     }
 
-    fun cancel(context: Context) = runtime.cancelUnique(context, UNIQUE_WORK_NAME)
+    fun cancel(context: Context) = MidnightWorkSchedulingGate.withLock {
+        runtime.cancelUnique(context, UNIQUE_WORK_NAME)
+    }
 
     /** Computes the next local midnight without assuming a fixed 24-hour day. */
     fun nextLocalMidnight(now: Instant = clock.instant(), zoneId: ZoneId = ZoneId.systemDefault()): Instant =

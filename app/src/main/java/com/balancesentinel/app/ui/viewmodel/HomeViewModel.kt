@@ -34,6 +34,8 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.BalanceRepository
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.CleanupScheduler
+import com.balancesentinel.app.work.MidnightMaintenanceDependencies
+import com.balancesentinel.app.work.MidnightWorkSchedulingGate
 import com.balancesentinel.app.work.MidnightWorkScheduler
 import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
@@ -288,11 +290,16 @@ class HomeViewModel @JvmOverloads constructor(
 
     private fun scheduleMidnightAndCheckSummary() {
         try {
-            MidnightWorkScheduler().reconcile(getApplication())
+            MidnightWorkSchedulingGate.withLock {
+                MidnightWorkScheduler().reconcile(
+                    getApplication(),
+                    zoneId = MidnightMaintenanceDependencies.zoneIdProvider()
+                )
+            }
             viewModelScope.launch {
                 cleanupAction(getApplication())
             }
-        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
+        } catch (e: Exception) { Logger.w("HomeViewModel", "midnight_reconcile_failed", e) }
     }
 
     // ── 崩溃日志 ──

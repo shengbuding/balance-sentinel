@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
+import com.balancesentinel.app.work.MidnightWorkPolicy
 import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
@@ -32,7 +33,17 @@ class BootReceiverTest {
 
     @Test
     fun `onReceive with BOOT_COMPLETED action starts service`() {
-        val receiver = BootReceiver(starter)
+        val policies = mutableListOf<MidnightWorkPolicy>()
+        val delegate = object : WorkReconcileDelegate {
+            override fun reconcile(context: Context) {
+                policies += MidnightWorkPolicy.KEEP
+            }
+
+            override fun reconcile(context: Context, policy: MidnightWorkPolicy) {
+                policies += policy
+            }
+        }
+        val receiver = BootReceiver(starter, delegate)
         val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
 
         receiver.onReceive(context, intent)
@@ -41,6 +52,16 @@ class BootReceiverTest {
         assertNull(Shadows.shadowOf(context as Application).nextStartedService)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         assertEquals(1, Shadows.shadowOf(alarmManager).scheduledAlarms.size)
+        assertEquals(listOf(MidnightWorkPolicy.KEEP), policies)
+    }
+
+    @Test
+    fun `reconcile failure does not escape boot broadcast`() {
+        val receiver = BootReceiver(starter, WorkReconcileDelegate { throw IllegalStateException("enqueue failed") })
+
+        receiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+
+        assertEquals(1, starter.calls)
     }
 
     @Test
