@@ -106,6 +106,32 @@ class ConsoleResponseInterceptionTest {
     }
 
     @Test
+    fun `oversized console response is rejected instead of truncated success`() {
+        withHttpsServer { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(HttpURLConnection.HTTP_OK)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(Buffer().write(ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() }))
+            )
+            val platform = platform(server)
+            val entries = mutableListOf<ApiDebugEntry>()
+
+            val response = interceptApiRequest(
+                request = request(server.url("/api/oversized").toString()),
+                tag = platform.id,
+                policy = ConsoleOriginPolicy(platform),
+                debuggable = true,
+                entrySink = entries::add
+            )
+
+            assertEquals(null, response)
+            assertTrue(entries.isNotEmpty())
+            assertTrue(entries.single().errorTruncated || entries.single().error != null)
+        }
+    }
+
+    @Test
     fun `interception forwards repeated Set-Cookie fields independently and redacts diagnostics`() {
         val certificate = HeldCertificate.Builder()
             .commonName("localhost")
