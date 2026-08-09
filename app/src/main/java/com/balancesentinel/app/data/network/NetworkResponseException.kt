@@ -24,6 +24,13 @@ class NetworkResponseException(
     }
 
     val kind: Reason get() = reason
+    val category: Reason get() = reason
+    val limitType: Reason? get() = reason.takeIf {
+        it == Reason.ENCODED_LIMIT || it == Reason.DECODED_LIMIT
+    }
+    val isEncodedLimit: Boolean get() = reason == Reason.ENCODED_LIMIT
+    val isDecodedLimit: Boolean get() = reason == Reason.DECODED_LIMIT
+    val status: Int? get() = statusCode
     val maxBytes: Long? get() = limitBytes
     val body: String? get() = limitedBody
 
@@ -47,5 +54,27 @@ class NetworkResponseException(
                 base
             }
         }
+
+        fun encodedLimit(endpoint: String, maxBytes: Long, observedBytes: Long? = null) =
+            NetworkResponseException(
+                reason = Reason.ENCODED_LIMIT,
+                endpoint = endpoint,
+                limitBytes = maxBytes,
+                observedBytes = observedBytes
+            )
+
+        fun decodedLimit(endpoint: String, maxBytes: Long, observedBytes: Long? = null) =
+            NetworkResponseException(
+                reason = Reason.DECODED_LIMIT,
+                endpoint = endpoint,
+                limitBytes = maxBytes,
+                observedBytes = observedBytes
+            )
+
+        fun contentType(endpoint: String, actual: String?) = NetworkResponseException(
+            reason = Reason.CONTENT_TYPE,
+            endpoint = endpoint,
+            responseContentType = actual
+        )
     }
 }

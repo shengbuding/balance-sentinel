@@ -13,6 +13,11 @@ import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.model.UsageResponse
+import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
+import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.ResponseBudget
+import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
@@ -35,13 +40,25 @@ class DeepSeekProvider(
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
         .build()
 
-    internal fun getClientWithDebug(accountId: String?): OkHttpClient = DebugClientInstaller.install(
-        client = client,
-        debuggable = debuggable,
-        interceptor = accountId?.let(::DebugInterceptor)
-    )
+    internal fun getClientWithDebug(accountId: String?): OkHttpClient {
+        val boundedClient = if (client.networkInterceptors.none {
+                it is EncodedResponseLimitInterceptor
+            }) {
+            client.newBuilder()
+                .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
+                .build()
+        } else {
+            client
+        }
+        return DebugClientInstaller.install(
+            client = boundedClient,
+            debuggable = debuggable,
+            interceptor = accountId?.let(::DebugInterceptor)
+        )
+    }
 
     override suspend fun getBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> =
         balanceQueryService.queryBalance(config)
@@ -68,6 +85,19 @@ class DeepSeekProvider(
             .build()
 
         getClientWithDebug(config.credentials["accountId"]).newCall(request).execute().use { response ->
+            val body = response.body?.let {
+                BoundedResponseReader(
+                    ResponseBudget.DEEPSEEK.maxDecodedBytes,
+                    "deepseek-provider-usage"
+                ).readText(
+                    it,
+                    expectedContentType = if (response.isSuccessful) {
+                        "application/json"
+                    } else {
+                        null
+                    }
+                )
+            }.orEmpty()
             if (!response.isSuccessful) {
                 return@use when (response.code) {
                     401 -> ProviderResult.Failure(ProviderError.AuthError(providerType, "API Key is invalid"))
@@ -76,7 +106,12 @@ class DeepSeekProvider(
                 }
             }
 
-            val body = response.body?.string() ?: throw IOException("Empty response body")
+            if (body.isBlank()) {
+                throw NetworkResponseException(
+                    NetworkResponseException.Reason.EMPTY_BODY,
+                    endpoint = "deepseek-provider-usage"
+                )
+            }
             val usage = json.decodeFromString<UsageResponse>(body)
             val promptTokens = usage.data.sumOf { it.prompt_tokens }
             val completionTokens = usage.data.sumOf { it.completion_tokens }
@@ -90,6 +125,8 @@ class DeepSeekProvider(
                 )
             )
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (error: IOException) {
         ProviderResult.Failure(ProviderError.NetworkError(providerType, error))
     } catch (error: Exception) {

@@ -38,12 +38,18 @@ import com.balancesentinel.app.data.debug.ApiDebugStore
 import com.balancesentinel.app.data.debug.DebugCapture
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.SensitiveDataRedactor
+import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.ResponseBudget
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.text.SimpleDateFormat
+import java.io.ByteArrayInputStream
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.CancellationException
+import java.util.zip.GZIPInputStream
 
 /**
  * 控制台页面 - 统一处理登录和数据显示
@@ -1099,7 +1105,37 @@ internal fun interceptApiRequest(
             connection.errorStream
         }
 
-        val responseBytes = inputStream?.use { it.readBytes() } ?: ByteArray(0)
+        val responseBytes = try {
+            val bodyStream = inputStream ?: ByteArrayInputStream(ByteArray(0))
+            BoundedResponseReader(
+                ResponseBudget.CONSOLE.maxEncodedBytes,
+                "console-encoded"
+            ).readBytes(
+                input = bodyStream,
+                declaredLength = connection.contentLengthLong,
+                closeInput = true
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: NetworkResponseException) {
+            connection.disconnect()
+            throw error
+        }
+
+        // Validate the decompressed budget independently. The raw transport
+        // bytes remain unchanged for WebView, while diagnostics use the same
+        // bounded path and cannot turn a gzip bomb into apparent success.
+        if (connection.contentEncoding?.contains("gzip", ignoreCase = true) == true) {
+            BoundedResponseReader(
+                ResponseBudget.CONSOLE.maxDecodedBytes,
+                "console-decoded"
+            ).readBytes(GZIPInputStream(responseBytes.inputStream()))
+        } else {
+            BoundedResponseReader(
+                ResponseBudget.CONSOLE.maxDecodedBytes,
+                "console-decoded"
+            ).readBytes(responseBytes.inputStream())
+        }
         val capturedResponse = captureConsoleDiagnostic(
             responseBytes,
             connection.contentEncoding
@@ -1160,6 +1196,8 @@ internal fun interceptApiRequest(
             transportResponseHeaders,
             responseBytes.inputStream()
         )
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (e: Exception) {
         DebugLogger.log("[$tag] API request failed: ${e.javaClass.simpleName}")
 

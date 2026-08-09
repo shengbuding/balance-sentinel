@@ -5,6 +5,10 @@ import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
+import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
+import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.ResponseBudget
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
@@ -49,6 +53,12 @@ class DeepSeekApiService(
                     val response = chain.proceed(request)
                     // 5xx 服务端错误可重试
                     if (response.code in 500..599 && attempt < MAX_ATTEMPTS) {
+                        response.body?.let {
+                            BoundedResponseReader(
+                                ResponseBudget.DEEPSEEK.maxDecodedBytes,
+                                ResponseBudget.DEEPSEEK.endpoint
+                            ).readBytes(it)
+                        }
                         response.close()
                         Logger.w("DeepSeekApi", "Server error ${response.code}, retry $attempt/$MAX_ATTEMPTS")
                         sleepBeforeRetry(attempt)
@@ -88,6 +98,7 @@ class DeepSeekApiService(
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
         .addInterceptor(RetryInterceptor())
         .build(),
         debuggable = debuggable,
@@ -113,17 +124,40 @@ class DeepSeekApiService(
             .build()
 
         client.newCall(request).execute().use { response ->
-            val body = response.body?.string()
-                ?: throw IOException("Empty response body")
+            val body = response.body?.let {
+                BoundedResponseReader(
+                    ResponseBudget.DEEPSEEK.maxDecodedBytes,
+                    "deepseek-balance"
+                ).readText(
+                    it,
+                    expectedContentType = if (response.isSuccessful) {
+                        "application/json"
+                    } else {
+                        null
+                    }
+                )
+            } ?: throw NetworkResponseException(
+                NetworkResponseException.Reason.EMPTY_BODY,
+                endpoint = "deepseek-balance"
+            )
 
             if (!response.isSuccessful) {
+                if (response.code != 401 && response.code != 429) {
+                    throw IOException("API response error ${response.code}")
+                }
                 when (response.code) {
                     401 -> throw IOException("API Key 无效 (401 Unauthorized)")
                     429 -> throw IOException("请求过于频繁，请稍后再试 (429)")
-                    else -> throw IOException("API 返回错误 ${response.code}: $body")
+                    else -> throw IOException("API response error ${response.code}")
                 }
             }
 
+            if (body.isBlank()) {
+                throw NetworkResponseException(
+                    NetworkResponseException.Reason.EMPTY_BODY,
+                    endpoint = "deepseek-balance"
+                )
+            }
             return json.decodeFromString<BalanceResponse>(body)
         }
     }
@@ -154,8 +188,22 @@ class DeepSeekApiService(
             .build()
 
         client.newCall(request).execute().use { response ->
-            val body = response.body?.string()
-                ?: throw IOException("Empty response body")
+            val body = response.body?.let {
+                BoundedResponseReader(
+                    ResponseBudget.DEEPSEEK.maxDecodedBytes,
+                    "deepseek-usage"
+                ).readText(
+                    it,
+                    expectedContentType = if (response.isSuccessful) {
+                        "application/json"
+                    } else {
+                        null
+                    }
+                )
+            } ?: throw NetworkResponseException(
+                NetworkResponseException.Reason.EMPTY_BODY,
+                endpoint = "deepseek-usage"
+            )
 
             if (!response.isSuccessful) {
                 when (response.code) {
@@ -165,6 +213,12 @@ class DeepSeekApiService(
                 }
             }
 
+            if (body.isBlank()) {
+                throw NetworkResponseException(
+                    NetworkResponseException.Reason.EMPTY_BODY,
+                    endpoint = "deepseek-usage"
+                )
+            }
             return json.decodeFromString<UsageResponse>(body)
         }
     }

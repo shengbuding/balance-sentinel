@@ -21,6 +21,7 @@ data class ResponseBudget(
     val maxDecompressedBytes: Long get() = maxDecodedBytes
     val encodedBytes: Long get() = maxEncodedBytes
     val decodedBytes: Long get() = maxDecodedBytes
+    val maxBytes: Long get() = maxDecodedBytes
 
     companion object {
         const val JSON_ENCODED_BYTES: Long = 256L * 1024L

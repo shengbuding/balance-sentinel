@@ -5,6 +5,9 @@ import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.debug.DebugInterceptor
+import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
+import com.balancesentinel.app.data.network.ResponseBudget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -82,6 +85,8 @@ object UsageScriptExecutor {
                 throw CancellationException("Script inspection was cancelled").also {
                     it.initCause(interrupted)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 inspectionFailure(
                     RefreshFailure.ResponseSchemaFailure("Script configuration is invalid")
@@ -136,6 +141,8 @@ object UsageScriptExecutor {
             throw CancellationException("Script execution was cancelled").also {
                 it.initCause(interrupted)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             return@withContext failure(
                 RefreshFailure.ResponseSchemaFailure("Script configuration is invalid")
@@ -208,6 +215,8 @@ object UsageScriptExecutor {
         null
     } catch (_: ScriptDeadlineExceeded) {
         "Script configuration timed out"
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (_: Exception) {
         "Script configuration is invalid"
     }
@@ -296,6 +305,8 @@ object UsageScriptExecutor {
         throw CancellationException("Script extraction was cancelled").also {
             it.initCause(interrupted)
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (_: Exception) {
         failure(RefreshFailure.ResponseSchemaFailure("Script response schema is invalid"))
     }
@@ -348,6 +359,8 @@ object UsageScriptExecutor {
             }
             val connectionUrl = try {
                 connectionUrlOverride?.invoke(logicalUrl) ?: logicalUrl
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 return networkFailure()
             }
@@ -364,6 +377,7 @@ object UsageScriptExecutor {
                 .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.SCRIPT))
                 .apply {
                     if (connectionUrlOverride == null) {
                         dns(pinnedDns(logicalUrl.host, destination.addresses))
@@ -372,6 +386,8 @@ object UsageScriptExecutor {
                 .build()
             val response = try {
                 requestClient.newCall(request).execute()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 return networkFailure()
             }
@@ -379,6 +395,17 @@ object UsageScriptExecutor {
             var redirectTarget: HttpUrl? = null
             response.use {
                 if (it.code in 300..399) {
+                    runCatching {
+                        it.body?.let { body ->
+                            BoundedResponseReader(
+                                ResponseBudget.SCRIPT.maxDecodedBytes,
+                                "script-redirect"
+                            ).readBytes(body)
+                        }
+                    }.getOrElse { failure ->
+                        if (failure is CancellationException) throw failure
+                        return networkFailure()
+                    }
                     if (redirectsFollowed >= MAX_REDIRECTS) {
                         return HttpFetchResult.Failure(
                             failure(
@@ -395,8 +422,26 @@ object UsageScriptExecutor {
                             )
                         )
                 } else {
-                    if (!it.isSuccessful) return networkFailure()
-                    val body = it.body?.string() ?: return networkFailure()
+                    val body = try {
+                        it.body?.let { body ->
+                            BoundedResponseReader(
+                                ResponseBudget.SCRIPT.maxDecodedBytes,
+                                "script-response"
+                            ).readText(
+                                body,
+                                expectedContentType = if (it.isSuccessful) {
+                                    "application/json"
+                                } else {
+                                    null
+                                }
+                            )
+                        }.orEmpty()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        return networkFailure()
+                    }
+                    if (!it.isSuccessful || body.isBlank()) return networkFailure()
                     return HttpFetchResult.Success(body)
                 }
             }

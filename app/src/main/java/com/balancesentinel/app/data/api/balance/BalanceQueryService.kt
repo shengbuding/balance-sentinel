@@ -7,7 +7,11 @@ import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
+import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
+import com.balancesentinel.app.data.network.ResponseBudget
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,6 +47,19 @@ class BalanceQueryService(
 
             try {
                 callFactoryFor(config, contract).newCall(request).execute().use { response ->
+                    val body = response.body?.let {
+                        BoundedResponseReader(
+                            ResponseBudget.BALANCE.maxDecodedBytes,
+                            "balance-${config.providerType.name.lowercase()}"
+                        ).readText(
+                            it,
+                            expectedContentType = if (response.isSuccessful) {
+                                "application/json"
+                            } else {
+                                null
+                            }
+                        )
+                    }.orEmpty()
                     when (response.code) {
                         401 -> ProviderResult.Failure(
                             ProviderError.AuthError(config.providerType, "API Key is invalid")
@@ -54,7 +71,6 @@ class BalanceQueryService(
                             )
                         )
                         in 200..299 -> {
-                            val body = response.body?.string().orEmpty()
                             if (body.isBlank()) {
                                 ProviderResult.Failure(
                                     ProviderError.InvalidResponseError(
@@ -75,6 +91,8 @@ class BalanceQueryService(
                         )
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: IOException) {
                 ProviderResult.Failure(ProviderError.NetworkError(config.providerType, error))
             } catch (error: Exception) {
@@ -91,10 +109,19 @@ class BalanceQueryService(
         config: ProviderConfig,
         contract: BalanceContract
     ): Call.Factory {
-        val accountId = config.credentials["accountId"] ?: return callFactory
         val client = callFactory as? OkHttpClient ?: return callFactory
+        val boundedClient = if (client.networkInterceptors.none {
+                it is EncodedResponseLimitInterceptor
+            }) {
+            client.newBuilder()
+                .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.BALANCE))
+                .build()
+        } else {
+            client
+        }
+        val accountId = config.credentials["accountId"] ?: return boundedClient
         return DebugClientInstaller.install(
-            client = client,
+            client = boundedClient,
             debuggable = debuggable,
             interceptor = DebugInterceptor(
                     accountId = accountId,

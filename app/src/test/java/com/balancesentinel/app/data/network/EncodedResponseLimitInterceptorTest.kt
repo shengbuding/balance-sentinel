@@ -39,8 +39,10 @@ class EncodedResponseLimitInterceptorTest {
             .addNetworkInterceptor(EncodedResponseLimitInterceptor(maxBytes = 8L))
             .build()
 
-        client.newCall(Request.Builder().url(server.url("/bomb")).get().build()).execute().use {
-            assertThrows(NetworkResponseException::class.java) { it.body!!.bytes() }
+        assertThrows(NetworkResponseException::class.java) {
+            client.newCall(Request.Builder().url(server.url("/bomb")).get().build()).execute().use {
+                it.body!!.bytes()
+            }
         }
     }
 
