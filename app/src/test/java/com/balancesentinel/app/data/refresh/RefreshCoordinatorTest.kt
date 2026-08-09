@@ -179,13 +179,24 @@ class RefreshCoordinatorTest {
             committer = RecordingCommitter(),
             backgroundScope = backgroundScope,
             runRecorder = recorder,
-            ownerProcessSessionId = "owner"
+            ownerProcessSessionId = "owner",
+            staleProjection = { accountId, failure ->
+                AccountRefreshResult.Failed(
+                    accountId = accountId,
+                    failure = failure,
+                    stale = true,
+                    dataTimestamp = 88L,
+                    lastError = failure.message
+                )
+            }
         )
 
         val batch = coordinator.refreshAll(RefreshTrigger.SERVICE)
 
         assertEquals(listOf("bad", "good"), batch.results.map { it.accountId })
         assertTrue(batch.results.first() is AccountRefreshResult.Failed)
+        assertTrue((batch.results.first() as AccountRefreshResult.Failed).stale)
+        assertEquals(88L, (batch.results.first() as AccountRefreshResult.Failed).dataTimestamp)
         assertTrue(batch.results[1] is AccountRefreshResult.Committed)
         assertTrue("the run must be finalized", recorder.finished)
     }

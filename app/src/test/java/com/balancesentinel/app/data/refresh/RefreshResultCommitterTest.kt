@@ -13,6 +13,7 @@ import com.balancesentinel.app.data.repository.RoomRefreshPersistence
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
+import com.balancesentinel.app.widget.AccountBalance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -131,6 +132,58 @@ class RefreshResultCommitterTest {
         assertEquals(0, db.historyDao().countRecords())
         assertEquals(0, db.usageDao().countSnapshots())
         assertEquals(0, db.eventLogDao().countLogs())
+    }
+
+    @Test fun `persistence failure projects cached data as stale`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(
+            database = db,
+            beforeResultWrite = { error("injected result-side failure") },
+            clock = { 20L }
+        )
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val cached = listOf(
+            AccountBalance(
+                accountId = "acct",
+                label = "Primary",
+                totalBalance = "10",
+                currency = "USD",
+                isAvailable = true,
+                grantedBalance = "",
+                toppedUpBalance = "",
+                lastUpdated = 77L
+            )
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            runRecorder = recorder,
+            staleProjection = { accountId, failure ->
+                RefreshRuntime.projectStaleFailure(accountId, failure, cached) { }
+            }
+        )
+
+        val result = committer.commit(
+            RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            BalanceFetchResult.Success(balance("acct"), 15L)
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertTrue((result as AccountRefreshResult.Failed).stale)
+        assertEquals(77L, result.dataTimestamp)
+        assertEquals("Refresh data could not be saved", result.lastError)
+        assertTrue(db.refreshRunDao().getAccountResult(handle.runId, "acct")?.stale == true)
     }
 
     @Test fun `post-commit projection failure does not downgrade durable success`() = runBlocking {
