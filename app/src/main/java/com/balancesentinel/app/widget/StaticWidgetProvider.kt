@@ -1,6 +1,5 @@
 package com.balancesentinel.app.widget
 
-import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.ComponentName
 import com.balancesentinel.app.data.util.Logger
@@ -23,7 +22,6 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RoomHistoryRepository
 import com.balancesentinel.app.data.repository.appendRoomEvent
 import com.balancesentinel.app.data.repository.RefreshScheduler
-import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.service.ForegroundServiceStarter
@@ -470,60 +468,24 @@ open class StaticWidgetProvider : AppWidgetProvider() {
     }
 
     private fun scheduleRefresh(context: Context) {
-        val now = System.currentTimeMillis()
-        if (now - lastScheduleTime < 2000L) return
-        lastScheduleTime = now
-
         val published = SettingsRepositoryProvider.get(context).snapshot.value
             as? SettingsSnapshotState.Ready ?: return
-        val intervalSec = published.value.backgroundRefreshIntervalSeconds ?: return
-
-        val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: run {
-            logSchedule(context, intervalSec, 0, "failed", "无法获取 AlarmManager")
+        val intervalSec = published.value.backgroundRefreshIntervalSeconds ?: run {
+            workSchedulerFactory(context).reconcile(context, null, widgetEnabled = true)
             return
         }
-
-        val oldState = RefreshScheduler.getState(context)
-        if (oldState.expectedNextAt > 0) RefreshScheduler.markCancelled(context)
-
-        val intent = WidgetRefreshIntents.watchdog(context)
-        val pending = PendingIntent.getBroadcast(
-            context, 100, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        alarm.cancel(pending)
-
-        val expectedRefreshTime = now + intervalSec * 1000L
-        val triggerTime = expectedRefreshTime + SCHEDULE_GRACE_MS + 1L
-        var method = "alarm_clock"
-        var message = ""
-
-        try {
-            val showPending = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        runCatching {
+            workSchedulerFactory(context).reconcile(
+                context = context,
+                backgroundIntervalSeconds = intervalSec.toLong(),
+                widgetEnabled = true
             )
-            alarm.setAlarmClock(AlarmManager.AlarmClockInfo(triggerTime, showPending), pending)
-            message = "看门狗闹钟已设定"
-        } catch (_: SecurityException) {
-            try {
-                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pending)
-                method = "exact"
-            } catch (_: SecurityException) {
-                try {
-                    alarm.set(AlarmManager.RTC_WAKEUP, triggerTime, pending)
-                    method = "inexact"
-                } catch (e: Exception) {
-                    method = "failed"
-                    message = "✗ 闹钟设置失败"
-                }
-            }
-        } catch (e: Exception) {
-            method = "failed"
+            val expectedRefreshTime = System.currentTimeMillis() + intervalSec * 1000L
+            RefreshScheduler.recordSchedule(context, intervalSec, expectedRefreshTime, "work_manager")
+            logSchedule(context, intervalSec, expectedRefreshTime, "work_manager", "")
+        }.onFailure { error ->
+            Logger.w("StaticWidget", "Failed to reconcile widget refresh work", error)
         }
-
-        RefreshScheduler.recordSchedule(context, intervalSec, expectedRefreshTime, method)
-        logSchedule(context, intervalSec, expectedRefreshTime, method, message)
     }
 
     private fun logSchedule(context: Context, intervalSec: Int, triggerTime: Long, method: String, message: String) {
@@ -598,5 +560,6 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         @Volatile private var lastScheduleTime: Long = 0L
 
         internal var accountStateLoaderOverride: (suspend (Context) -> AccountLoadState)? = null
+        internal var workSchedulerFactory: (Context) -> com.balancesentinel.app.work.RefreshWorkScheduler = { com.balancesentinel.app.work.RefreshWorkScheduler() }
     }
 }

@@ -1,6 +1,15 @@
 package com.balancesentinel.app.work
 
 import android.content.Context
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
+import androidx.work.PeriodicWorkRequest
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 /** Description of a periodic WorkManager request. */
 data class PeriodicWorkSpec(
@@ -29,7 +38,47 @@ interface WorkRuntime {
 }
 
 object DefaultWorkRuntime : WorkRuntime {
-    override fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec) = Unit
-    override fun enqueueOneShot(context: Context, spec: OneShotWorkSpec) = Unit
-    override fun cancelUnique(context: Context, uniqueName: String) = Unit
+    override fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(
+                if (spec.requiresNetwork) NetworkType.CONNECTED else NetworkType.NOT_REQUIRED
+            )
+            .build()
+        val input = Data.Builder().apply {
+            spec.input.forEach { (key, value) -> putString(key, value) }
+        }.build()
+        val request = PeriodicWorkRequest.Builder(
+            RefreshWorker::class.java,
+            spec.intervalSeconds.coerceAtLeast(RefreshWorkScheduler.MIN_BACKGROUND_INTERVAL_SECONDS),
+            TimeUnit.SECONDS
+        )
+            .setConstraints(constraints)
+            .setInputData(input)
+            .addTag(spec.uniqueName)
+            .build()
+        WorkManager.getInstance(context.applicationContext)
+            .enqueueUniquePeriodicWork(
+                spec.uniqueName,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request
+            )
+    }
+
+    override fun enqueueOneShot(context: Context, spec: OneShotWorkSpec) {
+        val input = Data.Builder().apply {
+            spec.input.forEach { (key, value) -> putString(key, value) }
+            putInt(RefreshWorker.KEY_ATTEMPT, spec.attempt)
+        }.build()
+        val request = OneTimeWorkRequest.Builder(RefreshWorker::class.java)
+            .setInitialDelay(spec.delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            .setInputData(input)
+            .addTag(spec.uniqueName)
+            .build()
+        WorkManager.getInstance(context.applicationContext)
+            .enqueueUniqueWork(spec.uniqueName, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    override fun cancelUnique(context: Context, uniqueName: String) {
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(uniqueName)
+    }
 }

@@ -32,6 +32,7 @@ class RefreshWorkerTest {
         context = ApplicationProvider.getApplicationContext()
         scheduledRetries.clear()
         RefreshWorkerDependencies.gatewayFactory = { fakeGateway() }
+        RefreshWorkerDependencies.retryPlanner = RefreshRetryPlanner(jitterMillis = { 0L })
         RefreshWorkerDependencies.retryScheduler = { scheduledRetries += it }
     }
 

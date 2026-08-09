@@ -69,6 +69,18 @@ class RefreshWorkSchedulerTest {
     }
 
     @Test
+    fun `retry work keeps a stable account name and bounded attempt payload`() {
+        scheduler.scheduleRetry(context, RetrySchedule("account", attempt = 1, delayMillis = 1_000L))
+        scheduler.scheduleRetry(context, RetrySchedule("account", attempt = 3, delayMillis = 99 * 60_000L))
+
+        assertEquals(1, runtime.oneShot.size)
+        val spec = runtime.oneShot.getValue(RefreshWorkScheduler.retryWorkName("account"))
+        assertEquals(3, spec.attempt)
+        assertEquals(RefreshWorkScheduler.MAX_RETRY_DELAY_MILLIS, spec.delayMillis)
+        assertEquals("account", spec.input[RefreshWorker.KEY_ACCOUNT_ID])
+    }
+
+    @Test
     fun `first reconcile cancels legacy widget alarm pending intent`() {
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val legacy = PendingIntent.getBroadcast(

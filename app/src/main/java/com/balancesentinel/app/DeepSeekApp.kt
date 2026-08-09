@@ -27,10 +27,12 @@ import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.work.RefreshWorkScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 open class DeepSeekApp : Application() {
@@ -64,6 +66,8 @@ open class DeepSeekApp : Application() {
     lateinit var settingsRepository: SettingsRepository
         private set
 
+    internal var refreshWorkSchedulerFactory: (Context) -> RefreshWorkScheduler = { RefreshWorkScheduler() }
+
     var credentialCorruption: DataCorruptionException? = null
         private set
 
@@ -71,6 +75,7 @@ open class DeepSeekApp : Application() {
         super.onCreate()
         settingsRepository = SettingsRepositoryProvider.get(this)
         refreshGateway = RefreshRuntime.create(this)
+        launchBackgroundWorkReconcile()
         CrashLogger.install(this)
 
         // Clean up stale downloaded APKs from previous sessions
@@ -110,6 +115,28 @@ open class DeepSeekApp : Application() {
      * 2. 迁移账户ID（4字节 -> 8字节）
      * 3. 清理旧版数据
      */
+    internal fun launchBackgroundWorkReconcile() {
+        val current = settingsRepository.snapshot.value
+        if (current is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready) {
+            reconcileBackgroundWork(current)
+            return
+        }
+        startupMigrationScope.launch {
+            val ready = settingsRepository.snapshot.first { it is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready }
+            if (ready is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready) {
+                reconcileBackgroundWork(ready)
+            }
+        }
+    }
+
+    internal fun reconcileBackgroundWork(
+        state: com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready
+    ) {
+        val interval = state.value.backgroundRefreshIntervalSeconds?.toLong()
+        runCatching { refreshWorkSchedulerFactory(this).reconcile(this, interval) }
+            .onFailure { CrashLogger.logNonFatal("RefreshWorkScheduler", it) }
+    }
+
     internal fun migrateDataIfNeeded() = migrateDataIfNeeded(::performDataMigration)
 
     internal fun migrateDataIfNeeded(migration: () -> Unit) {
