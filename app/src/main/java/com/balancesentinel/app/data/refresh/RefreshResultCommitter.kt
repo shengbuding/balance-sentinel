@@ -136,6 +136,8 @@ class RefreshResultCommitter(
                         }
                     )
                     afterPersistenceWrite()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     // Durable Room success is terminal. A projection failure must not
                     // contradict the committed ledger result.
