@@ -134,6 +134,26 @@ class RefreshCoordinatorTest {
     }
 
     @Test
+    fun `refresh all converts unexpected account exceptions into terminal results`() = runTest {
+        val recorder = RecordingRunRecorder()
+        val coordinator = RefreshCoordinator(
+            accountStore = ThrowingReadStore(),
+            source = AccountBalanceSource { current -> success(8.0, current.id) },
+            committer = RecordingCommitter(),
+            backgroundScope = backgroundScope,
+            runRecorder = recorder,
+            ownerProcessSessionId = "owner"
+        )
+
+        val batch = coordinator.refreshAll(RefreshTrigger.SERVICE)
+
+        assertEquals(listOf("bad", "good"), batch.results.map { it.accountId })
+        assertTrue(batch.results.first() is AccountRefreshResult.Failed)
+        assertTrue(batch.results[1] is AccountRefreshResult.Committed)
+        assertTrue("the run must be finalized", recorder.finished)
+    }
+
+    @Test
     fun `revision change observed from repository makes in flight result stale`() = runTest {
         val fetched = CompletableDeferred<BalanceFetchResult>()
         val store = RevisionChangingStore(account())
@@ -218,6 +238,49 @@ class RefreshCoordinatorTest {
         override fun getAccounts(): List<AccountInfo> = listOf(initial)
         override suspend fun readAccount(accountId: String): AccountStoreRead =
             AccountStoreRead.Ready(listOf(if (changed) initial.copy(revision = initial.revision + 1) else initial))
+    }
+
+    private inner class ThrowingReadStore : RefreshAccountStore {
+        private val accounts = listOf(account("bad"), account("good"))
+
+        override fun getAccount(accountId: String): AccountInfo? = accounts.firstOrNull { it.id == accountId }
+
+        override fun getAccounts(): List<AccountInfo> = accounts
+
+        override suspend fun readAccount(accountId: String): AccountStoreRead {
+            if (accountId == "bad") error("unexpected account read failure")
+            return AccountStoreRead.Ready(listOf(account("good")))
+        }
+    }
+
+    private class RecordingRunRecorder : RefreshRunRecorder {
+        var finished = false
+        private val results = mutableListOf<AccountRefreshResult>()
+
+        override suspend fun begin(
+            trigger: RefreshTrigger,
+            accounts: List<AccountInfo>,
+            startedAt: Long,
+            ownerProcessSessionId: String
+        ) = RefreshRunHandle("run", ownerProcessSessionId)
+
+        override suspend fun recordAccount(
+            runId: String,
+            request: RefreshRequest,
+            result: AccountRefreshResult,
+            persist: suspend () -> Unit
+        ): AccountRefreshResult {
+            persist()
+            results += result
+            return result
+        }
+
+        override suspend fun finish(runId: String, completedAt: Long): RefreshBatchAggregate {
+            finished = true
+            return deriveRefreshBatchAggregate(results)
+        }
+
+        override suspend fun recover(activeOwnerProcessSessionId: String, completedAt: Long) = 0
     }
 
     private companion object {
