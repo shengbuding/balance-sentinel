@@ -10,7 +10,8 @@ import com.balancesentinel.app.service.ServiceStarter
 
 /** Starts the refresh foreground service after boot and arms the keepalive. */
 class BootReceiver(
-    private val serviceStarter: ServiceStarter = ForegroundServiceStarter()
+    private val serviceStarter: ServiceStarter = ForegroundServiceStarter(),
+    private val workReconcileDelegate: WorkReconcileDelegate = WorkReconcileDelegate { }
 ) : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -23,5 +24,6 @@ class BootReceiver(
             is ServiceStartResult.Failed -> Logger.w("BootReceiver", "boot_service_start_failed")
         }
         KeepAliveReceiver.schedule(context)
+        workReconcileDelegate.reconcile(context)
     }
 }
