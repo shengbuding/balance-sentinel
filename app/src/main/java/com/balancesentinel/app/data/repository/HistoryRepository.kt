@@ -199,6 +199,8 @@ class LegacyHistoryRepository(
 class RoomHistoryRepository(
     private val database: WalletDatabase
 ) : HistoryRepository {
+    internal suspend fun countRecords(): Long = database.historyDao().countRecords()
+
     internal suspend fun archiveAndDelete(
         summaries: List<DailySummary>,
         recordIds: List<Long>

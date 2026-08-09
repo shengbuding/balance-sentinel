@@ -91,10 +91,20 @@ object CleanupScheduler {
         onlyDate: String? = null
     ): CleanupReport {
         val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
+        val targetRange = onlyDate?.let { serializedDate ->
+            val targetDate = LocalDate.parse(serializedDate)
+            targetDate.atStartOfDay(zoneId).toInstant().toEpochMilli() to
+                targetDate.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        }
         val all = mutableListOf<HistoryRecord>()
         var cursor: HistoryCursor? = null
         while (true) {
-            val page = repository.pageAll(after = cursor, limit = HistoryRepository.MAX_PAGE_SIZE)
+            val page = repository.pageAll(
+                fromInclusive = targetRange?.first ?: Long.MIN_VALUE,
+                toExclusive = targetRange?.second ?: Long.MAX_VALUE,
+                after = cursor,
+                limit = HistoryRepository.MAX_PAGE_SIZE
+            )
             if (page.records.isEmpty()) break
             all += page.records
             cursor = page.nextCursor ?: break
@@ -138,14 +148,7 @@ object CleanupScheduler {
             generated
         } else emptyList()
         if (continuity.isNotEmpty()) repository.upsertSummaries(continuity)
-        var retained = 0
-        var retainedCursor: HistoryCursor? = null
-        while (true) {
-            val page = repository.pageAll(after = retainedCursor, limit = HistoryRepository.MAX_PAGE_SIZE)
-            if (page.records.isEmpty()) break
-            retained += page.records.size
-            retainedCursor = page.nextCursor ?: break
-        }
+        val retained = repository.countRecords().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         return CleanupReport(archived, deleted, retained, failures)
     }
 

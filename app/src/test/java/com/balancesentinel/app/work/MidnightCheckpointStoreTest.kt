@@ -63,4 +63,60 @@ class MidnightCheckpointStoreTest {
         assertEquals(newZone, current.zoneId)
         assertEquals(2L, current.lastSuccessAt)
     }
+
+    @Test
+    fun `stale old-zone worker cannot overwrite rebased checkpoint`() = runBlocking {
+        val store = RoomMaintenanceCheckpointStore(context)
+        val utc = ZoneId.of("UTC")
+        val newZone = ZoneId.of("America/Los_Angeles")
+        val staleOldZoneRead = store.read(utc)
+
+        assertTrue(
+            store.markCompletedIfCurrent(
+                expected = staleOldZoneRead,
+                date = LocalDate.of(2026, 8, 9),
+                zoneId = newZone,
+                successAt = 2L
+            )
+        )
+        assertFalse(
+            store.markCompletedIfCurrent(
+                expected = staleOldZoneRead,
+                date = LocalDate.of(2026, 8, 10),
+                zoneId = utc,
+                successAt = 3L
+            )
+        )
+
+        val current = store.read(newZone)
+        assertEquals(LocalDate.of(2026, 8, 9), current.lastCompletedDate)
+        assertEquals(newZone, current.zoneId)
+        assertEquals(2L, current.lastSuccessAt)
+    }
+
+    @Test
+    fun `corrupt checkpoint date fails closed`() = runBlocking {
+        val store = RoomMaintenanceCheckpointStore(context)
+        store.read(ZoneId.of("UTC"))
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE maintenance_checkpoint SET last_completed_date = 'not-a-date' WHERE id = 0"
+        )
+
+        val thrown = runCatching { store.read(ZoneId.of("UTC")) }.exceptionOrNull()
+
+        assertTrue(thrown is MaintenanceCheckpointCorruptionException)
+    }
+
+    @Test
+    fun `corrupt checkpoint zone fails closed`() = runBlocking {
+        val store = RoomMaintenanceCheckpointStore(context)
+        store.read(ZoneId.of("UTC"))
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE maintenance_checkpoint SET zone_id = 'not/a-zone' WHERE id = 0"
+        )
+
+        val thrown = runCatching { store.read(ZoneId.of("UTC")) }.exceptionOrNull()
+
+        assertTrue(thrown is MaintenanceCheckpointCorruptionException)
+    }
 }

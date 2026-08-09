@@ -37,6 +37,7 @@ class MidnightMaintenanceWorkerTest {
             Instant.parse("2026-08-10T12:00:00Z"),
             ZoneId.of("UTC")
         )
+        MidnightMaintenanceDependencies.zoneIdProvider = { ZoneId.of("UTC") }
         MidnightMaintenanceDependencies.checkpointStoreFactory = { checkpoint }
         MidnightMaintenanceDependencies.reenqueue = { }
         MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->

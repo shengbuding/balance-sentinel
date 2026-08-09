@@ -87,6 +87,7 @@ class CleanupSchedulerTest {
         )
 
         assertEquals(setOf("1970-01-01"), report.archivedDates)
+        assertEquals(1, report.retainedRecordCount)
         assertEquals(1, db.historyDao().countRecords())
     }
 

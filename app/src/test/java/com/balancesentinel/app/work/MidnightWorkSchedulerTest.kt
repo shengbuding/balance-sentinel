@@ -6,6 +6,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,6 +58,21 @@ class MidnightWorkSchedulerTest {
         assertEquals(1, runtime.specs.size)
     }
 
+    @Test
+    fun `legacy runtime cannot silently downgrade keep policy`() {
+        val legacyRuntime = LegacyReplaceRuntime()
+        val now = Instant.parse("2026-08-10T12:00:00Z")
+        val scheduler = MidnightWorkScheduler(legacyRuntime, Clock.fixed(now, ZoneId.of("UTC")))
+
+        val keepFailure = runCatching {
+            scheduler.reconcile(context, now, ZoneId.of("UTC"), MidnightWorkPolicy.KEEP)
+        }.exceptionOrNull()
+        scheduler.enqueueImmediate(context, now, ZoneId.of("UTC"))
+
+        assertTrue(keepFailure is IllegalStateException)
+        assertEquals(1, legacyRuntime.replaceCalls)
+    }
+
     private class RecordingMidnightRuntime : MidnightWorkRuntime {
         val specs = linkedMapOf<String, MidnightWorkSpec>()
         val policies = linkedMapOf<String, MidnightWorkPolicy>()
@@ -73,5 +89,15 @@ class MidnightWorkSchedulerTest {
         override fun cancelUnique(context: Context, uniqueName: String) {
             specs.remove(uniqueName)
         }
+    }
+
+    private class LegacyReplaceRuntime : MidnightWorkRuntime {
+        var replaceCalls = 0
+
+        override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
+            replaceCalls += 1
+        }
+
+        override fun cancelUnique(context: Context, uniqueName: String) = Unit
     }
 }

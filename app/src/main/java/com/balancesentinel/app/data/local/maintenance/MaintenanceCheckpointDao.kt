@@ -25,17 +25,11 @@ abstract class MaintenanceCheckpointDao {
             zone_id = :zoneId,
             last_success_at = :successAt
         WHERE id = 0
-        """
-    )
-    abstract suspend fun advanceAfterCompleteDate(date: String, zoneId: String, successAt: Long): Int
-
-    @Query(
-        """
-        UPDATE maintenance_checkpoint SET
-            last_completed_date = :date,
-            zone_id = :zoneId,
-            last_success_at = :successAt
-        WHERE id = 0
+          AND zone_id = :expectedZoneId
+          AND ((last_completed_date IS NULL AND :expectedDate IS NULL)
+               OR last_completed_date = :expectedDate)
+          AND ((last_success_at IS NULL AND :expectedSuccessAt IS NULL)
+               OR last_success_at = :expectedSuccessAt)
           AND (
               zone_id != :zoneId
               OR last_completed_date IS NULL
@@ -43,5 +37,12 @@ abstract class MaintenanceCheckpointDao {
           )
         """
     )
-    abstract suspend fun advanceAfterCompleteDateIfNewer(date: String, zoneId: String, successAt: Long): Int
+    abstract suspend fun advanceAfterCompleteDateIfCurrent(
+        date: String,
+        zoneId: String,
+        successAt: Long,
+        expectedDate: String?,
+        expectedZoneId: String,
+        expectedSuccessAt: Long?
+    ): Int
 }

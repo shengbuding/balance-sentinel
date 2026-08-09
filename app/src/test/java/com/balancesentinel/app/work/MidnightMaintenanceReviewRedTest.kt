@@ -10,6 +10,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -36,6 +37,7 @@ class MidnightMaintenanceReviewRedTest {
             Instant.parse("2026-08-10T12:00:00Z"),
             ZoneId.of("UTC")
         )
+        MidnightMaintenanceDependencies.zoneIdProvider = { ZoneId.of("UTC") }
         MidnightMaintenanceDependencies.checkpointStoreFactory = { store }
         MidnightMaintenanceDependencies.schedulerFactory = { MidnightWorkScheduler(runtime) }
         MidnightMaintenanceDependencies.reenqueue = null
@@ -59,12 +61,35 @@ class MidnightMaintenanceReviewRedTest {
 
     @Test
     fun `zone change rebases checkpoint instead of applying old-zone date`() = runTest {
+        MidnightMaintenanceDependencies.zoneIdProvider = { ZoneId.of("America/Los_Angeles") }
         val worker = worker(
             zone = ZoneId.of("America/Los_Angeles"),
             inputNow = Instant.parse("2026-08-11T12:00:00Z")
         )
         assertEquals(ListenableWorker.Result.success(), worker.doWork())
         assertEquals(listOf(LocalDate.of(2026, 8, 10)), dates)
+    }
+
+    @Test
+    fun `timezone change during cleanup prevents stale checkpoint and requeues current zone`() = runTest {
+        var activeZone = ZoneId.of("UTC")
+        val newZone = ZoneId.of("America/Los_Angeles")
+        MidnightMaintenanceDependencies.zoneIdProvider = { activeZone }
+        MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->
+            dates += date
+            activeZone = newZone
+            CleanupReport(emptySet(), 0, 0, emptyList())
+        }
+
+        assertEquals(
+            ListenableWorker.Result.success(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+
+        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
+        assertEquals(ZoneId.of("UTC"), store.zoneId)
+        assertEquals(MidnightWorkPolicy.REPLACE, runtime.policies[MidnightWorkScheduler.UNIQUE_WORK_NAME])
+        assertEquals(newZone.id, runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]?.input?.get(MidnightWorkScheduler.KEY_ZONE_ID))
     }
 
     @Test
@@ -82,6 +107,44 @@ class MidnightMaintenanceReviewRedTest {
         assertTrue(outcome.isSuccess)
         assertEquals(ListenableWorker.Result.retry(), outcome.getOrThrow())
         assertEquals(listOf(LocalDate.of(2026, 8, 9)), dates)
+        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
+        assertEquals(ZoneId.of("UTC"), store.zoneId)
+    }
+
+    @Test
+    fun `checkpoint compare-and-set conflict does not let stale worker replace queue`() = runTest {
+        store.markResult = false
+
+        assertEquals(
+            ListenableWorker.Result.retry(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+        assertEquals(LocalDate.of(2026, 8, 8), store.lastCompletedDate)
+        assertTrue(runtime.policies.isEmpty())
+    }
+
+    @Test
+    fun `follow-up enqueue failure retries after durable checkpoint`() = runTest {
+        runtime.enqueueFailure = IllegalStateException("work manager unavailable")
+
+        assertEquals(
+            ListenableWorker.Result.retry(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
+    }
+
+    @Test
+    fun `follow-up cancellation propagates after durable checkpoint`() = runTest {
+        runtime.enqueueFailure = CancellationException("worker cancelled")
+
+        val thrown = runCatching {
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        }.exceptionOrNull()
+
+        assertTrue(thrown is CancellationException)
+        assertEquals("worker cancelled", thrown?.message)
+        assertEquals(LocalDate.of(2026, 8, 9), store.lastCompletedDate)
     }
 
     @Test
@@ -108,11 +171,17 @@ class MidnightMaintenanceReviewRedTest {
 
     private class ReviewRuntime : MidnightWorkRuntime {
         val policies = linkedMapOf<String, MidnightWorkPolicy>()
+        val specs = linkedMapOf<String, MidnightWorkSpec>()
+        var enqueueFailure: Exception? = null
 
-        override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) = Unit
+        override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
+            specs[spec.uniqueName] = spec
+        }
 
         override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec, policy: MidnightWorkPolicy) {
+            enqueueFailure?.let { throw it }
             policies[spec.uniqueName] = policy
+            specs[spec.uniqueName] = spec
         }
 
         override fun cancelUnique(context: Context, uniqueName: String) = Unit
@@ -124,6 +193,7 @@ class MidnightMaintenanceReviewRedTest {
     ) : MaintenanceCheckpointStore {
         var readFailure: Throwable? = null
         var markFailure: Throwable? = null
+        var markResult: Boolean = true
 
         override suspend fun read(zoneId: ZoneId): MaintenanceCheckpoint {
             readFailure?.let { throw it }
@@ -132,6 +202,7 @@ class MidnightMaintenanceReviewRedTest {
 
         override suspend fun markCompleted(date: LocalDate, zoneId: ZoneId, successAt: Long): Boolean {
             markFailure?.let { throw it }
+            if (!markResult) return false
             lastCompletedDate = date
             this.zoneId = zoneId
             return true

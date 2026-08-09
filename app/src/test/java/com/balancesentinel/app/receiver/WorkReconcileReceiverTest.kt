@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.work.MidnightWorkRuntime
+import com.balancesentinel.app.work.MidnightWorkPolicy
 import com.balancesentinel.app.work.MidnightWorkScheduler
 import com.balancesentinel.app.work.MidnightWorkSpec
 import org.junit.Assert.assertEquals
@@ -24,8 +25,17 @@ class WorkReconcileReceiverTest {
     @Test
     fun `boot package replacement and timezone change reconcile one unique work without opening home`() {
         val runtime = RecordingRuntime()
-        val scheduler = MidnightWorkScheduler(runtime)
-        val receiver = WorkReconcileReceiver(WorkReconcileDelegate { scheduler.reconcile(context) })
+        val policies = mutableListOf<MidnightWorkPolicy>()
+        val receiver = WorkReconcileReceiver(object : WorkReconcileDelegate {
+            override fun reconcile(context: Context) {
+                policies += MidnightWorkPolicy.KEEP
+            }
+
+            override fun reconcile(context: Context, policy: MidnightWorkPolicy) {
+                policies += policy
+                MidnightWorkScheduler(runtime).reconcile(context, policy = policy)
+            }
+        })
 
         listOf(
             Intent.ACTION_BOOT_COMPLETED,
@@ -35,6 +45,11 @@ class WorkReconcileReceiverTest {
 
         assertEquals(1, runtime.specs.size)
         assertEquals(MidnightWorkScheduler.UNIQUE_WORK_NAME, runtime.specs.keys.single())
+        assertEquals(
+            listOf(MidnightWorkPolicy.KEEP, MidnightWorkPolicy.KEEP, MidnightWorkPolicy.REPLACE),
+            policies
+        )
+        assertEquals(MidnightWorkPolicy.REPLACE, runtime.singleKey())
     }
 
     @Test
@@ -48,13 +63,25 @@ class WorkReconcileReceiverTest {
 
     private class RecordingRuntime : MidnightWorkRuntime {
         val specs = linkedMapOf<String, MidnightWorkSpec>()
+        val policies = linkedMapOf<String, MidnightWorkPolicy>()
 
         override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
             specs[spec.uniqueName] = spec
         }
 
+        override fun enqueueOneShot(
+            context: Context,
+            spec: MidnightWorkSpec,
+            policy: MidnightWorkPolicy
+        ) {
+            policies[spec.uniqueName] = policy
+            enqueueOneShot(context, spec)
+        }
+
         override fun cancelUnique(context: Context, uniqueName: String) {
             specs.remove(uniqueName)
         }
+
+        fun singleKey(): MidnightWorkPolicy = policies.getValue(MidnightWorkScheduler.UNIQUE_WORK_NAME)
     }
 }

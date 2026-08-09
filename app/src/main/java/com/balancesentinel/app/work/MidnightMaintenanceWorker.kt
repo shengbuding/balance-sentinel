@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
+import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.data.repository.CleanupReport
 import java.time.LocalDate
 import java.time.Clock
@@ -18,6 +19,7 @@ fun interface MidnightCleanupRunner {
 
 object MidnightMaintenanceDependencies {
     var clock: Clock = Clock.systemDefaultZone()
+    var zoneIdProvider: () -> ZoneId = ZoneId::systemDefault
     var cleanupRunner: MidnightCleanupRunner = MidnightCleanupRunner { context, date, zoneId ->
         com.balancesentinel.app.data.repository.CleanupScheduler.runCleanupForDate(
             context = context,
@@ -33,6 +35,7 @@ object MidnightMaintenanceDependencies {
 
     fun reset() {
         clock = Clock.systemDefaultZone()
+        zoneIdProvider = ZoneId::systemDefault
         cleanupRunner = MidnightCleanupRunner { context, date, zoneId ->
             com.balancesentinel.app.data.repository.CleanupScheduler.runCleanupForDate(
                 context = context,
@@ -53,31 +56,51 @@ class MidnightMaintenanceWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): ListenableWorker.Result {
-        val zoneId = inputData.getString(MidnightWorkScheduler.KEY_ZONE_ID)
-            ?.let { runCatching { ZoneId.of(it) }.getOrNull() }
-            ?: ZoneId.systemDefault()
-        val nowMillis = inputData.getString(MidnightWorkScheduler.KEY_NOW_MILLIS)
-            ?.toLongOrNull()
-            ?: inputData.getLong(MidnightWorkScheduler.KEY_NOW_MILLIS, Long.MIN_VALUE)
-                .takeUnless { it == Long.MIN_VALUE }
-        val now = nowMillis
-            ?.let(Instant::ofEpochMilli)
-            ?: MidnightMaintenanceDependencies.clock.instant()
+        val requestedZoneId = try {
+            val serializedZone = inputData.getString(MidnightWorkScheduler.KEY_ZONE_ID)
+            if (serializedZone == null) ZoneId.systemDefault() else ZoneId.of(serializedZone)
+        } catch (error: Exception) {
+            return retry("invalid_zone_input", error)
+        }
+        val zoneId = try {
+            MidnightMaintenanceDependencies.zoneIdProvider()
+        } catch (error: Exception) {
+            return retry("active_zone_read_failed", error)
+        }
+        if (requestedZoneId != zoneId) {
+            Logger.i("MidnightMaintenanceWorker", "stale_zone_request_rebased")
+        }
+        val nowMillis = try {
+            val serializedNow = inputData.getString(MidnightWorkScheduler.KEY_NOW_MILLIS)
+            if (serializedNow != null) {
+                serializedNow.toLong()
+            } else {
+                inputData.getLong(MidnightWorkScheduler.KEY_NOW_MILLIS, Long.MIN_VALUE)
+                    .takeUnless { it == Long.MIN_VALUE }
+            }
+        } catch (error: Exception) {
+            return retry("invalid_now_input", error)
+        }
+        val now = try {
+            nowMillis?.let(Instant::ofEpochMilli) ?: MidnightMaintenanceDependencies.clock.instant()
+        } catch (error: Exception) {
+            return retry("clock_read_failed", error)
+        }
         val today = now.atZone(zoneId).toLocalDate()
         val yesterday = today.minusDays(1)
         val checkpointStore = try {
             MidnightMaintenanceDependencies.checkpointStoreFactory(applicationContext)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            return ListenableWorker.Result.retry()
+        } catch (error: Exception) {
+            return retry("checkpoint_store_factory_failed", error)
         }
         val checkpoint = try {
             checkpointStore.read(zoneId)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            return ListenableWorker.Result.retry()
+        } catch (error: Exception) {
+            return retry("checkpoint_read_failed", error)
         }
         val nextDate = if (checkpoint.zoneId != zoneId) {
             yesterday
@@ -86,36 +109,98 @@ class MidnightMaintenanceWorker(
         }
 
         if (nextDate.isAfter(yesterday)) {
-            reconcileNext(now, zoneId)
-            return ListenableWorker.Result.success()
+            return if (scheduleReconcile(now, zoneId)) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
         }
 
         val report = try {
             MidnightMaintenanceDependencies.cleanupRunner.run(applicationContext, nextDate, zoneId)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            return retry("cleanup_failed", error)
+        }
+        if (report.failures.isNotEmpty()) {
+            Logger.w(
+                "MidnightMaintenanceWorker",
+                "cleanup_report_failed:${report.failures.size}"
+            )
             return ListenableWorker.Result.retry()
         }
-        if (report.failures.isNotEmpty()) return ListenableWorker.Result.retry()
 
-        try {
-            checkpointStore.markCompleted(nextDate, zoneId, now.toEpochMilli())
+        val zoneAfterCleanup = try {
+            MidnightMaintenanceDependencies.zoneIdProvider()
+        } catch (error: Exception) {
+            return retry("active_zone_recheck_failed", error)
+        }
+        if (zoneAfterCleanup != zoneId) {
+            return if (scheduleReconcile(now, zoneAfterCleanup)) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
+        }
+
+        val marked = try {
+            checkpointStore.markCompletedIfCurrent(
+                expected = checkpoint,
+                date = nextDate,
+                zoneId = zoneId,
+                successAt = now.toEpochMilli()
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            return ListenableWorker.Result.retry()
+        } catch (error: Exception) {
+            return retry("checkpoint_write_failed", error)
+        }
+        if (!marked) {
+            // Another worker won the compare-and-set. Do not enqueue with the
+            // stale worker's zone/policy and cancel the winner's request.
+            val current = try {
+                checkpointStore.read(zoneId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                return retry("checkpoint_conflict_read_failed", error)
+            }
+            return if (current.lastCompletedDate?.let { !it.isBefore(nextDate) } == true) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
+        }
+        val schedulingZone = try {
+            MidnightMaintenanceDependencies.zoneIdProvider()
+        } catch (error: Exception) {
+            return retry("active_zone_schedule_check_failed", error)
+        }
+        if (schedulingZone != zoneId) {
+            return if (scheduleReconcile(now, schedulingZone)) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
         }
         val after = nextDate.plusDays(1)
         if (after.isAfter(yesterday)) {
-            reconcileNext(now, zoneId)
+            return if (scheduleReconcile(now, zoneId)) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
         } else {
-            enqueueNext(now, zoneId, after)
+            return if (scheduleNext(now, zoneId, after)) {
+                ListenableWorker.Result.success()
+            } else {
+                ListenableWorker.Result.retry()
+            }
         }
-        return ListenableWorker.Result.success()
     }
 
-    private fun enqueueNext(now: Instant, zoneId: ZoneId, targetDate: LocalDate) {
+    private fun scheduleNext(now: Instant, zoneId: ZoneId, targetDate: LocalDate): Boolean = try {
         val callback = MidnightMaintenanceDependencies.reenqueue
         if (callback != null) {
             callback(applicationContext)
@@ -123,9 +208,15 @@ class MidnightMaintenanceWorker(
             MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
                 .enqueueImmediate(applicationContext, now, zoneId, targetDate)
         }
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Logger.w("MidnightMaintenanceWorker", "next_enqueue_failed", error)
+        false
     }
 
-    private fun reconcileNext(now: Instant, zoneId: ZoneId) {
+    private fun scheduleReconcile(now: Instant, zoneId: ZoneId): Boolean = try {
         val callback = MidnightMaintenanceDependencies.reenqueue
         if (callback != null) {
             callback(applicationContext)
@@ -138,5 +229,16 @@ class MidnightMaintenanceWorker(
                     MidnightWorkPolicy.REPLACE
                 )
         }
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Logger.w("MidnightMaintenanceWorker", "next_reconcile_failed", error)
+        false
+    }
+
+    private fun retry(reason: String, error: Exception): ListenableWorker.Result {
+        Logger.w("MidnightMaintenanceWorker", reason, error)
+        return ListenableWorker.Result.retry()
     }
 }

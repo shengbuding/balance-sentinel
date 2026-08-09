@@ -19,6 +19,7 @@ import com.balancesentinel.app.data.migration.LegacyStoresDataSource
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -27,6 +28,7 @@ import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.work.MidnightWorkPolicy
 import com.balancesentinel.app.work.RefreshWorkScheduler
 import com.balancesentinel.app.work.MidnightWorkScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -76,7 +78,10 @@ open class DeepSeekApp : Application() {
         super.onCreate()
         settingsRepository = SettingsRepositoryProvider.get(this)
         refreshGateway = RefreshRuntime.create(this)
-        runCatching { MidnightWorkScheduler().reconcile(this) }
+        runCatching { MidnightWorkScheduler().reconcile(this, policy = MidnightWorkPolicy.KEEP) }
+            .onFailure { error ->
+                Logger.w("MidnightWorkScheduler", "startup_reconcile_failed", error)
+            }
         launchBackgroundWorkReconcile()
         CrashLogger.install(this)
 

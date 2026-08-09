@@ -27,11 +27,22 @@ enum class MidnightWorkPolicy {
 interface MidnightWorkRuntime {
     fun enqueueOneShot(context: Context, spec: MidnightWorkSpec)
 
+    /**
+     * Policy-aware enqueue. The historical two-argument seam represented a
+     * replace-style enqueue, so it is safe to preserve that behavior for
+     * REPLACE. KEEP cannot be emulated safely and fails closed until a runtime
+     * explicitly implements this overload.
+     */
     fun enqueueOneShot(
         context: Context,
         spec: MidnightWorkSpec,
         policy: MidnightWorkPolicy
-    ) = enqueueOneShot(context, spec)
+    ) {
+        check(policy == MidnightWorkPolicy.REPLACE) {
+            "MidnightWorkRuntime must implement policy-aware KEEP enqueue"
+        }
+        enqueueOneShot(context, spec)
+    }
 
     fun cancelUnique(context: Context, uniqueName: String)
 }
