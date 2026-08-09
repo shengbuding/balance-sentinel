@@ -12,6 +12,7 @@ import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
 import com.balancesentinel.app.service.ServiceStartResult
 import com.balancesentinel.app.service.ServiceStarter
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.FixMethodOrder
@@ -38,6 +39,11 @@ class KeepAliveReceiverTest {
         while (shadowApplication.nextStartedService != null) {
             // Drain starts left by a prior test in the same Robolectric sandbox.
         }
+    }
+
+    @After
+    fun tearDown() {
+        WalletDatabaseProvider.clearForTests()
     }
 
     @Test
