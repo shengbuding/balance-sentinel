@@ -73,6 +73,7 @@ object DefaultWorkRuntime : WorkRuntime {
         val request = OneTimeWorkRequest.Builder(RefreshWorker::class.java)
             .setInitialDelay(spec.delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .setInputData(input)
+            .addTag(RefreshWorkScheduler.RETRY_WORK_TAG)
             .addTag(spec.uniqueName)
             .build()
         WorkManager.getInstance(context.applicationContext)
@@ -83,5 +84,8 @@ object DefaultWorkRuntime : WorkRuntime {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(uniqueName)
     }
 
-    override fun cancelAllRetries(context: Context) = Unit
+    override fun cancelAllRetries(context: Context) {
+        WorkManager.getInstance(context.applicationContext)
+            .cancelAllWorkByTag(RefreshWorkScheduler.RETRY_WORK_TAG)
+    }
 }

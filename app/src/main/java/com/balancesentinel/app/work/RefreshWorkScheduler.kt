@@ -19,6 +19,7 @@ class RefreshWorkScheduler(
         cancelLegacyWidgetAlarms(context)
         if (backgroundIntervalSeconds == null) {
             runtime.cancelUnique(context, PERIODIC_WORK_NAME)
+            runtime.cancelAllRetries(context)
             return
         }
 
@@ -73,6 +74,7 @@ class RefreshWorkScheduler(
     companion object {
         const val PERIODIC_WORK_NAME = "refresh-periodic"
         const val RETRY_WORK_PREFIX = "refresh-retry-"
+        const val RETRY_WORK_TAG = "refresh-retry"
         const val KEY_INTERVAL_SECONDS = "refresh_interval_seconds"
         const val MIN_BACKGROUND_INTERVAL_SECONDS = 900L
         const val MAX_RETRY_DELAY_MILLIS = 15 * 60_000L

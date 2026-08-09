@@ -50,12 +50,12 @@ class RefreshWorker(
             val accountId = inputData.getString(KEY_ACCOUNT_ID)
             val previousAttempt = inputData.getInt(KEY_ATTEMPT, 0)
             if (accountId == null) {
-                val batch = gateway.refreshAll(RefreshTrigger.SERVICE)
+                val batch = gateway.refreshAll(RefreshTrigger.BACKGROUND)
                 batch.results.forEach { result ->
                     enqueueRetryIfNeeded(result.accountId, result, previousAttempt)
                 }
             } else {
-                val result = gateway.refreshAccount(accountId, RefreshTrigger.SERVICE)
+                val result = gateway.refreshAccount(accountId, RefreshTrigger.BACKGROUND)
                 enqueueRetryIfNeeded(accountId, result, previousAttempt)
             }
             ListenableWorker.Result.success()
@@ -75,9 +75,12 @@ class RefreshWorker(
         result: AccountRefreshResult,
         previousAttempt: Int
     ) {
-        RefreshWorkerDependencies.retryPlanner
-            .next(accountId, result, previousAttempt)
-            ?.let { RefreshWorkerDependencies.scheduleRetry(applicationContext, it) }
+        val nextRetry = RefreshWorkerDependencies.retryPlanner.next(accountId, result, previousAttempt)
+        if (nextRetry != null) {
+            RefreshWorkerDependencies.scheduleRetry(applicationContext, nextRetry)
+        } else {
+            RefreshWorkerDependencies.cancelRetry(applicationContext, accountId)
+        }
     }
 
     companion object {
