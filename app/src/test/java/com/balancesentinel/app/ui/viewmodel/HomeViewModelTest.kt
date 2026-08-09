@@ -15,9 +15,11 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
@@ -55,6 +57,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowLooper
+
+private fun testRefreshBatch(results: List<AccountRefreshResult>) = RefreshBatchResult(
+    runId = "test-run",
+    results = results,
+    aggregate = deriveRefreshBatchAggregate(results)
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -1032,14 +1040,14 @@ class HomeViewModelTest {
 
         override suspend fun refreshAll(
             trigger: RefreshTrigger
-        ): List<AccountRefreshResult> {
+        ): RefreshBatchResult {
             refreshAllCalls++
             // Record per-account calls from the results list
             val snapshot = results.toList()
             for (r in snapshot) {
                 calls += r.accountId to trigger
             }
-            return snapshot.also { results.clear() }
+            return snapshot.also { results.clear() }.let(::testRefreshBatch)
         }
 
         override fun invalidate(accountId: String) {}
@@ -1047,7 +1055,7 @@ class HomeViewModelTest {
 
     private class ControlledRefreshGateway : RefreshGateway {
         private val pendingSingle = java.util.ArrayDeque<CompletableDeferred<AccountRefreshResult>>()
-        private val pendingAll = java.util.ArrayDeque<CompletableDeferred<List<AccountRefreshResult>>>()
+        private val pendingAll = java.util.ArrayDeque<CompletableDeferred<RefreshBatchResult>>()
         var singleCalls: Int = 0
             private set
         var allCalls: Int = 0
@@ -1061,9 +1069,9 @@ class HomeViewModelTest {
             return CompletableDeferred<AccountRefreshResult>().also(pendingSingle::addLast).await()
         }
 
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             allCalls++
-            return CompletableDeferred<List<AccountRefreshResult>>().also(pendingAll::addLast).await()
+            return CompletableDeferred<RefreshBatchResult>().also(pendingAll::addLast).await()
         }
 
         fun completeNextSingle(result: AccountRefreshResult) {
@@ -1071,7 +1079,7 @@ class HomeViewModelTest {
         }
 
         fun completeNextAll(results: List<AccountRefreshResult>) {
-            pendingAll.removeFirst().complete(results)
+            pendingAll.removeFirst().complete(testRefreshBatch(results))
         }
 
         override fun invalidate(accountId: String) = Unit
@@ -1162,10 +1170,10 @@ class HomeViewModelTest {
                 return AccountRefreshResult.Failed(accountId, RefreshFailure.NetworkFailure("not used"))
             }
 
-            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
-                val results = if (callCount++ == 0) first else second
-                for (r in results) calls += r.accountId to trigger
-                return results
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
+            val results = if (callCount++ == 0) first else second
+            for (r in results) calls += r.accountId to trigger
+            return testRefreshBatch(results)
             }
 
             override fun invalidate(accountId: String) {}
@@ -1215,17 +1223,17 @@ class HomeViewModelTest {
                 trigger: RefreshTrigger
             ): AccountRefreshResult = error("Single-account refresh is not expected")
 
-            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> =
+            override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult =
                 if (run++ == 0) {
-                    listOf(committed(accountA.id, 100.0), committed(accountB.id, 200.0))
+                    testRefreshBatch(listOf(committed(accountA.id, 100.0), committed(accountB.id, 200.0)))
                 } else {
-                    listOf(
+                    testRefreshBatch(listOf(
                         AccountRefreshResult.Failed(
                             accountA.id,
                             RefreshFailure.NetworkFailure("Stable network failure")
                         ),
                         committed(accountB.id, 300.0)
-                    )
+                    ))
                 }
 
             override fun invalidate(accountId: String) = Unit
@@ -1308,11 +1316,11 @@ class HomeViewModelTest {
             return result
         }
 
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             val snapshot = resultsList.toList()
             for (r in snapshot) calls += r.accountId to trigger
             resultsList.clear()
-            return snapshot
+            return testRefreshBatch(snapshot)
         }
 
         override fun invalidate(accountId: String) {}

@@ -49,8 +49,13 @@ class BalanceRefreshRunner(
         }
         refreshDeadline.markStarted()
         return try {
-            gateway.refreshAll(RefreshTrigger.SERVICE)
-            ServiceRefreshBatch(accountCount, if (accountCount == 0) emptyList() else committedBalanceReader())
+            val batch = gateway.refreshAll(RefreshTrigger.SERVICE)
+            val committedBalances = if (accountCount == 0) {
+                emptyList()
+            } else {
+                committedBalanceReader()
+            }
+            ServiceRefreshBatch(accountCount, committedBalances, batch)
         } finally {
             refreshDeadline.clear()
         }

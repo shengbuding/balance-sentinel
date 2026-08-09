@@ -8,6 +8,7 @@ import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.refresh.RefreshAccountResultState
 import com.balancesentinel.app.data.repository.RoomRefreshPersistence
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.RefreshLogEntry
@@ -65,7 +66,7 @@ class RefreshResultCommitterTest {
             alertDispatcher = RefreshAlertDispatcher { _, _ -> },
             widgetRedrawNotifier = WidgetRedrawNotifier { }
         )
-        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        val result = runBlocking { committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true } }
         assertTrue(result is AccountRefreshResult.Failed)
         runBlocking { assertEquals(0, db.historyDao().countRecords()); assertEquals(0, db.usageDao().countSnapshots()); assertEquals(0, db.eventLogDao().countLogs()) }
     }
@@ -76,7 +77,7 @@ class RefreshResultCommitterTest {
             override fun getAccount(accountId: String) = AccountInfo(accountId, "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
             override fun getAccounts() = emptyList<AccountInfo>()
         }, roomPersistence = RoomRefreshPersistence(db), alertDispatcher = RefreshAlertDispatcher { _, _ -> }, widgetRedrawNotifier = WidgetRedrawNotifier { })
-        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        val result = runBlocking { committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true } }
         assertTrue(result is AccountRefreshResult.Committed)
         runBlocking { assertEquals(1, db.historyDao().countRecords()); assertEquals(1, db.usageDao().countSnapshots()); assertEquals(1, db.eventLogDao().countLogs()) }
     }
@@ -87,9 +88,58 @@ class RefreshResultCommitterTest {
             override fun getAccount(accountId: String) = AccountInfo(accountId, "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
             override fun getAccounts() = emptyList<AccountInfo>()
         }, alertDispatcher = RefreshAlertDispatcher { _, _ -> }, widgetRedrawNotifier = WidgetRedrawNotifier { })
-        val result = committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true }
+        val result = runBlocking { committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true } }
         assertTrue(result is AccountRefreshResult.Committed)
     }
+
+    @Test fun `run ledger failure compensation leaves no partial Room writes`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(
+            database = db,
+            beforeResultWrite = { error("injected result-side failure") },
+            clock = { 20L }
+        )
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            runRecorder = recorder
+        )
+
+        val result = committer.commit(
+            RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            BalanceFetchResult.Success(balance("acct"), 15L)
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertEquals(
+            RefreshAccountResultState.PERSISTENCE_FAILED,
+            db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
+        )
+        assertEquals(0, db.historyDao().countRecords())
+        assertEquals(0, db.usageDao().countSnapshots())
+        assertEquals(0, db.eventLogDao().countLogs())
+    }
+
+    private fun accountInfo() = AccountInfo("acct", "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
+
+    private fun balance(accountId: String) = UnifiedBalance(
+        ProviderType.DEEPSEEK,
+        accountId,
+        true,
+        listOf(BalanceEntry("USD", 1.0))
+    )
 
     private fun accountEntity() = AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED)
 }

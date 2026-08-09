@@ -24,5 +24,8 @@ interface RefreshRunRecorder {
 
     suspend fun finish(runId: String, completedAt: Long): RefreshBatchAggregate
 
+    /** Mark any rows that did not reach a terminal outcome before cancellation. */
+    suspend fun cancelRunning(runId: String, completedAt: Long): Int = 0
+
     suspend fun recover(activeOwnerProcessSessionId: String, completedAt: Long): Int
 }

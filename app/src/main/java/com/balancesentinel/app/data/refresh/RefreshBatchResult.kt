@@ -26,7 +26,9 @@ data class RefreshBatchResult(
 
 internal fun deriveRefreshBatchAggregate(results: List<AccountRefreshResult>): RefreshBatchAggregate {
     val successCount = results.count { it is AccountRefreshResult.Committed }
-    val cancelledCount = 0
+    val cancelledCount = results.count {
+        it is AccountRefreshResult.Failed && it.failure is RefreshFailure.Cancelled
+    }
     val failureCount = results.size - successCount - cancelledCount
     val state = when {
         results.isEmpty() -> RefreshBatchState.FAILED

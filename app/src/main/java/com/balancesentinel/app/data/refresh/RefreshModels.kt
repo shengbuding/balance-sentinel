@@ -39,6 +39,7 @@ sealed interface RefreshFailure {
     data class AccountStale(override val message: String) : RefreshFailure
     data class PersistenceFailure(override val message: String) : RefreshFailure
     data class AccountCorrupt(override val message: String) : RefreshFailure
+    data class Cancelled(override val message: String = "Refresh cancelled") : RefreshFailure
 }
 
 data class RefreshRequest(
@@ -64,7 +65,8 @@ sealed interface AccountRefreshResult {
 
     data class Committed(
         override val accountId: String,
-        val balance: UnifiedBalance
+        val balance: UnifiedBalance,
+        val dataTimestamp: Long? = null
     ) : AccountRefreshResult
 
     data class Failed(
@@ -92,7 +94,10 @@ fun interface AccountBalanceSource {
 }
 
 interface RefreshCommitter {
-    fun commit(
+    val recordsRunOutcome: Boolean
+        get() = false
+
+    suspend fun commit(
         request: RefreshRequest,
         fetched: BalanceFetchResult.Success,
         isLatest: () -> Boolean
@@ -101,7 +106,7 @@ interface RefreshCommitter {
 
 interface RefreshGateway {
     suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult
-    suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult>
+    suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult
     fun invalidate(accountId: String)
     suspend fun readAccountSnapshot(): AccountStoreRead = AccountStoreRead.Missing
 }

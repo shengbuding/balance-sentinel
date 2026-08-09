@@ -1,6 +1,7 @@
 package com.balancesentinel.app.widget
 
 import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 
 /**
@@ -18,8 +19,8 @@ class WidgetRefreshRunner(
      * Execute a widget refresh through the shared gateway.
      * @param watchdog true for watchdog-triggered refresh, false for button refresh
      */
-    suspend fun refreshNow(watchdog: Boolean = false) {
+    suspend fun refreshNow(watchdog: Boolean = false): RefreshBatchResult {
         val trigger = if (watchdog) RefreshTrigger.WATCHDOG else RefreshTrigger.WIDGET
-        gateway.refreshAll(trigger)
+        return gateway.refreshAll(trigger)
     }
 }

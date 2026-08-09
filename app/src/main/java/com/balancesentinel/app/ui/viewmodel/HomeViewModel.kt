@@ -752,7 +752,7 @@ class HomeViewModel @JvmOverloads constructor(
             val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
             if (gw != null) {
                 // Task 4: route through shared gateway — committer owns all persistence
-                val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL)
+                val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL).results
                 if (readyAccounts() == null) return@launch
                 for (result in results) {
                     val accountId = result.accountId

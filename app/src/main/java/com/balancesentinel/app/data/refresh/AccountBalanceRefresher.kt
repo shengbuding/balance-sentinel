@@ -70,9 +70,9 @@ class AccountBalanceRefresher(
         is ProviderError.AuthError ->
             RefreshFailure.AuthenticationFailure("Authentication failed")
         is ProviderError.RateLimitError ->
-            RefreshFailure.RateLimited("Provider rate limit reached")
+            RefreshFailure.RateLimited("Provider rate limit reached", retryAfter = error.retryAfter)
         is ProviderError.NetworkError ->
-            RefreshFailure.NetworkFailure("Network request failed")
+            RefreshFailure.NetworkFailure("Network request failed", retryable = true)
         is ProviderError.ServerError ->
             RefreshFailure.NetworkFailure("Provider service failed (HTTP ${error.code})")
         is ProviderError.QuotaExceededError ->

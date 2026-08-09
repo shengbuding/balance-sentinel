@@ -107,7 +107,7 @@ object BalanceWidgetDataStore {
             val first = byCurrency.keys.first()
             return AggregatedBalance(
                 totalBalance = "0.00", currency = first,
-                isAvailable = balances.all { it.isAvailable },
+                isAvailable = balances.all { it.isAvailable && !it.stale },
                 grantedBalance = "0.00", toppedUpBalance = "0.00",
                 accountCount = balances.map { it.accountId }.distinct().size,
                 lastUpdated = balances.maxOf { it.lastUpdated }
@@ -129,7 +129,7 @@ object BalanceWidgetDataStore {
             currency = currency,
             totalBalance2 = if (total2 > 0) "%.2f".format(total2) else "",
             currency2 = if (total2 > 0) currency2 else "",
-            isAvailable = balances.all { it.isAvailable },
+            isAvailable = balances.all { it.isAvailable && !it.stale },
             grantedBalance = "%.2f".format(granted),
             toppedUpBalance = "%.2f".format(toppedUp),
             accountCount = balances.map { it.accountId }.distinct().size,
@@ -193,6 +193,22 @@ object BalanceWidgetDataStore {
         }
     }
 
+    /** Preserve the last successful values while projecting the current failure. */
+    fun markAccountStale(context: Context, accountId: String, reason: String) {
+        synchronized(STORE_LOCK) {
+            val prefs = getPrefs(context)
+            val balances = getAllBalances(prefs)
+            val projected = balances.map { balance ->
+                if (balance.accountId == accountId) {
+                    balance.copy(stale = true, staleReason = reason)
+                } else {
+                    balance
+                }
+            }
+            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(projected)).commit())
+        }
+    }
+
     internal fun snapshotAccountBalances(
         context: Context,
         accountId: String
@@ -210,7 +226,9 @@ data class AccountBalance(
     val isAvailable: Boolean,
     val grantedBalance: String,
     val toppedUpBalance: String,
-    val lastUpdated: Long
+    val lastUpdated: Long,
+    val stale: Boolean = false,
+    val staleReason: String? = null
 )
 
 data class AggregatedBalance(

@@ -11,6 +11,7 @@ import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -131,9 +132,11 @@ class BalanceRefreshRunnerTest {
 
         override suspend fun refreshAll(
             trigger: RefreshTrigger
-        ): List<AccountRefreshResult> {
+        ): RefreshBatchResult {
             refreshAllCalls += trigger
-            return resultsList.toList().also { resultsList.clear() }
+            return resultsList.toList().also { resultsList.clear() }.let { results ->
+                RefreshBatchResult("test-run", results, deriveRefreshBatchAggregate(results))
+            }
         }
 
         override fun invalidate(accountId: String) {}

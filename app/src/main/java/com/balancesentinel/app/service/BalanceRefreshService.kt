@@ -34,6 +34,7 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_4x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
+import com.balancesentinel.app.data.refresh.RefreshBatchState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -207,7 +208,8 @@ class BalanceRefreshService : Service() {
                         BalanceWidgetDataStore.getAllBalances(this@BalanceRefreshService)
                     }
                 )
-                val committedBalances = runner.refreshBatch().committedBalances
+                val serviceBatch = runner.refreshBatch()
+                val committedBalances = serviceBatch.committedBalances
                 val settings = (settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value
                     ?: settingsRepository.readSnapshot()
                 val showTotal = settings.appSettings.showTotalBalanceInNotification
@@ -239,8 +241,13 @@ class BalanceRefreshService : Service() {
                 sendWidgetUpdateBroadcast()
                 RefreshScheduler.markFired(this@BalanceRefreshService)
                 RefreshScheduler.heartbeat(this@BalanceRefreshService)
-                ServiceHealthTracker.recordSuccess(this@BalanceRefreshService)
-                RefreshStatsStore.recordSuccess(this@BalanceRefreshService)
+                if (serviceBatch.batch?.aggregate?.state == RefreshBatchState.SUCCEEDED) {
+                    ServiceHealthTracker.recordSuccess(this@BalanceRefreshService)
+                    RefreshStatsStore.recordSuccess(this@BalanceRefreshService)
+                } else {
+                    ServiceHealthTracker.recordFailure(this@BalanceRefreshService)
+                    RefreshStatsStore.recordFailure(this@BalanceRefreshService)
+                }
             } catch (e: Exception) {
                 Logger.e(TAG, "Auto refresh batch failed", e)
                 ServiceHealthTracker.recordFailure(this@BalanceRefreshService)

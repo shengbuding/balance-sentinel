@@ -16,8 +16,10 @@ import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.testing.MutableSettingsRepository
@@ -243,8 +245,10 @@ class WidgetProviderTest {
             trigger: RefreshTrigger
         ): AccountRefreshResult = error("not used")
 
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> =
-            refreshAll.invoke(trigger)
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult =
+            refreshAll.invoke(trigger).let { results ->
+                RefreshBatchResult("test-run", results, deriveRefreshBatchAggregate(results))
+            }
 
         override fun invalidate(accountId: String) = Unit
 

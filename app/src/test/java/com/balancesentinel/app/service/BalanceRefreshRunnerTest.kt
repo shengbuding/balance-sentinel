@@ -1,9 +1,11 @@
 package com.balancesentinel.app.service
 
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import com.balancesentinel.app.widget.AccountBalance
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.awaitCancellation
@@ -110,7 +112,7 @@ class BalanceRefreshRunnerTest {
         val events = mutableListOf<String>()
         val lifecycle = EventDeadlineLifecycle(events)
         val gateway = object : RefreshGateway {
-            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+            override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
                 events += "refresh"
                 throw IllegalStateException("failed")
             }
@@ -135,7 +137,7 @@ class BalanceRefreshRunnerTest {
         val events = mutableListOf<String>()
         val lifecycle = EventDeadlineLifecycle(events)
         val gateway = object : RefreshGateway {
-            override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+            override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
                 events += "refresh"
                 awaitCancellation()
             }
@@ -170,9 +172,9 @@ class BalanceRefreshRunnerTest {
     private class EventGateway(
         private val events: MutableList<String>
     ) : RefreshGateway {
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             events += "refresh"
-            return emptyList()
+            return batch(emptyList())
         }
 
         override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
@@ -202,11 +204,19 @@ class BalanceRefreshRunnerTest {
 
         override suspend fun refreshAll(
             trigger: RefreshTrigger
-        ): List<AccountRefreshResult> {
+        ): RefreshBatchResult {
             refreshAllCalls += trigger
-            return resultsList.toList().also { resultsList.clear() }
+            return resultsList.toList().also { resultsList.clear() }.let(::batch)
         }
 
         override fun invalidate(accountId: String) {}
+    }
+
+    private companion object {
+        fun batch(results: List<AccountRefreshResult>) = RefreshBatchResult(
+            runId = "test-run",
+            results = results,
+            aggregate = deriveRefreshBatchAggregate(results)
+        )
     }
 }

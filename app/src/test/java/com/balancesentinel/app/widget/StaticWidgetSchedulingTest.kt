@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import com.balancesentinel.app.data.repository.HEARTBEAT_GRACE_MS
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SCHEDULE_GRACE_MS
@@ -241,6 +243,12 @@ class StaticWidgetSchedulingTest {
     private companion object {
         const val INTERNAL_RECEIVER_CLASS =
             "com.balancesentinel.app.widget.WidgetRefreshReceiver"
+
+        fun batch(results: List<AccountRefreshResult>) = RefreshBatchResult(
+            runId = "test-run",
+            results = results,
+            aggregate = deriveRefreshBatchAggregate(results)
+        )
     }
 
     private fun schedulerPrefs() =
@@ -249,9 +257,9 @@ class StaticWidgetSchedulingTest {
     private class RecordingGateway(
         private val events: MutableList<String>
     ) : RefreshGateway {
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             events += "refresh:${trigger.name}"
-            return emptyList()
+            return batch(emptyList())
         }
 
         override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
@@ -264,7 +272,7 @@ class StaticWidgetSchedulingTest {
         private val events: MutableList<String>,
         private val failure: RuntimeException
     ) : RefreshGateway {
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             events += "refresh:${trigger.name}"
             throw failure
         }
@@ -278,7 +286,7 @@ class StaticWidgetSchedulingTest {
     private class CancellingGateway(
         private val events: MutableList<String>
     ) : RefreshGateway {
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> {
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
             events += "refresh:${trigger.name}"
             awaitCancellation()
         }
@@ -300,4 +308,5 @@ class StaticWidgetSchedulingTest {
             return ServiceStartResult.Started
         }
     }
+
 }

@@ -29,6 +29,7 @@ import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
 import com.balancesentinel.app.data.refresh.RefreshGateway
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -81,9 +82,12 @@ class WidgetRefreshExecution(
     private val gateway: RefreshGateway,
     private val serviceStarter: ServiceStarter
 ) {
-    suspend fun execute(context: Context, decision: WidgetRefreshDecision.Refresh) {
+    suspend fun execute(
+        context: Context,
+        decision: WidgetRefreshDecision.Refresh
+    ): RefreshBatchResult {
         try {
-            WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
+            return WidgetRefreshRunner(gateway).refreshNow(watchdog = decision.watchdog)
         } finally {
             if (decision.watchdog) {
                 RefreshScheduler.recordRestart(context)
@@ -241,7 +245,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     // ── Widget 渲染（汇总显示） ──
 
-    private fun updateWidget(
+    private suspend fun updateWidget(
         context: Context, manager: AppWidgetManager, widgetId: Int,
         options: Bundle = manager.getAppWidgetOptions(widgetId),
         accountState: AccountLoadState = AccountLoadState.Corrupt(
@@ -351,7 +355,10 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         // Sparkline 迷你趋势线（仅 expanded layout）
         if (isExpanded && agg != null) {
             try {
-                val summaries = kotlinx.coroutines.runBlocking { RoomHistoryRepository(WalletDatabaseProvider.get(context)).summaries(currency = agg.currency) }
+                val summaries = withContext(Dispatchers.IO) {
+                    RoomHistoryRepository(WalletDatabaseProvider.get(context))
+                        .summaries(currency = agg.currency)
+                }
                 if (summaries.size >= 2) {
                     val recent = summaries.takeLast(7)
                     val values = recent.map { it.close }

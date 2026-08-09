@@ -23,6 +23,7 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_3x1
 import com.balancesentinel.app.widget.StaticWidgetProvider_4x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 
 fun interface RefreshAlertDispatcher {
     fun check(account: AccountInfo, balance: BalanceEntry)
@@ -41,26 +42,29 @@ class RefreshResultCommitter(
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val roomPersistence: RoomRefreshPersistence =
         RoomRefreshPersistence(WalletDatabaseProvider.get(context)),
-    private val afterPersistenceWrite: () -> Unit = {}
+    private val afterPersistenceWrite: () -> Unit = {},
+    private val runRecorder: RefreshRunRecorder? = null
 ) : RefreshCommitter {
 
-    override fun commit(
+    override val recordsRunOutcome: Boolean = runRecorder != null
+
+    override suspend fun commit(
         request: RefreshRequest,
         fetched: BalanceFetchResult.Success,
         isLatest: () -> Boolean
-    ): AccountRefreshResult = RefreshMutationBarrier.withRefreshCommit {
-        DataMutationCoordinator.withMutation {
-        if (!isLatest()) return@withMutation stale(request.accountId)
+    ): AccountRefreshResult = RefreshMutationBarrier.withRefreshCommitSuspend {
+        DataMutationCoordinator.withMutationSuspend {
+        if (!isLatest()) return@withMutationSuspend stale(request.accountId)
         val account = accountStore.getAccount(request.accountId)
         if (
             account == null ||
             account.id != request.accountId ||
             account.revision != request.revision
         ) {
-            return@withMutation stale(request.accountId)
+            return@withMutationSuspend stale(request.accountId)
         }
         if (fetched.balance.balances.any { !it.hasPersistableAmounts() }) {
-            return@withMutation responseSchemaFailure(request.accountId)
+            return@withMutationSuspend responseSchemaFailure(request.accountId)
         }
 
         try {
@@ -71,7 +75,7 @@ class RefreshResultCommitter(
                 currentAccount.id != request.accountId ||
                 currentAccount.revision != request.revision
             ) {
-                return@withMutation stale(request.accountId)
+                return@withMutationSuspend stale(request.accountId)
             }
 
             try {
@@ -83,8 +87,34 @@ class RefreshResultCommitter(
                     entry.toRefreshLog(request.trigger, account, fetched.balance.isAvailable, fetched.completedAt)
                 }
                 val usage = UsageSnapshot(account.id, fetched.completedAt, records = emptyList())
-                kotlinx.coroutines.runBlocking {
-                    roomPersistence.commit(rawBatch, listOf(usage), logs, "refresh:${fetched.completedAt}", account.id)
+                val committed = AccountRefreshResult.Committed(
+                    request.accountId,
+                    fetched.balance,
+                    fetched.completedAt
+                )
+                val persistedResult = if (runRecorder != null && request.runId != null) {
+                    runRecorder.recordAccount(request.runId, request, committed) {
+                        roomPersistence.commit(
+                            rawBatch,
+                            listOf(usage),
+                            logs,
+                            "refresh:${fetched.completedAt}",
+                            account.id
+                        )
+                    }
+                } else {
+                    roomPersistence.commit(
+                        rawBatch,
+                        listOf(usage),
+                        logs,
+                        "refresh:${fetched.completedAt}",
+                        account.id
+                    )
+                    committed
+                }
+
+                if (persistedResult !is AccountRefreshResult.Committed) {
+                    return@withMutationSuspend persistedResult
                 }
 
                 // Cache/widget state is published only after the durable Room transaction succeeds.
@@ -98,8 +128,10 @@ class RefreshResultCommitter(
                 )
 
                 afterPersistenceWrite()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                return@withMutation persistenceFailure(request.accountId)
+                return@withMutationSuspend persistenceFailure(request.accountId)
             }
 
             fetched.balance.balances.forEach { entry ->
@@ -107,6 +139,8 @@ class RefreshResultCommitter(
             }
             runCatching { widgetRedrawNotifier.notifyRedraw() }
             AccountRefreshResult.Committed(request.accountId, fetched.balance)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             persistenceFailure(request.accountId)
         }

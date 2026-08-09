@@ -5,8 +5,10 @@ import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
+import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.testing.MutableSettingsRepository
 import com.balancesentinel.app.widget.AccountBalance
@@ -76,7 +78,8 @@ class BalanceRefreshServiceTest {
     private class EmptyGateway : RefreshGateway {
         override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult =
             AccountRefreshResult.Skipped(accountId, "unused")
-        override suspend fun refreshAll(trigger: RefreshTrigger): List<AccountRefreshResult> = emptyList()
+        override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult =
+            RefreshBatchResult("test-run", emptyList(), deriveRefreshBatchAggregate(emptyList()))
         override fun invalidate(accountId: String) = Unit
     }
 

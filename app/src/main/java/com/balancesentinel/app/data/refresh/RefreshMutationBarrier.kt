@@ -3,6 +3,8 @@ package com.balancesentinel.app.data.refresh
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 
 /** Shared lock joining Room account mutations to refresh persistence. */
@@ -27,6 +29,19 @@ object RefreshMutationBarrier {
         }
     }
 
+    /** Suspending counterpart used by Room-backed refresh commits. */
+    suspend fun <T> withRefreshCommitSuspend(block: suspend () -> T): T {
+        if (coroutineContext[PermitKey] != null) return block()
+        return withContext(Dispatchers.IO + PermitElement) {
+            permit.acquire()
+            try {
+                block()
+            } finally {
+                permit.release()
+            }
+        }
+    }
+
     suspend fun <T> withAccountMutation(
         accountId: String?,
         invalidate: (String) -> Unit = {},
@@ -44,4 +59,10 @@ object RefreshMutationBarrier {
                 permit.release()
             }
         }
+
+    private object PermitKey : CoroutineContext.Key<PermitElement>
+
+    private object PermitElement : CoroutineContext.Element {
+        override val key: CoroutineContext.Key<*> = PermitKey
+    }
 }

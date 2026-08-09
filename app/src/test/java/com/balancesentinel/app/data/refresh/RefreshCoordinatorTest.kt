@@ -85,7 +85,7 @@ class RefreshCoordinatorTest {
             backgroundScope
         )
 
-        val results = coordinator.refreshAll(RefreshTrigger.MANUAL_ALL)
+        val results = coordinator.refreshAll(RefreshTrigger.MANUAL_ALL).results
 
         assertTrue(results[0] is AccountRefreshResult.Failed)
         assertTrue(results[1] is AccountRefreshResult.Committed)
@@ -180,7 +180,7 @@ class RefreshCoordinatorTest {
     private class RecordingCommitter : RefreshCommitter {
         val committedBalances = mutableListOf<Double>()
 
-        override fun commit(
+        override suspend fun commit(
             request: RefreshRequest,
             fetched: BalanceFetchResult.Success,
             isLatest: () -> Boolean

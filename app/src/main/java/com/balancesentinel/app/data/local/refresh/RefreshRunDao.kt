@@ -33,7 +33,7 @@ interface RefreshRunDao {
             completed_at = :completedAt
         WHERE run_id = :runId AND account_id = :accountId AND state = 'RUNNING'
           AND (
-            :state = 'ACCOUNT_STALE'
+            :state != 'SUCCEEDED'
             OR EXISTS (
                 SELECT 1 FROM accounts
                 WHERE accounts.id = :accountId
@@ -81,7 +81,6 @@ interface RefreshRunDao {
             failure_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state NOT IN ('RUNNING', 'SUCCEEDED', 'CANCELLED')),
             cancelled_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = :runId AND state = 'CANCELLED')
         WHERE id = :runId
-          AND EXISTS (SELECT 1 FROM refresh_account_results WHERE run_id = :runId)
           AND NOT EXISTS (
               SELECT 1 FROM refresh_account_results
               WHERE run_id = :runId AND state = 'RUNNING'
@@ -92,10 +91,54 @@ interface RefreshRunDao {
 
     @Query(
         """
+        UPDATE refresh_account_results SET
+            state = 'CANCELLED',
+            error_category = 'CANCELLED',
+            error_code = 'CANCELLED',
+            retryable = 0,
+            retry_after_at = NULL,
+            completed_at = :completedAt
+        WHERE run_id = :runId AND state = 'RUNNING'
+        """
+    )
+    suspend fun cancelRunningResults(runId: String, completedAt: Long): Int
+
+    @Query(
+        """
         UPDATE refresh_runs SET state = 'INTERRUPTED', completed_at = :completedAt
         WHERE state = 'RUNNING'
           AND (owner_process_session_id IS NULL OR owner_process_session_id != :activeOwner)
         """
     )
     suspend fun interruptRunsWithoutOwner(activeOwner: String, completedAt: Long): Int
+
+    @Query(
+        """
+        UPDATE refresh_account_results SET
+            state = 'INTERRUPTED',
+            error_category = 'INTERRUPTED',
+            error_code = 'PROCESS_RESTARTED',
+            retryable = 0,
+            retry_after_at = NULL,
+            completed_at = :completedAt
+        WHERE state = 'RUNNING'
+          AND run_id IN (
+              SELECT id FROM refresh_runs
+              WHERE state = 'INTERRUPTED' AND completed_at = :completedAt
+          )
+        """
+    )
+    suspend fun interruptRunningResults(completedAt: Long): Int
+
+    @Query(
+        """
+        UPDATE refresh_runs SET
+            account_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = refresh_runs.id),
+            success_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = refresh_runs.id AND state = 'SUCCEEDED'),
+            failure_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = refresh_runs.id AND state NOT IN ('RUNNING', 'SUCCEEDED', 'CANCELLED')),
+            cancelled_count = (SELECT COUNT(*) FROM refresh_account_results WHERE run_id = refresh_runs.id AND state = 'CANCELLED')
+        WHERE state = 'INTERRUPTED' AND completed_at = :completedAt
+        """
+    )
+    suspend fun updateInterruptedCounts(completedAt: Long): Int
 }
