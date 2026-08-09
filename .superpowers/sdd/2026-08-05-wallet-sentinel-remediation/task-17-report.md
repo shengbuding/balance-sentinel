@@ -103,4 +103,3 @@ recovery actions.
 - Connected-device instrumentation was not run because this task only requires
   the JVM focus and Android-test compilation; no device was available in the
   workspace.
-
