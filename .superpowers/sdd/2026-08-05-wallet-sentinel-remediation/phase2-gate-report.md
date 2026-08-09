@@ -112,5 +112,6 @@ Room exception into an explicit `database fixture should be usable` assertion.
 ## Remaining Risk
 
 The original fault was load-sensitive, but both the deterministic receiver RED
-and the exact 932-test failing prefix now pass, followed by the exact full
-1,223-test gate. No unresolved functional gate failure remains.
+and the previously failing prefix now pass with 933 tests after adding the
+regression, followed by the exact full 1,223-test gate. No unresolved
+functional gate failure remains.
