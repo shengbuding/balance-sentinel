@@ -1,6 +1,9 @@
 package com.balancesentinel.app.service
 
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.AccountStoreRead
+import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
@@ -78,6 +81,50 @@ class BalanceRefreshRunnerTest {
         val result = runner.refreshAndReadCommitted()
 
         assertEquals("Must return committed data even after failure", staleBalances, result)
+    }
+
+    @Test
+    fun `service runner does not read stale cache after an empty account snapshot`() = runTest {
+        val staleBalances = listOf(
+            AccountBalance("deleted", "Deleted", "100.00", "USD", true, "", "", 1L)
+        )
+        val runner = BalanceRefreshRunner(
+            gateway = DistinguishingRefreshGateway(),
+            accountSnapshotReader = ServiceAccountSnapshotReader {
+                AccountStoreRead.Ready(emptyList())
+            },
+            committedBalanceReader = { staleBalances }
+        )
+
+        assertTrue(runner.refreshAndReadCommitted().isEmpty())
+    }
+
+    @Test
+    fun `service batch filters deleted accounts from the post-refresh snapshot`() = runTest {
+        val staleBalances = listOf(
+            AccountBalance("active", "Active", "100.00", "USD", true, "", "", 1L),
+            AccountBalance("deleted", "Deleted", "99.00", "USD", true, "", "", 1L)
+        )
+        var reads = 0
+        val runner = BalanceRefreshRunner(
+            gateway = DistinguishingRefreshGateway(),
+            accountSnapshotReader = ServiceAccountSnapshotReader {
+                reads += 1
+                if (reads == 1) {
+                    AccountStoreRead.Ready(listOf(
+                        AccountInfo("active", "Active", "key", ProviderType.DEEPSEEK, revision = 1),
+                        AccountInfo("deleted", "Deleted", "key", ProviderType.DEEPSEEK, revision = 1)
+                    ))
+                } else {
+                    AccountStoreRead.Ready(listOf(
+                        AccountInfo("active", "Active", "key", ProviderType.DEEPSEEK, revision = 1)
+                    ))
+                }
+            },
+            committedBalanceReader = { staleBalances }
+        )
+
+        assertEquals(listOf("active"), runner.refreshBatch().committedBalances.map { it.accountId })
     }
 
     @Test

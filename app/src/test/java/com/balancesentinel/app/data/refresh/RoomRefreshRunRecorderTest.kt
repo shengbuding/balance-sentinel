@@ -90,6 +90,24 @@ class RoomRefreshRunRecorderTest {
         )
     }
 
+    @Test
+    fun `late owner finish preserves interrupted run after startup recovery`() = runTest {
+        val account = account("acct-1")
+        database.accountDao().insertCreate(accountEntity(account))
+        val recorder = RoomRefreshRunRecorder(database)
+        val handle = recorder.begin(RefreshTrigger.SERVICE, listOf(account), 10L, "dead-owner")
+
+        recorder.recover("active-owner", 50L)
+        recorder.finish(handle.runId, 60L)
+
+        assertEquals(RefreshRunState.INTERRUPTED, database.refreshRunDao().getRun(handle.runId)?.state)
+        assertEquals(50L, database.refreshRunDao().getRun(handle.runId)?.completedAt)
+        assertEquals(
+            RefreshAccountResultState.INTERRUPTED,
+            database.refreshRunDao().getAccountResult(handle.runId, account.id)?.state
+        )
+    }
+
     private fun account(id: String) = AccountInfo(
         id = id,
         label = id,

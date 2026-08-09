@@ -80,7 +80,8 @@ class WidgetRefreshActionHandler {
 
 class WidgetRefreshExecution(
     private val gateway: RefreshGateway,
-    private val serviceStarter: ServiceStarter
+    private val serviceStarter: ServiceStarter,
+    private val resultConsumer: WidgetRefreshResultConsumer = WidgetRefreshResultConsumer { }
 ) {
     suspend fun execute(
         context: Context,
@@ -95,6 +96,10 @@ class WidgetRefreshExecution(
             }
         }
     }
+}
+
+fun interface WidgetRefreshResultConsumer {
+    suspend operator fun invoke(result: RefreshBatchResult)
 }
 
 object WidgetRefreshIntents {

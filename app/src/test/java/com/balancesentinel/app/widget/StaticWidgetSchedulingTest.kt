@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
+import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
@@ -154,6 +155,23 @@ class StaticWidgetSchedulingTest {
 
         assertEquals(listOf("refresh:WIDGET"), events)
         assertEquals(0, starter.calls)
+    }
+
+    @Test
+    fun `widget execution delivers the real batch result to its consumer`() = runTest {
+        val events = mutableListOf<String>()
+        val starter = RecordingStarter(events)
+        var observed: RefreshBatchResult? = null
+        val execution = WidgetRefreshExecution(
+            RecordingGateway(events),
+            starter,
+            WidgetRefreshResultConsumer { result -> observed = result }
+        )
+
+        execution.execute(context, WidgetRefreshDecision.Refresh(watchdog = false))
+
+        assertEquals("test-run", observed?.runId)
+        assertEquals(RefreshBatchState.FAILED, observed?.aggregate?.state)
     }
 
     @Test

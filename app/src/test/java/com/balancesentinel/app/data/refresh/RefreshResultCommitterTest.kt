@@ -132,6 +132,81 @@ class RefreshResultCommitterTest {
         assertEquals(0, db.eventLogDao().countLogs())
     }
 
+    @Test fun `post-commit projection failure does not downgrade durable success`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(database = db, clock = { 20L })
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            afterPersistenceWrite = { error("injected projection failure") },
+            runRecorder = recorder
+        )
+
+        val result = committer.commit(
+            RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            BalanceFetchResult.Success(balance("acct"), 15L)
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Committed)
+        assertEquals(
+            RefreshAccountResultState.SUCCEEDED,
+            db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
+        )
+    }
+
+    @Test fun `schema rejection records terminal ledger outcome`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(database = db, clock = { 20L })
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            runRecorder = recorder
+        )
+
+        val result = committer.commit(
+            RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            BalanceFetchResult.Success(
+                UnifiedBalance(
+                    ProviderType.DEEPSEEK,
+                    "acct",
+                    true,
+                    listOf(BalanceEntry("USD", Double.NaN))
+                ),
+                15L
+            )
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertEquals(
+            RefreshAccountResultState.RESPONSE_INVALID,
+            db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
+        )
+    }
+
     private fun accountInfo() = AccountInfo("acct", "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
 
     private fun balance(accountId: String) = UnifiedBalance(

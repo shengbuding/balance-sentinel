@@ -132,6 +132,31 @@ class WidgetProviderTest {
     }
 
     @Test
+    fun `configured stale account is not rendered as available`() {
+        StaticWidgetProvider.accountStateLoaderOverride = {
+            AccountLoadState.Ready(listOf(account("active")))
+        }
+        val manager = AppWidgetManager.getInstance(context)
+        val widgetId = Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        WidgetConfigStore.saveConfig(context, widgetId, "active", "CNY")
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "active", "Active", "25.00", "CNY", true, "", ""
+        )
+        BalanceWidgetDataStore.markAccountStale(context, "active", "timeout")
+        val provider = StaticWidgetProvider_2x1()
+        val pending = attachPendingResult(provider)
+
+        provider.onUpdate(context, manager, intArrayOf(widgetId))
+        val rendered = awaitWidgetStatus(manager, widgetId)
+        pending.future.get(2, TimeUnit.SECONDS)
+
+        assertEquals(context.getString(R.string.widget_status_insufficient), rendered)
+    }
+
+    @Test
     fun `receiver entrypoint returns while refresh is suspended and finishes afterward`() {
         StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
         val manager = AppWidgetManager.getInstance(context)
@@ -286,6 +311,26 @@ class WidgetProviderTest {
             Thread.sleep(10)
         }
         fail("widget balance did not match; last rendered value was '$rendered'")
+        return rendered
+    }
+
+    private fun awaitWidgetStatus(
+        manager: AppWidgetManager,
+        widgetId: Int
+    ): String {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        var rendered = ""
+        while (System.nanoTime() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            rendered = Shadows.shadowOf(manager).getViewFor(widgetId)
+                ?.findViewById<TextView>(R.id.widget_status)
+                ?.text
+                ?.toString()
+                .orEmpty()
+            if (rendered.isNotEmpty() && rendered != "--") return rendered
+            Thread.sleep(10)
+        }
+        fail("widget status did not render; last value was '$rendered'")
         return rendered
     }
 
