@@ -6,6 +6,8 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import com.balancesentinel.app.data.repository.CleanupReport
 import java.time.LocalDate
+import java.time.Clock
+import java.time.Instant
 import java.time.ZoneId
 
 /** Injectable cleanup boundary for date-ordered midnight maintenance. */
@@ -14,6 +16,7 @@ fun interface MidnightCleanupRunner {
 }
 
 object MidnightMaintenanceDependencies {
+    var clock: Clock = Clock.systemDefaultZone()
     var cleanupRunner: MidnightCleanupRunner = MidnightCleanupRunner { context, _, zoneId ->
         com.balancesentinel.app.data.repository.CleanupScheduler.runCleanup(
             context = context,
@@ -23,8 +26,10 @@ object MidnightMaintenanceDependencies {
     }
 
     var checkpointStoreFactory: (Context) -> MaintenanceCheckpointStore = ::RoomMaintenanceCheckpointStore
+    var reenqueue: ((Context) -> Unit)? = null
 
     fun reset() {
+        clock = Clock.systemDefaultZone()
         cleanupRunner = MidnightCleanupRunner { context, _, zoneId ->
             com.balancesentinel.app.data.repository.CleanupScheduler.runCleanup(
                 context = context,
@@ -33,6 +38,7 @@ object MidnightMaintenanceDependencies {
             )
         }
         checkpointStoreFactory = ::RoomMaintenanceCheckpointStore
+        reenqueue = null
     }
 }
 
@@ -43,4 +49,3 @@ class MidnightMaintenanceWorker(
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): ListenableWorker.Result = ListenableWorker.Result.success()
 }
-

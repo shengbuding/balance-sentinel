@@ -58,10 +58,14 @@ class MidnightWorkScheduler(
 
     fun cancel(context: Context) = runtime.cancelUnique(context, UNIQUE_WORK_NAME)
 
+    /** Computes the next local midnight without assuming a fixed 24-hour day. */
+    fun nextLocalMidnight(now: Instant = clock.instant(), zoneId: ZoneId = ZoneId.systemDefault()): Instant = now
+
     companion object {
         const val UNIQUE_WORK_NAME = "midnight-maintenance"
         const val KEY_ZONE_ID = "midnight_zone_id"
         const val KEY_RECONCILED_AT = "midnight_reconciled_at"
         const val KEY_TARGET_DATE = "midnight_target_date"
+        const val KEY_NOW_MILLIS = "midnight_now_millis"
     }
 }
