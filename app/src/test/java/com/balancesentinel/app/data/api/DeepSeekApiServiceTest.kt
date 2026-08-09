@@ -62,6 +62,7 @@ class DeepSeekApiServiceTest {
         )
         val response = BalanceResponse(isAvailable = true, balanceInfos = listOf(balanceInfo))
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(response))
             .setResponseCode(200))
 
@@ -178,6 +179,7 @@ class DeepSeekApiServiceTest {
             )
         )
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -192,6 +194,7 @@ class DeepSeekApiServiceTest {
     fun `getUsage with startDate builds correct URL`() {
         val usageResponse = UsageResponse(data = emptyList())
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -205,6 +208,7 @@ class DeepSeekApiServiceTest {
     fun `getUsage with both dates builds correct URL`() {
         val usageResponse = UsageResponse(data = emptyList())
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -218,6 +222,7 @@ class DeepSeekApiServiceTest {
     fun `getUsage with only endDate builds correct URL`() {
         val usageResponse = UsageResponse(data = emptyList())
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -231,6 +236,7 @@ class DeepSeekApiServiceTest {
     fun `getUsage without dates has no query params`() {
         val usageResponse = UsageResponse(data = emptyList())
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -287,6 +293,7 @@ class DeepSeekApiServiceTest {
     fun `getUsage handles empty data list`() {
         val usageResponse = UsageResponse(data = emptyList())
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 
@@ -307,6 +314,7 @@ class DeepSeekApiServiceTest {
         val response = BalanceResponse(isAvailable = true, balanceInfos = listOf(balanceInfo))
         server.enqueue(MockResponse().setResponseCode(500))
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(response))
             .setResponseCode(200))
 
@@ -321,6 +329,7 @@ class DeepSeekApiServiceTest {
         )
         server.enqueue(MockResponse().setResponseCode(500))
         server.enqueue(MockResponse()
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(usageResponse))
             .setResponseCode(200))
 

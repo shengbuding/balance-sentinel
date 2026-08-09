@@ -11,10 +11,16 @@ import okhttp3.ResponseBody
  */
 class BoundedResponseReader(
     private val maxBytes: Long,
-    private val endpoint: String = "response"
+    private val endpoint: String = "response",
+    private val limitReason: NetworkResponseException.Reason =
+        NetworkResponseException.Reason.DECODED_LIMIT
 ) {
     init {
         require(maxBytes > 0)
+        require(
+            limitReason == NetworkResponseException.Reason.ENCODED_LIMIT ||
+                limitReason == NetworkResponseException.Reason.DECODED_LIMIT
+        ) { "limitReason must describe an encoded or decoded budget" }
     }
 
     fun readBytes(body: ResponseBody): ByteArray = readBytes(body, expectedContentType = null)
@@ -28,7 +34,7 @@ class BoundedResponseReader(
         try {
             if (declaredLength >= 0L && declaredLength > maxBytes) {
                 throw NetworkResponseException(
-                    reason = NetworkResponseException.Reason.DECODED_LIMIT,
+                    reason = limitReason,
                     endpoint = endpoint,
                     limitBytes = maxBytes,
                     observedBytes = declaredLength
@@ -76,7 +82,7 @@ class BoundedResponseReader(
         if (declaredLength >= 0L && declaredLength > maxBytes) {
             if (closeInput) runCatching { input.close() }
             throw NetworkResponseException(
-                reason = NetworkResponseException.Reason.DECODED_LIMIT,
+                reason = limitReason,
                 endpoint = endpoint,
                 limitBytes = maxBytes,
                 observedBytes = declaredLength
@@ -113,7 +119,7 @@ class BoundedResponseReader(
         readBytes(input).toString(charset)
 
     private fun decodedLimit(observed: Long) = NetworkResponseException(
-        reason = NetworkResponseException.Reason.DECODED_LIMIT,
+        reason = limitReason,
         endpoint = endpoint,
         limitBytes = maxBytes,
         observedBytes = observed
@@ -126,14 +132,22 @@ class BoundedResponseReader(
     }
 
     private fun validateContentType(actual: String?, expected: String?) {
-        if (expected == null || actual == null) return
+        if (expected == null) return
+        if (actual == null) {
+            throw NetworkResponseException(
+                reason = NetworkResponseException.Reason.CONTENT_TYPE,
+                endpoint = endpoint,
+                responseContentType = null
+            )
+        }
         val expectedType = expected.substringBefore(';').trim().lowercase()
         val actualType = actual.substringBefore(';').trim().lowercase()
         if (expectedType == actualType) return
         val expectedJson = expectedType == "application/json" || expectedType.endsWith("+json")
         val actualJson = actualType == "application/json" || actualType.endsWith("+json")
-        val acceptedLegacyText = actualType == "text/plain" || actualType == "text/*"
-        if (!(expectedJson && (actualJson || acceptedLegacyText))) {
+        val expectedText = expectedType.startsWith("text/")
+        val actualText = actualType.startsWith("text/")
+        if (!((expectedJson && actualJson) || (expectedText && actualText))) {
             throw NetworkResponseException(
                 reason = NetworkResponseException.Reason.CONTENT_TYPE,
                 endpoint = endpoint,

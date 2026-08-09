@@ -75,6 +75,7 @@ class UpdateCheckerIntegrationTest {
         // Return a release with a non-semver tag
         server.enqueue(MockResponse()
             .setResponseCode(200)
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(listOf(
                 GitHubRelease(
                     tagName = "no-version-tag",
@@ -96,6 +97,7 @@ class UpdateCheckerIntegrationTest {
     fun `checkForUpdate returns UpdateAvailable when newer version exists`() = runTest {
         server.enqueue(MockResponse()
             .setResponseCode(200)
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(listOf(
                 GitHubRelease(
                     tagName = "v9.9.9",
@@ -121,6 +123,7 @@ class UpdateCheckerIntegrationTest {
         // So any semver tag should be "newer"
         server.enqueue(MockResponse()
             .setResponseCode(200)
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(listOf(
                 GitHubRelease(
                     tagName = "v0.0.1",
@@ -144,6 +147,7 @@ class UpdateCheckerIntegrationTest {
     fun `checkForUpdate skips prerelease and returns no stable`() = runTest {
         server.enqueue(MockResponse()
             .setResponseCode(200)
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(listOf(
                 GitHubRelease(
                     tagName = "v2.0.0-beta",
@@ -236,6 +240,7 @@ class UpdateCheckerIntegrationTest {
     fun `checkForUpdate returns UpToDate for equal versions`() = runTest {
         server.enqueue(MockResponse()
             .setResponseCode(200)
+            .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(listOf(
                 GitHubRelease(
                     tagName = "v1.0.0",

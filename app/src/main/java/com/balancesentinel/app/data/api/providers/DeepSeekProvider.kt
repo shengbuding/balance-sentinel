@@ -17,6 +17,7 @@ import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
+import com.balancesentinel.app.data.network.executeCancellable
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -84,7 +85,7 @@ class DeepSeekProvider(
             .get()
             .build()
 
-        getClientWithDebug(config.credentials["accountId"]).newCall(request).execute().use { response ->
+        getClientWithDebug(config.credentials["accountId"]).executeCancellable(request) { response ->
             val body = response.body?.let {
                 BoundedResponseReader(
                     ResponseBudget.DEEPSEEK.maxDecodedBytes,
@@ -98,11 +99,35 @@ class DeepSeekProvider(
                     }
                 )
             }.orEmpty()
+            val statusFailure = if (!response.isSuccessful) {
+                NetworkResponseException.httpStatus(
+                    endpoint = "deepseek-provider-usage",
+                    statusCode = response.code,
+                    limitedBody = body
+                )
+            } else {
+                null
+            }
             if (!response.isSuccessful) {
-                return@use when (response.code) {
-                    401 -> ProviderResult.Failure(ProviderError.AuthError(providerType, "API Key is invalid"))
-                    429 -> ProviderResult.Failure(ProviderError.RateLimitError(providerType))
-                    else -> ProviderResult.Failure(ProviderError.ServerError(providerType, response.code))
+                return@executeCancellable when (response.code) {
+                    401 -> ProviderResult.Failure(
+                        ProviderError.AuthError(
+                            providerType,
+                            "API Key is invalid",
+                            cause = statusFailure
+                        )
+                    )
+                    429 -> ProviderResult.Failure(
+                        ProviderError.RateLimitError(providerType, cause = statusFailure)
+                    )
+                    else -> ProviderResult.Failure(
+                        ProviderError.ServerError(
+                            providerType,
+                            response.code,
+                            responseBody = body,
+                            cause = statusFailure
+                        )
+                    )
                 }
             }
 

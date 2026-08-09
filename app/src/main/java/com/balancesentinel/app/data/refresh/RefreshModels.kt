@@ -25,7 +25,8 @@ sealed interface RefreshFailure {
     data class NetworkFailure(
         override val message: String,
         override val retryable: Boolean = true,
-        override val retryAfter: Long? = null
+        override val retryAfter: Long? = null,
+        val cause: Throwable? = null
     ) : RefreshFailure
     data class AuthenticationFailure(override val message: String) : RefreshFailure
     data class RateLimited(

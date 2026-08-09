@@ -7,7 +7,10 @@ import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
+import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
+import com.balancesentinel.app.data.network.executeCancellable
+import com.balancesentinel.app.data.network.originalCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -112,7 +115,8 @@ object UsageScriptExecutor {
         client: OkHttpClient,
         connectionUrlOverride: ((HttpUrl) -> HttpUrl)?,
         debuggable: Boolean = DebugCapturePolicy.enabled()
-    ): ScriptExecutionResult = withContext(Dispatchers.IO) {
+    ): ScriptExecutionResult = try {
+        withContext(Dispatchers.IO) {
         if (!script.enabled || !account.usageScriptEnabled) {
             return@withContext failure(
                 RefreshFailure.ScriptPolicyDenied("Custom balance script is disabled")
@@ -184,7 +188,13 @@ object UsageScriptExecutor {
         ) {
             is HttpFetchResult.Failure -> response.result
             is HttpFetchResult.Success -> extract(source, response.body, timeoutMillis)
+            is HttpFetchResult.Redirect -> failure(
+                RefreshFailure.NetworkFailure("Script redirect resolution failed")
+            )
         }
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled.originalCancellation()
     }
 
     suspend fun extractForTest(
@@ -336,7 +346,7 @@ object UsageScriptExecutor {
         )
     }
 
-    private fun sendHttpRequest(
+    private suspend fun sendHttpRequest(
         config: RequestConfig,
         initialUrl: HttpUrl,
         timeoutMillis: Long,
@@ -384,69 +394,83 @@ object UsageScriptExecutor {
                     }
                 }
                 .build()
-            val response = try {
-                requestClient.newCall(request).execute()
+            val result = try {
+                requestClient.executeCancellable(request) { response ->
+                    if (response.code in 300..399) {
+                        try {
+                            response.body?.let { body ->
+                                BoundedResponseReader(
+                                    ResponseBudget.SCRIPT.maxDecodedBytes,
+                                    "script-redirect"
+                                ).readBytes(body)
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            return@executeCancellable networkFailure(error)
+                        }
+                        if (redirectsFollowed >= MAX_REDIRECTS) {
+                            return@executeCancellable HttpFetchResult.Failure(
+                                failure(
+                                    RefreshFailure.ScriptPolicyDenied("Script redirect limit exceeded")
+                                )
+                            )
+                        }
+                        val location = response.header("Location")
+                            ?: return@executeCancellable networkFailure()
+                        val redirectTarget = logicalUrl.resolve(location)
+                            ?: return@executeCancellable HttpFetchResult.Failure(
+                                failure(
+                                    RefreshFailure.ScriptPolicyDenied("Script redirect URL is invalid")
+                                )
+                            )
+                        HttpFetchResult.Redirect(redirectTarget)
+                    } else {
+                        val body = try {
+                            response.body?.let { body ->
+                                BoundedResponseReader(
+                                    ResponseBudget.SCRIPT.maxDecodedBytes,
+                                    "script-response"
+                                ).readText(
+                                    body,
+                                    expectedContentType = if (response.isSuccessful) {
+                                        "application/json"
+                                    } else {
+                                        null
+                                    }
+                                )
+                            }.orEmpty()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            return@executeCancellable networkFailure(error)
+                        }
+                        if (!response.isSuccessful) {
+                            return@executeCancellable networkFailure(
+                                NetworkResponseException.httpStatus(
+                                    endpoint = "script-response",
+                                    statusCode = response.code,
+                                    limitedBody = body
+                                )
+                            )
+                        }
+                        if (body.isBlank()) return@executeCancellable networkFailure()
+                        HttpFetchResult.Success(body)
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                return networkFailure()
+            } catch (error: Exception) {
+                return networkFailure(error)
             }
-
-            var redirectTarget: HttpUrl? = null
-            response.use {
-                if (it.code in 300..399) {
-                    runCatching {
-                        it.body?.let { body ->
-                            BoundedResponseReader(
-                                ResponseBudget.SCRIPT.maxDecodedBytes,
-                                "script-redirect"
-                            ).readBytes(body)
-                        }
-                    }.getOrElse { failure ->
-                        if (failure is CancellationException) throw failure
-                        return networkFailure()
-                    }
-                    if (redirectsFollowed >= MAX_REDIRECTS) {
-                        return HttpFetchResult.Failure(
-                            failure(
-                                RefreshFailure.ScriptPolicyDenied("Script redirect limit exceeded")
-                            )
-                        )
-                    }
-                    val location = it.header("Location")
-                        ?: return networkFailure()
-                    redirectTarget = logicalUrl.resolve(location)
-                        ?: return HttpFetchResult.Failure(
-                            failure(
-                                RefreshFailure.ScriptPolicyDenied("Script redirect URL is invalid")
-                            )
-                        )
-                } else {
-                    val body = try {
-                        it.body?.let { body ->
-                            BoundedResponseReader(
-                                ResponseBudget.SCRIPT.maxDecodedBytes,
-                                "script-response"
-                            ).readText(
-                                body,
-                                expectedContentType = if (it.isSuccessful) {
-                                    "application/json"
-                                } else {
-                                    null
-                                }
-                            )
-                        }.orEmpty()
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        return networkFailure()
-                    }
-                    if (!it.isSuccessful || body.isBlank()) return networkFailure()
-                    return HttpFetchResult.Success(body)
+            when (result) {
+                is HttpFetchResult.Failure -> return result
+                is HttpFetchResult.Success -> return result
+                is HttpFetchResult.Redirect -> {
+                    redirectsFollowed++
+                    logicalUrl = result.target
                 }
             }
-            redirectsFollowed++
-            logicalUrl = checkNotNull(redirectTarget)
         }
     }
 
@@ -622,13 +646,14 @@ object UsageScriptExecutor {
 
     private fun failure(failure: RefreshFailure) = ScriptExecutionResult.Failure(failure)
 
-    private fun networkFailure() = HttpFetchResult.Failure(
-        failure(RefreshFailure.NetworkFailure("Script network request failed"))
+    private fun networkFailure(cause: Throwable? = null) = HttpFetchResult.Failure(
+        failure(RefreshFailure.NetworkFailure("Script network request failed", cause = cause))
     )
 
     private sealed interface HttpFetchResult {
         data class Success(val body: String) : HttpFetchResult
         data class Failure(val result: ScriptExecutionResult.Failure) : HttpFetchResult
+        data class Redirect(val target: HttpUrl) : HttpFetchResult
     }
 
     private const val CONFIGURATION_PHASE = "configuration"

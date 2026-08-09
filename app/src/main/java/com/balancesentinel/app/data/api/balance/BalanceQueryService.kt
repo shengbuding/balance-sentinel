@@ -8,8 +8,11 @@ import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.ResponseBudget
+import com.balancesentinel.app.data.network.executeCancellable
+import com.balancesentinel.app.data.network.originalCancellation
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
@@ -24,7 +27,7 @@ class BalanceQueryService(
     private val endpointOverride: ((BalanceContract) -> HttpUrl)? = null,
     private val debuggable: Boolean = DebugCapturePolicy.enabled()
 ) {
-    suspend fun queryBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> =
+    suspend fun queryBalance(config: ProviderConfig): ProviderResult<UnifiedBalance> = try {
         withContext(Dispatchers.IO) {
             if (config.apiKey.isBlank()) {
                 return@withContext ProviderResult.Failure(
@@ -46,7 +49,7 @@ class BalanceQueryService(
             val request = contract.request(config.apiKey, endpoint)
 
             try {
-                callFactoryFor(config, contract).newCall(request).execute().use { response ->
+                callFactoryFor(config, contract).executeCancellable(request) { response ->
                     val body = response.body?.let {
                         BoundedResponseReader(
                             ResponseBudget.BALANCE.maxDecodedBytes,
@@ -60,14 +63,28 @@ class BalanceQueryService(
                             }
                         )
                     }.orEmpty()
+                    val statusFailure = if (!response.isSuccessful) {
+                        NetworkResponseException.httpStatus(
+                            endpoint = "balance-${config.providerType.name.lowercase()}",
+                            statusCode = response.code,
+                            limitedBody = body
+                        )
+                    } else {
+                        null
+                    }
                     when (response.code) {
                         401 -> ProviderResult.Failure(
-                            ProviderError.AuthError(config.providerType, "API Key is invalid")
+                            ProviderError.AuthError(
+                                config.providerType,
+                                "API Key is invalid",
+                                cause = statusFailure
+                            )
                         )
                         429 -> ProviderResult.Failure(
                             ProviderError.RateLimitError(
                                 provider = config.providerType,
-                                retryAfter = response.header("Retry-After")?.toLongOrNull()
+                                retryAfter = response.header("Retry-After")?.toLongOrNull(),
+                                cause = statusFailure
                             )
                         )
                         in 200..299 -> {
@@ -87,12 +104,17 @@ class BalanceQueryService(
                             }
                         }
                         else -> ProviderResult.Failure(
-                            ProviderError.ServerError(config.providerType, response.code)
+                            ProviderError.ServerError(
+                                config.providerType,
+                                response.code,
+                                responseBody = body,
+                                cause = statusFailure
+                            )
                         )
                     }
                 }
             } catch (cancelled: CancellationException) {
-                throw cancelled
+                throw cancelled.originalCancellation()
             } catch (error: IOException) {
                 ProviderResult.Failure(ProviderError.NetworkError(config.providerType, error))
             } catch (error: Exception) {
@@ -104,12 +126,18 @@ class BalanceQueryService(
                 )
             }
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled.originalCancellation()
+    }
 
     internal fun callFactoryFor(
         config: ProviderConfig,
         contract: BalanceContract
     ): Call.Factory {
-        val client = callFactory as? OkHttpClient ?: return callFactory
+        val client = callFactory as? OkHttpClient
+            ?: throw IllegalArgumentException(
+                "Balance response budgets require an OkHttpClient Call.Factory"
+            )
         val boundedClient = if (client.networkInterceptors.none {
                 it is EncodedResponseLimitInterceptor
             }) {

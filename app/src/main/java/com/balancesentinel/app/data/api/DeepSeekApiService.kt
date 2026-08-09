@@ -142,14 +142,11 @@ class DeepSeekApiService(
             )
 
             if (!response.isSuccessful) {
-                if (response.code != 401 && response.code != 429) {
-                    throw IOException("API response error ${response.code}")
-                }
-                when (response.code) {
-                    401 -> throw IOException("API Key 无效 (401 Unauthorized)")
-                    429 -> throw IOException("请求过于频繁，请稍后再试 (429)")
-                    else -> throw IOException("API response error ${response.code}")
-                }
+                throw NetworkResponseException.httpStatus(
+                    endpoint = "deepseek-balance",
+                    statusCode = response.code,
+                    limitedBody = body
+                )
             }
 
             if (body.isBlank()) {
@@ -206,11 +203,11 @@ class DeepSeekApiService(
             )
 
             if (!response.isSuccessful) {
-                when (response.code) {
-                    401 -> throw IOException("API Key 无效 (401)")
-                    429 -> throw IOException("请求过于频繁 (429)")
-                    else -> throw IOException("API 返回错误 ${response.code}")
-                }
+                throw NetworkResponseException.httpStatus(
+                    endpoint = "deepseek-usage",
+                    statusCode = response.code,
+                    limitedBody = body
+                )
             }
 
             if (body.isBlank()) {

@@ -76,5 +76,16 @@ class NetworkResponseException(
             endpoint = endpoint,
             responseContentType = actual
         )
+
+        fun httpStatus(
+            endpoint: String,
+            statusCode: Int,
+            limitedBody: String?
+        ) = NetworkResponseException(
+            reason = Reason.HTTP_STATUS,
+            endpoint = endpoint,
+            statusCode = statusCode,
+            limitedBody = limitedBody
+        )
     }
 }

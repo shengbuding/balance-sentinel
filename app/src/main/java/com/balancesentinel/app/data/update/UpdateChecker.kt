@@ -6,6 +6,7 @@ import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
+import com.balancesentinel.app.data.network.executeCancellable
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -20,7 +21,11 @@ import java.util.concurrent.TimeUnit
 sealed class UpdateResult {
     data object UpToDate : UpdateResult()
     data class UpdateAvailable(val release: GitHubRelease, val currentVersion: String) : UpdateResult()
-    data class Error(val message: String, val isNetworkError: Boolean = false) : UpdateResult()
+    data class Error(
+        val message: String,
+        val isNetworkError: Boolean = false,
+        val cause: Throwable? = null
+    ) : UpdateResult()
 }
 
 class UpdateChecker {
@@ -47,7 +52,7 @@ class UpdateChecker {
             throw cancelled
         } catch (e: Exception) {
             Logger.w(TAG, "Failed to fetch releases: ${e.message}", e)
-            return UpdateResult.Error(classifyError(e), isNetworkError = true)
+            return UpdateResult.Error(classifyError(e), isNetworkError = true, cause = e)
         }
 
         val stableRelease = releases.firstOrNull { !it.prerelease }
@@ -69,7 +74,7 @@ class UpdateChecker {
     }
 
     @Throws(IOException::class)
-    private fun fetchReleases(): List<GitHubRelease> {
+    private suspend fun fetchReleases(): List<GitHubRelease> {
         val request = Request.Builder()
             .url("https://api.github.com/repos/shengbuding/balance-sentinel/releases")
             .header("Accept", "application/vnd.github+json")
@@ -87,7 +92,7 @@ class UpdateChecker {
             client
         }
 
-        boundedClient.newCall(request).execute().use { response ->
+        return boundedClient.executeCancellable(request) { response ->
             val body = response.body?.let {
                 BoundedResponseReader(
                     ResponseBudget.UPDATE.maxDecodedBytes,
@@ -106,7 +111,11 @@ class UpdateChecker {
             )
 
             if (!response.isSuccessful) {
-                throw IOException("GitHub API returned HTTP ${response.code}")
+                throw NetworkResponseException.httpStatus(
+                    endpoint = "update-releases",
+                    statusCode = response.code,
+                    limitedBody = body
+                )
             }
 
             if (body.isBlank()) {
@@ -116,7 +125,7 @@ class UpdateChecker {
                 )
             }
 
-            return json.decodeFromString<List<GitHubRelease>>(body)
+            json.decodeFromString<List<GitHubRelease>>(body)
         }
     }
 

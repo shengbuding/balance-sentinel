@@ -21,8 +21,9 @@ sealed class ProviderError(
      */
     class AuthError(
         provider: ProviderType,
-        message: String
-    ) : ProviderError(provider, message)
+        message: String,
+        cause: Throwable? = null
+    ) : ProviderError(provider, message, cause)
 
     /**
      * 速率限制（429等）
@@ -30,8 +31,9 @@ sealed class ProviderError(
     class RateLimitError(
         provider: ProviderType,
         val retryAfter: Long? = null,
-        message: String = "请求过于频繁"
-    ) : ProviderError(provider, message)
+        message: String = "请求过于频繁",
+        cause: Throwable? = null
+    ) : ProviderError(provider, message, cause)
 
     /**
      * 网络错误
@@ -47,8 +49,9 @@ sealed class ProviderError(
     class ServerError(
         provider: ProviderType,
         val code: Int,
-        @Suppress("UNUSED_PARAMETER") responseBody: String? = null
-    ) : ProviderError(provider, "Server error (HTTP $code)")
+        @Suppress("UNUSED_PARAMETER") responseBody: String? = null,
+        cause: Throwable? = null
+    ) : ProviderError(provider, "Server error (HTTP $code)", cause)
 
     /**
      * 配额超限

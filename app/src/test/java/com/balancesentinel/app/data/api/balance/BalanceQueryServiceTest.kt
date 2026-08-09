@@ -89,7 +89,11 @@ class BalanceQueryServiceTest {
     fun `configured script failure never falls through to a native contract`() = runTest {
         val server = MockWebServer().also { it.start() }
         try {
-            server.enqueue(MockResponse().setBody(resource("balance/stepfun.json")))
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(resource("balance/stepfun.json"))
+            )
             val service = BalanceQueryService(OkHttpClient(), endpointOverride(server))
             val provider = OpenAiCompatibleProvider(
                 ProviderType.CUSTOM,
@@ -134,7 +138,11 @@ class BalanceQueryServiceTest {
     fun `resolved contract sends exactly one request to its declared path`() = runTest {
         val server = MockWebServer().also { it.start() }
         try {
-            server.enqueue(MockResponse().setBody(resource("balance/stepfun.json")))
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(resource("balance/stepfun.json"))
+            )
             val service = BalanceQueryService(OkHttpClient(), endpointOverride(server))
             val result = service.queryBalance(config(ProviderType.CUSTOM, "https://api.stepfun.com/v1"))
 

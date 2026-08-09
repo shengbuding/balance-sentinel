@@ -1109,7 +1109,8 @@ internal fun interceptApiRequest(
             val bodyStream = inputStream ?: ByteArrayInputStream(ByteArray(0))
             BoundedResponseReader(
                 ResponseBudget.CONSOLE.maxEncodedBytes,
-                "console-encoded"
+                "console-encoded",
+                NetworkResponseException.Reason.ENCODED_LIMIT
             ).readBytes(
                 input = bodyStream,
                 declaredLength = connection.contentLengthLong,
