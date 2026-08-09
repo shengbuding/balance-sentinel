@@ -317,6 +317,54 @@ class DataExporterTest {
     }
 
     @Test
+    fun `applyImport replaces a continuity placeholder with a real summary`() {
+        val date = LocalDate.parse("2026-08-01")
+        val placeholder = DailySummary(
+            accountId = "continuity-import",
+            date = date.toString(),
+            currency = "USD",
+            open = 5f,
+            close = 5f,
+            consumed = 0f,
+            toppedUp = 0f,
+            avgBalance = 5f,
+            sampleCount = 0,
+            generatedAt = 10L
+        )
+        runBlocking {
+            ensureDataExporterRoomAccount(placeholder.accountId)
+            RoomHistoryRepository(database).insertContinuitySummariesIfNoRaw(
+                listOf(placeholder),
+                ZoneId.of("UTC")
+            )
+        }
+        val real = placeholder.copy(
+            open = 10f,
+            close = 9f,
+            consumed = 1f,
+            sampleCount = 2,
+            generatedAt = 20L
+        )
+
+        val result = applyDataExporterRoomImport(
+            DataExport(
+                exportedAt = "2026-08-02T00:00:00",
+                appVersion = "1.0",
+                dailySummaries = listOf(real),
+                rawRecords = emptyList()
+            )
+        )
+
+        assertEquals(1, result.summariesImported)
+        val persisted = runBlocking {
+            database.historyDao().countSummaryKey(real.date, real.accountId, real.currency) to
+                requireNotNull(database.historyDao().getSummary(real.date, real.accountId, real.currency)).closeBalance
+        }
+        assertEquals(1L, persisted.first)
+        assertEquals(9.0, persisted.second, 0.0)
+    }
+
+    @Test
     fun `applyImport merges new records without duplicates`() {
         val existing = RawRecord(
             accountId = "a1", timestamp = 1752009600000L, currency = "CNY",

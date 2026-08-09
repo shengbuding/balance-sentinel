@@ -252,7 +252,18 @@ object DataExporter {
                     val knownAccountIds = accountIds.filterTo(mutableSetOf()) { accountId ->
                         accountId.isNotBlank() && database.accountDao().get(accountId) != null
                     }
-                    val existingSummaries = history.summaries().mapTo(mutableSetOf()) { it.historyKey() }
+                    // Continuity placeholders are only read-model shadows. They
+                    // must not make a real imported summary look like a duplicate
+                    // (or suppress raw rows that arrive with that summary).
+                    val existingSummaries = database.historyDao()
+                        .publishedSummaryKeys(CONTINUITY_SUMMARY_IDENTITY)
+                        .mapTo(mutableSetOf()) { key ->
+                            HistoryKey(
+                                date = key.date,
+                                accountId = key.accountId,
+                                currency = key.currency.uppercase(Locale.ROOT)
+                            )
+                        }
                     val preImportSummaryKeys = existingSummaries.toSet()
                     val newSummaries = data.dailySummaries.filter { summary ->
                         summary.accountId in knownAccountIds && existingSummaries.add(summary.historyKey())
