@@ -28,6 +28,7 @@ object MidnightMaintenanceDependencies {
 
     var checkpointStoreFactory: (Context) -> MaintenanceCheckpointStore = ::RoomMaintenanceCheckpointStore
     var reenqueue: ((Context) -> Unit)? = null
+    var schedulerFactory: (Context) -> MidnightWorkScheduler = { MidnightWorkScheduler() }
 
     fun reset() {
         clock = Clock.systemDefaultZone()
@@ -41,6 +42,7 @@ object MidnightMaintenanceDependencies {
         }
         checkpointStoreFactory = ::RoomMaintenanceCheckpointStore
         reenqueue = null
+        schedulerFactory = { MidnightWorkScheduler() }
     }
 }
 

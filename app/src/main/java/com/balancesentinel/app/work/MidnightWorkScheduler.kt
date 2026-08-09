@@ -18,15 +18,35 @@ data class MidnightWorkSpec(
     val input: Map<String, String> = emptyMap()
 )
 
+enum class MidnightWorkPolicy {
+    KEEP,
+    REPLACE
+}
+
 /** Injectable WorkManager boundary for midnight maintenance. */
 interface MidnightWorkRuntime {
     fun enqueueOneShot(context: Context, spec: MidnightWorkSpec)
+
+    fun enqueueOneShot(
+        context: Context,
+        spec: MidnightWorkSpec,
+        policy: MidnightWorkPolicy
+    ) = enqueueOneShot(context, spec)
+
     fun cancelUnique(context: Context, uniqueName: String)
 }
 
 /** Production WorkManager implementation for the unique midnight chain. */
 object DefaultMidnightWorkRuntime : MidnightWorkRuntime {
     override fun enqueueOneShot(context: Context, spec: MidnightWorkSpec) {
+        enqueueOneShot(context, spec, MidnightWorkPolicy.REPLACE)
+    }
+
+    override fun enqueueOneShot(
+        context: Context,
+        spec: MidnightWorkSpec,
+        policy: MidnightWorkPolicy
+    ) {
         val input = Data.Builder().apply {
             spec.input.forEach { (key, value) -> putString(key, value) }
         }.build()
@@ -38,7 +58,10 @@ object DefaultMidnightWorkRuntime : MidnightWorkRuntime {
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(
                 spec.uniqueName,
-                ExistingWorkPolicy.REPLACE,
+                when (policy) {
+                    MidnightWorkPolicy.KEEP -> ExistingWorkPolicy.KEEP
+                    MidnightWorkPolicy.REPLACE -> ExistingWorkPolicy.REPLACE
+                },
                 request
             )
     }
