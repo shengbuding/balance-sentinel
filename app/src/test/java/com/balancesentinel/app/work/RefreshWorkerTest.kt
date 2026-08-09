@@ -26,14 +26,19 @@ import org.robolectric.RobolectricTestRunner
 class RefreshWorkerTest {
     private lateinit var context: Context
     private val scheduledRetries = mutableListOf<RetrySchedule>()
+    private val cancelledRetries = mutableListOf<String>()
+    private val observedTriggers = mutableListOf<RefreshTrigger>()
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         scheduledRetries.clear()
+        cancelledRetries.clear()
+        observedTriggers.clear()
         RefreshWorkerDependencies.gatewayFactory = { fakeGateway() }
         RefreshWorkerDependencies.retryPlanner = RefreshRetryPlanner(jitterMillis = { 0L })
         RefreshWorkerDependencies.retryScheduler = { scheduledRetries += it }
+        RefreshWorkerDependencies.retryCanceller = { _, accountId -> cancelledRetries += accountId }
     }
 
     @After
@@ -49,6 +54,8 @@ class RefreshWorkerTest {
 
         assertEquals(ListenableWorker.Result.success(), result)
         assertEquals(listOf(RetrySchedule("network", attempt = 1, delayMillis = 30_000L)), scheduledRetries)
+        assertEquals(listOf("success", "permanent"), cancelledRetries)
+        assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
     }
 
     @Test
@@ -58,6 +65,7 @@ class RefreshWorkerTest {
             object : RefreshGateway by fakeGateway() {
                 override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult {
                     refreshedAccount = accountId
+                    observedTriggers += trigger
                     return AccountRefreshResult.Failed(
                         accountId,
                         RefreshFailure.AuthenticationFailure("bad credential")
@@ -74,13 +82,18 @@ class RefreshWorkerTest {
         assertEquals(ListenableWorker.Result.success(), result)
         assertEquals("permanent", refreshedAccount)
         assertTrue(scheduledRetries.isEmpty())
+        assertEquals(listOf("permanent"), cancelledRetries)
+        assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
     }
 
     private fun fakeGateway(): RefreshGateway = object : RefreshGateway {
-        override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult =
-            AccountRefreshResult.Committed(accountId, fakeBalance())
+        override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult {
+            observedTriggers += trigger
+            return AccountRefreshResult.Committed(accountId, fakeBalance())
+        }
 
         override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
+            observedTriggers += trigger
             val results = listOf(
                 AccountRefreshResult.Committed("success", fakeBalance()),
                 AccountRefreshResult.Failed(

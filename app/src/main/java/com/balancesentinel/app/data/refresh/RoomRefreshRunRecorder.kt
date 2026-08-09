@@ -231,6 +231,7 @@ class RoomRefreshRunRecorder(
     private fun RefreshTrigger.toRunSource(): RefreshRunSource = when (this) {
         RefreshTrigger.MANUAL_ALL, RefreshTrigger.MANUAL_ACCOUNT -> RefreshRunSource.MANUAL
         RefreshTrigger.SERVICE -> RefreshRunSource.FOREGROUND
+        RefreshTrigger.BACKGROUND -> RefreshRunSource.BACKGROUND
         RefreshTrigger.WIDGET, RefreshTrigger.WATCHDOG -> RefreshRunSource.WIDGET
     }
 

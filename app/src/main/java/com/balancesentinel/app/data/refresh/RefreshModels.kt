@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
-enum class RefreshTrigger { MANUAL_ALL, MANUAL_ACCOUNT, SERVICE, WIDGET, WATCHDOG }
+enum class RefreshTrigger { MANUAL_ALL, MANUAL_ACCOUNT, SERVICE, BACKGROUND, WIDGET, WATCHDOG }
 
 sealed interface RefreshFailure {
     val message: String

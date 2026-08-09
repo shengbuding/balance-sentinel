@@ -81,6 +81,24 @@ class RefreshWorkSchedulerTest {
     }
 
     @Test
+    fun `account retry can be cancelled after success or permanent failure`() {
+        scheduler.scheduleRetry(context, RetrySchedule("account", attempt = 1, delayMillis = 1_000L))
+        scheduler.cancelRetries(context, "account")
+
+        assertTrue(runtime.oneShot.isEmpty())
+        assertEquals(listOf(RefreshWorkScheduler.retryWorkName("account")), runtime.cancelledNames)
+    }
+
+    @Test
+    fun `disabling background refresh cancels queued account retries`() {
+        scheduler.scheduleRetry(context, RetrySchedule("account", attempt = 1, delayMillis = 1_000L))
+        scheduler.reconcile(context, backgroundIntervalSeconds = null)
+
+        assertTrue(runtime.oneShot.isEmpty())
+        assertEquals(1, runtime.cancelAllRetriesCalls)
+    }
+
+    @Test
     fun `first reconcile cancels legacy widget alarm pending intent`() {
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val legacy = PendingIntent.getBroadcast(
@@ -116,6 +134,8 @@ class RefreshWorkSchedulerTest {
 private class RecordingWorkRuntime : WorkRuntime {
     val periodic = linkedMapOf<String, PeriodicWorkSpec>()
     val oneShot = linkedMapOf<String, OneShotWorkSpec>()
+    val cancelledNames = mutableListOf<String>()
+    var cancelAllRetriesCalls: Int = 0
 
     override fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec) {
         periodic[spec.uniqueName] = spec
@@ -126,8 +146,17 @@ private class RecordingWorkRuntime : WorkRuntime {
     }
 
     override fun cancelUnique(context: Context, uniqueName: String) {
+        cancelledNames += uniqueName
         periodic.remove(uniqueName)
         oneShot.remove(uniqueName)
+    }
+
+    override fun cancelAllRetries(context: Context) {
+        cancelAllRetriesCalls += 1
+        oneShot.keys
+            .filter { it.startsWith(RefreshWorkScheduler.RETRY_WORK_PREFIX) }
+            .toList()
+            .forEach(oneShot::remove)
     }
 
     fun clear() {

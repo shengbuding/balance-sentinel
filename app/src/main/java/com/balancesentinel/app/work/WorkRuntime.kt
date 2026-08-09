@@ -35,6 +35,7 @@ interface WorkRuntime {
     fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec)
     fun enqueueOneShot(context: Context, spec: OneShotWorkSpec)
     fun cancelUnique(context: Context, uniqueName: String)
+    fun cancelAllRetries(context: Context)
 }
 
 object DefaultWorkRuntime : WorkRuntime {
@@ -81,4 +82,6 @@ object DefaultWorkRuntime : WorkRuntime {
     override fun cancelUnique(context: Context, uniqueName: String) {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(uniqueName)
     }
+
+    override fun cancelAllRetries(context: Context) = Unit
 }

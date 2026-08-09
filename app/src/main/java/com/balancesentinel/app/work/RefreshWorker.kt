@@ -16,6 +16,11 @@ object RefreshWorkerDependencies {
     var gatewayFactory: (Context) -> RefreshGateway = RefreshRuntime::from
     var retryPlanner: RefreshRetryPlanner = RefreshRetryPlanner()
     var retryScheduler: ((RetrySchedule) -> Unit)? = null
+    var retryCanceller: ((Context, String) -> Unit)? = null
+
+    fun cancelRetry(context: Context, accountId: String) {
+        retryCanceller?.invoke(context, accountId) ?: RefreshWorkScheduler().cancelRetries(context, accountId)
+    }
 
     fun scheduleRetry(context: Context, schedule: RetrySchedule) {
         val callback = retryScheduler
@@ -30,6 +35,7 @@ object RefreshWorkerDependencies {
         gatewayFactory = RefreshRuntime::from
         retryPlanner = RefreshRetryPlanner()
         retryScheduler = null
+        retryCanceller = null
     }
 }
 
