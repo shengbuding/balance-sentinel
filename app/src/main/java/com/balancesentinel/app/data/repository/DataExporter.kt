@@ -463,7 +463,12 @@ object DataExporter {
                 val currency = summary.currency.uppercase(Locale.ROOT)
                 val key = summary.historyKey()
                 if (known(summary.accountId) &&
-                    database.historyDao().countSummaryKey(summary.date, summary.accountId, currency) == 0L
+                    database.historyDao().countPublishedSummaryKey(
+                        summary.date,
+                        summary.accountId,
+                        currency,
+                        CONTINUITY_SUMMARY_IDENTITY
+                    ) == 0L
                 ) {
                     fresh += summary
                     importedSummaryKeys += key
@@ -535,7 +540,13 @@ object DataExporter {
         }
 
         private suspend fun isSummaryOnly(key: HistoryKey): Boolean {
-            if (database.historyDao().countSummaryKey(key.date, key.accountId, key.currency) == 0L) return false
+            if (database.historyDao().countPublishedSummaryKey(
+                    key.date,
+                    key.accountId,
+                    key.currency,
+                    CONTINUITY_SUMMARY_IDENTITY
+                ) == 0L
+            ) return false
             val date = LocalDate.parse(key.date)
             val start = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
             val end = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()

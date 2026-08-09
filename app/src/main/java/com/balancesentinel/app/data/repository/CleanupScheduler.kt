@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
 import com.balancesentinel.app.data.model.DailySummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -124,12 +125,16 @@ object CleanupScheduler {
                     repository.archiveAndDelete(summaries, ids)
                     archived += date
                     deleted += ids.size
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (throwable: Exception) {
                     failures += failure(date, CleanupStage.WRITE_SUMMARY, throwable.message ?: "Room transaction failed")
                 }
             }
         try {
             deleted += repository.purgeExpiredSummarizedRecords(now, zoneId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (throwable: Exception) {
             failures += failure(
                 date = onlyDate ?: today.toString(),
@@ -156,7 +161,7 @@ object CleanupScheduler {
             }
             generated
         } else emptyList()
-        if (continuity.isNotEmpty()) repository.upsertSummaries(continuity)
+        if (continuity.isNotEmpty()) repository.insertContinuitySummariesIfNoRaw(continuity, zoneId)
         val retained = repository.countRecords().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         return CleanupReport(archived, deleted, retained, failures)
     }

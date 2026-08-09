@@ -8,6 +8,7 @@ import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
+import com.balancesentinel.app.data.model.DailySummary
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -211,6 +212,73 @@ class CleanupSchedulerTest {
 
         assertEquals(0, report.deletedRecordCount)
         assertEquals(1, db.historyDao().countRecords())
+    }
+
+    @Test fun `continuity placeholder yields to a real immutable publication in either order`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        val repository = RoomHistoryRepository(db)
+        val placeholder = DailySummary(
+            accountId = "acct", date = "1970-01-01", currency = "USD",
+            open = 5f, close = 5f, consumed = 0f, toppedUp = 0f, granted = 0f,
+            avgBalance = 5f, sampleCount = 0, toppedUpBalanceClose = 2f,
+            grantedBalanceClose = 1f, generatedAt = 10L
+        )
+        val real = placeholder.copy(
+            open = 10f, close = 9f, consumed = 1f, sampleCount = 2, generatedAt = 20L
+        )
+
+        repository.insertContinuitySummariesIfNoRaw(listOf(placeholder), ZoneOffset.UTC)
+        repository.archiveAndDelete(listOf(real), emptyList())
+        assertEquals(1L, db.historyDao().countSummaryKey("1970-01-01", "acct", "USD"))
+        assertEquals(9.0, requireNotNull(db.historyDao().getSummary("1970-01-01", "acct", "USD")).closeBalance, 0.0)
+
+        db.historyDao().clearSummaries()
+        repository.archiveAndDelete(listOf(real), emptyList())
+        repository.insertContinuitySummariesIfNoRaw(listOf(placeholder), ZoneOffset.UTC)
+        assertEquals(1L, db.historyDao().countSummaryKey("1970-01-01", "acct", "USD"))
+        assertEquals(9.0, requireNotNull(db.historyDao().getSummary("1970-01-01", "acct", "USD")).closeBalance, 0.0)
+    }
+
+    @Test fun `continuity-only placeholder never authorizes expired raw deletion`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(
+            listOf(BalanceRecordEntity(accountId = "acct", currency = "USD", recordedAt = 1_000L, totalBalance = 10.0, source = BalanceRecordSource.REFRESH))
+        )
+        db.historyDao().insertSummariesIfAbsent(
+            listOf(
+                com.balancesentinel.app.data.local.history.DailySummaryEntity(
+                    date = "1970-01-01", accountId = "acct", currency = "USD",
+                    openBalance = 10.0, closeBalance = 10.0, consumedBalance = 0.0,
+                    toppedUpBalance = 0.0, grantedBalance = 0.0, averageBalance = 10.0,
+                    sampleCount = 0, generatedAt = 1L,
+                    identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+                )
+            )
+        )
+
+        val deleted = RoomHistoryRepository(db).purgeExpiredSummarizedRecords(3 * 86_400_000L, ZoneOffset.UTC)
+
+        assertEquals(0, deleted)
+        assertEquals(1, db.historyDao().countRecords())
+    }
+
+    @Test fun `canonical readers and export prefer a real summary over continuity shadow`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        val base = com.balancesentinel.app.data.local.history.DailySummaryEntity(
+            date = "1970-01-01", accountId = "acct", currency = "USD",
+            openBalance = 5.0, closeBalance = 5.0, consumedBalance = 0.0,
+            toppedUpBalance = 0.0, grantedBalance = 0.0, averageBalance = 5.0,
+            sampleCount = 0, generatedAt = 20L,
+            identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+        )
+        db.historyDao().insertSummariesIfAbsent(
+            listOf(base, base.copy(closeBalance = 9.0, sampleCount = 2, generatedAt = 10L, identityDiscriminator = ""))
+        )
+
+        assertEquals(9.0, requireNotNull(db.historyDao().getSummary("1970-01-01", "acct", "USD")).closeBalance, 0.0)
+        val exported = db.historyDao().exportSummaryPage(offset = 0, limit = 10)
+        assertEquals(1, exported.size)
+        assertEquals(9.0, exported.single().closeBalance, 0.0)
     }
 
     private class RoomTestContext(base: Context, val database: WalletDatabase) : android.content.ContextWrapper(base)

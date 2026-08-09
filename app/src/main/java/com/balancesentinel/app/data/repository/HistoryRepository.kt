@@ -15,6 +15,9 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.Currency
 
+/** Reserved identity for a continuity placeholder, never a cleanup publication. */
+internal const val CONTINUITY_SUMMARY_IDENTITY = "__continuity__"
+
 interface HistoryRepository {
     suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int
 
@@ -205,8 +208,48 @@ open class RoomHistoryRepository(
         summaries: List<DailySummary>,
         recordIds: List<Long>
     ) = database.withTransaction {
+        summaries.forEach { summary ->
+            database.historyDao().deleteSummaryIdentity(
+                date = summary.date,
+                accountId = summary.accountId,
+                currency = requireIsoCurrency(summary.currency),
+                identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+            )
+        }
         database.historyDao().insertSummariesIfAbsent(summaries.map { it.toEntity() })
         recordIds.chunked(500).forEach { ids -> database.historyDao().deleteByIds(ids) }
+    }
+
+    /**
+     * Publishes continuity placeholders without allowing a stale full cleanup
+     * to race a date worker. The raw-row check and insert share one Room
+     * transaction, while real cleanup rows use the empty identity and can
+     * replace/remove a placeholder in their own transaction.
+     */
+    internal suspend fun insertContinuitySummariesIfNoRaw(
+        summaries: List<DailySummary>,
+        zoneId: java.time.ZoneId
+    ) = database.withTransaction {
+        summaries.forEach { summary ->
+            val currency = requireIsoCurrency(summary.currency)
+            if (database.historyDao().countPublishedSummaryKey(
+                    summary.date,
+                    summary.accountId,
+                    currency,
+                    CONTINUITY_SUMMARY_IDENTITY
+                ) > 0L
+            ) {
+                return@forEach
+            }
+            val date = java.time.LocalDate.parse(summary.date)
+            val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+            if (database.historyDao().countRecordsForDay(summary.accountId, currency, from, to) == 0L) {
+                database.historyDao().insertSummariesIfAbsent(
+                    listOf(summary.toEntity(CONTINUITY_SUMMARY_IDENTITY))
+                )
+            }
+        }
     }
 
     /**
@@ -223,17 +266,15 @@ open class RoomHistoryRepository(
             val today = java.time.Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
             val cutoff = now - 24L * 3_600_000L
             database.historyDao()
-                .querySummaries(null, null, null, null)
+                .publishedSummaryKeys(CONTINUITY_SUMMARY_IDENTITY)
                 .asSequence()
-                .map { it.date to (it.accountId to it.currency) }
-                .distinct()
-                .mapNotNull { (serializedDate, key) ->
-                    val date = runCatching { java.time.LocalDate.parse(serializedDate) }.getOrNull()
+                .mapNotNull { key ->
+                    val date = runCatching { java.time.LocalDate.parse(key.date) }.getOrNull()
                         ?: return@mapNotNull null
                     if (date == today) return@mapNotNull null
                     val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
                     val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
-                    Triple(from, to, key)
+                    Triple(from, to, key.accountId to key.currency)
                 }
                 .sumOf { (from, to, key) ->
                     database.historyDao().deleteExpiredForDate(
@@ -360,7 +401,27 @@ open class RoomHistoryRepository(
 
     override suspend fun upsertSummaries(summaries: List<DailySummary>) {
         summaries.chunked(HistoryRepository.INSERT_CHUNK_SIZE).forEach { chunk ->
+            chunk.forEach { summary ->
+                database.historyDao().deleteSummaryIdentity(
+                    date = summary.date,
+                    accountId = summary.accountId,
+                    currency = requireIsoCurrency(summary.currency),
+                    identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+                )
+            }
             database.historyDao().upsertSummaries(chunk.map { it.toEntity() })
+            // A stale continuity transaction may have committed between the
+            // first delete and this publication. Remove that harmless shadow
+            // after the real row is durable; callers that already own a Room
+            // transaction retain their existing atomic boundary.
+            chunk.forEach { summary ->
+                database.historyDao().deleteSummaryIdentity(
+                    date = summary.date,
+                    accountId = summary.accountId,
+                    currency = requireIsoCurrency(summary.currency),
+                    identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+                )
+            }
         }
     }
 }
@@ -377,7 +438,7 @@ private fun BalanceRecordEntity.toHistoryRecord() = HistoryRecord(
     )
 )
 
-private fun DailySummary.toEntity() = DailySummaryEntity(
+private fun DailySummary.toEntity(identityDiscriminator: String = "") = DailySummaryEntity(
     date = date,
     accountId = accountId,
     currency = requireIsoCurrency(currency),
@@ -390,7 +451,8 @@ private fun DailySummary.toEntity() = DailySummaryEntity(
     sampleCount = sampleCount,
     toppedUpBalanceClose = toppedUpBalanceClose.toDouble(),
     grantedBalanceClose = grantedBalanceClose.toDouble(),
-    generatedAt = generatedAt
+    generatedAt = generatedAt,
+    identityDiscriminator = identityDiscriminator
 )
 
 private fun DailySummaryEntity.toDomain() = DailySummary(

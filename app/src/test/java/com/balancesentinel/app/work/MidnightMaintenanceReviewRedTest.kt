@@ -126,6 +126,24 @@ class MidnightMaintenanceReviewRedTest {
     }
 
     @Test
+    fun `catch-up immediate request carries fresh clock`() = runTest {
+        store.lastCompletedDate = LocalDate.of(2026, 8, 7)
+        val fresh = Instant.parse("2026-08-10T18:00:00Z")
+        MidnightMaintenanceDependencies.clock = Clock.fixed(fresh, ZoneId.of("UTC"))
+
+        assertEquals(
+            ListenableWorker.Result.success(),
+            worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork()
+        )
+
+        assertEquals(
+            fresh.toEpochMilli().toString(),
+            runtime.specs[MidnightWorkScheduler.UNIQUE_WORK_NAME]
+                ?.input?.get(MidnightWorkScheduler.KEY_NOW_MILLIS)
+        )
+    }
+
+    @Test
     fun `checkpoint failure becomes retry instead of escaping worker`() = runTest {
         store.readFailure = IllegalStateException("transient checkpoint")
         val outcome = runCatching { worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork() }

@@ -54,6 +54,14 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
         summaries: List<com.balancesentinel.app.data.model.DailySummary>,
         recordIds: List<Long>
     ) = database.withTransaction {
+        summaries.forEach { summary ->
+            database.historyDao().deleteSummaryIdentity(
+                date = summary.date,
+                accountId = summary.accountId,
+                currency = summary.currency.uppercase(),
+                identityDiscriminator = CONTINUITY_SUMMARY_IDENTITY
+            )
+        }
         database.historyDao().upsertSummaries(summaries.map { it.toEntity() })
         recordIds.chunked(500).forEach { ids -> database.historyDao().deleteByIds(ids) }
     }

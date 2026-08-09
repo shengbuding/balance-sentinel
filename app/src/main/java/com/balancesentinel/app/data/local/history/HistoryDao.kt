@@ -25,6 +25,12 @@ data class HistoryAggregateProjection(
     @ColumnInfo(name = "granted_balance_close") val grantedBalanceClose: Double?
 )
 
+data class SummaryKeyProjection(
+    val date: String,
+    @ColumnInfo(name = "account_id") val accountId: String,
+    val currency: String
+)
+
 @Dao
 interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -44,11 +50,54 @@ interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertSummariesIfAbsent(summaries: List<DailySummaryEntity>): List<Long>
 
-    @Query("SELECT * FROM daily_summaries ORDER BY date, account_id, currency, identity_discriminator LIMIT :limit OFFSET :offset")
+    @Query(
+        "DELETE FROM daily_summaries WHERE date = :date AND account_id = :accountId " +
+            "AND currency = :currency AND identity_discriminator = :identityDiscriminator"
+    )
+    suspend fun deleteSummaryIdentity(
+        date: String,
+        accountId: String,
+        currency: String,
+        identityDiscriminator: String
+    ): Int
+
+    @Query(
+        """
+        SELECT summary.* FROM daily_summaries AS summary
+        WHERE summary.identity_discriminator = (
+            SELECT candidate.identity_discriminator
+            FROM daily_summaries AS candidate
+            WHERE candidate.date = summary.date
+              AND candidate.account_id = summary.account_id
+              AND candidate.currency = summary.currency
+            ORDER BY CASE
+                WHEN candidate.identity_discriminator = '' THEN 0
+                WHEN candidate.identity_discriminator = '__continuity__' THEN 2
+                ELSE 1
+              END,
+              candidate.generated_at DESC, candidate.identity_discriminator
+            LIMIT 1
+        )
+        ORDER BY summary.date, summary.account_id, summary.currency
+        LIMIT :limit OFFSET :offset
+        """
+    )
     suspend fun exportSummaryPage(offset: Int, limit: Int): List<DailySummaryEntity>
 
     @Query("SELECT COUNT(*) FROM daily_summaries WHERE date = :date AND account_id = :accountId AND currency = :currency")
     suspend fun countSummaryKey(date: String, accountId: String, currency: String): Long
+
+    @Query(
+        "SELECT COUNT(*) FROM daily_summaries " +
+            "WHERE date = :date AND account_id = :accountId AND currency = :currency " +
+            "AND identity_discriminator != :excludedIdentity"
+    )
+    suspend fun countPublishedSummaryKey(
+        date: String,
+        accountId: String,
+        currency: String,
+        excludedIdentity: String
+    ): Long
 
     @Query(
         """
@@ -354,6 +403,12 @@ interface HistoryDao {
     @Query("SELECT DISTINCT currency FROM balance_records ORDER BY currency")
     suspend fun distinctCurrencies(): List<String>
 
+    @Query(
+        "SELECT DISTINCT date, account_id, currency FROM daily_summaries " +
+            "WHERE identity_discriminator != :excludedIdentity"
+    )
+    suspend fun publishedSummaryKeys(excludedIdentity: String): List<SummaryKeyProjection>
+
     @Query("DELETE FROM balance_records WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive")
     suspend fun deleteRawForDate(fromInclusive: Long, toExclusive: Long): Int
 
@@ -378,7 +433,11 @@ interface HistoryDao {
         """
         SELECT * FROM daily_summaries
         WHERE date = :date AND account_id = :accountId AND currency = :currency
-        ORDER BY CASE WHEN identity_discriminator = '' THEN 0 ELSE 1 END,
+        ORDER BY CASE
+            WHEN identity_discriminator = '' THEN 0
+            WHEN identity_discriminator = '__continuity__' THEN 2
+            ELSE 1
+          END,
             generated_at DESC, identity_discriminator
         LIMIT 1
         """
@@ -398,7 +457,11 @@ interface HistoryDao {
             WHERE candidate.date = summary.date
               AND candidate.account_id = summary.account_id
               AND candidate.currency = summary.currency
-            ORDER BY CASE WHEN candidate.identity_discriminator = '' THEN 0 ELSE 1 END,
+            ORDER BY CASE
+                WHEN candidate.identity_discriminator = '' THEN 0
+                WHEN candidate.identity_discriminator = '__continuity__' THEN 2
+                ELSE 1
+              END,
               candidate.generated_at DESC, candidate.identity_discriminator
             LIMIT 1
           )

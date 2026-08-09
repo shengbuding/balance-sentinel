@@ -192,7 +192,7 @@ class MidnightMaintenanceWorker(
                 ListenableWorker.Result.retry()
             }
         } else {
-            return if (scheduleNext(now, zoneId, after)) {
+            return if (scheduleNext(zoneId, after)) {
                 ListenableWorker.Result.success()
             } else {
                 ListenableWorker.Result.retry()
@@ -200,7 +200,7 @@ class MidnightMaintenanceWorker(
         }
     }
 
-    private fun scheduleNext(now: Instant, zoneId: ZoneId, targetDate: LocalDate): Boolean = try {
+    private fun scheduleNext(zoneId: ZoneId, targetDate: LocalDate): Boolean = try {
         MidnightWorkSchedulingGate.withLock {
             val activeZone = MidnightMaintenanceDependencies.zoneIdProvider()
             val callback = MidnightMaintenanceDependencies.reenqueue
@@ -216,7 +216,12 @@ class MidnightMaintenanceWorker(
                     )
             } else {
                 MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
-                    .enqueueImmediate(applicationContext, now, activeZone, targetDate)
+                    .enqueueImmediate(
+                        applicationContext,
+                        MidnightMaintenanceDependencies.clock.instant(),
+                        activeZone,
+                        targetDate
+                    )
             }
         }
         true
