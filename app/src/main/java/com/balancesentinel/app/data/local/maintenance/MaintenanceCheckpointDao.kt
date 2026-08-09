@@ -36,7 +36,11 @@ abstract class MaintenanceCheckpointDao {
             zone_id = :zoneId,
             last_success_at = :successAt
         WHERE id = 0
-          AND (last_completed_date IS NULL OR last_completed_date < :date)
+          AND (
+              zone_id != :zoneId
+              OR last_completed_date IS NULL
+              OR last_completed_date < :date
+          )
         """
     )
     abstract suspend fun advanceAfterCompleteDateIfNewer(date: String, zoneId: String, successAt: Long): Int

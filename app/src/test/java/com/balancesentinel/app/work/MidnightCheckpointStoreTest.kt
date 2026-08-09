@@ -48,4 +48,19 @@ class MidnightCheckpointStoreTest {
         assertEquals(zone, current.zoneId)
         assertEquals(1L, current.lastSuccessAt)
     }
+
+    @Test
+    fun `zone change can atomically rebase to an older local date`() = runBlocking {
+        val store = RoomMaintenanceCheckpointStore(context)
+        val utc = ZoneId.of("UTC")
+        val newZone = ZoneId.of("America/Los_Angeles")
+
+        assertTrue(store.markCompleted(LocalDate.of(2026, 8, 10), utc, 1L))
+        assertTrue(store.markCompleted(LocalDate.of(2026, 8, 9), newZone, 2L))
+
+        val current = store.read(newZone)
+        assertEquals(LocalDate.of(2026, 8, 9), current.lastCompletedDate)
+        assertEquals(newZone, current.zoneId)
+        assertEquals(2L, current.lastSuccessAt)
+    }
 }

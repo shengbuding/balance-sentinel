@@ -38,7 +38,7 @@ class MidnightMaintenanceReviewRedTest {
         )
         MidnightMaintenanceDependencies.checkpointStoreFactory = { store }
         MidnightMaintenanceDependencies.schedulerFactory = { MidnightWorkScheduler(runtime) }
-        MidnightMaintenanceDependencies.reenqueue = { runtimeScheduler().enqueueImmediate(it, MidnightMaintenanceDependencies.clock.instant(), ZoneId.of("UTC")) }
+        MidnightMaintenanceDependencies.reenqueue = null
         MidnightMaintenanceDependencies.cleanupRunner = MidnightCleanupRunner { _, date, _ ->
             dates += date
             CleanupReport(emptySet(), 0, 0, emptyList())
@@ -76,13 +76,23 @@ class MidnightMaintenanceReviewRedTest {
     }
 
     @Test
+    fun `checkpoint write failure becomes retry after cleanup`() = runTest {
+        store.markFailure = IllegalStateException("transient checkpoint write")
+        val outcome = runCatching { worker(inputNow = Instant.parse("2026-08-10T12:00:00Z")).doWork() }
+        assertTrue(outcome.isSuccess)
+        assertEquals(ListenableWorker.Result.retry(), outcome.getOrThrow())
+        assertEquals(listOf(LocalDate.of(2026, 8, 9)), dates)
+    }
+
+    @Test
     fun `string now input controls worker date`() = runTest {
+        // The dependency clock is fixed on Aug 10. With the checkpoint already
+        // at Aug 9, only the serialized Aug 11 input makes Aug 10 eligible.
+        store.lastCompletedDate = LocalDate.of(2026, 8, 9)
         val worker = worker(inputNow = Instant.parse("2026-08-11T12:00:00Z"))
         assertEquals(ListenableWorker.Result.success(), worker.doWork())
         assertEquals(listOf(LocalDate.of(2026, 8, 10)), dates)
     }
-
-    private fun runtimeScheduler() = MidnightWorkScheduler(runtime)
 
     private fun worker(
         zone: ZoneId = ZoneId.of("UTC"),
@@ -113,6 +123,7 @@ class MidnightMaintenanceReviewRedTest {
         var zoneId: ZoneId
     ) : MaintenanceCheckpointStore {
         var readFailure: Throwable? = null
+        var markFailure: Throwable? = null
 
         override suspend fun read(zoneId: ZoneId): MaintenanceCheckpoint {
             readFailure?.let { throw it }
@@ -120,6 +131,7 @@ class MidnightMaintenanceReviewRedTest {
         }
 
         override suspend fun markCompleted(date: LocalDate, zoneId: ZoneId, successAt: Long): Boolean {
+            markFailure?.let { throw it }
             lastCompletedDate = date
             this.zoneId = zoneId
             return true

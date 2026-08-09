@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 
 /** Injectable cleanup boundary for date-ordered midnight maintenance. */
 fun interface MidnightCleanupRunner {
@@ -55,15 +56,34 @@ class MidnightMaintenanceWorker(
         val zoneId = inputData.getString(MidnightWorkScheduler.KEY_ZONE_ID)
             ?.let { runCatching { ZoneId.of(it) }.getOrNull() }
             ?: ZoneId.systemDefault()
-        val now = inputData.getLong(MidnightWorkScheduler.KEY_NOW_MILLIS, Long.MIN_VALUE)
-            .takeUnless { it == Long.MIN_VALUE }
+        val nowMillis = inputData.getString(MidnightWorkScheduler.KEY_NOW_MILLIS)
+            ?.toLongOrNull()
+            ?: inputData.getLong(MidnightWorkScheduler.KEY_NOW_MILLIS, Long.MIN_VALUE)
+                .takeUnless { it == Long.MIN_VALUE }
+        val now = nowMillis
             ?.let(Instant::ofEpochMilli)
             ?: MidnightMaintenanceDependencies.clock.instant()
         val today = now.atZone(zoneId).toLocalDate()
         val yesterday = today.minusDays(1)
-        val checkpointStore = MidnightMaintenanceDependencies.checkpointStoreFactory(applicationContext)
-        val checkpoint = checkpointStore.read(zoneId)
-        val nextDate = checkpoint.lastCompletedDate?.plusDays(1) ?: yesterday
+        val checkpointStore = try {
+            MidnightMaintenanceDependencies.checkpointStoreFactory(applicationContext)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ListenableWorker.Result.retry()
+        }
+        val checkpoint = try {
+            checkpointStore.read(zoneId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ListenableWorker.Result.retry()
+        }
+        val nextDate = if (checkpoint.zoneId != zoneId) {
+            yesterday
+        } else {
+            checkpoint.lastCompletedDate?.plusDays(1) ?: yesterday
+        }
 
         if (nextDate.isAfter(yesterday)) {
             reconcileNext(now, zoneId)
@@ -72,14 +92,20 @@ class MidnightMaintenanceWorker(
 
         val report = try {
             MidnightMaintenanceDependencies.cleanupRunner.run(applicationContext, nextDate, zoneId)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             return ListenableWorker.Result.retry()
         }
         if (report.failures.isNotEmpty()) return ListenableWorker.Result.retry()
 
-        checkpointStore.markCompleted(nextDate, zoneId, now.toEpochMilli())
+        try {
+            checkpointStore.markCompleted(nextDate, zoneId, now.toEpochMilli())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ListenableWorker.Result.retry()
+        }
         val after = nextDate.plusDays(1)
         if (after.isAfter(yesterday)) {
             reconcileNext(now, zoneId)
@@ -94,7 +120,8 @@ class MidnightMaintenanceWorker(
         if (callback != null) {
             callback(applicationContext)
         } else {
-            MidnightWorkScheduler().enqueueImmediate(applicationContext, now, zoneId, targetDate)
+            MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
+                .enqueueImmediate(applicationContext, now, zoneId, targetDate)
         }
     }
 
@@ -103,7 +130,13 @@ class MidnightMaintenanceWorker(
         if (callback != null) {
             callback(applicationContext)
         } else {
-            MidnightWorkScheduler().reconcile(applicationContext, now, zoneId)
+            MidnightMaintenanceDependencies.schedulerFactory(applicationContext)
+                .reconcile(
+                    applicationContext,
+                    now,
+                    zoneId,
+                    MidnightWorkPolicy.REPLACE
+                )
         }
     }
 }

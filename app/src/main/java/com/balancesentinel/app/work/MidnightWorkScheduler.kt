@@ -84,7 +84,8 @@ class MidnightWorkScheduler(
     fun reconcile(
         context: Context,
         now: Instant = clock.instant(),
-        zoneId: ZoneId = ZoneId.systemDefault()
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        policy: MidnightWorkPolicy = MidnightWorkPolicy.KEEP
     ) {
         val next = nextLocalMidnight(now, zoneId)
         val targetDate = next.atZone(zoneId).toLocalDate()
@@ -98,7 +99,8 @@ class MidnightWorkScheduler(
                     KEY_RECONCILED_AT to now.toEpochMilli().toString(),
                     KEY_TARGET_DATE to targetDate.toString()
                 )
-            )
+            ),
+            policy
         )
     }
 
@@ -119,7 +121,8 @@ class MidnightWorkScheduler(
                     targetDate?.let { put(KEY_TARGET_DATE, it.toString()) }
                     put(KEY_NOW_MILLIS, now.toEpochMilli().toString())
                 }
-            )
+            ),
+            MidnightWorkPolicy.REPLACE
         )
     }
 
