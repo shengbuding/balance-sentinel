@@ -246,6 +246,59 @@ class RefreshResultCommitterTest {
         )
     }
 
+    @Test fun `schema rejection preserves cached data through stale projection`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val recorder = RoomRefreshRunRecorder(database = db, clock = { 20L })
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(accountInfo()),
+            startedAt = 10L,
+            ownerProcessSessionId = "owner"
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { },
+            runRecorder = recorder,
+            staleProjection = { accountId, failure ->
+                AccountRefreshResult.Failed(
+                    accountId = accountId,
+                    failure = failure,
+                    stale = true,
+                    dataTimestamp = 12L,
+                    lastError = failure.message
+                )
+            }
+        )
+
+        val result = committer.commit(
+            RefreshRequest("acct", 0L, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            BalanceFetchResult.Success(
+                UnifiedBalance(
+                    ProviderType.DEEPSEEK,
+                    "acct",
+                    true,
+                    listOf(BalanceEntry("USD", Double.NaN))
+                ),
+                15L
+            )
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Failed)
+        assertTrue((result as AccountRefreshResult.Failed).stale)
+        assertEquals(12L, result.dataTimestamp)
+        assertEquals(
+            RefreshAccountResultState.RESPONSE_INVALID,
+            db.refreshRunDao().getAccountResult(handle.runId, "acct")?.state
+        )
+        assertTrue(db.refreshRunDao().getAccountResult(handle.runId, "acct")?.stale == true)
+    }
+
     private fun accountInfo() = AccountInfo("acct", "Primary", "key", ProviderType.DEEPSEEK, revision = 0)
 
     private fun balance(accountId: String) = UnifiedBalance(

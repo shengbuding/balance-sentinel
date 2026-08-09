@@ -73,6 +73,32 @@ class BalanceRefreshServiceTest {
         assertTrue(runner.refreshBatch().committedBalances.isEmpty())
     }
 
+    @Test
+    fun `service runner reads live account snapshot after refresh`() = runTest {
+        var current = AccountStoreRead.Ready(listOf(account("deleted")))
+        val gateway = object : RefreshGateway {
+            override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger) =
+                AccountRefreshResult.Skipped(accountId, "unused")
+
+            override suspend fun refreshAll(trigger: RefreshTrigger): RefreshBatchResult {
+                current = AccountStoreRead.Ready(emptyList())
+                return RefreshBatchResult("test-run", emptyList(), deriveRefreshBatchAggregate(emptyList()))
+            }
+
+            override fun invalidate(accountId: String) = Unit
+
+            override suspend fun readAccountSnapshot() = current
+        }
+        val stale = AccountBalance("deleted", "Deleted", "99", "CNY", true, "", "", 1L)
+        val runner = buildServiceRefreshRunner(
+            gateway = gateway,
+            accountReader = ServiceAccountSnapshotReader { gateway.readAccountSnapshot() },
+            committedBalanceReader = { listOf(stale) }
+        )
+
+        assertTrue(runner.refreshBatch().committedBalances.isEmpty())
+    }
+
     private fun account(id: String) = AccountInfo(id, id, "key-$id", ProviderType.DEEPSEEK, revision = 1)
 
     private class EmptyGateway : RefreshGateway {
