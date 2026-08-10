@@ -9,6 +9,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.widget.RemoteViews
@@ -467,6 +468,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     private fun currencySymbol(currency: String): String =
         when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
+
+    /** Support seam for the canonical widget deep-link URI. */
+    fun canonicalDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
 
     companion object {
         const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"
