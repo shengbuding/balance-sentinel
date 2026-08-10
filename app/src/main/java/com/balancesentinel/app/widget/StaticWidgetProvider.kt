@@ -488,7 +488,10 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"
+        const val ACTION_REFRESH_NOW = "com.balancesentinel.app.WIDGET_REFRESH_NOW"
+        const val ACTION_WATCHDOG = "com.balancesentinel.app.WIDGET_WATCHDOG"
         const val EXTRA_FROM_BUTTON = "from_button"
+        const val LEGACY_WIDGET_ALARM_REQUEST_CODE = 100
         fun canonicalDeepLinkUri(accountId: String, currency: String): Uri =
             AppRoute.Insights(accountId, currency).toUri()
         fun configuredDeepLinkAccountId(configAccountId: String?, activeAccountIds: Set<String>): String? =
