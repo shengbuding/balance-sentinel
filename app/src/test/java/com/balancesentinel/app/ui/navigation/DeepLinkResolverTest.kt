@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import com.balancesentinel.app.widget.StaticWidgetProvider
 
 @RunWith(RobolectricTestRunner::class)
 class DeepLinkResolverTest {
@@ -102,6 +103,27 @@ class DeepLinkResolverTest {
         ) as DeepLinkResult.InvalidDeepLink
 
         assertEquals(AppRoute.InvalidDeepLink(InvalidReason.InvalidCurrency.name), result.route)
+    }
+
+    @Test
+    fun `extra URI path segments are an invalid deep link`() {
+        val result = DeepLinkResolver.resolve(
+            Uri.parse("balancesentinel://insights/account-1/USD/extra"), accounts
+        )
+
+        assertEquals(DeepLinkResult.InvalidDeepLink(InvalidReason.MalformedUri), result)
+    }
+
+    @Test
+    fun `stale widget account cannot produce an account deep link`() {
+        assertEquals(
+            null,
+            StaticWidgetProvider.configuredDeepLinkAccountId("deleted-account", accounts)
+        )
+        assertEquals(
+            "account-1",
+            StaticWidgetProvider.configuredDeepLinkAccountId("account-1", accounts)
+        )
     }
 
 }
