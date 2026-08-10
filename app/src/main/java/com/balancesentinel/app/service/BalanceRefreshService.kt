@@ -85,12 +85,10 @@ class BalanceRefreshService : Service() {
             Logger.i(TAG, "Foreground dataSync budget reached — stopping service")
             stopLoop()
             isSelfDestructing = true
-            refreshScope.launch(NonCancellable) {
+            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+            stopSelf()
+            CoroutineScope(NonCancellable + Dispatchers.IO).launch {
                 runCatching { monitoringController.onPlatformTimeout() }
-                handler.post {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
             }
         }
     }
