@@ -968,7 +968,10 @@ private fun CommunityCard() {
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun WidgetSettingsSection(viewModel: HomeViewModel, uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState) {
+private fun WidgetSettingsSection(
+    viewModel: HomeViewModel,
+    uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
+) {
     val currentIntervalSec = uiState.refreshIntervalSeconds
     var expanded by remember { mutableStateOf(false) }
     var inputValue by remember(currentIntervalSec) { mutableStateOf((currentIntervalSec / 60).toString()) }
