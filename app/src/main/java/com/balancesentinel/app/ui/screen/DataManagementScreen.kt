@@ -28,6 +28,8 @@ import com.balancesentinel.app.ui.viewmodel.PendingAction
 /**
  * 内部子页面路由。
  */
+private enum class DataSubPage { HUB, CLEAR_DATA, BACKUP_RESTORE }
+
 /**
  * 数据管理 — Hub 页面。
  * 概览 + 导航到子页面（清除数据 / 备份迁移）+ 重置操作。
@@ -37,17 +39,28 @@ import com.balancesentinel.app.ui.viewmodel.PendingAction
 fun DataManagementScreen(
     viewModel: DataManagementViewModel,
     onBack: () -> Unit,
-    onNavigateToClear: () -> Unit = {},
-    onNavigateToBackup: () -> Unit = {}
-) = DataHub(viewModel, onBack, onNavigateToClear, onNavigateToBackup)
+    onConfigImported: () -> Unit = {}
+) {
+    var subPage by remember { mutableStateOf(DataSubPage.HUB) }
 
-@Composable
-fun ClearDataRouteScreen(viewModel: DataManagementViewModel, onBack: () -> Unit) =
-    ClearDataScreen(viewModel = viewModel, onBack = onBack)
-
-@Composable
-fun BackupRestoreRouteScreen(viewModel: DataManagementViewModel, onBack: () -> Unit) =
-    BackupRestoreScreen(viewModel = viewModel, onBack = onBack)
+    when (subPage) {
+        DataSubPage.CLEAR_DATA -> ClearDataScreen(
+            viewModel = viewModel,
+            onBack = { subPage = DataSubPage.HUB }
+        )
+        DataSubPage.BACKUP_RESTORE -> BackupRestoreScreen(
+            viewModel = viewModel,
+            onBack = { subPage = DataSubPage.HUB },
+            onConfigImported = onConfigImported
+        )
+        DataSubPage.HUB -> DataHub(
+            viewModel = viewModel,
+            onBack = onBack,
+            onNavigateToClear = { subPage = DataSubPage.CLEAR_DATA },
+            onNavigateToBackup = { subPage = DataSubPage.BACKUP_RESTORE }
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
