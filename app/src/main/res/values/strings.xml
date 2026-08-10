@@ -2,6 +2,7 @@
 <resources>
     <!-- ===== App Identity (existing IDs preserved) ===== -->
     <string name="app_name">钱包哨兵</string>
+    <string name="invalid_deep_link_title">链接已失效</string>
     <string name="widget_name">余额小组件</string>
     <string name="widget_description">在桌面查看 API 账户余额</string>
 

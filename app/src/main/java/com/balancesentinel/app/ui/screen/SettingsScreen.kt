@@ -59,54 +59,47 @@ import kotlinx.coroutines.withContext
 // 子页面枚举
 // ═══════════════════════════════════════════════════════════
 
-private enum class SettingsPage { Main, Refresh, SystemStatus, About }
-
 // ═══════════════════════════════════════════════════════════
 // 设置主入口 — 内部页面路由
 // ═══════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit, onNavigateToDataManagement: () -> Unit, onNavigateToAlertSettings: () -> Unit) {
-    var currentPage by remember { mutableStateOf(SettingsPage.Main) }
-
+fun SettingsScreen(
+    viewModel: HomeViewModel,
+    onBack: () -> Unit,
+    onNavigateToLog: () -> Unit,
+    onNavigateToDataManagement: () -> Unit,
+    onNavigateToAlertSettings: () -> Unit,
+    onNavigateToRefresh: () -> Unit = {},
+    onNavigateToSystemStatus: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {}
+) {
     LaunchedEffect(Unit) {
         viewModel.loadStatusSummary()
         viewModel.loadRefreshStats()
     }
 
-    // 拦截系统返回键/手势
-    BackHandler {
-        when (currentPage) {
-            SettingsPage.Main -> onBack()
-            else -> currentPage = SettingsPage.Main
-        }
-    }
-
-    when (currentPage) {
-        SettingsPage.Main -> SettingsMainPage(
-            viewModel = viewModel,
-            onBack = onBack,
-            onNavigateToAlertSettings = onNavigateToAlertSettings,
-            onNavigateToDataManagement = onNavigateToDataManagement,
-            onNavigateToRefresh = { currentPage = SettingsPage.Refresh },
-            onNavigateToSystemStatus = { currentPage = SettingsPage.SystemStatus },
-            onNavigateToAbout = { currentPage = SettingsPage.About }
-        )
-        SettingsPage.Refresh -> RefreshSettingsPage(
-            viewModel = viewModel,
-            onBack = { currentPage = SettingsPage.Main }
-        )
-        SettingsPage.SystemStatus -> SystemStatusPage(
-            viewModel = viewModel,
-            onBack = { currentPage = SettingsPage.Main },
-            onNavigateToLog = onNavigateToLog
-        )
-        SettingsPage.About -> AboutPage(
-            onBack = { currentPage = SettingsPage.Main }
-        )
-    }
+    SettingsMainPage(
+        viewModel = viewModel,
+        onBack = onBack,
+        onNavigateToAlertSettings = onNavigateToAlertSettings,
+        onNavigateToDataManagement = onNavigateToDataManagement,
+        onNavigateToRefresh = onNavigateToRefresh,
+        onNavigateToSystemStatus = onNavigateToSystemStatus,
+        onNavigateToAbout = onNavigateToAbout
+    )
 }
+
+@Composable
+fun RefreshSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) = RefreshSettingsPage(viewModel, onBack)
+
+@Composable
+fun SystemStatusScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit) =
+    SystemStatusPage(viewModel, onBack, onNavigateToLog)
+
+@Composable
+fun AboutScreen(onBack: () -> Unit) = AboutPage(onBack)
 
 // ═══════════════════════════════════════════════════════════
 // 主页面 — 导航卡片列表（按使用频率排列）
@@ -283,7 +276,7 @@ private fun SettingsNavCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
+fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -321,7 +314,7 @@ private fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SystemStatusPage(
+fun SystemStatusPage(
     viewModel: HomeViewModel,
     onBack: () -> Unit,
     onNavigateToLog: () -> Unit
@@ -390,7 +383,7 @@ private fun SystemStatusPage(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AboutPage(onBack: () -> Unit) {
+fun AboutPage(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -975,7 +968,10 @@ private fun CommunityCard() {
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun WidgetSettingsSection(viewModel: HomeViewModel, uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState) {
+private fun WidgetSettingsSection(
+    viewModel: HomeViewModel,
+    uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
+) {
     val currentIntervalSec = uiState.refreshIntervalSeconds
     var expanded by remember { mutableStateOf(false) }
     var inputValue by remember(currentIntervalSec) { mutableStateOf((currentIntervalSec / 60).toString()) }
@@ -1216,4 +1212,3 @@ private fun LanguageDialog(
         }
     )
 }
-
