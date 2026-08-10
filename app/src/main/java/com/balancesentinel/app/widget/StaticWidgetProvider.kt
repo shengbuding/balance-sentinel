@@ -189,6 +189,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         // 读取 per-widget 配置
         val config = WidgetConfigStore.getConfig(context, widgetId)
+        val activeAccountIds = if (config != null && config.accountId != WidgetConfig.TOTAL_ACCOUNT_ID) {
+            ApiKeyManager(context).getAccounts().map { it.id }.toSet()
+        } else emptySet()
         val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
             // 总余额模式：仅聚合当前有效账户
             val keyManager = ApiKeyManager(context)
@@ -197,23 +200,27 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 .filter { it.accountId in validAccountIds }
             if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
         } else if (config != null) {
-            // 仅显示选定账户+币种
-            val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
-            val matching = accountBalances.filter {
-                it.accountId == config.accountId && it.currency == config.currency
+            if (config.accountId !in activeAccountIds) {
+                null
+            } else {
+                // configured account + currency
+                val accountBalances = BalanceWidgetDataStore.getAllBalances(context)
+                val matching = accountBalances.filter {
+                    it.accountId == config.accountId && it.currency == config.currency
+                }
+                if (matching.isNotEmpty()) {
+                    val acc = matching.first()
+                    AggregatedBalance(
+                        totalBalance = acc.totalBalance,
+                        currency = acc.currency,
+                        isAvailable = acc.isAvailable,
+                        grantedBalance = acc.grantedBalance,
+                        toppedUpBalance = acc.toppedUpBalance,
+                        accountCount = 1,
+                        lastUpdated = acc.lastUpdated
+                    )
+                } else null
             }
-            if (matching.isNotEmpty()) {
-                val acc = matching.first()
-                AggregatedBalance(
-                    totalBalance = acc.totalBalance,
-                    currency = acc.currency,
-                    isAvailable = acc.isAvailable,
-                    grantedBalance = acc.grantedBalance,
-                    toppedUpBalance = acc.toppedUpBalance,
-                    accountCount = 1,
-                    lastUpdated = acc.lastUpdated
-                )
-            } else null
         } else {
             // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
             val keyManager = ApiKeyManager(context)
@@ -299,15 +306,13 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         }
 
         // 点击余额/标题 → deep-link 到 Insights 页面
-        val configuredAccount = config?.accountId
-            ?.takeUnless { it == WidgetConfig.TOTAL_ACCOUNT_ID }
+        val configuredAccount = configuredDeepLinkAccountId(config?.accountId, activeAccountIds)
         val appRoute = if (configuredAccount != null && agg != null) {
             AppRoute.Insights(configuredAccount, agg.currency)
         } else {
             AppRoute.Home
         }
         val appIntent = Intent(context, MainActivity::class.java).apply {
-            data = appRoute.toUri()
             if (appRoute is AppRoute.Insights) {
                 putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
                 putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, appRoute.accountId)
@@ -486,6 +491,10 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         const val EXTRA_FROM_BUTTON = "from_button"
         fun canonicalDeepLinkUri(accountId: String, currency: String): Uri =
             AppRoute.Insights(accountId, currency).toUri()
+        fun configuredDeepLinkAccountId(configAccountId: String?, activeAccountIds: Set<String>): String? =
+            configAccountId
+                ?.takeUnless { it == WidgetConfig.TOTAL_ACCOUNT_ID }
+                ?.takeIf { it in activeAccountIds }
         private val processingRefresh = AtomicBoolean(false)
         @Volatile private var lastScheduleTime: Long = 0L
     }
