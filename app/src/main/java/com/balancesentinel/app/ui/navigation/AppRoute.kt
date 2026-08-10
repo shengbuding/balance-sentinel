@@ -33,7 +33,7 @@ sealed interface AppRoute {
         override val route: String get() = "console/${Uri.encode(platformId)}"
     }
     data object AddPlatform : AppRoute { override val route = "add-platform" }
-    data class InvalidDeepLink(val reason: String) : AppRoute {
+    data class InvalidDeepLink(val reason: String = "invalid") : AppRoute {
         override val route: String get() = "invalid-deep-link"
     }
 
