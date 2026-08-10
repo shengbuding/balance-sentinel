@@ -95,13 +95,4 @@ class DeepLinkResolverTest {
         assertEquals("balancesentinel://insights/account-1/CNY", uri.toString())
         assertTrue(uri.pathSegments == listOf("account-1", "CNY"))
     }
-    @Test
-    fun `invalid result exposes typed InvalidDeepLink route`() {
-        val result = DeepLinkResolver.resolve(
-            Uri.parse("balancesentinel://insights/account-1/POINTS"), accounts
-        ) as DeepLinkResult.InvalidDeepLink
-
-        assertEquals(AppRoute.InvalidDeepLink(InvalidReason.InvalidCurrency.name), result.route)
-    }
-
 }

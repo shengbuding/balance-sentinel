@@ -15,12 +15,8 @@ data class DeepLinkInput(
 )
 
 sealed interface DeepLinkResult {
-    val route: AppRoute
-
-    data class Resolved(override val route: AppRoute) : DeepLinkResult
-    data class InvalidDeepLink(val reason: InvalidReason) : DeepLinkResult {
-        override val route: AppRoute = AppRoute.InvalidDeepLink(reason.name)
-    }
+    data class Resolved(val route: AppRoute) : DeepLinkResult
+    data class InvalidDeepLink(val reason: InvalidReason) : DeepLinkResult
 }
 
 enum class InvalidReason {
