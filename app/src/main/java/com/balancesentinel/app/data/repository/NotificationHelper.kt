@@ -4,7 +4,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.MainActivity
@@ -50,9 +49,6 @@ class NotificationHelper(private val context: Context) {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-    /** Support seam for the canonical deep-link URI; wired in the navigation implementation. */
-    fun createDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
 
     fun createDeepLinkIntent(accountId: String, currency: String): PendingIntent {
         val identity = AlertIdentity(accountId, currency)
