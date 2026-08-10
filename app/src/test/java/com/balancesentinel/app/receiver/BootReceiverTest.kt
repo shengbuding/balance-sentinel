@@ -1,6 +1,5 @@
 package com.balancesentinel.app.receiver
 
-import android.app.AlarmManager
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -24,7 +23,6 @@ class BootReceiverTest {
     @Before
     fun setUp() {
         starter = RecordingStarter()
-        KeepAliveReceiver.cancel(context)
         val shadowApplication = Shadows.shadowOf(context as Application)
         while (shadowApplication.nextStartedService != null) {
             // Drain starts left by a prior test in the same Robolectric sandbox.
@@ -32,7 +30,7 @@ class BootReceiverTest {
     }
 
     @Test
-    fun `onReceive with BOOT_COMPLETED action starts service`() {
+    fun `onReceive with BOOT_COMPLETED does not start service when monitoring is not desired`() {
         val policies = mutableListOf<MidnightWorkPolicy>()
         val delegate = object : WorkReconcileDelegate {
             override fun reconcile(context: Context) {
@@ -48,10 +46,8 @@ class BootReceiverTest {
 
         receiver.onReceive(context, intent)
 
-        assertEquals(1, starter.calls)
+        assertEquals(0, starter.calls)
         assertNull(Shadows.shadowOf(context as Application).nextStartedService)
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        assertEquals(1, Shadows.shadowOf(alarmManager).scheduledAlarms.size)
         assertEquals(listOf(MidnightWorkPolicy.KEEP), policies)
     }
 
@@ -61,7 +57,7 @@ class BootReceiverTest {
 
         receiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
 
-        assertEquals(1, starter.calls)
+        assertEquals(0, starter.calls)
     }
 
     @Test

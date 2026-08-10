@@ -39,8 +39,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 open class DeepSeekApp : Application() {
+
+    /** Stable for one process and intentionally changes after process death. */
+    val processSessionId: String = UUID.randomUUID().toString()
 
     internal var legacyMigrationRunner: suspend () -> Unit = {
         legacyAccountMigration().run()

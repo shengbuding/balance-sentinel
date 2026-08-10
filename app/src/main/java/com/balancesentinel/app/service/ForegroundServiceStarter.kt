@@ -1,8 +1,6 @@
 package com.balancesentinel.app.service
 
-import android.app.AlarmManager
 import android.app.ForegroundServiceStartNotAllowedException
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
@@ -12,7 +10,6 @@ import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.STARTUP_GRACE_MS
 import com.balancesentinel.app.data.util.Logger
-import com.balancesentinel.app.receiver.KeepAliveReceiver
 
 sealed interface ServiceStartResult {
     data object Started : ServiceStartResult
@@ -59,7 +56,7 @@ class ForegroundServiceStarter(
     private val launcher: ForegroundServiceLauncher = ForegroundServiceLauncher { context, intent ->
         ContextCompat.startForegroundService(context, intent)
     },
-    private val retryScheduler: ServiceStartRetryScheduler = AlarmServiceStartRetryScheduler,
+    private val retryScheduler: ServiceStartRetryScheduler = ServiceStartRetryNoop,
     private val diagnosticSink: ServiceStartDiagnosticSink = RefreshLogServiceStartDiagnosticSink
 ) : ServiceStarter {
 
@@ -100,27 +97,8 @@ class ForegroundServiceStarter(
     }
 }
 
-private object AlarmServiceStartRetryScheduler : ServiceStartRetryScheduler {
-    private const val REQUEST_CODE = 202
-
-    override fun schedule(context: Context, retryAt: Long) {
-        val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val retryIntent = Intent(context, KeepAliveReceiver::class.java).apply {
-            action = KeepAliveReceiver.ACTION_SERVICE_START_RETRY
-        }
-        val pending = PendingIntent.getBroadcast(
-            context,
-            REQUEST_CODE,
-            retryIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        alarm.cancel(pending)
-        try {
-            alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, retryAt, pending)
-        } catch (_: SecurityException) {
-            alarm.set(AlarmManager.RTC_WAKEUP, retryAt, pending)
-        }
-    }
+private object ServiceStartRetryNoop : ServiceStartRetryScheduler {
+    override fun schedule(context: Context, retryAt: Long) = Unit
 }
 
 private object RefreshLogServiceStartDiagnosticSink : ServiceStartDiagnosticSink {

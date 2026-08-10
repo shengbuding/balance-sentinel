@@ -19,6 +19,9 @@ interface MonitoringSessionDao {
     @Query("SELECT * FROM monitoring_sessions WHERE ended_at IS NULL AND process_session_id = :processSessionId LIMIT 1")
     suspend fun getOpenForProcess(processSessionId: String): MonitoringSessionEntity?
 
+    @Query("SELECT * FROM monitoring_sessions WHERE ended_at IS NULL")
+    suspend fun listOpen(): List<MonitoringSessionEntity>
+
     @Query(
         """
         UPDATE monitoring_sessions SET

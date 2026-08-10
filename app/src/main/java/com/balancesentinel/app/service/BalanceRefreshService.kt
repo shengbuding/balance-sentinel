@@ -25,7 +25,8 @@ import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
-import com.balancesentinel.app.receiver.KeepAliveReceiver
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.monitoring.MonitoringSessionEndReason
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x2
@@ -67,6 +68,7 @@ class BalanceRefreshService : Service() {
     private var isSelfDestructing = false
     private lateinit var notificationHelper: NotificationHelper
     internal var serviceStarter: ServiceStarter = ForegroundServiceStarter()
+    private lateinit var monitoringController: ContinuousMonitoringController
 
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {
@@ -90,6 +92,8 @@ class BalanceRefreshService : Service() {
         settingsRepository = SettingsRepositoryProvider.get(this)
         notificationHelper = NotificationHelper(this)
         refreshGateway = RefreshRuntime.from(this)
+        val processId = (application as? DeepSeekApp)?.processSessionId ?: java.util.UUID.randomUUID().toString()
+        monitoringController = ContinuousMonitoringController(WalletDatabaseProvider.get(this), processId)
         createNotificationChannel()
     }
 
@@ -102,7 +106,7 @@ class BalanceRefreshService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        RefreshScheduler.heartbeat(this)
+        refreshScope.launch { monitoringController.start() }
 
         if (!isLoopRunning) {
             try {
@@ -127,21 +131,16 @@ class BalanceRefreshService : Service() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
         refreshScope.cancel()
-        if (!isSelfDestructing) {
-            KeepAliveReceiver.cancel(this)
+        refreshScope.launch {
+            runCatching { monitoringController.stop(MonitoringSessionEndReason.SERVICE_DESTROYED) }
         }
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
         super.onDestroy()
     }
 
-    // A task-removal restart uses the same compliant foreground-service boundary.
+    // Task removal does not restart a bounded, user-owned monitoring session.
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        when (serviceStarter.start(this)) {
-            ServiceStartResult.Started -> Logger.i(TAG, "task_removal_service_started")
-            is ServiceStartResult.Deferred -> Logger.w(TAG, "task_removal_service_start_deferred")
-            is ServiceStartResult.Failed -> Logger.w(TAG, "task_removal_service_start_failed")
-        }
     }
 
     private fun startLoop() {
@@ -274,9 +273,7 @@ class BalanceRefreshService : Service() {
                 isRefreshing = false
                 try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
                 CrashLogger.breadcrumb(TAG, "Refresh cycle completed")
-                try {
-                    stopForeground(STOP_FOREGROUND_DETACH)
-                } catch (_: Exception) {}
+                // Keep foreground notification attached for the session lifetime.
             }
         }
     }
@@ -301,7 +298,6 @@ class BalanceRefreshService : Service() {
             System.currentTimeMillis() + intervalMs,
             if (inProtection) "protection_mode" else "foreground_service"
         )
-        KeepAliveReceiver.schedule(this)
         handler.removeCallbacks(refreshTask)
         handler.postDelayed(refreshTask, intervalMs)
     }

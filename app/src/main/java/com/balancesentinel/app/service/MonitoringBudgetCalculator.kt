@@ -21,7 +21,35 @@ object MonitoringBudgetCalculator {
         now: Long,
         lastUserForegroundResetAt: Long? = null,
         windowMillis: Long = DEFAULT_WINDOW_MILLIS
-    ): Long = 0L
+    ): Long {
+        val cutoff = effectiveCutoff(now, windowMillis, lastUserForegroundResetAt)
+        if (now <= cutoff) return 0L
+        val clipped = intervals.asSequence()
+            .map { interval ->
+                val start = maxOf(interval.startedAt, cutoff)
+                val end = minOf(interval.endedAt ?: now, now)
+                start to end
+            }
+            .filter { (start, end) -> end > start }
+            .sortedWith(compareBy<Pair<Long, Long>> { it.first }.thenBy { it.second })
+            .toList()
+        if (clipped.isEmpty()) return 0L
+
+        var mergedStart = clipped.first().first
+        var mergedEnd = clipped.first().second
+        var total = 0L
+        for (index in 1 until clipped.size) {
+            val (start, end) = clipped[index]
+            if (start <= mergedEnd) {
+                if (end > mergedEnd) mergedEnd = end
+            } else {
+                total += mergedEnd - mergedStart
+                mergedStart = start
+                mergedEnd = end
+            }
+        }
+        return total + (mergedEnd - mergedStart)
+    }
 
     fun remainingMillis(
         intervals: Iterable<MonitoringBudgetInterval>,

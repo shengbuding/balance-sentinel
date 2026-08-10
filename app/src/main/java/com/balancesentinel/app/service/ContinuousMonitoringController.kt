@@ -31,7 +31,18 @@ class ContinuousMonitoringController(
                 return@withTransaction
             }
             // Conservative process recovery happens before attempting a new unique active slot.
+            val openBeforeRecovery = sessions.listOpen()
             sessions.endOpenForRecovery(processSessionId, at)
+            openBeforeRecovery
+                .filter { it.processSessionId != processSessionId }
+                .forEach { recovered ->
+                    state.projectSessionEnd(
+                        recovered.id,
+                        at,
+                        MonitoringObservedState.ABNORMAL,
+                        MonitoringSessionEndReason.PROCESS_RECOVERY.name
+                    )
+                }
             val session = MonitoringSessionEntity(
                 id = UUID.randomUUID().toString(),
                 processSessionId = processSessionId,
@@ -99,4 +110,3 @@ class ContinuousMonitoringController(
         return ServiceLeaseEvaluator.evaluate(snapshot, at, processSessionId)
     }
 }
-
