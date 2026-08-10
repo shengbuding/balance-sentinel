@@ -13,6 +13,12 @@ interface MonitoringSessionDao {
     @Query("SELECT * FROM monitoring_sessions WHERE id = :id")
     suspend fun get(id: String): MonitoringSessionEntity?
 
+    @Query("SELECT * FROM monitoring_sessions WHERE ended_at IS NULL AND active_slot = 'DATA_SYNC' LIMIT 1")
+    suspend fun getOpenDataSync(): MonitoringSessionEntity?
+
+    @Query("SELECT * FROM monitoring_sessions WHERE ended_at IS NULL AND process_session_id = :processSessionId LIMIT 1")
+    suspend fun getOpenForProcess(processSessionId: String): MonitoringSessionEntity?
+
     @Query(
         """
         UPDATE monitoring_sessions SET

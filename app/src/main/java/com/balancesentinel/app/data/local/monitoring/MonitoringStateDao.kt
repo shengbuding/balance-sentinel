@@ -28,6 +28,23 @@ abstract class MonitoringStateDao {
     @Query(
         """
         UPDATE monitoring_state SET
+            desired = :desired,
+            observed_state = :observedState,
+            state_reason = :reason,
+            updated_at = :updatedAt
+        WHERE id = 0
+        """
+    )
+    abstract suspend fun setDesiredAndState(
+        desired: Boolean,
+        observedState: MonitoringObservedState,
+        reason: String?,
+        updatedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state SET
             process_session_id = :processSessionId,
             lease_expires_at = :leaseExpiresAt,
             observed_state = 'RUNNING',
@@ -36,6 +53,22 @@ abstract class MonitoringStateDao {
         """
     )
     abstract suspend fun renewLease(
+        processSessionId: String,
+        leaseExpiresAt: Long,
+        updatedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state SET
+            process_session_id = :processSessionId,
+            lease_expires_at = :leaseExpiresAt,
+            observed_state = 'RUNNING',
+            updated_at = :updatedAt
+        WHERE id = 0 AND desired = 1
+        """
+    )
+    abstract suspend fun renewDesiredLease(
         processSessionId: String,
         leaseExpiresAt: Long,
         updatedAt: Long

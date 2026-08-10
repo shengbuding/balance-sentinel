@@ -20,10 +20,10 @@ class MonitoringBudgetCalculatorTest {
     @Test
     fun `reset is bounded by now and does not create second budget`() {
         val now = 100_000L
-        val intervals = listOf(MonitoringBudgetInterval(1L, 80_000L))
+        val intervals = listOf(MonitoringBudgetInterval(1L, 99_000L))
 
         assertEquals(20_000L, MonitoringBudgetCalculator.effectiveCutoff(now, 30_000L, 95_000L))
-        assertEquals(5_000L, MonitoringBudgetCalculator.usedMillis(intervals, now, 95_000L, 30_000L))
+        assertEquals(4_000L, MonitoringBudgetCalculator.usedMillis(intervals, now, 95_000L, 30_000L))
     }
 
     @Test
