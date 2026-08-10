@@ -36,14 +36,14 @@ class BalanceRefreshServiceTest {
     }
 
     @Test
-    fun `task removal restart delegates to foreground service starter`() {
+    fun `task removal does not restart bounded monitoring session`() {
         val service = Robolectric.buildService(BalanceRefreshService::class.java).get()
         val starter = RecordingStarter()
         service.serviceStarter = starter
 
         service.onTaskRemoved(null)
 
-        assertEquals(1, starter.calls)
+        assertEquals(0, starter.calls)
     }
 
     @Test
