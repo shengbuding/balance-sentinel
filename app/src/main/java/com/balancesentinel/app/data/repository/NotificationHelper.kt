@@ -31,17 +31,19 @@ class NotificationHelper(private val context: Context) {
 
     /** 每账户 alert 通知 ID：10000 + hash，范围 [10000, 75535] */
     fun alertNotificationId(accountId: String, currency: String = ""): Int =
-        if (currency.isBlank()) 10000 + (accountId.hashCode() and 0xFFFF)
-        else stablePairId("alert", accountId, currency)
+        10000 + notificationPairHash("alert", accountId, currency)
 
     /** Stable notification ID isolated by account and normalized currency. */
     fun changeNotificationId(accountId: String, currency: String = ""): Int =
-        if (currency.isBlank()) 20000 + (accountId.hashCode() and 0xFFFF)
-        else stablePairId("change", accountId, currency)
+        20000 + notificationPairHash("change", accountId, currency)
 
-    private fun stablePairId(kind: String, accountId: String, currency: String): Int =
-        pairHash(kind, accountId, currency)
-
+    private fun notificationPairHash(kind: String, accountId: String, currency: String): Int {
+        if (currency.isBlank()) return accountId.hashCode() and 0xFFFF
+        val normalized = currency.trim().uppercase(Locale.ROOT)
+        val bytes = MessageDigest.getInstance("SHA-256")
+            .digest("\u0000$kind\u0000$accountId\u0000$normalized".toByteArray())
+        return (((bytes[0].toInt() and 0xFF) shl 8) or (bytes[1].toInt() and 0xFF)) and 0xFFFF
+    }
 
     // ── PendingIntent 工厂 ──
 
@@ -63,20 +65,16 @@ class NotificationHelper(private val context: Context) {
         pairRequestCode("snooze", accountId, currency)
 
     private fun pairRequestCode(kind: String, accountId: String, currency: String): Int {
-        val hash = pairHash(kind, accountId, currency)
-        return if (kind == "deep-link") hash and 0x3FFFFFFF else hash or 0x40000000
-    }
-
-    private fun pairHash(kind: String, accountId: String, currency: String): Int {
         val normalized = currency.trim().uppercase(Locale.ROOT)
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest("\u0000$kind\u0000$accountId\u0000$normalized".toByteArray())
-        return ((bytes[0].toInt() and 0xFF) shl 24 or
+        val value = ((bytes[0].toInt() and 0xFF) shl 24) or
             ((bytes[1].toInt() and 0xFF) shl 16) or
             ((bytes[2].toInt() and 0xFF) shl 8) or
-            (bytes[3].toInt() and 0xFF)) and 0x7FFFFFFF
+            (bytes[3].toInt() and 0xFF)
+        val base = if (kind == "deep-link") 100_000 else 200_000
+        return base + (value and 0xFFFFF)
     }
-
 
     fun createDeepLinkIntent(accountId: String, currency: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {

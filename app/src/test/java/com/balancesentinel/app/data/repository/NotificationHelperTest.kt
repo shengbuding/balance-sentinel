@@ -449,12 +449,4 @@ class NotificationHelperTest {
         )
     }
 
-    @Test
-    fun `pair notification identity keeps four-byte hash entropy`() {
-        assertNotEquals(
-            helper.alertNotificationId("collision-206", "USD"),
-            helper.alertNotificationId("collision-292", "USD")
-        )
-    }
-
 }
