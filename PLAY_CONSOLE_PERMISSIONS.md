@@ -77,7 +77,7 @@ AlarmManager 单独使用可以被系统冻结（特别是国产 ROM），前台
 
 ---
 
-## 三、精确闹钟（Exact Alarm）声明
+## 三、已退役调度说明（无需提交特殊权限）
 
 > Play Console 路径：应用内容 → 特殊应用访问权限 → 闹钟和提醒 → 添加声明
 
@@ -85,34 +85,26 @@ AlarmManager 单独使用可以被系统冻结（特别是国产 ROM），前台
 ### 核心功能描述（英文，250 字符以内）
 
 ```
-The app schedules exact alarms to trigger balance refresh at
-user-defined intervals. Users configure their preferred
-refresh frequency (1, 5, 10, 15, 30, or 60 minutes). The
-alarm ensures the refresh runs at the precise scheduled
-time. This is the app's primary function — monitoring API
-balance and alerting users before they run out of credits.
-Delayed or missed refreshes would defeat the purpose of
-real-time balance monitoring.
+The app no longer uses privileged alarm scheduling. User-requested bounded foreground
+monitoring runs in a dataSync foreground service; ordinary background refreshes
+are delegated to WorkManager.
 ```
 
 ### 核心功能描述（中文，供参考）
 
 ```
-应用调度精确闹钟以按用户定义的时间间隔触发余额刷新。
-用户配置首选刷新频率（1/5/10/15/30/60 分钟）。闹钟确保
-刷新在精确的调度时间运行。这是应用的核心功能——监控
-API 余额并在额度耗尽前预警。延迟或丢失刷新将使实时
-余额监控失去意义。
+应用不再使用特权闹钟调度。用户主动开启有界前台 dataSync 监控会话，
+普通后台刷新统一使用 WorkManager；达到平台预算后会显示受限状态，
+不会自动重启前台服务。
 ```
 
-### 为什么不能使用 inexact alarm 或 WorkManager
+### 当前调度策略
 
-本应用的核心功能是**实时余额监控和预警**。用户主动选择刷新间隔（最短 1 分钟），期望在余额不足时立即收到通知。
+普通后台刷新由 WorkManager 负责，用户发起的短间隔刷新只在有界前台会话中运行。
 
-- **Inexact alarm**：系统会将多个应用的闹钟批量集中在「维护窗口」执行，实际延迟可达数十分钟
-- **WorkManager**：受 Doze 模式限制，最小间隔 15 分钟且不可靠，可能在维护窗口外完全停止
+- WorkManager：系统可能延迟后台任务，界面会明确显示降级状态。
 
-如果使用 inexact alarm，余额预警可能会延迟 30 分钟以上，用户可能在此期间耗尽所有 API 额度，使应用的预警功能失效。
+前台 dataSync 会话受 Android 15 滚动预算约束，超限后立即停止且不自动重启。
 
 ### 用户如何控制此权限
 

@@ -19,12 +19,12 @@ class ContinuousMonitoringController(
     private val sessions: MonitoringSessionDao = database.monitoringSessionDao()
     private val state: MonitoringStateDao = database.monitoringStateDao()
 
-    suspend fun start(at: Long = now()): MonitoringSessionEntity? {
+    suspend fun start(at: Long = now(), userInitiated: Boolean = false): MonitoringSessionEntity? {
         var started: MonitoringSessionEntity? = null
         database.withTransaction {
             state.getOrCreate(at)
             state.setDesiredAndState(true, MonitoringObservedState.STARTING, "USER_STARTED", at)
-            state.setLastUserForegroundResetAt(at, at)
+            if (userInitiated) state.setLastUserForegroundResetAt(at, at)
             sessions.getOpenForProcess(processSessionId)?.let {
                 state.projectSessionStart(it.id, processSessionId, it.startedAt)
                 state.renewDesiredLease(processSessionId, at + leaseDurationMillis, at)

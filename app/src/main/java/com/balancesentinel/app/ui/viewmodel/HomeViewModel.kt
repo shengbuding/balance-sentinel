@@ -517,6 +517,7 @@ class HomeViewModel @JvmOverloads constructor(
         try {
             val context = getApplication<Application>()
             val intent = Intent(context, BalanceRefreshService::class.java)
+                .putExtra(BalanceRefreshService.EXTRA_USER_INITIATED, true)
             ContextCompat.startForegroundService(context, intent)
         } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
     }

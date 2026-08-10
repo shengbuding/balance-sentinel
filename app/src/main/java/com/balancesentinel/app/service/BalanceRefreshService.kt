@@ -83,6 +83,7 @@ class BalanceRefreshService : Service() {
     private val restartRunnable = object : Runnable {
         override fun run() {
             Logger.i(TAG, "Foreground dataSync budget reached — stopping service")
+            stopLoop()
             isSelfDestructing = true
             refreshScope.launch(NonCancellable) {
                 runCatching { monitoringController.onPlatformTimeout() }
@@ -122,7 +123,11 @@ class BalanceRefreshService : Service() {
         }
         if (!monitoringSessionStarted) {
             monitoringSessionStarted = true
-            refreshScope.launch { monitoringController.start() }
+            refreshScope.launch {
+                monitoringController.start(
+                    userInitiated = intent?.getBooleanExtra(EXTRA_USER_INITIATED, false) == true
+                )
+            }
         }
 
         if (!isLoopRunning) {
@@ -152,8 +157,10 @@ class BalanceRefreshService : Service() {
     override fun onDestroy() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
-        refreshScope.launch(NonCancellable) {
-            runCatching { monitoringController.stop(MonitoringSessionEndReason.SERVICE_DESTROYED) }
+        if (!isSelfDestructing) {
+            refreshScope.launch(NonCancellable) {
+                runCatching { monitoringController.stop(MonitoringSessionEndReason.SERVICE_DESTROYED) }
+            }
         }
         refreshScope.cancel()
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
@@ -372,5 +379,6 @@ class BalanceRefreshService : Service() {
         private const val DEFAULT_FOREGROUND_INTERVAL_SECONDS = 30
         private const val NOTIFICATION_TOTAL_KEY = "__total__"
         private const val LEASE_RENEW_INTERVAL_MS = 30_000L
+        const val EXTRA_USER_INITIATED = "monitoring_user_initiated"
     }
 }

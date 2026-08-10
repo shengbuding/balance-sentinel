@@ -242,8 +242,8 @@
 
     <!-- ===== Settings Alarm Method Labels ===== -->
     <string name="alarm_method_alarm_clock">Alarm Clock</string>
-    <string name="alarm_method_exact">Exact Alarm</string>
-    <string name="alarm_method_inexact">Inexact Alarm (degraded)</string>
+    <string name="alarm_method_exact">Legacy exact scheduling (retired)</string>
+    <string name="alarm_method_inexact">Legacy inexact scheduling (retired)</string>
     <string name="alarm_method_failed">Failed</string>
     <string name="alarm_method_service_loop">Foreground Service Loop</string>
     <string name="alarm_method_none">None</string>
@@ -516,9 +516,6 @@
     <string name="service_killed_message">Killed by system %1$d times. OnePlus/ColorOS may freeze the app in background.</string>
     <string name="service_not_running_hint">Service not running. Disable battery optimization below to fix.</string>
 
-    <!-- ===== KeepAlive ===== -->
-    <string name="keepalive_thawed">KeepAlive detected freeze, restarted via foreground service</string>
-    <string name="keepalive_restart_fail">KeepAlive restart failed: %1$s</string>
 
     <!-- ===== API Errors ===== -->
     <string name="api_error_401">Invalid API Key (401 Unauthorized)</string>

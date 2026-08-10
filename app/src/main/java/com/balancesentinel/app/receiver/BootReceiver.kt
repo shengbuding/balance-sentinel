@@ -36,7 +36,12 @@ class BootReceiver(
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
         val desired = runCatching {
-            runBlocking { WalletDatabaseProvider.get(context).monitoringStateDao().get()?.desired == true }
+            runBlocking {
+                WalletDatabaseProvider.get(context).monitoringStateDao().get()?.let { state ->
+                    state.desired && state.observedState != com.balancesentinel.app.data.local.monitoring.MonitoringObservedState.PLATFORM_LIMITED &&
+                        state.observedState != com.balancesentinel.app.data.local.monitoring.MonitoringObservedState.PAUSED
+                } == true
+            }
         }.getOrDefault(false)
         if (desired) {
             Logger.i("BootReceiver", "boot_desired_service_start_requested")
