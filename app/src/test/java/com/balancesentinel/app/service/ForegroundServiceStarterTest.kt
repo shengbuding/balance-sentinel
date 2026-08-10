@@ -137,12 +137,14 @@ class ForegroundServiceStarterTest {
         marker: ServiceStartRequestMarker = ServiceStartRequestMarker { _, _ -> Unit },
         launcher: ForegroundServiceLauncher,
         retry: ServiceStartRetryScheduler = ServiceStartRetryScheduler { _, _ -> Unit },
-        diagnostic: ServiceStartDiagnosticSink = ServiceStartDiagnosticSink { _, _ -> Unit }
+        diagnostic: ServiceStartDiagnosticSink = ServiceStartDiagnosticSink { _, _ -> Unit },
+        fallback: ForegroundServiceFallbackScheduler = ForegroundServiceFallbackScheduler { }
     ) = ForegroundServiceStarter(
         now = { now },
         requestMarker = marker,
         launcher = launcher,
         retryScheduler = retry,
-        diagnosticSink = diagnostic
+        diagnosticSink = diagnostic,
+        fallbackScheduler = fallback
     )
 }

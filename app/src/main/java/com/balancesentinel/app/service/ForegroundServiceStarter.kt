@@ -52,6 +52,10 @@ fun interface ServiceStartDiagnosticSink {
     fun record(context: Context, diagnostic: ServiceStartDiagnostic)
 }
 
+fun interface ForegroundServiceFallbackScheduler {
+    fun enqueue(context: Context)
+}
+
 class ForegroundServiceStarter(
     private val now: () -> Long = System::currentTimeMillis,
     private val requestMarker: ServiceStartRequestMarker = ServiceStartRequestMarker { context, requestedAt ->
@@ -61,7 +65,8 @@ class ForegroundServiceStarter(
         ContextCompat.startForegroundService(context, intent)
     },
     private val retryScheduler: ServiceStartRetryScheduler = ServiceStartRetryNoop,
-    private val diagnosticSink: ServiceStartDiagnosticSink = RefreshLogServiceStartDiagnosticSink
+    private val diagnosticSink: ServiceStartDiagnosticSink = RefreshLogServiceStartDiagnosticSink,
+    private val fallbackScheduler: ForegroundServiceFallbackScheduler = WorkManagerForegroundFallbackScheduler
 ) : ServiceStarter {
 
     override fun start(context: Context): ServiceStartResult {
@@ -74,11 +79,7 @@ class ForegroundServiceStarter(
         } catch (_: ForegroundServiceStartNotAllowedException) {
             val retryAt = requestedAt + STARTUP_GRACE_MS + 1L
             retryScheduler.schedule(context, retryAt)
-            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                "foreground-refresh-fallback",
-                ExistingWorkPolicy.REPLACE,
-                OneTimeWorkRequestBuilder<RefreshWorker>().build()
-            )
+            fallbackScheduler.enqueue(context)
             diagnosticSink.record(
                 context,
                 ServiceStartDiagnostic(ServiceStartDiagnosticReason.START_NOT_ALLOWED, retryAt)
@@ -108,6 +109,16 @@ class ForegroundServiceStarter(
 
 private object ServiceStartRetryNoop : ServiceStartRetryScheduler {
     override fun schedule(context: Context, retryAt: Long) = Unit
+}
+
+private object WorkManagerForegroundFallbackScheduler : ForegroundServiceFallbackScheduler {
+    override fun enqueue(context: Context) {
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+            "foreground-refresh-fallback",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<RefreshWorker>().build()
+        )
+    }
 }
 
 private object RefreshLogServiceStartDiagnosticSink : ServiceStartDiagnosticSink {
