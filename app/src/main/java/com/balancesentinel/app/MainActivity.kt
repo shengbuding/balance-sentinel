@@ -3,6 +3,7 @@ package com.balancesentinel.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -21,14 +22,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import com.balancesentinel.app.data.console.DebugLogger
-import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdatePrefs
 import com.balancesentinel.app.data.update.UpdateResult
 import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.ui.navigation.AppRoute
-import com.balancesentinel.app.ui.navigation.DeepLinkResolver
 import com.balancesentinel.app.ui.navigation.WalletNavHost
 import com.balancesentinel.app.ui.screen.UpdateDialog
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
@@ -71,20 +70,28 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         CrashLogger.breadcrumb("MainActivity", "onCreate started")
-        // Foreground monitoring and notification permission are user initiated.
+        RefreshScheduler.markStartRequested(this)
+        requestNotificationAndStartService()
 
-        val accountIds = try {
-            val manager = ApiKeyManager(this)
-            manager.migrateLegacyKeyIfNeeded()
-            manager.getAccounts().map { it.id }.toSet()
-        } catch (_: Exception) {
-            emptySet()
+        val deepLinkTarget = intent?.getStringExtra(AppRoute.LEGACY_TARGET_EXTRA)
+        val deepLinkAccountId = intent?.getStringExtra(AppRoute.LEGACY_ACCOUNT_EXTRA)
+        val deepLinkCurrency = intent?.getStringExtra(AppRoute.LEGACY_CURRENCY_EXTRA)
+        val uriSegments = intent?.data?.takeIf {
+            it.scheme.equals(AppRoute.SCHEME, ignoreCase = true) &&
+                it.host.equals(AppRoute.INSIGHTS_HOST, ignoreCase = true)
+        }?.pathSegments.orEmpty()
+        val uriAccountId = uriSegments.getOrNull(0)
+        val uriCurrency = uriSegments.getOrNull(1)
+        val requestedStart = when {
+            OnboardingHelper.shouldShow(this) -> AppRoute.Onboarding.route
+            !uriAccountId.isNullOrBlank() && !uriCurrency.isNullOrBlank() ->
+                AppRoute.Insights(Uri.decode(uriAccountId), Uri.decode(uriCurrency)).route
+            deepLinkTarget.equals("insights", ignoreCase = true) &&
+                !deepLinkAccountId.isNullOrBlank() && !deepLinkCurrency.isNullOrBlank() ->
+                AppRoute.Insights(deepLinkAccountId, deepLinkCurrency).route
+            deepLinkTarget != null -> AppRoute.InvalidDeepLink("legacy_deep_link").route
+            else -> AppRoute.Home.route
         }
-        val requestedStart = resolveStartDestination(
-            intent = intent,
-            accountIds = accountIds,
-            showOnboarding = OnboardingHelper.shouldShow(this)
-        )
 
         setContent {
             DeepSeekBalanceTheme {
@@ -155,24 +162,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         CrashLogger.breadcrumb("MainActivity", "onCreate complete")
-    }
-
-    companion object {
-        @JvmStatic
-        fun resolveStartDestination(
-            intent: Intent?,
-            accountIds: Set<String>,
-            showOnboarding: Boolean
-        ): String {
-            if (showOnboarding) return AppRoute.Onboarding.route
-            val hasDeepLink = intent?.data != null || intent?.extras?.let {
-                it.containsKey(AppRoute.LEGACY_TARGET_EXTRA) ||
-                    it.containsKey(AppRoute.LEGACY_ACCOUNT_EXTRA) ||
-                    it.containsKey(AppRoute.LEGACY_CURRENCY_EXTRA)
-            } == true
-            if (!hasDeepLink) return AppRoute.Home.route
-            return DeepLinkResolver.resolve(intent, accountIds).route.route
-        }
     }
 
     private fun requestNotificationAndStartService() {
