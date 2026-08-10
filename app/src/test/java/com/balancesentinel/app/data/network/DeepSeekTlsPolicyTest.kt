@@ -64,12 +64,13 @@ class DeepSeekTlsPolicyTest {
         val pin = "sha256/${Base64.getEncoder().encodeToString(
             MessageDigest.getInstance("SHA-256").digest(serverCertificate.keyPair.public.encoded)
         )}"
-        val pinner = CertificatePinner.Builder().add("127.0.0.1", pin).build()
         val server = MockWebServer()
         server.useHttps(serverHandshake.sslSocketFactory(), false)
         server.enqueue(MockResponse().setBody("ok"))
         server.start()
         try {
+            val host = server.url("/").host
+            val pinner = CertificatePinner.Builder().add(host, pin).build()
             val client = OkHttpClient.Builder()
                 .sslSocketFactory(clientHandshake.sslSocketFactory(), clientHandshake.trustManager)
                 .certificatePinner(pinner)
@@ -103,7 +104,11 @@ class DeepSeekTlsPolicyTest {
         try {
             val client = OkHttpClient.Builder()
                 .sslSocketFactory(clientHandshake.sslSocketFactory(), clientHandshake.trustManager)
-                .certificatePinner(CertificatePinner.Builder().add("127.0.0.1", wrongPin).build())
+                .certificatePinner(
+                    CertificatePinner.Builder()
+                        .add(server.url("/").host, wrongPin)
+                        .build()
+                )
                 .build()
             val failure = assertThrows(IOException::class.java) {
                 client.newCall(Request.Builder().url(server.url("/")).build()).execute().use { it.body?.close() }
