@@ -3,6 +3,7 @@ package com.balancesentinel.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -75,8 +76,16 @@ class MainActivity : ComponentActivity() {
         val deepLinkTarget = intent?.getStringExtra(AppRoute.LEGACY_TARGET_EXTRA)
         val deepLinkAccountId = intent?.getStringExtra(AppRoute.LEGACY_ACCOUNT_EXTRA)
         val deepLinkCurrency = intent?.getStringExtra(AppRoute.LEGACY_CURRENCY_EXTRA)
+        val uriSegments = intent?.data?.takeIf {
+            it.scheme.equals(AppRoute.SCHEME, ignoreCase = true) &&
+                it.host.equals(AppRoute.INSIGHTS_HOST, ignoreCase = true)
+        }?.pathSegments.orEmpty()
+        val uriAccountId = uriSegments.getOrNull(0)
+        val uriCurrency = uriSegments.getOrNull(1)
         val requestedStart = when {
             OnboardingHelper.shouldShow(this) -> AppRoute.Onboarding.route
+            !uriAccountId.isNullOrBlank() && !uriCurrency.isNullOrBlank() ->
+                AppRoute.Insights(Uri.decode(uriAccountId), Uri.decode(uriCurrency)).route
             deepLinkTarget.equals("insights", ignoreCase = true) &&
                 !deepLinkAccountId.isNullOrBlank() && !deepLinkCurrency.isNullOrBlank() ->
                 AppRoute.Insights(deepLinkAccountId, deepLinkCurrency).route
