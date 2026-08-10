@@ -147,6 +147,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.navigation.compose)
 
     // Compose
     implementation(platform(libs.compose.bom))
@@ -174,6 +175,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.navigation.testing)
 
     // Test (Instrumented / Compose UI)
     androidTestImplementation(libs.compose.ui.test.junit4)
