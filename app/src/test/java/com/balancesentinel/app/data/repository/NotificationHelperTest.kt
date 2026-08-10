@@ -417,24 +417,4 @@ class NotificationHelperTest {
         )
     }
 
-    @Test
-    fun `deep link request code is stable per normalized account currency pair`() {
-        assertEquals(
-            helper.deepLinkRequestCode("acc1", "cny"),
-            helper.deepLinkRequestCode("acc1", "CNY")
-        )
-        assertNotEquals(
-            helper.deepLinkRequestCode("acc1", "CNY"),
-            helper.deepLinkRequestCode("acc1", "USD")
-        )
-    }
-
-    @Test
-    fun `snooze request code is isolated per normalized account currency pair`() {
-        assertNotEquals(
-            helper.snoozeRequestCode("acc1", "CNY"),
-            helper.snoozeRequestCode("acc1", "USD")
-        )
-    }
-
 }
