@@ -6,6 +6,7 @@ import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.DeepSeekTlsPolicyAdapter
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
@@ -94,7 +95,7 @@ class DeepSeekApiService(
     }
 
     private val client = DebugClientInstaller.install(
-        OkHttpClient.Builder()
+        DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)

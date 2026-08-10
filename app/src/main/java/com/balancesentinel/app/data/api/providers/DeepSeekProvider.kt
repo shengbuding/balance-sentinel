@@ -14,6 +14,7 @@ import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.model.UsageResponse
 import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.DeepSeekTlsPolicyAdapter
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
@@ -38,7 +39,7 @@ class DeepSeekProvider(
     )
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val client = OkHttpClient.Builder()
+    private val client = DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))

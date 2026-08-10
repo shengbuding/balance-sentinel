@@ -8,6 +8,7 @@ import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
 import com.balancesentinel.app.data.network.BoundedResponseReader
+import com.balancesentinel.app.data.network.DeepSeekTlsPolicyAdapter
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.ResponseBudget
@@ -147,9 +148,14 @@ class BalanceQueryService(
         } else {
             client
         }
-        val accountId = config.credentials["accountId"] ?: return boundedClient
+        val tlsClient = if (config.providerType == com.balancesentinel.app.data.api.ProviderType.DEEPSEEK) {
+            DeepSeekTlsPolicyAdapter.configure(boundedClient.newBuilder()).build()
+        } else {
+            boundedClient
+        }
+        val accountId = config.credentials["accountId"] ?: return tlsClient
         return DebugClientInstaller.install(
-            client = boundedClient,
+            client = tlsClient,
             debuggable = debuggable,
             interceptor = DebugInterceptor(
                     accountId = accountId,

@@ -32,5 +32,6 @@ object DeepSeekTlsPolicy {
  * until the pinning behavior is enabled in the implementation commit.
  */
 internal object DeepSeekTlsPolicyAdapter {
-    fun configure(builder: OkHttpClient.Builder): OkHttpClient.Builder = builder
+    fun configure(builder: OkHttpClient.Builder): OkHttpClient.Builder =
+        DeepSeekTlsPolicy.apply(builder)
 }

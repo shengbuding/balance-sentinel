@@ -1,5 +1,16 @@
 package com.balancesentinel.app.data.api
 
+import javax.net.ssl.SSLException
+
+private fun hasSslFailure(error: Throwable): Boolean {
+    var current: Throwable? = error
+    while (current != null) {
+        if (current is SSLException) return true
+        current = current.cause
+    }
+    return false
+}
+
 /**
  * 统一供应商操作结果
  */
@@ -40,8 +51,16 @@ sealed class ProviderError(
      */
     class NetworkError(
         provider: ProviderType,
-        @Suppress("UNUSED_PARAMETER") cause: Throwable
-    ) : ProviderError(provider, "网络错误")
+        cause: Throwable
+    ) : ProviderError(
+        provider,
+        message = if (hasSslFailure(cause)) {
+            "TLS certificate pinning/network failure"
+        } else {
+            "网络错误"
+        },
+        cause = null
+    )
 
     /**
      * 服务端错误（5xx等）

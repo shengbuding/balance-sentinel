@@ -16,9 +16,20 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">api.deepseek.com</domain>
         <pin-set expiration="2027-07-01">
-            <!-- Leaf certificate SPKI (2026-07) -->
+            <!--
+              Evidence captured 2026-08-10 with a Java TLS socket to
+              api.deepseek.com:443 (SNI api.deepseek.com), hashing
+              SHA-256(X509Certificate.publicKey.encoded) and Base64 encoding.
+              Leaf: subject=CN=api.deepseek.com; issuer=CN=TrustAsia DV TLS RSA CA 2025,
+              O=TrustAsia Technologies, Inc., C=CN; valid 2026-06-20 through 2026-09-18.
+              Backup issuer: subject=CN=TrustAsia DV TLS RSA CA 2025,
+              O=TrustAsia Technologies, Inc., C=CN; issuer=CN=DigiCert Global Root G2,
+              O=DigiCert Inc, C=US; valid 2025-01-08 through 2035-01-08.
+            -->
+            <!-- Leaf certificate SPKI (2026-06-20 to 2026-09-18) -->
             <pin digest="SHA-256">IS95653JtE1/bNto9qa5E/NHBmBbRDmfaLM+btVVTCk=</pin>
-            <!-- 备用：证书更新时追加新 pin，旧 pin 保留一段时间 -->
+            <!-- Issuer rotation backup SPKI (2025-01-08 to 2035-01-08) -->
+            <pin digest="SHA-256">eLVG2Nq6lNlY482AlhlwwHqvL3TsvXMFJx2ycA8gZpQ=</pin>
         </pin-set>
     </domain-config>
     <!-- 其他域名的 HTTPS 流量：不固定证书但要求加密 -->
