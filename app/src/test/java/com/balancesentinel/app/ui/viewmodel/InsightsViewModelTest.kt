@@ -3,6 +3,7 @@ package com.balancesentinel.app.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.room.Room
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.engine.DailyBillReport
@@ -263,6 +264,26 @@ class InsightsViewModelTest {
         assertEquals(50f, viewModel.uiState.value.intradayOutput!!.trendPoints[0].actualBalance)
     }
 
+    @Test
+    fun `selected filters restore from saved state`() {
+        val state = SavedStateHandle(
+            mapOf(
+                "insights.selectedAccountId" to "saved-account",
+                "insights.selectedCurrency" to "USD",
+                "insights.rangeDays" to 30
+            )
+        )
+
+        val viewModel = InsightsViewModel(
+            app,
+            AccountUiRepository { flowOf(AccountLoadState.Ready(emptyList())) },
+            savedStateHandle = state
+        )
+
+        assertEquals("saved-account", viewModel.uiState.value.selectedAccountId)
+        assertEquals("USD", viewModel.uiState.value.selectedCurrency)
+        assertEquals(30, viewModel.uiState.value.rangeDays)
+    }
     @Test
     fun `setRangeDays triggers reload`() {
         val viewModel = createViewModel()

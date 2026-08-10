@@ -46,8 +46,11 @@ fun ClearDataRouteScreen(viewModel: DataManagementViewModel, onBack: () -> Unit)
     ClearDataScreen(viewModel = viewModel, onBack = onBack)
 
 @Composable
-fun BackupRestoreRouteScreen(viewModel: DataManagementViewModel, onBack: () -> Unit) =
-    BackupRestoreScreen(viewModel = viewModel, onBack = onBack)
+fun BackupRestoreRouteScreen(
+    viewModel: DataManagementViewModel,
+    onBack: () -> Unit,
+    onConfigImported: () -> Unit = {}
+) = BackupRestoreScreen(viewModel = viewModel, onBack = onBack, onConfigImported = onConfigImported)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

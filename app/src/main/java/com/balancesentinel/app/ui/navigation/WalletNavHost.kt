@@ -66,7 +66,7 @@ fun WalletNavHost(
     LaunchedEffect(currentRoute) { onRouteChanged(currentRoute) }
 
     val homeViewModel: HomeViewModel = viewModel()
-    val insightsViewModel: InsightsViewModel = viewModel()
+    val insightsViewModel: InsightsViewModel = viewModel(factory = InsightsViewModel.Factory(application))
     val logViewModel: LogViewModel = viewModel()
     val dataManagementViewModel: DataManagementViewModel = viewModel()
     val showBottomBar = currentRoute != AppRoute.Onboarding.route && currentRoute != AppRoute.InvalidDeepLink().route
@@ -170,7 +170,7 @@ fun WalletNavHost(
                 )
             }
             composable(AppRoute.ClearData.route) { ClearDataRouteScreen(dataManagementViewModel) { navController.popBackStack() } }
-            composable(AppRoute.BackupRestore.route) { BackupRestoreRouteScreen(dataManagementViewModel) { navController.popBackStack() } }
+            composable(AppRoute.BackupRestore.route) { BackupRestoreRouteScreen(dataManagementViewModel, { navController.popBackStack() }, homeViewModel::loadCachedBalances) }
             composable(AppRoute.AlertSettings.route) { AlertSettingsScreen(homeViewModel) { navController.popBackStack() } }
             composable(AppRoute.ConsoleSelect.route) {
                 ConsoleSelectScreen(

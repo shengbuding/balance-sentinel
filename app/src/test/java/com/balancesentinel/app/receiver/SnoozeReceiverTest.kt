@@ -5,8 +5,14 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import android.app.NotificationManager
 import com.balancesentinel.app.data.repository.NotificationHelper
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.SettingsSnapshot
+import com.balancesentinel.app.testing.MutableSettingsRepository
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.robolectric.Shadows
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,6 +37,28 @@ class SnoozeReceiverTest {
         val receiver = SnoozeReceiver()
         val intent = Intent() // no account_id
         receiver.onReceive(context, intent)
+    }
+    @Test
+    fun `snooze persists an account level state through settings repository`() = runBlocking {
+        val repository = MutableSettingsRepository(
+            SettingsSnapshot(AppSettingsEntity(snoozeDurationMinutes = 10, updatedAt = 0L))
+        )
+        SettingsRepositoryProvider.factory = { repository }
+        try {
+            val before = System.currentTimeMillis()
+            SnoozeReceiver().onReceive(context, Intent().putExtra("account_id", "persisted-account"))
+
+            val deadline = System.currentTimeMillis() + 2_000L
+            while (repository.readSnapshot().snoozeUntil("persisted-account") <= before &&
+                System.currentTimeMillis() < deadline
+            ) {
+                Thread.sleep(10)
+            }
+
+            assertTrue(repository.readSnapshot().snoozeUntil("persisted-account") >= before + 600_000L)
+        } finally {
+            SettingsRepositoryProvider.resetForTests()
+        }
     }
     @Test
     fun `snoozing one currency does not cancel another currency notification`() {

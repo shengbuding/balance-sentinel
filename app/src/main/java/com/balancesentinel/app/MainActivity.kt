@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
     private fun startRefreshService() {
         RefreshScheduler.markStartRequested(this)
         try {
-            ContextCompat.startForegroundService(this, Intent(this, BalanceRefreshService::class.java))
+            ContextCompat.startForegroundService(this, Intent(this, BalanceRefreshService::class.java).putExtra(BalanceRefreshService.EXTRA_USER_INITIATED, true))
         } catch (e: Exception) {
             com.balancesentinel.app.data.util.Logger.e("MainActivity", "Failed to start refresh service", e)
         }

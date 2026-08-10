@@ -2,6 +2,11 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
@@ -86,10 +91,15 @@ data class InsightsUiState(
 class InsightsViewModel @JvmOverloads constructor(
     application: Application,
     private val injectedAccountUiRepository: AccountUiRepository? = null,
-    private val injectedHistoryRepository: HistoryRepository? = null
+    private val injectedHistoryRepository: HistoryRepository? = null,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : AndroidViewModel(application) {
 
-    private val _uiState = MutableStateFlow(InsightsUiState())
+    private val _uiState = MutableStateFlow(InsightsUiState(
+        selectedAccountId = savedStateHandle[KEY_ACCOUNT_ID],
+        selectedCurrency = savedStateHandle[KEY_CURRENCY] ?: "",
+        rangeDays = savedStateHandle[KEY_RANGE_DAYS] ?: 7
+    ))
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
     private val workScope: CoroutineScope by lazy {
@@ -302,11 +312,13 @@ class InsightsViewModel @JvmOverloads constructor(
     }
 
     fun selectCurrency(currency: String) {
+        savedStateHandle[KEY_CURRENCY] = currency
         _uiState.update { it.copy(selectedCurrency = currency) }
         loadData()
     }
 
     fun selectAccount(accountId: String?) {
+        savedStateHandle[KEY_ACCOUNT_ID] = accountId
         // 不再 fallback 到首个账户 — null 即全部账户，走合并路径
         _uiState.update { it.copy(selectedAccountId = accountId) }
         loadData()
@@ -314,6 +326,8 @@ class InsightsViewModel @JvmOverloads constructor(
 
     fun setRangeDays(days: Int) {
         if (_uiState.value.rangeDays == days) return
+        savedStateHandle[KEY_RANGE_DAYS] = days
+
         _uiState.update { it.copy(rangeDays = days) }
         loadData()
     }
@@ -336,7 +350,23 @@ class InsightsViewModel @JvmOverloads constructor(
         }
     }
 
+    class Factory(private val application: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(
+            modelClass: Class<T>,
+            extras: CreationExtras
+        ): T {
+            check(modelClass.isAssignableFrom(InsightsViewModel::class.java))
+            return InsightsViewModel(
+                application = application,
+                savedStateHandle = extras.createSavedStateHandle()
+            ) as T
+        }
+    }
     companion object {
+        private const val KEY_ACCOUNT_ID = "insights.selectedAccountId"
+        private const val KEY_CURRENCY = "insights.selectedCurrency"
+        private const val KEY_RANGE_DAYS = "insights.rangeDays"
         /**
          * 合并多账户 Intraday 输出（carry-forward 算法）。
          *
