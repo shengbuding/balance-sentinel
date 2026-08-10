@@ -12,6 +12,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.receiver.SnoozeReceiver
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.ui.navigation.AppRoute
 
 /**
  * 统一通知工厂。
@@ -44,14 +45,17 @@ class NotificationHelper(private val context: Context) {
         )
 
     /** Support seam for the canonical deep-link URI; wired in the navigation implementation. */
-    fun createDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
+    fun createDeepLinkUri(accountId: String, currency: String): Uri =
+        AppRoute.Insights(accountId, currency).toUri()
 
     fun createDeepLinkIntent(accountId: String, currency: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("deep_link_target", "insights")
-            putExtra("deep_link_account_id", accountId)
-            putExtra("deep_link_currency", currency)
+            data = createDeepLinkUri(accountId, currency)
+            // Keep old extras for clients upgraded in place; the resolver accepts both.
+            putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
+            putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, accountId)
+            putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, currency)
         }
         return PendingIntent.getActivity(
             context, accountId.hashCode(),

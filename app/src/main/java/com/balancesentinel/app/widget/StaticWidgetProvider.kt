@@ -27,6 +27,7 @@ import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.service.BalanceRefreshService
+import com.balancesentinel.app.ui.navigation.AppRoute
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -298,9 +299,20 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         }
 
         // 点击余额/标题 → deep-link 到 Insights 页面
+        val configuredAccount = config?.accountId
+            ?.takeUnless { it == WidgetConfig.TOTAL_ACCOUNT_ID }
+        val appRoute = if (configuredAccount != null && agg != null) {
+            AppRoute.Insights(configuredAccount, agg.currency)
+        } else {
+            AppRoute.Home
+        }
         val appIntent = Intent(context, MainActivity::class.java).apply {
-            putExtra("deep_link_target", "insights")
-            putExtra("deep_link_currency", agg?.currency ?: "CNY")
+            data = appRoute.toUri()
+            if (appRoute is AppRoute.Insights) {
+                putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
+                putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, appRoute.accountId)
+                putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, appRoute.currency)
+            }
         }
         val appPending = PendingIntent.getActivity(
             context, widgetId, appIntent,
@@ -469,12 +481,11 @@ open class StaticWidgetProvider : AppWidgetProvider() {
     private fun currencySymbol(currency: String): String =
         when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
 
-    /** Support seam for the canonical widget deep-link URI. */
-    fun canonicalDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
-
     companion object {
         const val ACTION_REFRESH = "com.balancesentinel.app.WIDGET_REFRESH"
         const val EXTRA_FROM_BUTTON = "from_button"
+        fun canonicalDeepLinkUri(accountId: String, currency: String): Uri =
+            AppRoute.Insights(accountId, currency).toUri()
         private val processingRefresh = AtomicBoolean(false)
         @Volatile private var lastScheduleTime: Long = 0L
     }
