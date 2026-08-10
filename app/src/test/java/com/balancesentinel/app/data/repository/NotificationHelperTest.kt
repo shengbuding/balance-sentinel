@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.ui.navigation.AppRoute
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -289,4 +290,12 @@ class NotificationHelperTest {
         )
         assertNotNull(notification)
     }
+    @Test
+    fun `deep link URI is the canonical typed route`() {
+        assertEquals(
+            AppRoute.Insights("acc1", "CNY").toUri(),
+            helper.createDeepLinkUri("acc1", "cny")
+        )
+    }
+
 }
