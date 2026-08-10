@@ -145,6 +145,9 @@
     <string name="settings_auto_refresh">Auto Refresh</string>
     <string name="settings_refresh_desc">Configure balance query interval and refresh strategy</string>
     <string name="settings_refresh_interval_label">Refresh Interval: %1$s</string>
+    <string name="settings_loading">Loading</string>
+    <string name="settings_cadence_disabled">Disabled</string>
+    <string name="settings_refresh_cadences">Foreground %1$d s · Background %2$s s · Effective %3$d s</string>
     <string name="settings_value">Value</string>
     <string name="settings_minutes">min</string>
     <string name="settings_seconds">sec</string>

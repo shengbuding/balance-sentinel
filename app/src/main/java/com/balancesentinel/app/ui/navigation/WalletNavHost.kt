@@ -61,14 +61,7 @@ fun WalletNavHost(
     val application = context.applicationContext as Application
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route.orEmpty()
-    val currentTab = when {
-        currentRoute == AppRoute.Home.route -> AppRoute.Home.route
-        currentRoute.startsWith("insights") -> "insights"
-        currentRoute.startsWith("console") -> AppRoute.ConsoleSelect.route
-        currentRoute.startsWith("settings") || currentRoute == AppRoute.About.route ||
-            currentRoute == AppRoute.RefreshSettings.route || currentRoute == AppRoute.SystemStatus.route -> AppRoute.Settings.route
-        else -> null
-    }
+    val currentTab = topLevelTabForRoute(currentRoute)
 
     LaunchedEffect(currentRoute) { onRouteChanged(currentRoute) }
 
@@ -229,4 +222,16 @@ fun WalletNavHost(
             }
         }
     }
+}
+
+internal fun topLevelTabForRoute(route: String): String? = when {
+    route == AppRoute.Home.route -> AppRoute.Home.route
+    route.startsWith("insights") -> "insights"
+    route.startsWith("console") || route == AppRoute.AddPlatform.route -> AppRoute.ConsoleSelect.route
+    route.startsWith("settings") || route == AppRoute.About.route ||
+        route == AppRoute.RefreshSettings.route || route == AppRoute.SystemStatus.route ||
+        route == AppRoute.Log.route || route == AppRoute.DataHub.route ||
+        route == AppRoute.ClearData.route || route == AppRoute.BackupRestore.route ||
+        route == AppRoute.AlertSettings.route -> AppRoute.Settings.route
+    else -> null
 }

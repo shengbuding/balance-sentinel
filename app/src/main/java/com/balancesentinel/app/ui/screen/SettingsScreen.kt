@@ -303,7 +303,7 @@ fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            WidgetSettingsSection(viewModel, uiState.refreshIntervalSeconds)
+            WidgetSettingsSection(viewModel, uiState)
         }
     }
 }
@@ -968,7 +968,11 @@ private fun CommunityCard() {
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: Int) {
+private fun WidgetSettingsSection(
+    viewModel: HomeViewModel,
+    uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
+) {
+    val currentIntervalSec = uiState.refreshIntervalSeconds
     var expanded by remember { mutableStateOf(false) }
     var inputValue by remember(currentIntervalSec) { mutableStateOf((currentIntervalSec / 60).toString()) }
     var isMinutes by remember { mutableStateOf(true) }
@@ -1025,6 +1029,21 @@ private fun WidgetSettingsSection(viewModel: HomeViewModel, currentIntervalSec: 
             Text(stringResource(R.string.settings_refresh_interval_label, displayLabel),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (uiState.settingsLoading) {
+                Text(stringResource(R.string.settings_loading))
+            } else {
+                Text(
+                    stringResource(
+                        R.string.settings_refresh_cadences,
+                        uiState.refreshIntervalSeconds,
+                        uiState.backgroundRefreshIntervalSeconds?.toString()
+                            ?: stringResource(R.string.settings_cadence_disabled),
+                        uiState.refreshIntervalSeconds
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             if (expanded) {
                 Spacer(modifier = Modifier.height(12.dp))

@@ -67,7 +67,9 @@ data class HomeUiState(
     val changeAlertThreshold: Float = 0f,
     val changeAlertPeriodMinutes: Int = 0,
     val snoozeInfo: com.balancesentinel.app.data.repository.SnoozeInfo = com.balancesentinel.app.data.repository.SnoozeInfo(),
-    val snoozeDurationMinutes: Int = 60
+    val snoozeDurationMinutes: Int = 60,
+    val backgroundRefreshIntervalSeconds: Int? = null,
+    val settingsLoading: Boolean = false
 )
 
 class HomeViewModel @JvmOverloads constructor(
