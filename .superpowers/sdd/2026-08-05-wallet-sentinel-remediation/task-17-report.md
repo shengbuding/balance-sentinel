@@ -9,6 +9,21 @@ successful completion re-enqueues either the next overdue date or the next local
 midnight. Boot, package replacement, and time-zone broadcasts reconcile the same
 unique work without requiring the Home screen to be opened.
 
+Final Task 17 hardening is included through `70ef4c4`. Continuity placeholders
+are now transactionally subordinate to real summaries across cleanup, refresh,
+canonical reads, exports, and both batch and streaming imports; catch-up
+reconciliation uses a fresh dependency clock; and cleanup cancellation remains
+propagated. Task 18 is unblocked and was not started.
+
+Final verification on `70ef4c4`: full JVM `1307 tests, 0 failures, 0 errors,
+3 skipped`; `compileDebugAndroidTestKotlin` passed; `lintDebug` passed; and
+`git diff --check` was clean.
+
+Independent read-only review of `d1334f4..70ef4c4` is clean: no Critical and no
+Important findings. Deferred/uncertain risk: exported summaries do not carry
+originating timezone metadata, so timezone rebasing near date boundaries can
+still require explicit policy in a later task.
+
 Baseline: `e6c9df6b51304c0b4aad28f70a30aed0972bd478`
 
 Support: `6947324` (`feat: add midnight maintenance support seams`)
