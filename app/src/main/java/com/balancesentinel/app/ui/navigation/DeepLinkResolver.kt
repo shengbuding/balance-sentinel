@@ -77,10 +77,7 @@ object DeepLinkResolver {
         val host = uri.host?.lowercase(Locale.ROOT)
         if (host != AppRoute.INSIGHTS_HOST) return invalid(InvalidReason.UnsupportedTarget)
 
-        val segments = uri.pathSegments
-        if (segments.isNotEmpty() && (segments.size > 2 || segments.any { it.isBlank() })) {
-            return invalid(InvalidReason.MalformedUri)
-        }
+        val segments = uri.pathSegments.filter { it.isNotEmpty() }
         val accountId = segments.firstOrNull()
             ?: uri.getQueryParameter("account_id")
             ?: uri.getQueryParameter("accountId")

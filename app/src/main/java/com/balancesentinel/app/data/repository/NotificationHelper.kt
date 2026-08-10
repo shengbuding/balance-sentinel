@@ -12,9 +12,8 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.receiver.SnoozeReceiver
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.widget.AccountBalance
-import com.balancesentinel.app.ui.navigation.AppRoute
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.Locale
 
 /**
  * 统一通知工厂。
@@ -22,28 +21,26 @@ import java.util.Locale
  * 职责：
  * - 构建 alert / change / foreground / group-summary 通知
  * - 生成 PendingIntent（打开 App、Deep-link、Snooze）
- * - 按 accountId 计算隔离的通知 ID
+ * - 按 accountId + currency 计算隔离的通知和动作 ID
  * - 批量跟踪——记录本轮发送的通知，用于分组摘要
  */
 class NotificationHelper(private val context: Context) {
 
     // ── 通知 ID 计算 ──
 
-    /** 每账户 alert 通知 ID：10000 + hash，范围 [10000, 75535] */
-    fun alertNotificationId(accountId: String, currency: String = ""): Int =
-        10000 + notificationPairHash("alert", accountId, currency)
+    /** 按账户与币种稳定派生 alert 通知 ID。 */
+    fun alertNotificationId(accountId: String, currency: String): Int =
+        stablePairId(KIND_ALERT, accountId, currency, ALERT_ID_BASE)
 
-    /** Stable notification ID isolated by account and normalized currency. */
-    fun changeNotificationId(accountId: String, currency: String = ""): Int =
-        20000 + notificationPairHash("change", accountId, currency)
+    /** 按账户与币种稳定派生 change 通知 ID。 */
+    fun changeNotificationId(accountId: String, currency: String): Int =
+        stablePairId(KIND_CHANGE, accountId, currency, CHANGE_ID_BASE)
 
-    private fun notificationPairHash(kind: String, accountId: String, currency: String): Int {
-        if (currency.isBlank()) return accountId.hashCode() and 0xFFFF
-        val normalized = currency.trim().uppercase(Locale.ROOT)
-        val bytes = MessageDigest.getInstance("SHA-256")
-            .digest("\u0000$kind\u0000$accountId\u0000$normalized".toByteArray())
-        return (((bytes[0].toInt() and 0xFF) shl 8) or (bytes[1].toInt() and 0xFF)) and 0xFFFF
-    }
+    fun deepLinkRequestCode(accountId: String, currency: String): Int =
+        stablePairId(KIND_DEEP_LINK, accountId, currency, DEEP_LINK_ID_BASE)
+
+    fun snoozeRequestCode(accountId: String, currency: String): Int =
+        stablePairId(KIND_SNOOZE, accountId, currency, SNOOZE_ID_BASE)
 
     // ── PendingIntent 工厂 ──
 
@@ -55,48 +52,32 @@ class NotificationHelper(private val context: Context) {
         )
 
     /** Support seam for the canonical deep-link URI; wired in the navigation implementation. */
-    fun createDeepLinkUri(accountId: String, currency: String): Uri =
-        AppRoute.Insights(accountId, currency).toUri()
-
-    fun deepLinkRequestCode(accountId: String, currency: String): Int =
-        pairRequestCode("deep-link", accountId, currency)
-
-    fun snoozeRequestCode(accountId: String, currency: String = ""): Int =
-        pairRequestCode("snooze", accountId, currency)
-
-    private fun pairRequestCode(kind: String, accountId: String, currency: String): Int {
-        val normalized = currency.trim().uppercase(Locale.ROOT)
-        val bytes = MessageDigest.getInstance("SHA-256")
-            .digest("\u0000$kind\u0000$accountId\u0000$normalized".toByteArray())
-        val value = ((bytes[0].toInt() and 0xFF) shl 24) or
-            ((bytes[1].toInt() and 0xFF) shl 16) or
-            ((bytes[2].toInt() and 0xFF) shl 8) or
-            (bytes[3].toInt() and 0xFF)
-        val base = if (kind == "deep-link") 100_000 else 200_000
-        return base + (value and 0xFFFFF)
-    }
+    fun createDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
 
     fun createDeepLinkIntent(accountId: String, currency: String): PendingIntent {
+        val identity = AlertIdentity(accountId, currency)
         val intent = Intent(context, MainActivity::class.java).apply {
-            // Keep old extras for clients upgraded in place; the resolver accepts both.
-            putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
-            putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, accountId)
-            putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, currency)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("deep_link_target", "insights")
+            putExtra("deep_link_account_id", accountId)
+            putExtra("deep_link_currency", identity.normalizedCurrency)
         }
         return PendingIntent.getActivity(
-            context, deepLinkRequestCode(accountId, currency),
+            context, deepLinkRequestCode(accountId, identity.normalizedCurrency),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
-    fun createSnoozeIntent(accountId: String, currency: String = ""): PendingIntent {
+    fun createSnoozeIntent(accountId: String, currency: String): PendingIntent {
+        val identity = AlertIdentity(accountId, currency)
         val intent = Intent(context, SnoozeReceiver::class.java).apply {
             putExtra("account_id", accountId)
-            if (currency.isNotBlank()) putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, currency)
+            putExtra("currency", identity.normalizedCurrency)
         }
         return PendingIntent.getBroadcast(
-            context, snoozeRequestCode(accountId, currency),
+            context,
+            snoozeRequestCode(accountId, currency),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -106,7 +87,8 @@ class NotificationHelper(private val context: Context) {
 
     /** 低余额预警通知，含 "查看详情" + "暂停预警" 操作按钮 */
     fun sendLowBalanceAlert(accountId: String, balance: Float, threshold: Float, currency: String, label: String) {
-        val symbol = FormatUtils.currencySymbol(currency)
+        val normalizedCurrency = AlertIdentity(accountId, currency).normalizedCurrency
+        val symbol = FormatUtils.currencySymbol(normalizedCurrency)
         val accountLabel = if (label.isNotEmpty()) "[$label] " else ""
         val title = context.getString(R.string.alert_low_title)
         val content = context.getString(
@@ -125,17 +107,17 @@ class NotificationHelper(private val context: Context) {
             .addAction(
                 android.R.drawable.ic_menu_view,
                 context.getString(R.string.alert_action_view),
-                createDeepLinkIntent(accountId, currency)
+                createDeepLinkIntent(accountId, normalizedCurrency)
             )
             .addAction(
                 android.R.drawable.ic_media_pause,
                 context.getString(R.string.alert_action_snooze),
-                createSnoozeIntent(accountId, currency)
+                createSnoozeIntent(accountId, normalizedCurrency)
             )
             .build()
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(alertNotificationId(accountId, currency), notification)
+        nm.notify(alertNotificationId(accountId, normalizedCurrency), notification)
     }
 
     /** 余额异动通知，含 "查看详情" + "暂停预警" 操作按钮 */
@@ -143,7 +125,8 @@ class NotificationHelper(private val context: Context) {
         accountId: String, current: Float, previous: Float, diff: Float,
         periodMin: Int, currency: String, label: String
     ) {
-        val symbol = FormatUtils.currencySymbol(currency)
+        val normalizedCurrency = AlertIdentity(accountId, currency).normalizedCurrency
+        val symbol = FormatUtils.currencySymbol(normalizedCurrency)
         val direction = if (current < previous)
             context.getString(R.string.alert_change_decreased)
         else
@@ -168,17 +151,17 @@ class NotificationHelper(private val context: Context) {
             .addAction(
                 android.R.drawable.ic_menu_view,
                 context.getString(R.string.alert_action_view),
-                createDeepLinkIntent(accountId, currency)
+                createDeepLinkIntent(accountId, normalizedCurrency)
             )
             .addAction(
                 android.R.drawable.ic_media_pause,
                 context.getString(R.string.alert_action_snooze),
-                createSnoozeIntent(accountId, currency)
+                createSnoozeIntent(accountId, normalizedCurrency)
             )
             .build()
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(changeNotificationId(accountId, currency), notification)
+        nm.notify(changeNotificationId(accountId, normalizedCurrency), notification)
     }
 
     /** 构建前台 Service 通知（返回 Notification 对象，用于 startForeground） */
@@ -343,6 +326,35 @@ class NotificationHelper(private val context: Context) {
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(DeepSeekApp.NOTIFICATION_ID_GROUP_SUMMARY, summary)
+    }
+
+    private fun stablePairId(
+        kind: String,
+        accountId: String,
+        currency: String,
+        base: Int
+    ): Int {
+        val identity = AlertIdentity(accountId, currency)
+        val input = "$kind\u0000$accountId\u0000${identity.normalizedCurrency}"
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray(StandardCharsets.UTF_8))
+        val firstFourBytes =
+            ((digest[0].toInt() and 0xFF) shl 24) or
+                ((digest[1].toInt() and 0xFF) shl 16) or
+                ((digest[2].toInt() and 0xFF) shl 8) or
+                (digest[3].toInt() and 0xFF)
+        return (firstFourBytes and Int.MAX_VALUE) + base
+    }
+
+    private companion object {
+        const val KIND_ALERT = "alert"
+        const val KIND_CHANGE = "change"
+        const val KIND_DEEP_LINK = "deep_link"
+        const val KIND_SNOOZE = "snooze"
+        const val ALERT_ID_BASE = 10_000
+        const val CHANGE_ID_BASE = 20_000
+        const val DEEP_LINK_ID_BASE = 30_000
+        const val SNOOZE_ID_BASE = 40_000
     }
 
     // ── 工具 ──

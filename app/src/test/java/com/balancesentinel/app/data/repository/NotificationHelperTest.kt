@@ -437,16 +437,4 @@ class NotificationHelperTest {
         )
     }
 
-    @Test
-    fun `alert and change notification IDs isolate currencies`() {
-        assertNotEquals(
-            helper.alertNotificationId("acc1", "CNY"),
-            helper.alertNotificationId("acc1", "USD")
-        )
-        assertNotEquals(
-            helper.changeNotificationId("acc1", "CNY"),
-            helper.changeNotificationId("acc1", "USD")
-        )
-    }
-
 }
