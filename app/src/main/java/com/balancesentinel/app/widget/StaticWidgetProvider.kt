@@ -9,6 +9,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.widget.RemoteViews
@@ -552,6 +553,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
     private fun currencySymbol(currency: String): String =
         when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
+
+    /** Support seam for the canonical widget deep-link URI. */
+    fun canonicalDeepLinkUri(accountId: String, currency: String): Uri = Uri.EMPTY
 
     companion object {
         const val LEGACY_WIDGET_ALARM_REQUEST_CODE = 100
