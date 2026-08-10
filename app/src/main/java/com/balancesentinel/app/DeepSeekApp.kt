@@ -40,6 +40,11 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
+import com.balancesentinel.app.work.MonitoringHealthWorker
 
 open class DeepSeekApp : Application() {
 
@@ -97,6 +102,11 @@ open class DeepSeekApp : Application() {
                 Logger.w("MidnightWorkScheduler", "startup_reconcile_failed", error)
             }
         launchBackgroundWorkReconcile()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "monitoring-health",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<MonitoringHealthWorker>(15, TimeUnit.MINUTES).build()
+        )
         CrashLogger.install(this)
 
         // Clean up stale downloaded APKs from previous sessions

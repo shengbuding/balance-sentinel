@@ -114,7 +114,6 @@
 
 # BroadcastReceivers
 -keep class com.balancesentinel.app.receiver.BootReceiver { *; }
--keep class com.balancesentinel.app.receiver.KeepAliveReceiver { *; }
 -keep class com.balancesentinel.app.receiver.MidnightReceiver { *; }
 -keep class com.balancesentinel.app.receiver.SnoozeReceiver { *; }
 

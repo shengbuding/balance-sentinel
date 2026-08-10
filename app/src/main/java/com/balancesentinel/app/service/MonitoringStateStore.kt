@@ -5,6 +5,7 @@ import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.monitoring.MonitoringObservedState
 import com.balancesentinel.app.data.local.monitoring.MonitoringStateDao
 import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
+import com.balancesentinel.app.DeepSeekApp
 import java.util.UUID
 
 /** Small repository around the singleton monitoring projection. */
@@ -39,6 +40,10 @@ class MonitoringStateStore(
         const val DEFAULT_LEASE_MILLIS = 90_000L
 
         fun from(context: Context): MonitoringStateStore =
-            MonitoringStateStore(WalletDatabaseProvider.get(context).monitoringStateDao())
+            MonitoringStateStore(
+                WalletDatabaseProvider.get(context).monitoringStateDao(),
+                processSessionId = (context.applicationContext as? DeepSeekApp)?.processSessionId
+                    ?: UUID.randomUUID().toString()
+            )
     }
 }

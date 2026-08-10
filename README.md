@@ -87,7 +87,6 @@ keyPassword=<密码>
 | FOREGROUND_SERVICE | 后台定时刷新 |
 | POST_NOTIFICATIONS | 余额预警通知 |
 | RECEIVE_BOOT_COMPLETED | 开机自启 |
-| SCHEDULE_EXACT_ALARM | 精确定时调度 |
 | WAKE_LOCK | 刷新期间防止 CPU 休眠 |
 
 ### 隐私
@@ -204,7 +203,6 @@ See [SIGNING.md](SIGNING.md) for details.
 | FOREGROUND_SERVICE | Background scheduled refresh |
 | POST_NOTIFICATIONS | Balance alert notifications |
 | RECEIVE_BOOT_COMPLETED | Start on boot |
-| SCHEDULE_EXACT_ALARM | Precise timing schedule |
 | WAKE_LOCK | Prevent CPU sleep during refresh |
 
 ### Privacy
@@ -362,7 +360,6 @@ DeepSeekBalance/
 │       │   │   │   ├── repository/{RawRecordStore,DailySummaryStore,UsageDataStore,...}.kt
 │       │   │   │   ├── util/Logger.kt
 │       │   │   │   └── update/{UpdateChecker,UpdatePrefs,ApkDownloader}.kt
-│       │   │   ├── receiver/{Boot,KeepAlive,Midnight,Snooze}Receiver.kt
 │       │   │   ├── service/BalanceRefreshService.kt
 │       │   │   ├── ui/
 │       │   │   │   ├── screen/{Home,Insights,Settings,AlertSettings,Log,DataManagement,UpdateDialog}.kt

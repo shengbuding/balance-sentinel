@@ -41,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 
 internal fun buildServiceRefreshRunner(
     gateway: RefreshGateway,
@@ -69,14 +70,27 @@ class BalanceRefreshService : Service() {
     private lateinit var notificationHelper: NotificationHelper
     internal var serviceStarter: ServiceStarter = ForegroundServiceStarter()
     private lateinit var monitoringController: ContinuousMonitoringController
+    private var monitoringSessionStarted = false
+    private val leaseRenewRunnable = object : Runnable {
+        override fun run() {
+            if (!isLoopRunning) return
+            refreshScope.launch { runCatching { monitoringController.heartbeat() } }
+            handler.postDelayed(this, LEASE_RENEW_INTERVAL_MS)
+        }
+    }
 
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {
         override fun run() {
-            Logger.i(TAG, "Scheduled self-destruct — stopping service")
+            Logger.i(TAG, "Foreground dataSync budget reached — stopping service")
             isSelfDestructing = true
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            refreshScope.launch(NonCancellable) {
+                runCatching { monitoringController.onPlatformTimeout() }
+                handler.post {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
         }
     }
 
@@ -106,7 +120,10 @@ class BalanceRefreshService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        refreshScope.launch { monitoringController.start() }
+        if (!monitoringSessionStarted) {
+            monitoringSessionStarted = true
+            refreshScope.launch { monitoringController.start() }
+        }
 
         if (!isLoopRunning) {
             try {
@@ -122,18 +139,23 @@ class BalanceRefreshService : Service() {
             handler.removeCallbacks(refreshTask)
             handler.post(refreshTask)
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @androidx.annotation.RequiresApi(35)
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        restartRunnable.run()
+    }
+
     override fun onDestroy() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
-        refreshScope.cancel()
-        refreshScope.launch {
+        refreshScope.launch(NonCancellable) {
             runCatching { monitoringController.stop(MonitoringSessionEndReason.SERVICE_DESTROYED) }
         }
+        refreshScope.cancel()
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
         super.onDestroy()
     }
@@ -147,6 +169,7 @@ class BalanceRefreshService : Service() {
         isLoopRunning = true
         Logger.i(TAG, "Refresh loop started")
         handler.post(refreshTask)
+        handler.post(leaseRenewRunnable)
 
         // 指数退避自毁：3h → 6h → 12h（基于重启次数）
         val restartCount = RefreshScheduler.getRestartCount(this)
@@ -155,14 +178,18 @@ class BalanceRefreshService : Service() {
             restartCount == 2 -> 6 * 3_600_000L   // 6 小时
             else              -> 12 * 3_600_000L  // 12 小时（上限）
         }
-        Logger.i(TAG, "Self-destruct scheduled in ${selfDestructMs / 3_600_000}h (restart #$restartCount)")
-        handler.postDelayed(restartRunnable, selfDestructMs)
+        Logger.i(TAG, "Foreground session bound to ${selfDestructMs / 3_600_000}h")
+        refreshScope.launch {
+            val remaining = runCatching { monitoringController.remainingBudget() }.getOrDefault(selfDestructMs)
+            handler.postDelayed(restartRunnable, minOf(selfDestructMs, remaining.coerceAtLeast(1L)))
+        }
     }
 
     private fun stopLoop() {
         isLoopRunning = false
         handler.removeCallbacks(refreshTask)
         handler.removeCallbacks(restartRunnable)
+        handler.removeCallbacks(leaseRenewRunnable)
         Logger.i(TAG, "Refresh loop stopped")
     }
 
@@ -344,5 +371,6 @@ class BalanceRefreshService : Service() {
         private const val TAG = "BalanceRefreshSvc"
         private const val DEFAULT_FOREGROUND_INTERVAL_SECONDS = 30
         private const val NOTIFICATION_TOTAL_KEY = "__total__"
+        private const val LEASE_RENEW_INTERVAL_MS = 30_000L
     }
 }

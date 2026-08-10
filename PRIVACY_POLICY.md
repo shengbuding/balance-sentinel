@@ -78,7 +78,6 @@ You can delete all stored data (including API Key, balance records, and logs) at
 | FOREGROUND_SERVICE | 后台定时刷新，保持小组件数据更新 / Background scheduled refresh, keep widget data updated |
 | POST_NOTIFICATIONS | 余额告警通知 / Balance alert notifications |
 | RECEIVE_BOOT_COMPLETED | 开机后自动恢复后台刷新 / Auto-restart background refresh after boot |
-| SCHEDULE_EXACT_ALARM | 精确定时刷新 / Precise scheduled refresh |
 | WAKE_LOCK | 刷新期间防止 CPU 休眠 / Prevent CPU sleep during refresh |
 
 ---

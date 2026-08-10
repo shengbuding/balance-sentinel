@@ -25,6 +25,12 @@ abstract class MonitoringStateDao {
     @Query("UPDATE monitoring_state SET desired = :desired, updated_at = :updatedAt WHERE id = 0")
     abstract suspend fun setDesired(desired: Boolean, updatedAt: Long): Int
 
+    @Query("UPDATE monitoring_state SET last_user_foreground_reset_at = :resetAt, updated_at = :updatedAt WHERE id = 0")
+    abstract suspend fun setLastUserForegroundResetAt(resetAt: Long?, updatedAt: Long): Int
+
+    @Query("UPDATE monitoring_state SET observed_state = :observedState, state_reason = :reason, updated_at = :updatedAt WHERE id = 0")
+    abstract suspend fun projectObservedState(observedState: MonitoringObservedState, reason: String?, updatedAt: Long): Int
+
     @Query(
         """
         UPDATE monitoring_state SET
@@ -48,6 +54,7 @@ abstract class MonitoringStateDao {
             process_session_id = :processSessionId,
             lease_expires_at = :leaseExpiresAt,
             observed_state = 'RUNNING',
+            state_reason = NULL,
             updated_at = :updatedAt
         WHERE id = 0
         """
@@ -64,6 +71,7 @@ abstract class MonitoringStateDao {
             process_session_id = :processSessionId,
             lease_expires_at = :leaseExpiresAt,
             observed_state = 'RUNNING',
+            state_reason = NULL,
             updated_at = :updatedAt
         WHERE id = 0 AND desired = 1
         """
@@ -82,6 +90,7 @@ abstract class MonitoringStateDao {
             foreground_session_started_at = :startedAt,
             foreground_session_ended_at = NULL,
             observed_state = 'RUNNING',
+            state_reason = NULL,
             updated_at = :startedAt
         WHERE id = 0
         """

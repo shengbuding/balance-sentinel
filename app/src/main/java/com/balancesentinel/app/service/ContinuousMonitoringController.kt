@@ -24,6 +24,7 @@ class ContinuousMonitoringController(
         database.withTransaction {
             state.getOrCreate(at)
             state.setDesiredAndState(true, MonitoringObservedState.STARTING, "USER_STARTED", at)
+            state.setLastUserForegroundResetAt(at, at)
             sessions.getOpenForProcess(processSessionId)?.let {
                 state.projectSessionStart(it.id, processSessionId, it.startedAt)
                 state.renewDesiredLease(processSessionId, at + leaseDurationMillis, at)
@@ -107,6 +108,35 @@ class ContinuousMonitoringController(
 
     suspend fun observedState(at: Long = now()): MonitoringObservedState {
         val snapshot = state.getOrCreate(at)
-        return ServiceLeaseEvaluator.evaluate(snapshot, at, processSessionId)
+        val evaluated = ServiceLeaseEvaluator.evaluate(snapshot, at, processSessionId)
+        if (evaluated != snapshot.observedState) {
+            state.projectObservedState(evaluated, "LEASE_RECONCILE", at)
+        }
+        return evaluated
+    }
+
+    suspend fun resetUserForegroundBudget(at: Long = now()) {
+        state.getOrCreate(at)
+        state.setLastUserForegroundResetAt(at, at)
+    }
+
+    suspend fun remainingBudget(
+        at: Long = now(),
+        budgetMillis: Long = 6 * 60 * 60 * 1000L
+    ): Long = database.withTransaction {
+        val snapshot = state.getOrCreate(at)
+        val cutoff = MonitoringBudgetCalculator.effectiveCutoff(
+            at,
+            lastUserForegroundResetAt = snapshot.lastUserForegroundResetAt
+        )
+        sessions.pruneClosedThrough(cutoff)
+        val intervals = sessions.listOverlapping(cutoff, at)
+            .map { MonitoringBudgetInterval(it.startedAt, it.endedAt) }
+        MonitoringBudgetCalculator.remainingMillis(
+            intervals,
+            at,
+            budgetMillis,
+            snapshot.lastUserForegroundResetAt
+        )
     }
 }

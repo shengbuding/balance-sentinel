@@ -13,14 +13,12 @@
 | `FOREGROUND_SERVICE_DATA_SYNC` | 敏感 | 前台服务类型：网络数据同步 |
 | `WAKE_LOCK` | 普通 | 确保后台刷新不被 CPU 休眠打断 |
 | `POST_NOTIFICATIONS` | 运行时 | 余额不足时推送通知（Android 13+） |
-| `SCHEDULE_EXACT_ALARM` | 特殊访问 | 按用户设定的间隔精确触发刷新 |
 | `RECEIVE_BOOT_COMPLETED` | 普通 | 设备重启后自动恢复后台刷新 |
 
 **上架不需要额外声明的权限（普通权限）：** INTERNET、WAKE_LOCK、RECEIVE_BOOT_COMPLETED
 
 **需要 Play Console 声明的：**
 - 前台服务（FOREGROUND_SERVICE_DATA_SYNC）
-- 精确闹钟（SCHEDULE_EXACT_ALARM）
 
 ---
 
@@ -83,7 +81,6 @@ AlarmManager 单独使用可以被系统冻结（特别是国产 ROM），前台
 
 > Play Console 路径：应用内容 → 特殊应用访问权限 → 闹钟和提醒 → 添加声明
 
-**权限：** `SCHEDULE_EXACT_ALARM`
 
 ### 核心功能描述（英文，250 字符以内）
 

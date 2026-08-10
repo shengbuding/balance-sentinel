@@ -4,12 +4,16 @@ import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RefreshLogStore
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.STARTUP_GRACE_MS
 import com.balancesentinel.app.data.util.Logger
+import com.balancesentinel.app.work.RefreshWorker
 
 sealed interface ServiceStartResult {
     data object Started : ServiceStartResult
@@ -70,6 +74,11 @@ class ForegroundServiceStarter(
         } catch (_: ForegroundServiceStartNotAllowedException) {
             val retryAt = requestedAt + STARTUP_GRACE_MS + 1L
             retryScheduler.schedule(context, retryAt)
+            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+                "foreground-refresh-fallback",
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<RefreshWorker>().build()
+            )
             diagnosticSink.record(
                 context,
                 ServiceStartDiagnostic(ServiceStartDiagnosticReason.START_NOT_ALLOWED, retryAt)
