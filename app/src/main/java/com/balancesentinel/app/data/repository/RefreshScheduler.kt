@@ -272,7 +272,6 @@ object RefreshScheduler {
 
         // 1. 闹钟方法
         when (state.alarmMethod) {
-            "inexact" -> reasons.add("使用了不精确闹钟（缺少 SCHEDULE_EXACT_ALARM 权限），系统可大幅延迟")
             "failed" -> reasons.add("闹钟设置完全失败")
         }
 
