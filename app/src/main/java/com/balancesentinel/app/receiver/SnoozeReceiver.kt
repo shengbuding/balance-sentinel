@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.data.repository.NotificationHelper
 
 /**
  * 暂停预警广播接收器。
@@ -24,9 +25,13 @@ class SnoozeReceiver : BroadcastReceiver() {
 
         // 取消该账户已有的通知
         try {
+            val currency = intent.getStringExtra("deep_link_currency")
+                ?: intent.getStringExtra("currency")
+                ?: ""
+            val helper = NotificationHelper(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            nm.cancel(1002 + (accountId.hashCode() and 0xFFFF))  // alert
-            nm.cancel(2002 + (accountId.hashCode() and 0xFFFF))  // change
+            nm.cancel(helper.alertNotificationId(accountId, currency))
+            nm.cancel(helper.changeNotificationId(accountId, currency))
         } catch (e: Exception) { Logger.w("SnoozeReceiver", "snooze failed", e) }
     }
 
