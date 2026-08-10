@@ -2,6 +2,7 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyEngine
@@ -67,9 +68,18 @@ data class InsightsUiState(
  *
  * 多账户全部账户模式：null accountId 时逐账户跑引擎再合并。
  */
-class InsightsViewModel(application: Application) : AndroidViewModel(application) {
+class InsightsViewModel(
+    application: Application,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
+) : AndroidViewModel(application) {
 
-    private val _uiState = MutableStateFlow(InsightsUiState())
+    private val _uiState = MutableStateFlow(
+        InsightsUiState(
+            selectedAccountId = savedStateHandle[KEY_ACCOUNT_ID],
+            selectedCurrency = savedStateHandle[KEY_CURRENCY] ?: "",
+            rangeDays = savedStateHandle[KEY_RANGE_DAYS] ?: 7
+        )
+    )
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
     private val apiKeyManager = ApiKeyManager(application)
@@ -173,11 +183,13 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectCurrency(currency: String) {
+        savedStateHandle[KEY_CURRENCY] = currency
         _uiState.value = _uiState.value.copy(selectedCurrency = currency)
         loadData()
     }
 
     fun selectAccount(accountId: String?) {
+        savedStateHandle[KEY_ACCOUNT_ID] = accountId
         // 不再 fallback 到首个账户 — null 即全部账户，走合并路径
         _uiState.value = _uiState.value.copy(selectedAccountId = accountId)
         loadData()
@@ -185,6 +197,7 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
 
     fun setRangeDays(days: Int) {
         if (_uiState.value.rangeDays == days) return
+        savedStateHandle[KEY_RANGE_DAYS] = days
         _uiState.value = _uiState.value.copy(rangeDays = days)
         loadData()
     }
@@ -208,6 +221,9 @@ class InsightsViewModel(application: Application) : AndroidViewModel(application
     }
 
     companion object {
+        private const val KEY_ACCOUNT_ID = "insights.selectedAccountId"
+        private const val KEY_CURRENCY = "insights.selectedCurrency"
+        private const val KEY_RANGE_DAYS = "insights.rangeDays"
         /**
          * 合并多账户 Intraday 输出（carry-forward 算法）。
          *
