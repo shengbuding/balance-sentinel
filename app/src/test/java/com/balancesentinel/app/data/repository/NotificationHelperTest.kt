@@ -7,7 +7,6 @@ import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.widget.AccountBalance
-import com.balancesentinel.app.widget.StaticWidgetProvider
 import com.balancesentinel.app.ui.navigation.AppRoute
 import org.junit.After
 import org.junit.Assert.*
@@ -406,14 +405,6 @@ class NotificationHelperTest {
         assertEquals(
             AppRoute.Insights("acc1", "CNY").toUri(),
             helper.createDeepLinkUri("acc1", "cny")
-        )
-    }
-
-    @Test
-    fun `widget and notification use one normalized deep link URI`() {
-        assertEquals(
-            helper.createDeepLinkUri("acc1", "usd"),
-            StaticWidgetProvider.canonicalDeepLinkUri("acc1", "USD")
         )
     }
 

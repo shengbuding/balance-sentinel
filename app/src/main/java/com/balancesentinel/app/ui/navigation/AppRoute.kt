@@ -43,7 +43,7 @@ sealed interface AppRoute {
         is Insights -> Uri.Builder()
             .scheme(SCHEME)
             .authority(INSIGHTS_HOST)
-            .appendPath(accountId)
+            .appendPath(Uri.encode(accountId))
             .appendPath(currency.uppercase(Locale.ROOT))
             .build()
         else -> Uri.parse("$SCHEME://$route")
