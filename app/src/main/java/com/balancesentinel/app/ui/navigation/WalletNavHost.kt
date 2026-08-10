@@ -1,7 +1,6 @@
 package com.balancesentinel.app.ui.navigation
 
 import android.app.Application
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -50,14 +49,6 @@ import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
-import com.balancesentinel.app.util.OnboardingHelper
-
-private val topLevelRoutes = setOf(
-    AppRoute.Home.route,
-    "insights",
-    AppRoute.ConsoleSelect.route,
-    AppRoute.Settings.route
-)
 
 @Composable
 fun WalletNavHost(
