@@ -14,7 +14,7 @@
 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">api.deepseek.com</domain>
+        <domain includeSubdomains="false">api.deepseek.com</domain>
         <pin-set expiration="2027-07-01">
             <!--
               Evidence captured 2026-08-10 with a Java TLS socket to

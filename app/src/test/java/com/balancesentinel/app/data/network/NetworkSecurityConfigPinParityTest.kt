@@ -24,6 +24,7 @@ class NetworkSecurityConfigPinParityTest {
                 when (parser.name) {
                     "domain" -> {
                         domainCount++
+                        assertEquals("false", parser.getAttributeValue(null, "includeSubdomains"))
                         assertEquals(DeepSeekTlsPolicy.HOST, parser.nextText())
                     }
                     "pin" -> {

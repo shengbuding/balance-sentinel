@@ -1,11 +1,13 @@
 package com.balancesentinel.app.data.network
 
-import java.net.InetSocketAddress
+import com.balancesentinel.app.data.api.ProviderError
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.Base64
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLPeerUnverifiedException
-import javax.net.ssl.SSLSocket
+import java.io.IOException
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,9 +23,9 @@ import org.junit.Test
 class DeepSeekTlsPolicyTest {
 
     @Test
-    fun `live current and backup SPKI pins are accepted and unrelated cert is rejected`() {
-        val chain = liveChain()
-        assertTrue(chain.size >= 2)
+    fun `trusted current and backup fixtures are accepted and unrelated cert is rejected`() {
+        val chain = fixtureChain()
+        assertTrue(chain.size >= 3)
 
         DeepSeekTlsPolicy.certificatePinner.check(DeepSeekTlsPolicy.HOST, listOf(chain[0]))
         DeepSeekTlsPolicy.certificatePinner.check(DeepSeekTlsPolicy.HOST, listOf(chain[1]))
@@ -36,7 +38,7 @@ class DeepSeekTlsPolicyTest {
 
     @Test
     fun `pin failure does not fall back to an unpinned connection`() {
-        val chain = liveChain()
+        val chain = fixtureChain()
         val currentOnly = CertificatePinner.Builder()
             .add(DeepSeekTlsPolicy.HOST, DeepSeekTlsPolicy.CURRENT_PIN)
             .build()
@@ -80,16 +82,45 @@ class DeepSeekTlsPolicyTest {
         }
     }
 
-    private fun liveChain(): List<java.security.cert.Certificate> {
-        val context = SSLContext.getInstance("TLS")
-        context.init(null, null, null)
-        val socket = context.socketFactory.createSocket() as SSLSocket
-        socket.connect(InetSocketAddress(DeepSeekTlsPolicy.HOST, 443), 15_000)
-        return try {
-            socket.startHandshake()
-            socket.session.peerCertificates.toList()
+    @Test
+    fun `HeldCertificate handshake rejects mismatched pin and maps to TLS network failure`() {
+        val serverCertificate = HeldCertificate.Builder()
+            .commonName("localhost")
+            .addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("127.0.0.1")
+            .build()
+        val serverHandshake = HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .build()
+        val clientHandshake = HandshakeCertificates.Builder()
+            .addTrustedCertificate(serverCertificate.certificate)
+            .build()
+        val wrongPin = "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        val server = MockWebServer()
+        server.useHttps(serverHandshake.sslSocketFactory(), false)
+        server.enqueue(MockResponse().setBody("must-not-fallback"))
+        server.start()
+        try {
+            val client = OkHttpClient.Builder()
+                .sslSocketFactory(clientHandshake.sslSocketFactory(), clientHandshake.trustManager)
+                .certificatePinner(CertificatePinner.Builder().add("127.0.0.1", wrongPin).build())
+                .build()
+            val failure = assertThrows(IOException::class.java) {
+                client.newCall(Request.Builder().url(server.url("/")).build()).execute().use { it.body?.close() }
+            }
+            val mapped = ProviderError.NetworkError(com.balancesentinel.app.data.api.ProviderType.DEEPSEEK, failure)
+            assertTrue(mapped.message.contains("TLS"))
+            assertTrue(server.requestCount <= 1)
         } finally {
-            socket.close()
+            server.shutdown()
         }
+    }
+
+    private fun fixtureChain(): List<X509Certificate> = (0..2).map { index ->
+        val bytes = checkNotNull(javaClass.classLoader?.getResourceAsStream("deepseek-chain/cert$index.der")) {
+            "missing DeepSeek certificate fixture $index"
+        }.use { it.readBytes() }
+        CertificateFactory.getInstance("X.509")
+            .generateCertificate(ByteArrayInputStream(bytes)) as X509Certificate
     }
 }
