@@ -2,9 +2,8 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
-import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyEngine
 import com.balancesentinel.app.data.engine.DailyInput
@@ -20,28 +19,16 @@ import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
-import com.balancesentinel.app.data.credentials.DataCorruptionException
-import com.balancesentinel.app.data.repository.AccountLoadState
-import com.balancesentinel.app.data.repository.AccountUiRepository
-import com.balancesentinel.app.data.repository.RoomAccountRepository
-import com.balancesentinel.app.data.repository.RoomAccountUiRepository
-import com.balancesentinel.app.data.repository.HistoryRepository
-import com.balancesentinel.app.data.repository.RoomHistoryRepository
+import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.DailySummaryStore
+import com.balancesentinel.app.data.repository.RawRecordStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.time.Instant
-import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /**
@@ -50,13 +37,11 @@ import kotlin.math.roundToInt
  * [dailyOutput] 来自 DailyEngine（长期日历天视图）。
  */
 data class InsightsUiState(
-    val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     val isLoading: Boolean = false,
     val accounts: List<AccountInfo> = emptyList(),
     val selectedAccountId: String? = null,
     val availableCurrencies: List<String> = emptyList(),
     val selectedCurrency: String = "",
-    val credentialCorrupt: Boolean = false,
     val rangeDays: Int = 7,
 
     /** IntradayEngine 输出 — 24h 滑动窗口 */
@@ -83,147 +68,78 @@ data class InsightsUiState(
  *
  * 多账户全部账户模式：null accountId 时逐账户跑引擎再合并。
  */
-class InsightsViewModel @JvmOverloads constructor(
+class InsightsViewModel(
     application: Application,
-    private val injectedAccountUiRepository: AccountUiRepository? = null,
-    private val injectedHistoryRepository: HistoryRepository? = null
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : AndroidViewModel(application) {
 
-    private val _uiState = MutableStateFlow(InsightsUiState())
+    private val _uiState = MutableStateFlow(
+        InsightsUiState(
+            selectedAccountId = savedStateHandle[KEY_ACCOUNT_ID],
+            selectedCurrency = savedStateHandle[KEY_CURRENCY] ?: "",
+            rangeDays = savedStateHandle[KEY_RANGE_DAYS] ?: 7
+        )
+    )
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
-    private val workScope: CoroutineScope by lazy {
-        if (injectedHistoryRepository != null) {
-            CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        } else {
-            viewModelScope
-        }
-    }
-
-    private val accountSource: AccountUiRepository = injectedAccountUiRepository
-        ?: RoomAccountUiRepository(
-            RoomAccountRepository(WalletDatabaseProvider.get(application)),
-            EncryptedPreferencesCredentialStore(application)
-        )
-    private val historySource: HistoryRepository = injectedHistoryRepository
-        ?: RoomHistoryRepository(WalletDatabaseProvider.get(application))
-    private var accountCollectionJob: Job? = null
+    private val apiKeyManager = ApiKeyManager(application)
     private var loadDataJob: Job? = null
 
     init {
-        observeAccounts()
-    }
-
-    private fun observeAccounts() {
-        accountCollectionJob?.cancel()
-        accountCollectionJob = workScope.launch {
-            accountSource.observe()
-                .catch { error ->
-                    if (error is kotlinx.coroutines.CancellationException) throw error
-                    emit(
-                        AccountLoadState.Corrupt(
-                            error as? DataCorruptionException
-                                ?: DataCorruptionException("Account UI state cannot be read", error)
-                        )
-                    )
-                }
-                .collect { state ->
-                    when (state) {
-                        AccountLoadState.Loading -> {
-                            _uiState.update { current -> current.copy(
-                                accountLoadState = state,
-                                isLoading = true
-                            ) }
-                        }
-                        is AccountLoadState.Ready -> {
-                            _uiState.update { current ->
-                                val selected = current.selectedAccountId
-                                    ?.takeIf { id -> state.accounts.any { it.id == id } }
-                                current.copy(
-                                    accountLoadState = state,
-                                    accounts = state.accounts,
-                                    selectedAccountId = selected,
-                                    credentialCorrupt = false
-                                )
-                            }
-                            loadData()
-                        }
-                        is AccountLoadState.Corrupt -> {
-                            _uiState.update { current -> current.copy(
-                                accountLoadState = state,
-                                credentialCorrupt = true,
-                                isLoading = false
-                            ) }
-                            loadData()
-                        }
-                    }
-                }
-        }
+        loadData()
     }
 
     fun loadData() {
-        val accounts = when (val state = _uiState.value.accountLoadState) {
-            is AccountLoadState.Ready -> state.accounts
-            is AccountLoadState.Corrupt -> _uiState.value.accounts
-            AccountLoadState.Loading -> return
-        }
         loadDataJob?.cancel()
-        loadDataJob = workScope.launch(Dispatchers.Default) {
-            _uiState.update { current -> current.copy(
+        loadDataJob = viewModelScope.launch(Dispatchers.Default) {
+            _uiState.value = _uiState.value.copy(
                 isLoading = true,
                 expandedDate = null
-            ) }
+            )
 
             try {
-                val accountId = _uiState.value.selectedAccountId
-                val rangeDays = _uiState.value.rangeDays
-                val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
-                val historyFrom = today.minusDays(365).toString()
-                val historyTo = today.toString()
-                val scopedSummaries = historySource.summaries(
-                    accountId = accountId,
-                    fromDateInclusive = historyFrom,
-                    toDateInclusive = historyTo
-                )
-                val currencies = (historySource.distinctCurrencies() + scopedSummaries.map { it.currency })
-                    .distinct().sorted()
+                val summaries = DailySummaryStore.getSummaries(getApplication())
+                val allRaw = RawRecordStore.getAllRecords(getApplication())
+                val currencies = (summaries.map { it.currency } + allRaw.map { it.currency }).distinct()
+
+                val accounts = try {
+                    apiKeyManager.migrateLegacyKeyIfNeeded()
+                    apiKeyManager.getAccounts()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+
                 val currency = _uiState.value.selectedCurrency.let {
                     if (it.isNotEmpty() && currencies.contains(it)) it
                     else currencies.firstOrNull() ?: ""
                 }
+                val accountId = _uiState.value.selectedAccountId
+                val rangeDays = _uiState.value.rangeDays
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-                val scopedAccounts = accountId?.let { id -> accounts.filter { it.id == id } } ?: accounts
-                val recentRaw = readHistoryWindow(historySource, scopedAccounts, currency, cutoff, Long.MAX_VALUE)
+                val recentRaw = RawRecordStore.getRecordsSince(getApplication(), cutoff)
                 val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
 
                 // ── Daily: 长期日历天视图 ──
-                val todayRaw = recentRaw.filter {
-                    Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
-                }
-                val summaries = if (accountId == null) scopedSummaries else historySource.summaries(
-                    accountId = accountId,
-                    currency = currency.takeIf { it.isNotEmpty() },
-                    fromDateInclusive = historyFrom,
-                    toDateInclusive = historyTo
-                )
+                val todayRaw = RawRecordStore.getTodayRecords(getApplication())
                 val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
 
                 // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──
                 val fullHistoryOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, 365)
 
-                _uiState.update { current -> current.copy(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
+                    accounts = accounts,
                     selectedAccountId = accountId,
                     availableCurrencies = currencies,
                     selectedCurrency = currency,
                     intradayOutput = intradayOutput,
                     dailyOutput = dailyOutput,
                     dailyHistoryPoints = fullHistoryOutput.dailyPoints
-                ) }
+                )
             } catch (_: Exception) {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
     }
@@ -231,41 +147,6 @@ class InsightsViewModel @JvmOverloads constructor(
     // ═══════════════════════════════════════════════════════════
     // 计算辅助：单账户走引擎，null=全部账户走逐账户引擎+合并
     // ═══════════════════════════════════════════════════════════
-
-    private suspend fun readHistoryWindow(
-        repository: HistoryRepository,
-        accounts: List<AccountInfo>,
-        currency: String,
-        fromInclusive: Long,
-        toExclusive: Long
-    ): List<RawRecord> {
-        if (currency.isBlank()) return emptyList()
-        val records = mutableListOf<RawRecord>()
-        for (account in accounts) {
-            var cursor: com.balancesentinel.app.data.repository.HistoryCursor? = null
-            while (true) {
-                val page = repository.page(
-                    accountId = account.id,
-                    currency = currency,
-                    fromInclusive = fromInclusive,
-                    toExclusive = toExclusive,
-                    after = cursor,
-                    limit = HistoryRepository.MAX_PAGE_SIZE
-                )
-                if (page.records.isEmpty()) break
-                records += page.records.map { it.value }
-                val next = page.nextCursor ?: break
-                if (next == cursor) break
-                cursor = next
-            }
-        }
-        return records
-    }
-
-    override fun onCleared() {
-        if (injectedHistoryRepository != null) workScope.cancel()
-        super.onCleared()
-    }
 
     private fun computeIntraday(
         records: List<RawRecord>,
@@ -302,41 +183,47 @@ class InsightsViewModel @JvmOverloads constructor(
     }
 
     fun selectCurrency(currency: String) {
-        _uiState.update { it.copy(selectedCurrency = currency) }
+        savedStateHandle[KEY_CURRENCY] = currency
+        _uiState.value = _uiState.value.copy(selectedCurrency = currency)
         loadData()
     }
 
     fun selectAccount(accountId: String?) {
+        savedStateHandle[KEY_ACCOUNT_ID] = accountId
         // 不再 fallback 到首个账户 — null 即全部账户，走合并路径
-        _uiState.update { it.copy(selectedAccountId = accountId) }
+        _uiState.value = _uiState.value.copy(selectedAccountId = accountId)
         loadData()
     }
 
     fun setRangeDays(days: Int) {
         if (_uiState.value.rangeDays == days) return
-        _uiState.update { it.copy(rangeDays = days) }
+        savedStateHandle[KEY_RANGE_DAYS] = days
+        _uiState.value = _uiState.value.copy(rangeDays = days)
         loadData()
     }
 
     fun setChartMode(mode: String) {
-        _uiState.update { it.copy(chartMode = mode) }
+        _uiState.value = _uiState.value.copy(chartMode = mode)
     }
 
     fun loadMoreHistory() {
-        _uiState.update { current ->
-            val maxDays = current.dailyHistoryPoints.size
-            val next = (current.historyVisibleCount + 10).coerceAtMost(maxDays)
-            current.copy(historyVisibleCount = next)
-        }
+        val current = _uiState.value
+        val maxDays = current.dailyHistoryPoints.size
+        val next = (current.historyVisibleCount + 10).coerceAtMost(maxDays)
+        _uiState.value = current.copy(historyVisibleCount = next)
     }
 
     fun toggleExpandDate(date: String) {
-        _uiState.update { current ->
-            current.copy(expandedDate = if (current.expandedDate == date) null else date)
-        }
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            expandedDate = if (current.expandedDate == date) null else date
+        )
     }
 
     companion object {
+        private const val KEY_ACCOUNT_ID = "insights.selectedAccountId"
+        private const val KEY_CURRENCY = "insights.selectedCurrency"
+        private const val KEY_RANGE_DAYS = "insights.rangeDays"
         /**
          * 合并多账户 Intraday 输出（carry-forward 算法）。
          *

@@ -2,6 +2,7 @@
 <resources>
     <!-- ===== App Identity ===== -->
     <string name="app_name">Wallet Sentinel</string>
+    <string name="invalid_deep_link_title">Invalid link</string>
     <string name="widget_name">Balance Widget</string>
     <string name="widget_description">View API account balance on home screen</string>
 
