@@ -30,11 +30,14 @@ import java.io.OutputStream
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -94,7 +97,7 @@ class HistoryStreamingLargeDatasetTest {
     }
 
     @Test
-    fun `room export reads every DAO page inside one consistent transaction`() = runBlocking {
+    fun `room export snapshots before paging and validates after paging`() = runBlocking {
         val transactionStates = mutableListOf<Boolean>()
         val source = DataExporter.roomHistoryExportSource(database) { _, _ ->
             transactionStates += database.inTransaction()
@@ -103,7 +106,65 @@ class HistoryStreamingLargeDatasetTest {
 
         assertTrue(DataExporter.exportToUri(context, TEST_URI, source = source, storage = storage))
         assertTrue(transactionStates.isNotEmpty())
-        assertTrue(transactionStates.all { it })
+        assertTrue(transactionStates.none { it })
+    }
+
+    @Test
+    fun `room export retries same-count usage content changes without holding a write-blocking transaction`() = runTest {
+        val persistence = RoomRefreshPersistence(database)
+        val initial = UsageSnapshot(
+            accountId = "account",
+            timestamp = 1L,
+            records = listOf(UsageRecord("old-model", 10L))
+        )
+        persistence.commit(emptyList(), listOf(initial), emptyList(), identityDiscriminator = "refresh")
+
+        val delegate = DataExporter.roomHistoryExportSource(database)
+        val usagePageEntered = CompletableDeferred<Unit>()
+        val releaseUsagePage = CompletableDeferred<Unit>()
+        var pauseOnce = true
+        val source = object : HistoryExportSource {
+            override suspend fun <T> withConsistentSnapshot(block: suspend () -> T): T =
+                delegate.withConsistentSnapshot(block)
+
+            override suspend fun dailySummaryPage(offset: Int, limit: Int) =
+                delegate.dailySummaryPage(offset, limit)
+
+            override suspend fun rawRecordPage(after: HistoryCursor?, limit: Int) =
+                delegate.rawRecordPage(after, limit)
+
+            override suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot> {
+                val page = delegate.usageSnapshotPage(offset, limit)
+                if (pauseOnce && offset == 0 && page.isNotEmpty()) {
+                    pauseOnce = false
+                    usagePageEntered.complete(Unit)
+                    releaseUsagePage.await()
+                }
+                return page
+            }
+
+            override suspend fun refreshLogPage(after: HistoryLogCursor?, limit: Int) =
+                delegate.refreshLogPage(after, limit)
+        }
+        val storage = MemoryUriStorage(byteArrayOf(), atomicReplace = true)
+        val export = async {
+            DataExporter.exportToUri(context, TEST_URI, source = source, storage = storage)
+        }
+
+        usagePageEntered.await()
+        val updated = initial.copy(records = listOf(UsageRecord("new-model", 99L)))
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                persistence.commit(emptyList(), listOf(updated), emptyList(), identityDiscriminator = "refresh")
+            }
+        }
+        releaseUsagePage.complete(Unit)
+
+        assertTrue(export.await())
+        assertTrue(storage.text().contains("new-model"))
+        assertFalse(storage.text().contains("old-model"))
+        val snapshotIds = database.usageDao().exportPage(0, 10).map { it.id }
+        assertEquals(1L, database.usageDao().countRecordsForSnapshots(snapshotIds))
     }
 
     @Test

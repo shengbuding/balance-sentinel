@@ -21,12 +21,16 @@ interface UsageDao {
     @Query("DELETE FROM usage_records WHERE snapshot_id = :snapshotId")
     suspend fun deleteRecords(snapshotId: String)
 
+    @Query("SELECT content_revision FROM usage_snapshots WHERE id = :snapshotId")
+    suspend fun contentRevision(snapshotId: String): Long?
+
     @Transaction
     suspend fun upsertSnapshotWithRecords(
         snapshot: UsageSnapshotEntity,
         records: List<UsageRecordEntity>
     ) {
-        upsertSnapshot(snapshot)
+        val nextRevision = (contentRevision(snapshot.id) ?: 0L) + 1L
+        upsertSnapshot(snapshot.copy(contentRevision = nextRevision))
         deleteRecords(snapshot.id)
         records.chunked(RECORD_BATCH_SIZE).forEach { batch ->
             upsertRecords(batch)
@@ -135,6 +139,9 @@ interface UsageDao {
 
     @Query("SELECT * FROM usage_snapshots ORDER BY captured_at, id LIMIT :limit OFFSET :offset")
     suspend fun exportPage(offset: Int, limit: Int): List<UsageSnapshotEntity>
+
+    @Query("SELECT COUNT(*) FROM usage_records WHERE snapshot_id IN (:snapshotIds)")
+    suspend fun countRecordsForSnapshots(snapshotIds: List<String>): Long
 
     @Query("DELETE FROM usage_snapshots")
     suspend fun clearSnapshots(): Int

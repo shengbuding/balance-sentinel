@@ -3,6 +3,8 @@ import com.balancesentinel.app.data.util.Logger
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
@@ -33,6 +35,16 @@ class LogViewModel(
     application: Application,
     private val eventLogRepository: EventLogRepository = RoomEventLogRepository(WalletDatabaseProvider.get(application))
 ) : AndroidViewModel(application) {
+
+    class Factory(private val application: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(LogViewModel::class.java)) {
+                return LogViewModel(application) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class")
+        }
+    }
 
     private val _uiState = MutableStateFlow(
         LogUiState(logMaxEntries = WidgetPrefs(application).logMaxEntries)

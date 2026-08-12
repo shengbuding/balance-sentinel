@@ -22,8 +22,11 @@ import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.ui.components.EditAccountDialog
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
 
@@ -42,7 +45,22 @@ class HomeScreenTest {
 
     private fun createViewModel(): HomeViewModel {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        return HomeViewModel(app)
+        lateinit var viewModel: HomeViewModel
+        composeTestRule.runOnIdle {
+            viewModel = HomeViewModel(
+                application = app,
+                injectedAccountUiRepository = AccountUiRepository {
+                    flowOf(AccountLoadState.Ready(emptyList()))
+                }
+            )
+        }
+        return viewModel
+    }
+
+    private fun awaitAccountsReady(viewModel: HomeViewModel) {
+        composeTestRule.waitUntil(5_000) {
+            viewModel.uiState.value.accountLoadState is AccountLoadState.Ready
+        }
     }
 
     private fun string(resId: Int): String =
@@ -84,6 +102,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithText(string(R.string.home_empty_title)).assertIsDisplayed()
         composeTestRule.onNodeWithText(string(R.string.home_empty_subtitle)).assertIsDisplayed()
@@ -95,6 +114,7 @@ class HomeScreenTest {
         setEnglishContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onAllNodesWithText("添加第一个账户").assertCountEquals(0)
         composeTestRule.onNodeWithText("Add Account").assertIsDisplayed()
@@ -117,6 +137,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).assertIsDisplayed()
     }
@@ -143,6 +164,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
@@ -155,6 +177,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
@@ -168,6 +191,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
 
@@ -181,6 +205,7 @@ class HomeScreenTest {
         composeTestRule.setContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
         composeTestRule.onNodeWithText(string(R.string.add_account_key_label)).assertIsDisplayed()
@@ -197,6 +222,7 @@ class HomeScreenTest {
         setEnglishContent {
             HomeScreen(viewModel = vm, onNavigateToSettings = {})
         }
+        awaitAccountsReady(vm)
 
         composeTestRule.onNodeWithTag(ADD_ACCOUNT_FAB_TAG).performClick()
         composeTestRule.onNodeWithTag(PROVIDER_SELECTOR_TAG).performClick()

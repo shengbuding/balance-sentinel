@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AppResetCoordinator
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
@@ -23,6 +24,11 @@ import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
 import com.balancesentinel.app.data.repository.ConfigManager
 import com.balancesentinel.app.data.repository.DataExporter
+import com.balancesentinel.app.data.repository.DataHistoryRepository
+import com.balancesentinel.app.data.repository.DataStatisticsRepository
+import com.balancesentinel.app.data.repository.RoomDataHistoryRepository
+import com.balancesentinel.app.data.repository.RoomDataStatisticsRepository
+import com.balancesentinel.app.data.repository.RoomConfigImportCoordinator
 import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -33,13 +39,18 @@ import com.balancesentinel.app.widget.WidgetErrorLogger
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 // ═══════════════════════════════════════════════════════════
 // UI State
@@ -57,6 +68,7 @@ data class DataManagementUiState(
     val widgetBalanceCount: Int = 0,
     val alarmCounters: AlarmCounterSnapshot = AlarmCounterSnapshot(),
     val crashCount: Int = 0,
+    val statisticsLoaded: Boolean = false,
 
     // 对话框控制
     val pendingAction: PendingAction? = null,
@@ -68,10 +80,20 @@ data class DataManagementUiState(
     val authorizedImportOrigins: Map<String, Set<WebOrigin>> = emptyMap(),
     val replaceConfirmationRequired: Boolean = false,
     val importError: Boolean = false,
-    val historyOperationState: HistoryOperationState = HistoryOperationState.IDLE
-)
+    val importInProgress: Boolean = false,
+    val dataOperationState: DataOperationState = DataOperationState.Idle
+) {
+    val historyOperationState: HistoryOperationState
+        get() = when (dataOperationState) {
+            DataOperationState.Idle -> HistoryOperationState.IDLE
+            is DataOperationState.Running -> HistoryOperationState.ACTIVE
+            is DataOperationState.Succeeded -> HistoryOperationState.SUCCEEDED
+            is DataOperationState.Failed -> HistoryOperationState.FAILED
+            is DataOperationState.Cancelled -> HistoryOperationState.CANCELLED
+        }
+}
 
-enum class HistoryOperationState { IDLE, ACTIVE, SUCCEEDED, FAILED }
+enum class HistoryOperationState { IDLE, ACTIVE, SUCCEEDED, FAILED, CANCELLED }
 
 data class AlarmCounterSnapshot(
     val totalSet: Int = 0,
@@ -104,15 +126,23 @@ class DataManagementViewModel @JvmOverloads constructor(
     private val importPlanner: BackupImportPlanner = BackupImportPlanner(
         apiKeyManager,
         widgetPrefs,
-        settingsRepository = SettingsRepositoryProvider.get(application)
+        settingsRepository = SettingsRepositoryProvider.get(application),
+        configImportCoordinator = RoomConfigImportCoordinator(
+            WalletDatabaseProvider.get(application),
+            EncryptedPreferencesCredentialStore(application),
+            SettingsRepositoryProvider.get(application)
+        )
     ),
     private val injectedAccountUiRepository: AccountUiRepository? = null,
-    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null
+    private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null,
+    private val injectedDataStatisticsRepository: DataStatisticsRepository? = null,
+    private val injectedDataHistoryRepository: DataHistoryRepository? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DataManagementUiState())
     val uiState: StateFlow<DataManagementUiState> = _uiState.asStateFlow()
     private var pendingImportConfig: AppConfig? = null
+    private val importInProgressGuard = AtomicBoolean(false)
     private val accountSource: AccountUiRepository = injectedAccountUiRepository
         ?: RoomAccountUiRepository(
             RoomAccountRepository(WalletDatabaseProvider.get(application)),
@@ -121,7 +151,20 @@ class DataManagementViewModel @JvmOverloads constructor(
     private val mutationCoordinator: AccountMutationCoordinator = injectedAccountMutationCoordinator
         ?: AccountLifecycleManager(application).mutationCoordinator()
     private val database = WalletDatabaseProvider.get(application)
+    private val appResetCoordinator = AppResetCoordinator(
+        application,
+        database,
+        EncryptedPreferencesCredentialStore(application),
+        SettingsRepositoryProvider.get(application)
+    )
+    private val statisticsRepository = injectedDataStatisticsRepository
+        ?: RoomDataStatisticsRepository(application, database)
+    private val historyRepository = injectedDataHistoryRepository
+        ?: RoomDataHistoryRepository(application)
     private var accountCollectionJob: Job? = null
+    private var statisticsJob: Job? = null
+    private var historyOperationJob: Job? = null
+    private var historyOperationOwner: String? = null
 
     init {
         observeAccounts()
@@ -169,33 +212,27 @@ class DataManagementViewModel @JvmOverloads constructor(
     // ── 统计 ──
 
     fun loadStats() {
-        val ctx = getApplication<Application>()
-        viewModelScope.launch(Dispatchers.IO) {
-            val rawCount = database.historyDao().countRecords()
-            val distinctDates = database.historyDao().countDistinctDates()
-            val summaryCount = database.historyDao().countSummaries()
-            val snapshotCount = database.usageDao().countSnapshots()
-            val logCount = database.eventLogDao().countLogs()
-            val widgetErrors = WidgetErrorLogger.getLogs(ctx).size
-            val balances = BalanceWidgetDataStore.getSummaryBalances(ctx).size
-            val state = RefreshScheduler.getState(ctx)
-            val crashes = CrashLogger.getCrashes(ctx).size
-            withContext(Dispatchers.Main) {
+        statisticsJob?.cancel()
+        statisticsJob = viewModelScope.launch(Dispatchers.IO) {
+            val summary = runCatching { statisticsRepository.loadSummary() }.getOrNull()
+                ?: return@launch
+            withContext(Dispatchers.Main.immediate) {
                 _uiState.value = _uiState.value.copy(
-                    rawRecordCount = rawCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    rawRecordDistinctDates = distinctDates.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    dailySummaryCount = summaryCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    usageSnapshotCount = snapshotCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    refreshLogCount = logCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    widgetErrorCount = widgetErrors,
-                    widgetBalanceCount = balances,
+                    rawRecordCount = summary.rawRecordCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    rawRecordDistinctDates = summary.rawRecordDistinctDates.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    dailySummaryCount = summary.dailySummaryCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    usageSnapshotCount = summary.usageSnapshotCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    refreshLogCount = summary.refreshLogCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    widgetErrorCount = summary.widgetErrorCount,
+                    widgetBalanceCount = summary.widgetBalanceCount,
                     alarmCounters = AlarmCounterSnapshot(
-                        totalSet = state.totalAlarmsSet,
-                        totalFired = state.totalAlarmsFired,
-                        totalCancelled = state.totalCancelled,
-                        totalDropped = state.totalDropped
+                        totalSet = summary.alarmCounters.totalSet,
+                        totalFired = summary.alarmCounters.totalFired,
+                        totalCancelled = summary.alarmCounters.totalCancelled,
+                        totalDropped = summary.alarmCounters.totalDropped
                     ),
-                    crashCount = crashes
+                    crashCount = summary.crashCount,
+                    statisticsLoaded = true
                 )
             }
         }
@@ -295,22 +332,36 @@ class DataManagementViewModel @JvmOverloads constructor(
         )
     }
 
-    fun requestApplyImport(): Boolean {
+    suspend fun requestApplyImport(): Boolean {
         val plan = _uiState.value.pendingImportPlan ?: return false
         if (!plan.canApply) return false
         if (plan.mode == ImportMode.REPLACE_ALL) {
             _uiState.value = _uiState.value.copy(replaceConfirmationRequired = true)
             return false
         }
-        return applyPendingImport(plan, confirmedFullReplace = false)
+        return runImportIfIdle(plan, confirmedFullReplace = false)
     }
 
-    fun confirmReplaceImport(): Boolean {
+    suspend fun confirmReplaceImport(): Boolean {
         val plan = _uiState.value.pendingImportPlan ?: return false
         if (!_uiState.value.replaceConfirmationRequired || plan.mode != ImportMode.REPLACE_ALL) {
             return false
         }
-        return applyPendingImport(plan, confirmedFullReplace = true)
+        return runImportIfIdle(plan, confirmedFullReplace = true)
+    }
+
+    private suspend fun runImportIfIdle(
+        plan: BackupImportPlan,
+        confirmedFullReplace: Boolean
+    ): Boolean {
+        if (!importInProgressGuard.compareAndSet(false, true)) return false
+        _uiState.value = _uiState.value.copy(importInProgress = true)
+        return try {
+            applyPendingImport(plan, confirmedFullReplace)
+        } finally {
+            importInProgressGuard.set(false)
+            _uiState.value = _uiState.value.copy(importInProgress = false)
+        }
     }
 
     fun dismissImportPreview() {
@@ -338,24 +389,18 @@ class DataManagementViewModel @JvmOverloads constructor(
         )
     }
 
-    private fun applyPendingImport(
+    private suspend fun applyPendingImport(
         plan: BackupImportPlan,
         confirmedFullReplace: Boolean
     ): Boolean = try {
-        if (importPlanner.usesAtomicSettingsPublication) {
-            viewModelScope.launch {
-                runCatching { importPlanner.applyAsync(plan, confirmedFullReplace) }
-                    .onFailure {
-                        _uiState.value = _uiState.value.copy(
-                            replaceConfirmationRequired = false,
-                            importError = true
-                        )
-                    }
+        withContext(Dispatchers.IO) {
+            if (importPlanner.usesAtomicSettingsPublication) {
+                importPlanner.applyAsync(plan, confirmedFullReplace)
+            } else {
+                // Legacy storage has no Room transaction boundary. Preserve its existing
+                // synchronous UI contract while production imports use applyAsync above.
+                importPlanner.apply(plan, confirmedFullReplace)
             }
-        } else {
-            // Legacy storage has no Room transaction boundary. Preserve its existing
-            // synchronous UI contract while production imports use applyAsync above.
-            importPlanner.apply(plan, confirmedFullReplace)
         }
         pendingImportConfig = null
         _uiState.value = _uiState.value.copy(
@@ -394,34 +439,150 @@ class DataManagementViewModel @JvmOverloads constructor(
         }
     }
 
-    suspend fun exportHistory(uri: Uri): Boolean {
-        _uiState.value = _uiState.value.copy(historyOperationState = HistoryOperationState.ACTIVE)
-        var succeeded = false
-        try {
-            succeeded = withContext(Dispatchers.IO) {
-                DataExporter.exportToUri(getApplication(), uri)
-            }
-            return succeeded
-        } finally {
+    fun startHistoryExport(uri: Uri): String? = startHistoryOperation(
+        DataOperationKind.EXPORT_HISTORY,
+        uri
+    )
+
+    fun startHistoryImport(uri: Uri): String? = startHistoryOperation(
+        DataOperationKind.IMPORT_HISTORY,
+        uri
+    )
+
+    fun cancelHistoryOperation() {
+        val operationId = historyOperationOwner ?: return
+        val state = _uiState.value.dataOperationState
+        if (state is DataOperationState.Running && state.operationId == operationId) {
             _uiState.value = _uiState.value.copy(
-                historyOperationState = if (succeeded) HistoryOperationState.SUCCEEDED else HistoryOperationState.FAILED
+                dataOperationState = DataOperationState.Cancelled(operationId, state.kind)
             )
+        }
+        historyOperationJob?.cancel()
+    }
+
+    fun acknowledgeHistoryOperation(operationId: String) {
+        val state = _uiState.value.dataOperationState
+        val terminalId = when (state) {
+            is DataOperationState.Succeeded -> state.operationId
+            is DataOperationState.Failed -> state.operationId
+            is DataOperationState.Cancelled -> state.operationId
+            else -> null
+        }
+        if (terminalId == operationId) {
+            _uiState.value = _uiState.value.copy(dataOperationState = DataOperationState.Idle)
         }
     }
 
+    /** Compatibility bridge for non-StateFlow callers. */
+    suspend fun exportHistory(uri: Uri): Boolean {
+        val operationId = startHistoryExport(uri) ?: return false
+        val job = historyOperationJob ?: return false
+        job.join()
+        return (_uiState.value.dataOperationState as? DataOperationState.Succeeded)
+            ?.operationId == operationId
+    }
+
+    /** Compatibility bridge for non-StateFlow callers. */
     suspend fun importHistory(uri: Uri): DataExporter.ImportResult? {
-        _uiState.value = _uiState.value.copy(historyOperationState = HistoryOperationState.ACTIVE)
-        var result: DataExporter.ImportResult? = null
-        try {
-            result = withContext(Dispatchers.IO) {
-                DataExporter.importAndApply(getApplication(), uri)
+        val operationId = startHistoryImport(uri) ?: return null
+        val job = historyOperationJob ?: return null
+        job.join()
+        val state = _uiState.value.dataOperationState as? DataOperationState.Succeeded
+        val summary = state?.takeIf { it.operationId == operationId }?.importSummary ?: return null
+        return DataExporter.ImportResult(
+            summary.summariesInFile,
+            summary.summariesImported,
+            summary.recordsInFile,
+            summary.recordsImported,
+            summary.snapshotsInFile,
+            summary.snapshotsImported,
+            summary.logsInFile,
+            summary.logsImported
+        )
+    }
+
+    private fun startHistoryOperation(kind: DataOperationKind, uri: Uri): String? {
+        historyOperationJob?.cancel()
+        val operationId = UUID.randomUUID().toString()
+        historyOperationOwner = operationId
+        _uiState.value = _uiState.value.copy(
+            dataOperationState = DataOperationState.Running(operationId, kind, 0)
+        )
+        historyOperationJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var exportSucceeded = false
+                val importResult = when (kind) {
+                    DataOperationKind.EXPORT_HISTORY -> {
+                        exportSucceeded = historyRepository.export(uri) { progress ->
+                            publishOperationProgress(operationId, kind, progress)
+                        }
+                        null
+                    }
+                    DataOperationKind.IMPORT_HISTORY -> historyRepository.import(uri) { progress ->
+                        publishOperationProgress(operationId, kind, progress)
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                val succeeded = exportSucceeded || importResult != null
+                val terminal = if (succeeded) {
+                    DataOperationState.Succeeded(
+                        operationId,
+                        kind,
+                        importResult?.let(DataImportSummary::from)
+                    )
+                } else {
+                    DataOperationState.Failed(operationId, kind)
+                }
+                publishOperationTerminal(operationId, terminal)
+                if (succeeded && kind == DataOperationKind.IMPORT_HISTORY) loadStats()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                publishOperationTerminal(
+                    operationId,
+                    DataOperationState.Cancelled(operationId, kind)
+                )
+            } catch (_: Exception) {
+                publishOperationTerminal(
+                    operationId,
+                    DataOperationState.Failed(operationId, kind)
+                )
             }
-            if (result != null) loadStats()
-            return result
-        } finally {
-            _uiState.value = _uiState.value.copy(
-                historyOperationState = if (result != null) HistoryOperationState.SUCCEEDED else HistoryOperationState.FAILED
-            )
+        }
+        return operationId
+    }
+
+    private fun publishOperationProgress(
+        operationId: String,
+        kind: DataOperationKind,
+        progress: Int
+    ) {
+        _uiState.update { state ->
+            val current = state.dataOperationState
+            if (historyOperationOwner == operationId &&
+                current is DataOperationState.Running && current.operationId == operationId
+            ) {
+                state.copy(
+                    dataOperationState = DataOperationState.Running(
+                        operationId,
+                        kind,
+                        progress.coerceIn(0, 100)
+                    )
+                )
+            } else {
+                state
+            }
+        }
+    }
+
+    private fun publishOperationTerminal(
+        operationId: String,
+        terminal: DataOperationState
+    ) {
+        _uiState.update { state ->
+            if (historyOperationOwner == operationId) {
+                state.copy(dataOperationState = terminal)
+            } else {
+                state
+            }
         }
     }
 
@@ -463,7 +624,8 @@ class DataManagementViewModel @JvmOverloads constructor(
         // 在 IO 线程执行存储操作
         viewModelScope.launch(Dispatchers.IO) {
             val res = ctx.resources
-            val message: String = when (action) {
+            val outcome = runCatching {
+                when (action) {
                 PendingAction.ClearRawRecords -> {
                     database.historyDao().clearRecords()
                     res.getString(R.string.data_cleared_toast)
@@ -496,49 +658,31 @@ class DataManagementViewModel @JvmOverloads constructor(
                 PendingAction.ResetSettings -> {
                     WidgetPrefs(ctx).resetAll()
                     WidgetConfigStore.clearAll(ctx)
-                    runCatching {
-                        SettingsRepositoryProvider.get(ctx).publishSnapshot(
-                            SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
-                            System.currentTimeMillis()
-                        )
-                    }
-                    res.getString(R.string.data_reset_toast)
-                }
-                PendingAction.ResetEntireApp -> {
-                    val accounts = readyAccounts() ?: return@launch
-                    database.historyDao().clearRecords()
-                    database.historyDao().clearSummaries()
-                    database.usageDao().clearSnapshots()
-                    database.eventLogDao().clearAll()
-                    WidgetErrorLogger.clear(ctx)
-                    CrashLogger.clear(ctx)
-                    BalanceWidgetDataStore.clearAll(ctx)
-                    WidgetConfigStore.clearAll(ctx)
-                    WidgetPrefs(ctx).resetAll()
-                    RefreshScheduler.resetAlarmCounters(ctx)
-                    accounts.forEach { account ->
-                        mutationCoordinator.delete(account.id)
-                    }
                     SettingsRepositoryProvider.get(ctx).publishSnapshot(
                         SettingsSnapshot(AppSettingsEntity(updatedAt = System.currentTimeMillis())),
                         System.currentTimeMillis()
                     )
-                    // 清除控制台数据
-                    com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
-                    try {
-                        val cookieManager = android.webkit.CookieManager.getInstance()
-                        cookieManager.removeAllCookies(null)
-                        cookieManager.flush()
-                    } catch (e: Exception) {
-                        // 忽略错误
-                    }
+                    res.getString(R.string.data_reset_toast)
+                }
+                PendingAction.ResetEntireApp -> {
+                    appResetCoordinator.reset()
                     res.getString(R.string.data_reset_app_toast)
                 }
+                }
             }
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(pendingAction = null)
-                loadStats()
-                _uiState.value = _uiState.value.copy(resultMessage = message)
+            withContext(Dispatchers.Main.immediate) {
+                if (outcome.isSuccess) {
+                    _uiState.value = _uiState.value.copy(
+                        pendingAction = null,
+                        resultMessage = outcome.getOrThrow()
+                    )
+                    loadStats()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        pendingAction = null,
+                        resultMessage = res.getString(R.string.data_operation_failed)
+                    )
+                }
             }
         }
     }

@@ -25,7 +25,8 @@ import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.icons.ProviderIcons
 import com.balancesentinel.app.ui.theme.WalletColors
-import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.ui.viewmodel.AccountRefreshUiState
+import com.balancesentinel.app.util.LocalizedFormatter
 
 /**
  * 账户余额卡片（支持多供应商）
@@ -37,17 +38,23 @@ fun AccountBalanceCard(
     accountId: String,
     providerType: ProviderType,
     balance: BalanceResponse?,
-    isLoading: Boolean,
-    lastRefreshTime: Long,
     now: Long,
     onLongPress: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     accountMutationsEnabled: Boolean = true,
     accountRefreshEnabled: Boolean = true,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    refreshState: AccountRefreshUiState = AccountRefreshUiState()
 ) {
     val context = LocalContext.current
+    val providerName = stringResource(providerType.displayNameResource())
+    val cardDescription = stringResource(R.string.account_card_long_press_delete, accountLabel)
+    val formatter = remember(context, context.resources.configuration.locales[0]) {
+        LocalizedFormatter(context)
+    }
+    val effectiveLoading = refreshState.isLoading
+    val effectiveDataTimestamp = refreshState.dataTimestamp ?: refreshState.lastSuccessAt ?: 0L
     var showMenu by remember { mutableStateOf(false) }
     var showDebugDialog by remember { mutableStateOf(false) }
 
@@ -69,7 +76,7 @@ fun AccountBalanceCard(
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
-                contentDescription = accountLabel + "，长按可删除"
+                contentDescription = cardDescription
             }
             .combinedClickable(
                 onClick = {},
@@ -98,7 +105,7 @@ fun AccountBalanceCard(
                     ) {
                         Icon(
                             imageVector = ProviderIcons.getIcon(providerType),
-                            contentDescription = providerType.displayName,
+                            contentDescription = providerName,
                             tint = Color(ProviderIcons.getColor(providerType)),
                             modifier = Modifier
                                 .padding(12.dp)
@@ -119,7 +126,7 @@ fun AccountBalanceCard(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            providerType.displayName,
+                            providerName,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -135,11 +142,11 @@ fun AccountBalanceCard(
                     Box {
                         IconButton(
                             onClick = { showMenu = true },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 Icons.Default.MoreVert,
-                                contentDescription = "更多操作",
+                                contentDescription = stringResource(R.string.account_more_actions),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -149,7 +156,7 @@ fun AccountBalanceCard(
                             onDismissRequest = { showMenu = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("刷新") },
+                                text = { Text(stringResource(R.string.account_refresh)) },
                                 enabled = accountRefreshEnabled,
                                 onClick = {
                                     showMenu = false
@@ -164,7 +171,7 @@ fun AccountBalanceCard(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("编辑") },
+                                text = { Text(stringResource(R.string.account_edit)) },
                                 enabled = accountMutationsEnabled,
                                 onClick = {
                                     showMenu = false
@@ -179,7 +186,7 @@ fun AccountBalanceCard(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("调试") },
+                                text = { Text(stringResource(R.string.account_debug)) },
                                 onClick = {
                                     showMenu = false
                                     showDebugDialog = true
@@ -193,7 +200,7 @@ fun AccountBalanceCard(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                text = { Text(stringResource(R.string.account_delete), color = MaterialTheme.colorScheme.error) },
                                 enabled = accountMutationsEnabled,
                                 onClick = {
                                     showMenu = false
@@ -217,12 +224,12 @@ fun AccountBalanceCard(
 
             // 余额内容区域
             when {
-                isLoading -> {
+                effectiveLoading -> {
                     // 加载状态
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(60.dp),
+                            .heightIn(min = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -253,13 +260,27 @@ fun AccountBalanceCard(
                             available = balance.isAvailable,
                             hasBalance = balance.balanceInfos.isNotEmpty()
                         )
-                        if (lastRefreshTime > 0) {
+                        if (effectiveDataTimestamp > 0) {
                             Text(
-                                formatRefreshTime(lastRefreshTime, now, context),
+                                formatter.formatRelativeTime(effectiveDataTimestamp, now),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+
+                    if (refreshState.errorMessage != null) {
+                        Text(
+                            refreshState.errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (refreshState.stale) {
+                        Text(
+                            stringResource(R.string.home_query_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -275,17 +296,45 @@ fun AccountBalanceCard(
                         balance.balanceInfos
                             .sortedByDescending { it.totalBalance.toDoubleOrNull() ?: 0.0 }
                             .forEach { info ->
-                                BalanceInfoCard(info)
+                                BalanceInfoCard(info, formatter)
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
                     }
                 }
-                lastRefreshTime > 0 -> {
+                refreshState.errorMessage != null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 60.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            refreshState.errorMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                refreshState.stale && effectiveDataTimestamp > 0 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 60.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.home_query_failed),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                effectiveDataTimestamp > 0 -> {
                     // 曾经查询过但失败了
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(60.dp),
+                            .heightIn(min = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -298,7 +347,7 @@ fun AccountBalanceCard(
                                 color = MaterialTheme.colorScheme.error
                             )
                             Text(
-                                formatRefreshTime(lastRefreshTime, now, context),
+                                formatter.formatRelativeTime(effectiveDataTimestamp, now),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -310,11 +359,11 @@ fun AccountBalanceCard(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(60.dp),
+                            .heightIn(min = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "等待刷新",
+                            stringResource(R.string.account_waiting_refresh),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -324,7 +373,6 @@ fun AccountBalanceCard(
         }
     }
 }
-
 // ═══════════════════════════════════════════════════════════
 // 状态芯片
 // ═══════════════════════════════════════════════════════════
@@ -335,7 +383,7 @@ private fun StatusChip(available: Boolean, hasBalance: Boolean = true) {
         !hasBalance -> Triple(
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            "无数据"
+            stringResource(R.string.account_status_no_data)
         )
         available -> Triple(
             WalletColors.success.copy(alpha = 0.15f),
@@ -380,7 +428,10 @@ private fun StatusChip(available: Boolean, hasBalance: Boolean = true) {
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun BalanceInfoCard(info: com.balancesentinel.app.data.model.BalanceInfo) {
+private fun BalanceInfoCard(
+    info: com.balancesentinel.app.data.model.BalanceInfo,
+    formatter: LocalizedFormatter
+) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -410,7 +461,7 @@ private fun BalanceInfoCard(info: com.balancesentinel.app.data.model.BalanceInfo
 
                 // 总额
                 Text(
-                    FormatUtils.formatAmount(info.totalBalance),
+                    formatter.formatAmount(info.totalBalance),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -431,15 +482,15 @@ private fun BalanceInfoCard(info: com.balancesentinel.app.data.model.BalanceInfo
                 ) {
                     if (info.grantedBalance != null) {
                         DetailItem(
-                            label = "赠送",
-                            value = FormatUtils.formatAmount(info.grantedBalance),
+                            label = stringResource(R.string.balance_granted_label),
+                            value = formatter.formatAmount(info.grantedBalance),
                             modifier = Modifier.weight(1f)
                         )
                     }
                     if (info.toppedUpBalance != null) {
                         DetailItem(
-                            label = "充值",
-                            value = FormatUtils.formatAmount(info.toppedUpBalance),
+                            label = stringResource(R.string.balance_topped_up_label),
+                            value = formatter.formatAmount(info.toppedUpBalance),
                             modifier = Modifier.weight(1f),
                             alignment = Alignment.End
                         )
@@ -477,19 +528,5 @@ private fun DetailItem(
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
         )
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
-// 工具函数
-// ═══════════════════════════════════════════════════════════
-
-private fun formatRefreshTime(lastRefreshTime: Long, now: Long, context: android.content.Context): String {
-    val diff = now - lastRefreshTime
-    return when {
-        diff < 60_000 -> "刚刚刷新"
-        diff < 3600_000 -> "${diff / 60_000}分钟前"
-        diff < 86400_000 -> "${diff / 3600_000}小时前"
-        else -> "${diff / 86400_000}天前"
     }
 }

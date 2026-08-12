@@ -25,8 +25,8 @@
 
         <ImageView
             android:id="@+id/widget_refresh_btn"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:src="@drawable/ic_refresh"
             android:clickable="true"
             android:contentDescription="@string/home_refresh"
@@ -49,8 +49,7 @@
             android:textColor="#1A1C2E"
             android:textSize="20sp"
             android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:maxLines="2" />
 
         <TextView
             android:id="@+id/widget_status"

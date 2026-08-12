@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
+import com.balancesentinel.app.data.local.history.HistorySeriesKeyProjection
 import com.balancesentinel.app.data.model.DailySummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -92,45 +93,60 @@ object CleanupScheduler {
         onlyDate: String? = null
     ): CleanupReport {
         val today = Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
-        val targetRange = onlyDate?.let { serializedDate ->
-            val targetDate = LocalDate.parse(serializedDate)
-            targetDate.atStartOfDay(zoneId).toInstant().toEpochMilli() to
-                targetDate.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
-        }
-        val all = mutableListOf<HistoryRecord>()
-        var cursor: HistoryCursor? = null
-        while (true) {
-            val page = repository.pageAll(
-                fromInclusive = targetRange?.first ?: Long.MIN_VALUE,
-                toExclusive = targetRange?.second ?: Long.MAX_VALUE,
-                after = cursor,
-                limit = HistoryRepository.MAX_PAGE_SIZE
-            )
-            if (page.records.isEmpty()) break
-            all += page.records
-            cursor = page.nextCursor ?: break
-        }
         val archived = linkedSetOf<String>()
         val failures = mutableListOf<CleanupFailure>()
         var deleted = 0
-        all.groupBy { dateOf(it.value.timestamp, zoneId) }
-            .filterKeys { it != today.toString() && (onlyDate == null || it == onlyDate) }
-            .toSortedMap()
-            .forEach { (date, rows) ->
-                val normalized = rows.map { if (it.value.currency == it.value.currency.uppercase(Locale.ROOT)) it.value else it.value.copy(currency = it.value.currency.uppercase(Locale.ROOT)) }
-                val summaries = RecordAggregator.aggregate(normalized, date).map { it.canonicalized() }
-                try {
-                    val cutoff = now - RETENTION_MS
-                    val ids = rows.filter { it.value.timestamp < cutoff }.map { it.id }
-                    repository.archiveAndDelete(summaries, ids)
-                    archived += date
-                    deleted += ids.size
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (throwable: Exception) {
-                    failures += failure(date, CleanupStage.WRITE_SUMMARY, throwable.message ?: "Room transaction failed")
+        val cutoff = now - RETENTION_MS
+        val todayStart = today.atStartOfDay(zoneId).toInstant().toEpochMilli()
+
+        suspend fun archiveDate(date: LocalDate) {
+            if (date == today) return
+            val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+            var after: HistorySeriesKeyProjection? = null
+            while (true) {
+                val keys = repository.rawSeriesKeyPage(from, to, after)
+                if (keys.isEmpty()) break
+                keys.forEach { key ->
+                    try {
+                        val result = repository.archiveDateSeries(
+                            date = date.toString(),
+                            accountId = key.accountId,
+                            currency = key.currency,
+                            fromInclusive = from,
+                            toExclusive = to,
+                            cutoff = cutoff,
+                            generatedAt = now
+                        )
+                        if (result.hadRecords) archived += date.toString()
+                        deleted += result.deletedRecords
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (throwable: Exception) {
+                        failures += failure(
+                            date.toString(),
+                            CleanupStage.WRITE_SUMMARY,
+                            throwable.message ?: "Room transaction failed"
+                        )
+                    }
                 }
+                after = keys.last()
+                if (keys.size < HistoryRepository.MAX_PAGE_SIZE) break
             }
+        }
+
+        if (onlyDate != null) {
+            archiveDate(LocalDate.parse(onlyDate))
+        } else {
+            var searchFrom = Long.MIN_VALUE
+            while (searchFrom < todayStart) {
+                val timestamp = repository.nextRecordedAt(searchFrom, todayStart) ?: break
+                val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+                archiveDate(date)
+                val nextStart = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+                searchFrom = if (nextStart > searchFrom) nextStart else timestamp + 1
+            }
+        }
         try {
             deleted += repository.purgeExpiredSummarizedRecords(now, zoneId)
         } catch (cancelled: CancellationException) {
@@ -142,26 +158,9 @@ object CleanupScheduler {
                 reason = throwable.message ?: "Expired raw sweep failed"
             )
         }
-        // Preserve continuity: materialize zero summaries through yesterday
-        // for every account/currency that has an archived history.
-        val existing = repository.summaries()
-        val yesterday = today.minusDays(1)
-        val continuity = if (onlyDate == null) existing.groupBy { it.accountId to it.currency }.flatMap { (_, seeds) ->
-            val ordered = seeds.sortedBy { it.date }.toMutableList()
-            val start = runCatching { LocalDate.parse(ordered.first().date) }.getOrNull() ?: return@flatMap emptyList()
-            val generated = mutableListOf<com.balancesentinel.app.data.model.DailySummary>()
-            var cursor = start.plusDays(1)
-            var previous = ordered.first()
-            while (!cursor.isAfter(yesterday)) {
-                val date = cursor.toString()
-                val existingDate = ordered.firstOrNull { it.date == date } ?: generated.firstOrNull { it.date == date }
-                if (existingDate != null) previous = existingDate
-                else generated += previous.copy(date = date, open = previous.close, close = previous.close, avgBalance = previous.close, consumed = 0f, toppedUp = 0f, granted = 0f, sampleCount = 0, toppedUpBalanceClose = previous.toppedUpBalanceClose, grantedBalanceClose = previous.grantedBalanceClose, generatedAt = now)
-                cursor = cursor.plusDays(1)
-            }
-            generated
-        } else emptyList()
-        if (continuity.isNotEmpty()) repository.insertContinuitySummariesIfNoRaw(continuity, zoneId)
+        if (onlyDate == null) {
+            repository.fillContinuityThrough(today.minusDays(1), now, zoneId)
+        }
         val retained = repository.countRecords().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         return CleanupReport(archived, deleted, retained, failures)
     }

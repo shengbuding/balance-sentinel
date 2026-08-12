@@ -88,6 +88,8 @@ class UsageRepositoryTest {
 
         override suspend fun deleteRecords(snapshotId: String) = Unit
 
+        override suspend fun contentRevision(snapshotId: String): Long? = null
+
         override suspend fun rangePage(
             accountId: String,
             fromInclusive: Long,
@@ -138,6 +140,9 @@ class UsageRepositoryTest {
         override suspend fun accountIds(): List<String> = error("unused")
 
         override suspend fun exportPage(offset: Int, limit: Int): List<UsageSnapshotEntity> =
+            error("unused")
+
+        override suspend fun countRecordsForSnapshots(snapshotIds: List<String>): Long =
             error("unused")
 
         override suspend fun clearSnapshots(): Int = error("unused")

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -45,9 +46,10 @@ import com.balancesentinel.app.ui.components.AddAccountDialog
 import com.balancesentinel.app.ui.components.EditAccountDialog
 import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import com.balancesentinel.app.ui.viewmodel.HomeUiEvent
+import com.balancesentinel.app.ui.viewmodel.AccountRefreshUiState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import com.balancesentinel.app.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -57,6 +59,17 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     val accountMutationsEnabled = uiState.accountLoadState is AccountLoadState.Ready
     val accountRefreshEnabled = accountMutationsEnabled && uiState.accounts.isNotEmpty()
     val accountCorrupt = uiState.accountLoadState is AccountLoadState.Corrupt
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is HomeUiEvent.ShowError -> snackbarHostState.showSnackbar(event.message)
+            }
+        }
+    }
+
+    val globalErrorMessage = uiState.operationErrorMessage
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -98,7 +111,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                     Text(stringResource(R.string.home_delete_account_confirm, label))
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "同时删除刷新日志、用量记录、原始数据、缓存与告警状态。",
+                        text = stringResource(R.string.home_delete_account_data_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -146,6 +159,7 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -157,7 +171,11 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                         )
                         if (uiState.accounts.isNotEmpty()) {
                             Text(
-                                "${uiState.accounts.size} 个账户",
+                                pluralStringResource(
+                                    R.plurals.home_account_count,
+                                    uiState.accounts.size,
+                                    uiState.accounts.size
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             )
@@ -233,11 +251,11 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
             ) {
                 // 错误消息
                 AnimatedVisibility(
-                    visible = uiState.errorMessage != null,
+                    visible = globalErrorMessage != null,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
-                    uiState.errorMessage?.let { msg ->
+                    globalErrorMessage?.let { msg ->
                         ErrorMessageCard(
                             message = msg,
                             onRetry = {
@@ -261,19 +279,19 @@ fun HomeScreen(viewModel: HomeViewModel, onNavigateToSettings: () -> Unit) {
                     // 每账户一张余额卡片
                     uiState.accounts.forEach { account ->
                         val balance = uiState.accountBalances[account.id]
+                        val refreshState = uiState.refreshStates[account.id] ?: AccountRefreshUiState()
                         AccountBalanceCard(
                             accountLabel = account.label,
                             accountId = account.id,
                             providerType = account.providerType,
                             balance = balance,
-                            isLoading = uiState.isLoading,
-                            lastRefreshTime = uiState.lastRefreshTime,
                             now = now,
+                            refreshState = refreshState,
                             onLongPress = { deleteTarget = Pair(account.id, account.label) },
                             onEdit = { editTargetId = account.id },
                             onDelete = { deleteTarget = Pair(account.id, account.label) },
                             accountMutationsEnabled = accountMutationsEnabled,
-                            accountRefreshEnabled = accountRefreshEnabled && !uiState.isLoading,
+                            accountRefreshEnabled = accountRefreshEnabled && !refreshState.isLoading,
                             onRefresh = { viewModel.refreshSingleAccount(account.id) }
                         )
                     }
@@ -332,7 +350,7 @@ private fun ErrorMessageCard(message: String, onRetry: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Text(
-                    "重试",
+                    stringResource(R.string.home_retry),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold
                 )

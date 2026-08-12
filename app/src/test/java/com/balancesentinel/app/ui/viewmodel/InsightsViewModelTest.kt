@@ -506,6 +506,9 @@ class InsightsViewModelTest {
     @Test
     fun `toggleExpandDate toggles expanded date`() {
         val viewModel = createViewModel()
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.dailyOutput != null
+        }
 
         assertNull(viewModel.uiState.value.expandedDate)
 

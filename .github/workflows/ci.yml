@@ -75,7 +75,16 @@ jobs:
           retention-days: 7
 
       - name: Run lint
-        run: ./gradlew lintDebug --no-daemon
+        run: ./gradlew lintDebug lintRelease --no-daemon
+
+      - name: Verify missing release signing config is rejected
+        shell: pwsh
+        run: |
+          $missing = Join-Path $env:RUNNER_TEMP "missing-wallet-sentinel-signing.properties"
+          $output = ./gradlew assembleRelease "-PwalletSentinel.signingConfigFile=$missing" --no-daemon 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0 -or $output -notmatch "RELEASE_SIGNING_CONFIG_REQUIRED") {
+            throw "Release signing gate did not reject the missing config"
+          }
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon

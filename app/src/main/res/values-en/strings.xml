@@ -14,6 +14,12 @@
     <string name="nav_console">Console</string>
     <string name="home_delete_account_title">Delete Account</string>
     <string name="home_delete_account_confirm">Delete "%1$s"? Cache and alert state will be cleared.</string>
+    <string name="home_delete_account_data_warning">Refresh logs, usage records, raw data, cache, and alert state for this account will also be deleted.</string>
+    <plurals name="home_account_count">
+        <item quantity="one">%1$d account</item>
+        <item quantity="other">%1$d accounts</item>
+    </plurals>
+    <string name="home_retry">Retry</string>
     <string name="home_delete">Delete</string>
     <string name="home_cancel">Cancel</string>
     <string name="home_save">Save</string>
@@ -88,6 +94,24 @@
     <string name="balance_total">%1$s Total Balance</string>
     <string name="balance_granted">Granted: %1$s</string>
     <string name="balance_topped_up">Topped Up: %1$s</string>
+    <string name="balance_granted_label">Granted</string>
+    <string name="balance_topped_up_label">Topped Up</string>
+    <string name="account_card_long_press_delete">%1$s, long press to delete</string>
+    <string name="account_more_actions">More actions</string>
+    <string name="account_refresh">Refresh</string>
+    <string name="account_edit">Edit</string>
+    <string name="account_debug">Debug</string>
+    <string name="account_delete">Delete</string>
+    <string name="account_waiting_refresh">Waiting to refresh</string>
+    <string name="account_status_no_data">No data</string>
+    <string name="accessibility_enabled">Enabled</string>
+    <string name="accessibility_disabled">Disabled</string>
+    <string name="accessibility_selected">Selected</string>
+    <string name="accessibility_not_selected">Not selected</string>
+    <string name="accessibility_move_up">Move up</string>
+    <string name="accessibility_move_down">Move down</string>
+    <string name="accessibility_expanded">Expanded</string>
+    <string name="accessibility_collapsed">Collapsed</string>
 
     <!-- ===== Insights Screen ===== -->
     <string name="insights_title">Insights</string>
@@ -185,6 +209,14 @@
     <string name="settings_language">Language</string>
     <string name="settings_language_dialog_title">Select Language</string>
     <string name="settings_language_system">Follow System</string>
+    <string name="settings_language_chinese">Chinese</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_qq_group_description">QQ group %1$s</string>
+    <string name="settings_qq_group_label">QQ group: %1$s</string>
+    <string name="settings_expanded_state">%1$s, expanded</string>
+    <string name="settings_collapsed_state">%1$s, collapsed</string>
+    <string name="settings_expand">Expand</string>
+    <string name="settings_collapse">Collapse</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Wallet Sentinel v%1$s</string>
     <string name="settings_about_desc">View multiple AI provider API account balances on your home screen with auto-refresh and widgets.</string>
@@ -314,6 +346,8 @@
     <string name="log_service_start_label">Service Started</string>
     <string name="log_service_start_message">Foreground refresh service started</string>
     <string name="log_watchdog_label">Watchdog</string>
+    <string name="log_interval_format">Interval: %1$s</string>
+    <string name="log_scheduled_interval_format">Scheduled: %1$s · Interval: %2$s</string>
     <string name="log_crash_log">Crash Log (%1$d)</string>
     <string name="log_exported_toast">Log exported: %1$s</string>
 
@@ -379,6 +413,10 @@
     <string name="data_importing">Importing…</string>
     <string name="data_import_history_success">Imported %1$d summaries and %2$d raw records</string>
     <string name="data_import_history_fail">Import failed: could not parse data file</string>
+    <string name="data_operation_failed">Operation failed; data was not changed</string>
+    <string name="data_operation_cancelled">Operation cancelled</string>
+    <string name="data_operation_cancel">Cancel operation</string>
+    <string name="data_operation_progress">Processing %1$d%%</string>
     <string name="data_import_history_empty">No importable data found in file</string>
     <string name="data_import_history_detail">Summaries: %1$d in file, %2$d imported | Records: %3$d in file, %4$d imported | Snapshots: %5$d in file, %6$d imported | Logs: %7$d in file, %8$d imported</string>
 
@@ -555,6 +593,30 @@
     <string name="time_hours_ago">%1$dh ago</string>
     <string name="time_month_day_format">MMM d</string>
     <string name="time_date_format">MM-dd HH:mm</string>
+    <plurals name="time_minutes_ago">
+        <item quantity="one">%1$d minute ago</item>
+        <item quantity="other">%1$d minutes ago</item>
+    </plurals>
+    <plurals name="time_hours_ago">
+        <item quantity="one">%1$d hour ago</item>
+        <item quantity="other">%1$d hours ago</item>
+    </plurals>
+    <plurals name="time_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <plurals name="duration_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="duration_minutes_seconds">%1$d min %2$d sec</string>
+    <string name="compact_ten_thousand_format">%1$s0K</string>
+    <string name="compact_thousand_format">%1$sK</string>
+    <string name="insights_no_data_day">No-data day</string>
 
     <!-- ===== Currency ===== -->
     <string name="currency_cny">¥</string>
@@ -567,6 +629,14 @@
     <string name="widget_config_currency">Select Currency</string>
     <string name="widget_config_total_account">Total Balance (All Accounts)</string>
     <string name="widget_title_total">Total Balance</string>
+    <string name="widget_state_unconfigured_title">Configure widget</string>
+    <string name="widget_state_unconfigured_status">Not configured</string>
+    <string name="widget_state_configure_prompt">Tap to choose an account</string>
+    <string name="widget_state_no_data_status">No data yet</string>
+    <string name="widget_state_stale_status">Data is out of date</string>
+    <string name="widget_state_permission_restricted_status">Permission limited</string>
+    <string name="widget_state_permission_restricted_balance">Open the app to view balance</string>
+    <string name="widget_state_refresh_failed_status">Refresh failed</string>
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">Welcome to Wallet Sentinel</string>
@@ -628,4 +698,116 @@
     <string name="debug_report_script_characters">Script characters</string>
     <string name="debug_report_script_bytes">Script bytes</string>
     <string name="debug_report_script_sha256">Script SHA-256</string>
+    <string name="capability_monitoring_title">Continuous monitoring</string>
+    <string name="capability_monitoring_desc">Notification permission and foreground monitoring start only after you enable this.</string>
+    <string name="capability_notifications">Notifications</string>
+    <string name="capability_foreground_service">Foreground service</string>
+    <string name="capability_data_sync">Data sync session</string>
+    <string name="capability_exact_alarm">Exact alarms</string>
+    <string name="capability_available">Available</string>
+    <string name="capability_not_granted">Not granted</string>
+    <string name="capability_permanently_denied">Denied</string>
+    <string name="capability_platform_limited">Platform limited</string>
+    <string name="capability_not_required">No longer required</string>
+    <string name="capability_open_settings">Open system settings</string>
+    <string name="capability_notification_required">Notification permission is not granted; notifications and continuous monitoring will not start.</string>
+
+    <!-- Console UI -->
+    <string name="console_title">Console</string>
+    <string name="console_invalid_platform">Invalid platform configuration</string>
+    <string name="console_select_prompt">Choose a console to open</string>
+    <string name="console_delete_platform_title">Delete platform</string>
+    <string name="console_delete_platform_message">Delete “%1$s”? All sign-in data for it will be cleared.</string>
+    <string name="console_delete">Delete</string>
+    <string name="console_cancel">Cancel</string>
+    <string name="console_empty_title">No consoles yet</string>
+    <string name="console_empty_description">Add a console to view account balances, usage, and other information.</string>
+    <string name="console_add">Add</string>
+    <string name="console_add_console">Add console</string>
+    <string name="console_logged_in">Signed in</string>
+    <string name="console_default_description">Console</string>
+    <string name="console_more">More</string>
+    <string name="console_enter">Open</string>
+    <string name="console_repair">Repair</string>
+    <string name="console_repair_config">Repair configuration</string>
+    <string name="console_add_platform">Add platform</string>
+    <string name="console_back">Back</string>
+    <string name="console_presets_title">Preset platforms</string>
+    <string name="console_presets_description">Supported AI platforms that are ready to use</string>
+    <string name="console_search_hint">Search platforms...</string>
+    <string name="console_search">Search</string>
+    <string name="console_clear_search">Clear</string>
+    <string name="console_no_match">No matching platforms</string>
+    <string name="console_no_match_hint">Try another keyword or add a custom platform.</string>
+    <string name="console_custom_platform">Custom platform</string>
+    <string name="console_custom_description">Add any OpenAI-compatible AI platform</string>
+    <string name="console_add_custom_platform">Add custom platform</string>
+    <string name="console_preset_description">Preset platform</string>
+    <string name="console_added">Added</string>
+    <string name="console_platform_name_label">Platform name *</string>
+    <string name="console_platform_name_hint">Example: Model Ark</string>
+    <string name="console_platform_name_required">Enter a platform name</string>
+    <string name="console_login_url_label">Sign-in page URL *</string>
+    <string name="console_url_http_required">Enter a valid URL beginning with http:// or https://</string>
+    <string name="console_dashboard_url_label">Dashboard URL *</string>
+    <string name="console_url_required">Enter a valid URL</string>
+    <string name="console_success_pattern_label">Successful sign-in URL patterns *</string>
+    <string name="console_success_pattern_help">Separate multiple patterns with commas. They are used to detect a successful sign-in.</string>
+    <string name="console_description_label">Description (optional)</string>
+    <string name="console_description_hint">View account balance and usage</string>
+    <string name="console_login_title">Sign in to %1$s</string>
+    <string name="console_skip_login">Skip sign-in</string>
+    <string name="console_close">Close</string>
+    <string name="console_load_failed">Failed to load</string>
+    <string name="console_login_saving">Signed in. Saving...</string>
+    <string name="console_retry">Retry</string>
+    <string name="console_login_expired_title">Sign-in expired</string>
+    <string name="console_login_expired_message">Your sign-in has expired. Sign in again to continue.</string>
+    <string name="console_relogin">Sign in again</string>
+    <string name="console_clear_session_title">Clear sign-in state</string>
+    <string name="console_clear_session_prompt">Clear the sign-in state for “%1$s”?</string>
+    <string name="console_clear_session_details">• All sign-in information will be cleared\n• You must sign in again to access the console</string>
+    <string name="console_clear_session_confirm">Clear sign-in</string>
+    <string name="console_dashboard_title">%1$s console</string>
+    <string name="console_debug_panel">Debug panel</string>
+    <string name="console_refresh_page">Refresh page</string>
+    <string name="console_copy_all">Copy all</string>
+    <string name="console_save">Save</string>
+    <string name="console_cleared">Cleared</string>
+    <string name="console_clear">Clear</string>
+    <string name="console_api_requests">API requests (%1$d)</string>
+    <string name="console_session_status">Session status</string>
+    <string name="console_debug_logs">Debug logs</string>
+    <string name="console_no_api_requests">No API requests yet\nRequests appear as you browse the console.</string>
+    <string name="console_no_session_info">No session information</string>
+    <string name="console_label_platform">Platform</string>
+    <string name="console_label_platform_id">Platform ID</string>
+    <string name="console_label_login_status">Sign-in status</string>
+    <string name="console_status_logged_in">Signed in</string>
+    <string name="console_status_not_logged_in">Not signed in</string>
+    <string name="console_label_session_validity">Session validity</string>
+    <string name="console_status_valid">Valid</string>
+    <string name="console_status_invalid">Invalid or expired</string>
+    <string name="console_label_cookies_count">Cookie count</string>
+    <string name="console_label_local_storage_count">LocalStorage count</string>
+    <string name="console_label_email">Email</string>
+    <string name="console_label_current_url">Current URL</string>
+    <string name="console_label_session_created">Session created</string>
+    <string name="console_label_session_expires">Session expires</string>
+    <string name="console_not_recorded">Not recorded</string>
+    <string name="console_none">None</string>
+    <string name="console_unknown">Unknown</string>
+    <string name="console_debug_logs_count">Debug logs (%1$d)</string>
+    <string name="console_debug_logs_copied">Debug logs copied</string>
+    <string name="console_copy">Copy</string>
+    <string name="console_no_debug_logs">No debug logs</string>
+    <string name="console_collapse">Collapse</string>
+    <string name="console_expand">Expand</string>
+    <string name="console_all_debug_copied">All debug information copied to the clipboard</string>
+    <string name="console_copied">Copied to clipboard</string>
+    <string name="console_saved_download">Saved to Download/WalletSentinel/%1$s</string>
+    <string name="console_saved_internal">Saved inside the app: %1$s</string>
+    <string name="console_save_failed">Save failed: %1$s</string>
+    <string name="console_clip_debug_info">Debug information</string>
+    <string name="console_clip_api_log">API logs</string>
 </resources>

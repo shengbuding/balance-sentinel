@@ -47,6 +47,8 @@ class RoomRefreshPersistence(private val database: WalletDatabase) {
         }
         if (logs.isNotEmpty()) {
             database.eventLogDao().insertAll(logs.map { it.toEntity(accountId) })
+            val maximum = (database.appSettingsDao().get()?.logMaxEntries ?: 100).coerceIn(10, 1000)
+            database.eventLogDao().trimToLatest(maximum)
         }
     }
 

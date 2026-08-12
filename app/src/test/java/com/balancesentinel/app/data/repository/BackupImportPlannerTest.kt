@@ -180,6 +180,18 @@ class BackupImportPlannerTest {
     }
 
     @Test
+    fun `schema v2 full backup preserves a Room UUID identity`() = runTest {
+        val uuid = "4fdf6c7e-8b6d-4f3b-9cf5-8a8c57ef4521"
+        val incoming = account(id = uuid, apiKey = NEW_KEY, label = "Room account")
+
+        val plan = planner().plan(config(true, listOf(incoming)), emptyList(), ImportMode.REPLACE_ALL)
+
+        assertTrue(plan.canApply)
+        assertEquals(uuid, plan.finalAccounts.single().id)
+        assertEquals(1, plan.createdCount)
+    }
+
+    @Test
     fun `full schema v1 merge replaces a matching legacy local ID with its normalized ID`() = runTest {
         // Mutation caught: exact-ID-only matching that appends a normalized v1 account beside its legacy local account.
         val localLegacy = account(id = NEW_LEGACY_ID, apiKey = NEW_KEY, label = "Local legacy")

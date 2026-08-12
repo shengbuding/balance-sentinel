@@ -58,7 +58,7 @@ jobs:
       - name: Write keystore.properties
         run: |
           cat > keystore.properties << 'EOF'
-          storeFile=../deepseek-balance.jks
+          storeFile=deepseek-balance.jks
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyAlias=deepseek
           keyPassword=${{ secrets.KEY_PASSWORD }}
@@ -104,7 +104,17 @@ jobs:
         run: ./gradlew lintRelease --no-daemon
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease -PwalletSentinel.signingConfigFile=keystore.properties --no-daemon
+
+      - name: Verify release signer allowlist
+        env:
+          EXPECTED_RELEASE_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+        run: |
+          test -n "$EXPECTED_RELEASE_CERT_SHA256" || { echo "RELEASE_CERT_SHA256 is required"; exit 1; }
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -r | head -1)
+          ACTUAL=$($APKSIGNER verify --print-certs app/build/outputs/apk/release/app-release.apk | awk -F': ' '/certificate SHA-256 digest/ {print toupper($2); exit}')
+          EXPECTED=$(echo "$EXPECTED_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')
+          test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED" || { echo "Release signer is not allowlisted"; exit 1; }
 
       - name: Rename APK
         run: |

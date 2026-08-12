@@ -2,13 +2,13 @@ package com.balancesentinel.app
 
 import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,28 +19,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.core.content.ContextCompat
 import com.balancesentinel.app.data.console.DebugLogger
 import com.balancesentinel.app.data.repository.ApiKeyManager
-import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdatePrefs
 import com.balancesentinel.app.data.update.UpdateResult
-import com.balancesentinel.app.service.BalanceRefreshService
 import com.balancesentinel.app.ui.navigation.AppRoute
 import com.balancesentinel.app.ui.navigation.DeepLinkResolver
 import com.balancesentinel.app.ui.navigation.WalletNavHost
 import com.balancesentinel.app.ui.screen.UpdateDialog
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
+import com.balancesentinel.app.ui.viewmodel.CapabilityUiEvent
+import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
 import com.balancesentinel.app.util.OnboardingHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private val capabilityViewModel: CapabilityViewModel by viewModels()
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { startRefreshService() }
+    ) { granted ->
+        val canAskAgain = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        capabilityViewModel.onNotificationPermissionResult(granted, canAskAgain)
+    }
 
     private val webViewLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -95,6 +100,29 @@ class MainActivity : ComponentActivity() {
                 var showAutoUpdateDialog by remember { mutableStateOf(false) }
                 var autoUpdateRelease by remember { mutableStateOf<com.balancesentinel.app.data.model.GitHubRelease?>(null) }
                 var autoUpdateCurrentVersion by remember { mutableStateOf("") }
+
+                LaunchedEffect(Unit) {
+                    capabilityViewModel.events.collect { event ->
+                        when (event) {
+                            CapabilityUiEvent.RequestNotificationPermission -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    capabilityViewModel.onNotificationPermissionResult(
+                                        granted = true,
+                                        canAskAgain = true
+                                    )
+                                }
+                            }
+                            CapabilityUiEvent.OpenAppSettings -> {
+                                startActivity(
+                                    Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                        .setData(android.net.Uri.parse("package:$packageName"))
+                                )
+                            }
+                        }
+                    }
+                }
 
                 LaunchedEffect(Unit) {
                     if (BatteryOptimizationHelper.shouldShowGuide(context)) showBatteryGuide = true
@@ -157,6 +185,11 @@ class MainActivity : ComponentActivity() {
         CrashLogger.breadcrumb("MainActivity", "onCreate complete")
     }
 
+    override fun onResume() {
+        super.onResume()
+        capabilityViewModel.refresh()
+    }
+
     companion object {
         @JvmStatic
         fun resolveStartDestination(
@@ -175,22 +208,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestNotificationAndStartService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                startRefreshService()
-            } else {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else startRefreshService()
-    }
-
-    private fun startRefreshService() {
-        RefreshScheduler.markStartRequested(this)
-        try {
-            ContextCompat.startForegroundService(this, Intent(this, BalanceRefreshService::class.java).putExtra(BalanceRefreshService.EXTRA_USER_INITIATED, true))
-        } catch (e: Exception) {
-            com.balancesentinel.app.data.util.Logger.e("MainActivity", "Failed to start refresh service", e)
-        }
-    }
 }

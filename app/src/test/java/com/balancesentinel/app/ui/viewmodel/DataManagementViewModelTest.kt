@@ -30,6 +30,10 @@ import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlanner
 import com.balancesentinel.app.data.repository.ConfigSettings
+import com.balancesentinel.app.data.repository.DataExporter
+import com.balancesentinel.app.data.repository.DataHistoryRepository
+import com.balancesentinel.app.data.repository.DataStatisticsRepository
+import com.balancesentinel.app.data.repository.DataStatisticsSnapshot
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.repository.LegacyAccountUiRepository
 import com.balancesentinel.app.data.repository.RoomEventLogRepository
@@ -45,13 +49,18 @@ import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -61,6 +70,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowLooper
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 class DataManagementViewModelTest {
@@ -112,6 +122,153 @@ class DataManagementViewModelTest {
             Thread.sleep(25)
         }
         ShadowLooper.idleMainLooper()
+    }
+
+    private fun awaitCondition(predicate: () -> Boolean) {
+        repeat(100) {
+            ShadowLooper.idleMainLooper()
+            if (predicate()) return
+            Thread.sleep(20)
+        }
+        fail("Condition was not reached")
+    }
+
+    @Test
+    fun `cold start reads one bounded statistics summary`() {
+        val calls = AtomicInteger()
+        val statistics = DataStatisticsRepository {
+            calls.incrementAndGet()
+            DataStatisticsSnapshot(rawRecordCount = 90_000, rawRecordDistinctDates = 365)
+        }
+
+        val viewModel = DataManagementViewModel(
+            application = app,
+            injectedDataStatisticsRepository = statistics
+        )
+
+        awaitCondition { viewModel.uiState.value.statisticsLoaded }
+        assertEquals(1, calls.get())
+        assertEquals(90_000, viewModel.uiState.value.rawRecordCount)
+        assertEquals(365, viewModel.uiState.value.rawRecordDistinctDates)
+    }
+
+    @Test
+    fun `cancelling history operation preserves operation id and never publishes success`() = runBlocking {
+        val history = BlockingHistoryRepository()
+        val viewModel = DataManagementViewModel(
+            application = app,
+            injectedDataStatisticsRepository = DataStatisticsRepository { DataStatisticsSnapshot() },
+            injectedDataHistoryRepository = history
+        )
+
+        val operationId = requireNotNull(viewModel.startHistoryExport(Uri.EMPTY))
+        history.started.await()
+        awaitCondition {
+            (viewModel.uiState.value.dataOperationState as? DataOperationState.Running)
+                ?.progressPercent == 25
+        }
+
+        viewModel.cancelHistoryOperation()
+        val cancelled = viewModel.uiState.value.dataOperationState as DataOperationState.Cancelled
+        assertEquals(operationId, cancelled.operationId)
+        history.release.complete(Unit)
+        Thread.sleep(100)
+        assertFalse(viewModel.uiState.value.dataOperationState is DataOperationState.Succeeded)
+    }
+
+    @Test
+    fun `late completion from replaced operation cannot overwrite newer owner`() = runBlocking {
+        val history = ReorderedHistoryRepository()
+        val viewModel = DataManagementViewModel(
+            application = app,
+            injectedDataStatisticsRepository = DataStatisticsRepository { DataStatisticsSnapshot() },
+            injectedDataHistoryRepository = history
+        )
+
+        val firstId = requireNotNull(viewModel.startHistoryExport(Uri.parse("file:///first")))
+        history.firstStarted.await()
+        val secondId = requireNotNull(viewModel.startHistoryExport(Uri.parse("file:///second")))
+        history.secondStarted.await()
+        assertNotEquals(firstId, secondId)
+
+        history.secondRelease.complete(Unit)
+        awaitCondition {
+            (viewModel.uiState.value.dataOperationState as? DataOperationState.Succeeded)
+                ?.operationId == secondId
+        }
+        history.firstRelease.complete(Unit)
+        Thread.sleep(100)
+
+        val finalState = viewModel.uiState.value.dataOperationState as DataOperationState.Succeeded
+        assertEquals(secondId, finalState.operationId)
+    }
+
+    @Test
+    fun `failed summary refresh retains last successful summary`() {
+        val calls = AtomicInteger()
+        val statistics = DataStatisticsRepository {
+            if (calls.incrementAndGet() == 1) DataStatisticsSnapshot(rawRecordCount = 7)
+            else error("summary unavailable")
+        }
+        val viewModel = DataManagementViewModel(
+            application = app,
+            injectedDataStatisticsRepository = statistics
+        )
+        awaitCondition { viewModel.uiState.value.statisticsLoaded }
+
+        viewModel.loadStats()
+        awaitCondition { calls.get() == 2 }
+
+        assertEquals(7, viewModel.uiState.value.rawRecordCount)
+    }
+
+    private class BlockingHistoryRepository : DataHistoryRepository {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        override suspend fun export(uri: Uri, reportProgress: suspend (Int) -> Unit): Boolean {
+            reportProgress(25)
+            started.complete(Unit)
+            release.await()
+            return true
+        }
+
+        override suspend fun import(
+            uri: Uri,
+            reportProgress: suspend (Int) -> Unit
+        ): DataExporter.ImportResult? = null
+    }
+
+    private class ReorderedHistoryRepository : DataHistoryRepository {
+        private val callCount = AtomicInteger()
+        val firstStarted = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val firstRelease = CompletableDeferred<Unit>()
+        val secondRelease = CompletableDeferred<Unit>()
+
+        override suspend fun export(uri: Uri, reportProgress: suspend (Int) -> Unit): Boolean {
+            return when (callCount.incrementAndGet()) {
+                1 -> {
+                    firstStarted.complete(Unit)
+                    try {
+                        firstRelease.await()
+                    } catch (_: CancellationException) {
+                        withContext(NonCancellable) { firstRelease.await() }
+                    }
+                    true
+                }
+                else -> {
+                    secondStarted.complete(Unit)
+                    secondRelease.await()
+                    true
+                }
+            }
+        }
+
+        override suspend fun import(
+            uri: Uri,
+            reportProgress: suspend (Int) -> Unit
+        ): DataExporter.ImportResult? = null
     }
 
     @Test
@@ -493,6 +650,49 @@ class DataManagementViewModelTest {
             readSnapshot()
     }
 
+    private class BlockingSettingsRepository : SettingsRepository {
+        private val state = MutableStateFlow<SettingsSnapshotState>(
+            SettingsSnapshotState.Ready(SettingsSnapshot(AppSettingsEntity(updatedAt = 0L)))
+        )
+        val applyStarted = CompletableDeferred<Unit>()
+        val allowApplyToFinish = CompletableDeferred<Unit>()
+        var applyCallCount = 0
+            private set
+
+        override val snapshot: StateFlow<SettingsSnapshotState> = state
+
+        override suspend fun readSnapshot(): SettingsSnapshot =
+            (state.value as SettingsSnapshotState.Ready).value
+
+        override suspend fun publishSnapshot(snapshot: SettingsSnapshot, publishedAt: Long) {
+            state.value = SettingsSnapshotState.Ready(snapshot)
+        }
+
+        override suspend fun hasPersistedSnapshot(): Boolean = true
+
+        override suspend fun updateSnapshot(
+            transform: (SettingsSnapshot) -> SettingsSnapshot
+        ): SettingsSnapshot = transform(readSnapshot()).also {
+            state.value = SettingsSnapshotState.Ready(it)
+        }
+
+        override suspend fun applyConfigSettings(settings: ConfigSettings): SettingsSnapshot =
+            readSnapshot()
+
+        override suspend fun currentRevision(): Long = 0L
+
+        override suspend fun applyConfigImport(
+            settings: ConfigSettings,
+            persistAccounts: suspend () -> Unit
+        ): SettingsSnapshot {
+            applyCallCount++
+            applyStarted.complete(Unit)
+            allowApplyToFinish.await()
+            persistAccounts()
+            return readSnapshot()
+        }
+    }
+
     @Test
     fun `configuration preview waits for repository flow and uses its latest accounts`() = runTest {
         // Mutation caught: preview reading ApiKeyManager synchronously instead of the injected account Flow.
@@ -726,6 +926,47 @@ class DataManagementViewModelTest {
             setOf("https://usage.example.com"),
             viewModel.uiState.value.pendingImportPlan!!.finalAccounts[0].authorizedScriptOrigins
         )
+        accountStorage.edit().clear().commit()
+    }
+
+    @Test
+    fun `concurrent configuration apply is accepted only once`() = runTest {
+        val accountStorage = context.getSharedPreferences(
+            "concurrent-import-${System.nanoTime()}",
+            Context.MODE_PRIVATE
+        )
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val repository = BlockingSettingsRepository()
+        val created = AccountInfo(NEW_ID, "Created", NEW_KEY)
+        val planner = BackupImportPlanner(
+            manager,
+            prefs,
+            repository,
+            ::staticInspection
+        )
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            planner,
+            LegacyAccountUiRepository(manager)
+        )
+        viewModel.previewConfiguration(importConfig(true, listOf(created)))
+
+        val firstApply = launch {
+            assertTrue(viewModel.requestApplyImport())
+        }
+        repository.applyStarted.await()
+
+        assertTrue(viewModel.uiState.value.importInProgress)
+        assertFalse(viewModel.requestApplyImport())
+        assertEquals(1, repository.applyCallCount)
+
+        repository.allowApplyToFinish.complete(Unit)
+        firstApply.join()
+        assertFalse(viewModel.uiState.value.importInProgress)
+        assertEquals(listOf(created.copy(usageScriptEnabled = false)), manager.getAccounts())
         accountStorage.edit().clear().commit()
     }
 

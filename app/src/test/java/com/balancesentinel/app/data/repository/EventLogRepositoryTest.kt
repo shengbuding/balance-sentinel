@@ -40,4 +40,29 @@ class EventLogRepositoryTest {
         )
         assertEquals(listOf(3L, 2L), repository.newest(2).map { it.id })
     }
+
+    @Test
+    fun `append trims Room logs to the published maximum`() = runTest {
+        database.appSettingsDao().upsert(
+            backgroundRefreshIntervalSeconds = 900,
+            foregroundMonitoringIntervalSeconds = 30,
+            alertEnabled = false,
+            alertThreshold = 0.0,
+            changeAlertEnabled = false,
+            changeAlertThreshold = 0.0,
+            changeAlertPeriodMinutes = 0,
+            logMaxEntries = 10,
+            snoozeDurationMinutes = 60,
+            showTotalBalanceInNotification = true,
+            updatedAt = 1L
+        )
+        repository.append(
+            (1L..11L).map { id ->
+                RefreshLogEntry(id, RefreshLogType.MANUAL, timestamp = id)
+            }
+        )
+
+        assertEquals(10L, database.eventLogDao().countLogs())
+        assertEquals((11L downTo 2L).toList(), repository.newest(20).map { it.id })
+    }
 }

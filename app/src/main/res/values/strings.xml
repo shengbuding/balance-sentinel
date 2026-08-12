@@ -14,6 +14,11 @@
     <string name="nav_console">控制台</string>
     <string name="home_delete_account_title">删除账户</string>
     <string name="home_delete_account_confirm">确定要删除「%1$s」吗？该账户的缓存和预警状态将被清除。</string>
+    <string name="home_delete_account_data_warning">同时删除刷新日志、用量记录、原始数据、缓存与告警状态。</string>
+    <plurals name="home_account_count">
+        <item quantity="other">%1$d 个账户</item>
+    </plurals>
+    <string name="home_retry">重试</string>
     <string name="home_delete">删除</string>
     <string name="home_cancel">取消</string>
     <string name="home_save">保存</string>
@@ -88,6 +93,24 @@
     <string name="balance_total">%1$s 总余额</string>
     <string name="balance_granted">赠送: %1$s</string>
     <string name="balance_topped_up">充值: %1$s</string>
+    <string name="balance_granted_label">赠送</string>
+    <string name="balance_topped_up_label">充值</string>
+    <string name="account_card_long_press_delete">%1$s，长按可删除</string>
+    <string name="account_more_actions">更多操作</string>
+    <string name="account_refresh">刷新</string>
+    <string name="account_edit">编辑</string>
+    <string name="account_debug">调试</string>
+    <string name="account_delete">删除</string>
+    <string name="account_waiting_refresh">等待刷新</string>
+    <string name="account_status_no_data">无数据</string>
+    <string name="accessibility_enabled">已启用</string>
+    <string name="accessibility_disabled">已停用</string>
+    <string name="accessibility_selected">已选择</string>
+    <string name="accessibility_not_selected">未选择</string>
+    <string name="accessibility_move_up">上移</string>
+    <string name="accessibility_move_down">下移</string>
+    <string name="accessibility_expanded">已展开</string>
+    <string name="accessibility_collapsed">已折叠</string>
 
     <!-- ===== Insights Screen ===== -->
     <string name="insights_title">洞察</string>
@@ -185,6 +208,14 @@
     <string name="settings_language">语言 / Language</string>
     <string name="settings_language_dialog_title">选择语言</string>
     <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_chinese">中文</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_qq_group_description">QQ 群 %1$s</string>
+    <string name="settings_qq_group_label">QQ 群：%1$s</string>
+    <string name="settings_expanded_state">%1$s，已展开</string>
+    <string name="settings_collapsed_state">%1$s，已折叠</string>
+    <string name="settings_expand">展开</string>
+    <string name="settings_collapse">折叠</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_version">钱包哨兵 v%1$s</string>
     <string name="settings_about_desc">在桌面查看多个AI供应商API账户余额，支持自动刷新和小组件。</string>
@@ -314,6 +345,8 @@
     <string name="log_service_start_label">服务启动</string>
     <string name="log_service_start_message">前台刷新服务已启动</string>
     <string name="log_watchdog_label">看门狗</string>
+    <string name="log_interval_format">间隔：%1$s</string>
+    <string name="log_scheduled_interval_format">预定：%1$s · 间隔：%2$s</string>
     <string name="log_crash_log">崩溃日志 (%1$d)</string>
     <string name="log_exported_toast">日志已导出: %1$s</string>
 
@@ -379,6 +412,10 @@
     <string name="data_importing">导入中…</string>
     <string name="data_import_history_success">已导入 %1$d 条日摘要和 %2$d 条原始记录</string>
     <string name="data_import_history_fail">导入失败：无法解析数据文件</string>
+    <string name="data_operation_failed">操作失败，数据未更改</string>
+    <string name="data_operation_cancelled">操作已取消</string>
+    <string name="data_operation_cancel">取消操作</string>
+    <string name="data_operation_progress">处理中 %1$d%%</string>
     <string name="data_import_history_empty">文件中没有可导入的数据</string>
     <string name="data_import_history_detail">日摘要: 文件%1$d条, 导入%2$d条 | 记录: 文件%3$d条, 导入%4$d条 | 快照: 文件%5$d条, 导入%6$d条 | 日志: 文件%7$d条, 导入%8$d条</string>
 
@@ -555,6 +592,25 @@
     <string name="time_hours_ago">%1$d小时前</string>
     <string name="time_month_day_format">M月d日</string>
     <string name="time_date_format">MM-dd HH:mm</string>
+    <plurals name="time_minutes_ago">
+        <item quantity="other">%1$d分钟前</item>
+    </plurals>
+    <plurals name="time_hours_ago">
+        <item quantity="other">%1$d小时前</item>
+    </plurals>
+    <plurals name="time_days_ago">
+        <item quantity="other">%1$d天前</item>
+    </plurals>
+    <plurals name="duration_seconds">
+        <item quantity="other">%1$d秒</item>
+    </plurals>
+    <plurals name="duration_minutes">
+        <item quantity="other">%1$d分钟</item>
+    </plurals>
+    <string name="duration_minutes_seconds">%1$d分%2$d秒</string>
+    <string name="compact_ten_thousand_format">%1$s万</string>
+    <string name="compact_thousand_format">%1$s千</string>
+    <string name="insights_no_data_day">无数据日</string>
 
     <!-- ===== Currency ===== -->
     <string name="currency_cny">¥</string>
@@ -567,6 +623,14 @@
     <string name="widget_config_currency">选择币种</string>
     <string name="widget_config_total_account">总余额 (全部账户)</string>
     <string name="widget_title_total">总余额</string>
+    <string name="widget_state_unconfigured_title">配置小组件</string>
+    <string name="widget_state_unconfigured_status">未配置</string>
+    <string name="widget_state_configure_prompt">点击选择账户</string>
+    <string name="widget_state_no_data_status">暂无数据</string>
+    <string name="widget_state_stale_status">数据已过期</string>
+    <string name="widget_state_permission_restricted_status">权限受限</string>
+    <string name="widget_state_permission_restricted_balance">请打开应用查看余额</string>
+    <string name="widget_state_refresh_failed_status">刷新失败</string>
 
     <!-- ===== Onboarding ===== -->
     <string name="onboarding_welcome_title">欢迎使用钱包哨兵</string>
@@ -628,4 +692,116 @@
     <string name="debug_report_script_characters">脚本字符数</string>
     <string name="debug_report_script_bytes">脚本字节数</string>
     <string name="debug_report_script_sha256">脚本 SHA-256</string>
+    <string name="capability_monitoring_title">持续监控</string>
+    <string name="capability_monitoring_desc">仅在您启用后请求通知权限并启动前台监控。</string>
+    <string name="capability_notifications">通知</string>
+    <string name="capability_foreground_service">前台服务</string>
+    <string name="capability_data_sync">数据同步会话</string>
+    <string name="capability_exact_alarm">精确闹钟</string>
+    <string name="capability_available">可用</string>
+    <string name="capability_not_granted">未授予</string>
+    <string name="capability_permanently_denied">已拒绝</string>
+    <string name="capability_platform_limited">受系统限制</string>
+    <string name="capability_not_required">不再需要</string>
+    <string name="capability_open_settings">打开系统设置</string>
+    <string name="capability_notification_required">通知权限尚未授予；通知与持续监控不会启动。</string>
+
+    <!-- Console UI -->
+    <string name="console_title">控制台</string>
+    <string name="console_invalid_platform">平台配置无效</string>
+    <string name="console_select_prompt">选择要进入的控制台</string>
+    <string name="console_delete_platform_title">删除平台</string>
+    <string name="console_delete_platform_message">确定要删除「%1$s」吗？删除后将清除所有登录数据。</string>
+    <string name="console_delete">删除</string>
+    <string name="console_cancel">取消</string>
+    <string name="console_empty_title">暂无控制台</string>
+    <string name="console_empty_description">添加控制台后可以查看账户余额、用量统计等信息</string>
+    <string name="console_add">添加</string>
+    <string name="console_add_console">添加控制台</string>
+    <string name="console_logged_in">已登录</string>
+    <string name="console_default_description">控制台</string>
+    <string name="console_more">更多</string>
+    <string name="console_enter">进入</string>
+    <string name="console_repair">修复</string>
+    <string name="console_repair_config">修复配置</string>
+    <string name="console_add_platform">添加平台</string>
+    <string name="console_back">返回</string>
+    <string name="console_presets_title">预设平台</string>
+    <string name="console_presets_description">已适配的 AI 平台，可直接使用</string>
+    <string name="console_search_hint">搜索平台...</string>
+    <string name="console_search">搜索</string>
+    <string name="console_clear_search">清除</string>
+    <string name="console_no_match">未找到匹配的平台</string>
+    <string name="console_no_match_hint">尝试其他关键词，或添加自定义平台</string>
+    <string name="console_custom_platform">自定义平台</string>
+    <string name="console_custom_description">添加任意 OpenAI 兼容的 AI 平台</string>
+    <string name="console_add_custom_platform">添加自定义平台</string>
+    <string name="console_preset_description">预设平台</string>
+    <string name="console_added">已添加</string>
+    <string name="console_platform_name_label">平台名称 *</string>
+    <string name="console_platform_name_hint">例如：模力方舟</string>
+    <string name="console_platform_name_required">请输入平台名称</string>
+    <string name="console_login_url_label">登录页面 URL *</string>
+    <string name="console_url_http_required">请输入有效的 URL（以 http:// 或 https:// 开头）</string>
+    <string name="console_dashboard_url_label">仪表盘 URL *</string>
+    <string name="console_url_required">请输入有效的 URL</string>
+    <string name="console_success_pattern_label">登录成功 URL 模式 *</string>
+    <string name="console_success_pattern_help">多个模式用逗号分隔，用于判断登录是否成功</string>
+    <string name="console_description_label">描述（可选）</string>
+    <string name="console_description_hint">查看账户余额、用量统计</string>
+    <string name="console_login_title">登录 %1$s</string>
+    <string name="console_skip_login">跳过登录</string>
+    <string name="console_close">关闭</string>
+    <string name="console_load_failed">加载失败</string>
+    <string name="console_login_saving">登录成功，正在保存...</string>
+    <string name="console_retry">重试</string>
+    <string name="console_login_expired_title">登录已失效</string>
+    <string name="console_login_expired_message">检测到您的登录状态已失效，请重新登录</string>
+    <string name="console_relogin">重新登录</string>
+    <string name="console_clear_session_title">清除登录状态</string>
+    <string name="console_clear_session_prompt">确定要清除「%1$s」的登录状态吗？</string>
+    <string name="console_clear_session_details">• 所有登录信息将被清除\n• 需要重新登录才能访问控制台</string>
+    <string name="console_clear_session_confirm">确认清除</string>
+    <string name="console_dashboard_title">%1$s 控制台</string>
+    <string name="console_debug_panel">调试面板</string>
+    <string name="console_refresh_page">刷新页面</string>
+    <string name="console_copy_all">复制全部</string>
+    <string name="console_save">保存</string>
+    <string name="console_cleared">已清空</string>
+    <string name="console_clear">清空</string>
+    <string name="console_api_requests">API 请求 (%1$d)</string>
+    <string name="console_session_status">会话状态</string>
+    <string name="console_debug_logs">调试日志</string>
+    <string name="console_no_api_requests">暂无 API 请求\n浏览控制台页面会自动记录</string>
+    <string name="console_no_session_info">无会话信息</string>
+    <string name="console_label_platform">平台</string>
+    <string name="console_label_platform_id">平台 ID</string>
+    <string name="console_label_login_status">登录状态</string>
+    <string name="console_status_logged_in">已登录</string>
+    <string name="console_status_not_logged_in">未登录</string>
+    <string name="console_label_session_validity">Session 有效性</string>
+    <string name="console_status_valid">有效</string>
+    <string name="console_status_invalid">无效/已过期</string>
+    <string name="console_label_cookies_count">Cookies 数量</string>
+    <string name="console_label_local_storage_count">LocalStorage 数量</string>
+    <string name="console_label_email">邮箱</string>
+    <string name="console_label_current_url">当前 URL</string>
+    <string name="console_label_session_created">Session 创建时间</string>
+    <string name="console_label_session_expires">Session 过期时间</string>
+    <string name="console_not_recorded">未记录</string>
+    <string name="console_none">无</string>
+    <string name="console_unknown">未知</string>
+    <string name="console_debug_logs_count">调试日志 (%1$d)</string>
+    <string name="console_debug_logs_copied">已复制调试日志</string>
+    <string name="console_copy">复制</string>
+    <string name="console_no_debug_logs">暂无调试日志</string>
+    <string name="console_collapse">收起</string>
+    <string name="console_expand">展开</string>
+    <string name="console_all_debug_copied">已复制全部调试信息到剪贴板</string>
+    <string name="console_copied">已复制到剪贴板</string>
+    <string name="console_saved_download">已保存到：Download/WalletSentinel/%1$s</string>
+    <string name="console_saved_internal">已保存到应用内部：%1$s</string>
+    <string name="console_save_failed">保存失败：%1$s</string>
+    <string name="console_clip_debug_info">调试信息</string>
+    <string name="console_clip_api_log">API 日志</string>
 </resources>

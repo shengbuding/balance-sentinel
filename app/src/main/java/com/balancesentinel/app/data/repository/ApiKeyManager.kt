@@ -258,6 +258,18 @@ class ApiKeyManager(
         }
     }
 
+    internal fun clearAllForReset() {
+        synchronized(accountLock) {
+            check(
+                prefs.edit()
+                    .remove(KEY_ACCOUNTS)
+                    .remove(KEY_LEGACY_API_KEY)
+                    .remove(KEY_ID_MIGRATION_DONE)
+                    .commit()
+            )
+        }
+    }
+
     // ── 兼容旧版单 Key 迁移 ──
 
     /**

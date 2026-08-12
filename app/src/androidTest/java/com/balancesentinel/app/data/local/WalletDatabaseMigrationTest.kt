@@ -29,18 +29,13 @@ class WalletDatabaseMigrationTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "wallet-schema-identity-${System.nanoTime()}"
         context.deleteDatabase(databaseName)
-        val exportedIdentity = context.assets.open(
-            "com.balancesentinel.app.data.local.WalletDatabase/${WalletDatabase.VERSION}.json"
-        ).bufferedReader().use { reader ->
-            Json.parseToJsonElement(reader.readText()).jsonObject
-                .getValue("database").jsonObject
-                .getValue("identityHash").jsonPrimitive.content
-        }
+        val exportedIdentity = exportedSchemaIdentity()
         val database = Room.databaseBuilder(context, WalletDatabase::class.java, databaseName)
             .addMigrations(
                 WalletDatabase.MIGRATION_1_2,
                 WalletDatabase.MIGRATION_2_3,
-                WalletDatabase.MIGRATION_3_4
+                WalletDatabase.MIGRATION_3_4,
+                WalletDatabase.MIGRATION_4_5
             )
             .build()
         try {
@@ -70,7 +65,8 @@ class WalletDatabaseMigrationTest {
             true,
             WalletDatabase.MIGRATION_1_2,
             WalletDatabase.MIGRATION_2_3,
-            WalletDatabase.MIGRATION_3_4
+            WalletDatabase.MIGRATION_3_4,
+            WalletDatabase.MIGRATION_4_5
         ).use { sqlite ->
             val identity = sqlite.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -78,15 +74,18 @@ class WalletDatabaseMigrationTest {
                 check(cursor.moveToFirst())
                 cursor.getString(0)
             }
-            val exportedIdentity = context.assets.open(
-                "com.balancesentinel.app.data.local.WalletDatabase/${WalletDatabase.VERSION}.json"
-            ).bufferedReader().use { reader ->
-                Json.parseToJsonElement(reader.readText()).jsonObject
-                    .getValue("database").jsonObject
-                    .getValue("identityHash").jsonPrimitive.content
-            }
+            val exportedIdentity = exportedSchemaIdentity()
             assertEquals(exportedIdentity, identity)
         }
         context.deleteDatabase(databaseName)
     }
+
+    private fun exportedSchemaIdentity(): String =
+        InstrumentationRegistry.getInstrumentation().context.assets.open(
+            "com.balancesentinel.app.data.local.WalletDatabase/${WalletDatabase.VERSION}.json"
+        ).bufferedReader().use { reader ->
+            Json.parseToJsonElement(reader.readText()).jsonObject
+                .getValue("database").jsonObject
+                .getValue("identityHash").jsonPrimitive.content
+        }
 }

@@ -66,13 +66,15 @@ class ForegroundServiceStarter(
     },
     private val retryScheduler: ServiceStartRetryScheduler = ServiceStartRetryNoop,
     private val diagnosticSink: ServiceStartDiagnosticSink = RefreshLogServiceStartDiagnosticSink,
-    private val fallbackScheduler: ForegroundServiceFallbackScheduler = WorkManagerForegroundFallbackScheduler
+    private val fallbackScheduler: ForegroundServiceFallbackScheduler = WorkManagerForegroundFallbackScheduler,
+    private val userInitiated: Boolean = false
 ) : ServiceStarter {
 
     override fun start(context: Context): ServiceStartResult {
         val requestedAt = now()
         requestMarker.mark(context, requestedAt)
         val serviceIntent = Intent(context, BalanceRefreshService::class.java)
+            .putExtra(BalanceRefreshService.EXTRA_USER_INITIATED, userInitiated)
         return try {
             launcher.launch(context, serviceIntent)
             ServiceStartResult.Started

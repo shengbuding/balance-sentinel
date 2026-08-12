@@ -44,12 +44,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -1053,6 +1055,85 @@ class HomeViewModelTest {
         override fun invalidate(accountId: String) {}
     }
 
+    @Test
+    fun `older single-account completion cannot replace newer data or clear loading`() {
+        val accountA = apiKeyManager.addAccount("A", "sk-order-a")
+        val accountB = apiKeyManager.addAccount("B", "sk-order-b")
+        val gateway = ControlledRefreshGateway()
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(accountA.id)
+        vm.refreshSingleAccount(accountA.id)
+        vm.refreshSingleAccount(accountB.id)
+
+        gateway.completeNextSingle(committed(accountA.id, 100.0))
+        drainMain()
+        assertTrue(vm.uiState.value.refreshStates.getValue(accountA.id).isLoading)
+        assertNull(vm.uiState.value.accountBalances[accountA.id])
+
+        gateway.completeNextSingle(committed(accountA.id, 200.0))
+        gateway.completeNextSingle(committed(accountB.id, 300.0))
+        drainMain()
+
+        val state = vm.uiState.value
+        assertEquals("200.0", state.accountBalances[accountA.id]?.balanceInfos?.single()?.totalBalance)
+        assertEquals("300.0", state.accountBalances[accountB.id]?.balanceInfos?.single()?.totalBalance)
+        assertFalse(state.refreshStates.getValue(accountA.id).isLoading)
+        assertFalse(state.refreshStates.getValue(accountB.id).isLoading)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun `failed refresh preserves data timestamp and last success while marking stale`() {
+        val account = apiKeyManager.addAccount("Timestamped", "sk-timestamped")
+        val initial = committed(account.id).copy(dataTimestamp = 111L)
+        val gateway = RecordingRefreshGateway(
+            initial,
+            AccountRefreshResult.Failed(
+                account.id,
+                RefreshFailure.NetworkFailure("temporary failure")
+            ),
+            committed(account.id, 222.0)
+        )
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+        val afterSuccess = vm.uiState.value.refreshStates.getValue(account.id)
+        assertEquals(111L, afterSuccess.dataTimestamp)
+        assertNotNull(afterSuccess.lastSuccessAt)
+
+        vm.refreshSingleAccount(account.id)
+        val afterFailure = vm.uiState.value.refreshStates.getValue(account.id)
+        assertEquals(111L, afterFailure.dataTimestamp)
+        assertEquals(afterSuccess.lastSuccessAt, afterFailure.lastSuccessAt)
+        assertTrue(afterFailure.stale)
+        assertEquals("[Timestamped] temporary failure", afterFailure.errorMessage)
+
+        vm.refreshSingleAccount(account.id)
+        val afterRecovery = vm.uiState.value.refreshStates.getValue(account.id)
+        assertFalse(afterRecovery.stale)
+        assertNull(afterRecovery.errorMessage)
+        assertNull(vm.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `refresh failure event is consumed once and not replayed to a rebuilt collector`() = runBlocking {
+        val account = apiKeyManager.addAccount("Events", "sk-events")
+        val gateway = RecordingRefreshGateway(
+            AccountRefreshResult.Failed(
+                account.id,
+                RefreshFailure.NetworkFailure("temporary failure")
+            )
+        )
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+
+        val first = vm.events.first()
+        assertEquals(HomeUiEvent.ShowError(account.id, "[Events] temporary failure"), first)
+        assertNull(withTimeoutOrNull(100) { vm.events.first() })
+    }
+
     private class ControlledRefreshGateway : RefreshGateway {
         private val pendingSingle = java.util.ArrayDeque<CompletableDeferred<AccountRefreshResult>>()
         private val pendingAll = java.util.ArrayDeque<CompletableDeferred<RefreshBatchResult>>()
@@ -1249,6 +1330,9 @@ class HomeViewModelTest {
         val state = vm.uiState.value
         assertEquals(priorA, state.accountBalances[accountA.id])
         assertEquals("300.0", state.accountBalances[accountB.id]?.balanceInfos?.single()?.totalBalance)
+        assertTrue(state.refreshStates.getValue(accountA.id).stale)
+        assertNotNull(state.refreshStates.getValue(accountB.id).lastSuccessAt)
+        assertFalse(state.refreshStates.getValue(accountB.id).stale)
         assertEquals("[Account A] Stable network failure", state.errorMessage)
     }
 

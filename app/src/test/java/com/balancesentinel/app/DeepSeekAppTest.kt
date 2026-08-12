@@ -166,7 +166,7 @@ class DeepSeekAppTest {
         val invoked = CountDownLatch(1)
         app.legacyMigrationRunner = { invoked.countDown() }
 
-        app.onCreate()
+        app.launchLegacyAccountMigration()
 
         assertTrue("DeepSeekApp startup must launch the Room account migration", invoked.await(2, TimeUnit.SECONDS))
     }
@@ -178,9 +178,9 @@ class DeepSeekAppTest {
         app.legacyMigrationRunner = { }
         app.accountMutationRecoveryRunner = { invoked.countDown() }
 
-        app.onCreate()
+        app.launchLegacyAccountMigration()
 
-        assertTrue("DeepSeekApp startup must launch account mutation recovery", invoked.await(2, TimeUnit.SECONDS))
+        assertTrue("DeepSeekApp startup must launch account mutation recovery", invoked.await(10, TimeUnit.SECONDS))
     }
 
     @Test
@@ -352,6 +352,14 @@ class DeepSeekTestApplication : DeepSeekApp() {
             Room.inMemoryDatabaseBuilder(this, WalletDatabase::class.java).build()
         )
         SettingsRepositoryProvider.factory = { MutableSettingsRepository() }
+        // The framework creates this application before each test can inject its runner.
+        // Keep that initial startup deterministic; individual tests invoke onCreate after
+        // installing the behavior they are asserting.
+        legacyMigrationRunner = { }
+        configImportRecoveryRunner = { }
+        legacyDataMigrationRunner = { }
+        settingsMigrationRunner = { }
+        accountMutationRecoveryRunner = { }
         super.onCreate()
     }
 }

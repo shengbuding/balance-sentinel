@@ -104,7 +104,9 @@ class MutationPublisher internal constructor(
                 snoozeDurationMinutes = write.value.snoozeDurationMinutes,
                 showTotalBalanceInNotification = write.value.showTotalBalanceInNotification,
                 updatedAt = input.publishedAt
-            )
+            ).also {
+                database.eventLogDao().trimToLatest(write.value.logMaxEntries.coerceIn(10, 1000))
+            }
         }
         when (val write = input.settings.accountAlertSettings) {
             AccountAlertSettingsWrite.Unchanged -> Unit

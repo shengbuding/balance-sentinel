@@ -38,12 +38,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.RefreshStats
 
 
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
+import com.balancesentinel.app.ui.components.CapabilityStatusCard
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
@@ -182,8 +185,8 @@ private fun SettingsMainPage(
             var showLanguageDialog by remember { mutableStateOf(false) }
 
             val languageLabel = when (currentLang) {
-                "zh" -> "中文"
-                "en" -> "English"
+                "zh" -> stringResource(R.string.settings_language_chinese)
+                "en" -> stringResource(R.string.settings_language_english)
                 else -> stringResource(R.string.settings_language_system)
             }
 
@@ -278,6 +281,7 @@ private fun SettingsNavCard(
 @Composable
 fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val capabilityViewModel: CapabilityViewModel = viewModel()
 
     Scaffold(
         topBar = {
@@ -303,6 +307,8 @@ fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            CapabilityStatusCard(capabilityViewModel)
+            Spacer(modifier = Modifier.height(12.dp))
             WidgetSettingsSection(viewModel, uiState)
         }
     }
@@ -941,7 +947,7 @@ private fun CommunityCard() {
                     .fillMaxWidth()
                     .semantics(mergeDescendants = true) {
                         role = Role.Button
-                        contentDescription = "QQ 群 $qqGroup"
+                        contentDescription = context.getString(R.string.settings_qq_group_description, qqGroup)
                     }
                     .clickable {
                         clipboard.setText(AnnotatedString(qqGroup))
@@ -954,7 +960,7 @@ private fun CommunityCard() {
                     Icon(Icons.Filled.AccountCircle, contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("QQ 群: $qqGroup", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_qq_group_label, qqGroup), style = MaterialTheme.typography.bodyMedium)
                 }
                 Text(qqHint, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -986,7 +992,10 @@ private fun WidgetSettingsSection(
     }
 
     val refreshLabel = stringResource(R.string.settings_auto_refresh)
-    val stateDesc = if (expanded) "$refreshLabel，已展开" else "$refreshLabel，已折叠"
+    val stateDesc = stringResource(
+        if (expanded) R.string.settings_expanded_state else R.string.settings_collapsed_state,
+        refreshLabel
+    )
     val minutesLabel = stringResource(R.string.settings_minutes)
     val secondsLabel = stringResource(R.string.settings_seconds)
 
@@ -1023,7 +1032,9 @@ private fun WidgetSettingsSection(
                 }
                 Icon(
                     if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "折叠" else "展开",
+                    contentDescription = stringResource(
+                        if (expanded) R.string.settings_collapse else R.string.settings_expand
+                    ),
                     modifier = Modifier.size(20.dp))
             }
             Text(stringResource(R.string.settings_refresh_interval_label, displayLabel),
@@ -1168,11 +1179,13 @@ private fun LanguageDialog(
     onConfirm: (String?) -> Unit
 ) {
     val systemLabel = stringResource(R.string.settings_language_system)
-    val languageOptions = remember {
+    val chineseLabel = stringResource(R.string.settings_language_chinese)
+    val englishLabel = stringResource(R.string.settings_language_english)
+    val languageOptions = remember(systemLabel, chineseLabel, englishLabel) {
         listOf(
             null to systemLabel,
-            "zh" to "中文",
-            "en" to "English"
+            "zh" to chineseLabel,
+            "en" to englishLabel
         )
     }
     var selected by remember { mutableStateOf(currentLanguage) }

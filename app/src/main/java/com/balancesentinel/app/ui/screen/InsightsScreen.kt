@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,7 +67,7 @@ import com.balancesentinel.app.data.engine.IntradayPoint
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
-import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.util.LocalizedFormatter
 
 /**
  * 洞察页 v2 — 双引擎双卡片架构。
@@ -237,7 +238,7 @@ private fun AccountFilterRow(
                     maxLines = 1
                 )
             },
-            modifier = Modifier.height(28.dp),
+            modifier = Modifier.heightIn(min = 48.dp),
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = MaterialTheme.colorScheme.primary,
                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -254,7 +255,7 @@ private fun AccountFilterRow(
                         maxLines = 1
                     )
                 },
-                modifier = Modifier.height(28.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -274,6 +275,7 @@ private fun IntradayCard(
     bill: IntradayBillReport,
     currency: String
 ) {
+    val formatter = rememberLocalizedFormatter()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -363,21 +365,21 @@ private fun IntradayCard(
                 if (bill.consumed > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
-                        value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
+                        value = formatter.formatCurrency(-bill.consumed, currency),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
-                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
+                        value = formatter.formatSignedCurrency(bill.toppedUp, currency, showPositiveSign = true),
                         color = WalletColors.success
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
-                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
+                        value = formatter.formatSignedCurrency(bill.granted, currency, showPositiveSign = true),
                         color = WalletColors.granted
                     )
                 }
@@ -391,7 +393,6 @@ private fun IntradayCard(
                     bill.netChange < 0 -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                val prefix = if (bill.netChange >= 0) "+" else ""
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -403,7 +404,7 @@ private fun IntradayCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$prefix${FormatUtils.currencySymbol(currency)}%.2f".format(bill.netChange),
+                        text = formatter.formatSignedCurrency(bill.netChange, currency, showPositiveSign = true),
                         style = MaterialTheme.typography.labelMedium,
                         color = netColor,
                         fontWeight = FontWeight.Bold
@@ -418,9 +419,7 @@ private fun IntradayCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 LabeledLine(
                     label = stringResource(R.string.insights_current_balance),
-                    value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
-                        points.lastOrNull()?.actualBalance ?: 0f
-                    ),
+                    value = formatter.formatCurrency(points.lastOrNull()?.actualBalance ?: 0f, currency),
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -445,6 +444,7 @@ private fun DailyCard(
     onChartModeChange: (String) -> Unit = {},
     onRangeDaysChange: (Int) -> Unit
 ) {
+    val formatter = rememberLocalizedFormatter()
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -483,7 +483,7 @@ private fun DailyCard(
                                     maxLines = 1
                                 )
                             },
-                            modifier = Modifier.height(28.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primary,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -591,7 +591,7 @@ private fun DailyCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "无数据日",
+                            text = stringResource(R.string.insights_no_data_day),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -608,21 +608,21 @@ private fun DailyCard(
                 if (bill.consumed > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_consumed),
-                        value = "-${FormatUtils.currencySymbol(currency)}%.2f".format(bill.consumed),
+                        value = formatter.formatCurrency(-bill.consumed, currency),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
                 if (bill.toppedUp > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_topped_up),
-                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.toppedUp),
+                        value = formatter.formatSignedCurrency(bill.toppedUp, currency, showPositiveSign = true),
                         color = WalletColors.success
                     )
                 }
                 if (bill.granted > 0f) {
                     LabeledLine(
                         label = stringResource(R.string.insights_label_granted),
-                        value = "+${FormatUtils.currencySymbol(currency)}%.2f".format(bill.granted),
+                        value = formatter.formatSignedCurrency(bill.granted, currency, showPositiveSign = true),
                         color = WalletColors.granted
                     )
                 }
@@ -636,7 +636,6 @@ private fun DailyCard(
                     bill.netChange < 0 -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                val prefix = if (bill.netChange >= 0) "+" else ""
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -648,7 +647,7 @@ private fun DailyCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$prefix${FormatUtils.currencySymbol(currency)}%.2f".format(bill.netChange),
+                        text = formatter.formatSignedCurrency(bill.netChange, currency, showPositiveSign = true),
                         style = MaterialTheme.typography.labelMedium,
                         color = netColor,
                         fontWeight = FontWeight.Bold
@@ -678,7 +677,7 @@ private fun DailyCard(
                     )
                     IconButton(
                         onClick = { showEstimateHelp = true },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.Info,
@@ -700,14 +699,12 @@ private fun DailyCard(
                         ) {
                             EstimateMetric(
                                 label = stringResource(R.string.insights_current_balance),
-                                value = "${FormatUtils.currencySymbol(currency)}%.2f".format(
-                                    points.lastOrNull()?.balance ?: 0f
-                                ),
+                                value = formatter.formatCurrency(points.lastOrNull()?.balance ?: 0f, currency),
                                 valueColor = MaterialTheme.colorScheme.onSurface
                             )
                             EstimateMetric(
                                 label = stringResource(R.string.insights_daily_consumption),
-                                value = "${FormatUtils.currencySymbol(currency)}%.2f".format(estimate.dailyRate),
+                                value = formatter.formatCurrency(estimate.dailyRate, currency),
                                 valueColor = MaterialTheme.colorScheme.onSurface
                             )
                             val estColor = when {
@@ -816,12 +813,12 @@ private fun IntradayLineChart(
     data: List<IntradayPoint>,
     modifier: Modifier = Modifier
 ) {
+    val formatter = rememberLocalizedFormatter()
     val lineColor = MaterialTheme.colorScheme.primary
     val textColor = android.graphics.Color.argb(0x99, 0x6B, 0x6E, 0x8A)
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
     val topUpMarkerColor = WalletColors.success
     val grantMarkerColor = WalletColors.granted
-    val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
 
     Canvas(modifier = modifier) {
         if (data.isEmpty()) return@Canvas
@@ -864,7 +861,7 @@ private fun IntradayLineChart(
                 strokeWidth = 1f
             )
             drawContext.canvas.nativeCanvas.drawText(
-                formatChartValue(value),
+                formatter.formatCompactNumber(value),
                 leftPadding - 8f, y + 4f,
                 android.graphics.Paint().apply {
                     color = textColor
@@ -958,7 +955,7 @@ private fun IntradayLineChart(
                 pathEffect = dashEffect
             )
             drawContext.canvas.nativeCanvas.drawText(
-                formatChartValue(values[maxIdx]),
+                formatter.formatCompactNumber(values[maxIdx]),
                 labelX, maxY - 6f,
                 labelPaint
             )
@@ -975,7 +972,7 @@ private fun IntradayLineChart(
                 // 靠近最低点时放线上方，让最低点标签可放下方
                 val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
                 drawContext.canvas.nativeCanvas.drawText(
-                    formatChartValue(values[curIdx]),
+                    formatter.formatCompactNumber(values[curIdx]),
                     labelX, curLabelY,
                     labelPaint
                 )
@@ -993,7 +990,7 @@ private fun IntradayLineChart(
                 // 靠近当前金额或最高点时放下方
                 val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
                 drawContext.canvas.nativeCanvas.drawText(
-                    formatChartValue(values[minIdx]),
+                    formatter.formatCompactNumber(values[minIdx]),
                     labelX, minLabelY,
                     labelPaint
                 )
@@ -1044,7 +1041,7 @@ private fun IntradayLineChart(
         val maxLabels = if (data.size <= 8) data.size else if (data.size <= 24) 8 else 6
         if (data.size <= maxLabels) {
             for (i in data.indices) {
-                val label = timeFormat.format(java.util.Date(data[i].timestamp))
+                val label = formatter.formatTime(data[i].timestamp)
                 val x = points[i].x
                 drawContext.canvas.nativeCanvas.drawText(
                     label, x, size.height - 2f,
@@ -1061,7 +1058,7 @@ private fun IntradayLineChart(
             var nextLabelAt = 0f
             for (i in data.indices) {
                 if (i.toFloat() >= nextLabelAt || i == data.lastIndex) {
-                    val label = timeFormat.format(java.util.Date(data[i].timestamp))
+                    val label = formatter.formatTime(data[i].timestamp)
                     val x = points[i].x
                     drawContext.canvas.nativeCanvas.drawText(
                         label, x, size.height - 2f,
@@ -1090,6 +1087,7 @@ private fun DailyLineChart(
     chartMode: String = "balance",
     modifier: Modifier = Modifier
 ) {
+    val formatter = rememberLocalizedFormatter()
     val lineColor = MaterialTheme.colorScheme.primary
     val textColor = android.graphics.Color.argb(0x99, 0x6B, 0x6E, 0x8A)
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
@@ -1142,7 +1140,7 @@ private fun DailyLineChart(
                 strokeWidth = 1f
             )
             drawContext.canvas.nativeCanvas.drawText(
-                formatChartValue(value),
+                formatter.formatCompactNumber(value),
                 leftPadding - 8f, y + 4f,
                 android.graphics.Paint().apply {
                     color = textColor
@@ -1240,7 +1238,7 @@ private fun DailyLineChart(
                 pathEffect = dashEffect
             )
             drawContext.canvas.nativeCanvas.drawText(
-                formatChartValue(values[maxIdx]),
+                formatter.formatCompactNumber(values[maxIdx]),
                 labelX, maxY - 6f,
                 labelPaint
             )
@@ -1257,7 +1255,7 @@ private fun DailyLineChart(
                 // 靠近最低点时放线上方，让最低点标签可放下方
                 val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
                 drawContext.canvas.nativeCanvas.drawText(
-                    formatChartValue(values[curIdx]),
+                    formatter.formatCompactNumber(values[curIdx]),
                     labelX, curLabelY,
                     labelPaint
                 )
@@ -1275,7 +1273,7 @@ private fun DailyLineChart(
                 // 靠近当前金额或最高点时放下方
                 val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
                 drawContext.canvas.nativeCanvas.drawText(
-                    formatChartValue(values[minIdx]),
+                    formatter.formatCompactNumber(values[minIdx]),
                     labelX, minLabelY,
                     labelPaint
                 )
@@ -1389,6 +1387,7 @@ private fun DailyHistoryCard(
     onLoadMore: () -> Unit
 ) {
     if (points.isEmpty()) return
+    val formatter = rememberLocalizedFormatter()
 
     val reversed = points.reversed()
     val visible = reversed.take(visibleCount)
@@ -1435,7 +1434,7 @@ private fun DailyHistoryCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (point.consumed > 0f) {
                                 Text(
-                                    text = "-${FormatUtils.currencySymbol(currency)}%.2f".format(point.consumed),
+                                    text = formatter.formatCurrency(-point.consumed, currency),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.SemiBold
@@ -1450,7 +1449,7 @@ private fun DailyHistoryCard(
                                 Spacer(modifier = Modifier.width(12.dp))
                             }
                             Text(
-                                text = "${FormatUtils.currencySymbol(currency)}%.2f".format(point.balance),
+                                text = formatter.formatCurrency(point.balance, currency),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1472,7 +1471,6 @@ private fun DailyHistoryCard(
                             netChange < 0 -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
-                        val netPrefix = if (netChange >= 0) "+" else ""
 
                         Column(
                             modifier = Modifier
@@ -1484,26 +1482,26 @@ private fun DailyHistoryCard(
                                 .padding(12.dp)
                         ) {
                             HistoryDetailRow(stringResource(R.string.insights_label_consumed),
-                                "-${FormatUtils.currencySymbol(currency)}%.2f".format(point.consumed),
+                                formatter.formatCurrency(-point.consumed, currency),
                                 MaterialTheme.colorScheme.error)
                             if (point.toppedUp > 0f) {
                                 HistoryDetailRow(stringResource(R.string.insights_label_topped_up),
-                                    "+${FormatUtils.currencySymbol(currency)}%.2f".format(point.toppedUp),
+                                    formatter.formatSignedCurrency(point.toppedUp, currency, showPositiveSign = true),
                                     WalletColors.success)
                             }
                             if (point.granted > 0f) {
                                 HistoryDetailRow(stringResource(R.string.insights_label_granted),
-                                    "+${FormatUtils.currencySymbol(currency)}%.2f".format(point.granted),
+                                    formatter.formatSignedCurrency(point.granted, currency, showPositiveSign = true),
                                     WalletColors.granted)
                             }
                             HistoryDetailRow(stringResource(R.string.insights_label_net),
-                                "$netPrefix${FormatUtils.currencySymbol(currency)}%.2f".format(netChange),
+                                formatter.formatSignedCurrency(netChange, currency, showPositiveSign = true),
                                 netColor)
                             HistoryDetailRow(stringResource(R.string.insights_history_open),
-                                "${FormatUtils.currencySymbol(currency)}%.2f".format(point.open),
+                                formatter.formatCurrency(point.open, currency),
                                 MaterialTheme.colorScheme.onSurfaceVariant)
                             HistoryDetailRow(stringResource(R.string.insights_history_close),
-                                "${FormatUtils.currencySymbol(currency)}%.2f".format(point.balance),
+                                formatter.formatCurrency(point.balance, currency),
                                 MaterialTheme.colorScheme.onSurfaceVariant)
                             HistoryDetailRow(stringResource(R.string.insights_history_samples),
                                 "${point.sampleCount}",
@@ -1609,12 +1607,10 @@ private fun LabeledLine(
     }
 }
 
-private fun formatChartValue(value: Float): String {
-    return when {
-        value >= 10000 -> "%.2f万".format(value / 10000f)
-        value >= 1000 -> "%.2fk".format(value / 1000f)
-        value >= 0.01f -> "%.2f".format(value)
-        else -> "%.4f".format(value)
-    }
+@Composable
+private fun rememberLocalizedFormatter(): LocalizedFormatter {
+    val context = LocalContext.current
+    val locale = context.resources.configuration.locales[0]
+    return remember(context, locale) { LocalizedFormatter(context, locale) }
 }
 

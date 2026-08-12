@@ -30,8 +30,42 @@ interface EventLogDao {
         limit: Int
     ): List<EventLogEntity>
 
+    @Query(
+        """
+        SELECT * FROM event_logs
+        WHERE id <= :maxId
+          AND (:afterRecordedAt IS NULL OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId))
+        ORDER BY recorded_at DESC, id DESC LIMIT :limit
+        """
+    )
+    suspend fun newestPageUpTo(
+        maxId: Long,
+        afterRecordedAt: Long?,
+        afterId: Long?,
+        limit: Int
+    ): List<EventLogEntity>
+
+    @Query("SELECT COALESCE(MAX(id), 0) FROM event_logs")
+    suspend fun maxId(): Long
+
+    @Query("SELECT COUNT(*) FROM event_logs WHERE id <= :maxId")
+    suspend fun countUpTo(maxId: Long): Long
+
     @Query("DELETE FROM event_logs WHERE recorded_at < :cutoff")
     suspend fun deleteBefore(cutoff: Long): Int
+
+    @Query(
+        """
+        DELETE FROM event_logs
+        WHERE id IN (
+            SELECT id FROM event_logs
+            ORDER BY recorded_at DESC, id DESC
+            LIMIT -1 OFFSET :maximum
+        )
+        """
+    )
+    suspend fun trimToLatest(maximum: Int): Int
 
     @Query("SELECT * FROM event_logs WHERE id = :id")
     suspend fun get(id: Long): EventLogEntity?

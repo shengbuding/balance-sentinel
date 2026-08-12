@@ -43,19 +43,19 @@ class WalletDatabaseTest {
     }
 
     @Test
-    fun `runtime pragma schema is the literal v4 contract`() = runTest {
+    fun `runtime pragma schema is the literal v5 contract`() = runTest {
         assertEquals(EXPECTED_SCHEMA, database.pragmaSchemaSnapshot())
     }
 
     @Test
-    fun `committed Room export is the exact v4 contract`() {
+    fun `committed Room export is the exact v5 contract`() {
         val schemaFile = walletSchemaFile()
         val databaseJson = Json.parseToJsonElement(schemaFile.readText())
             .jsonObject.getValue("database").jsonObject
 
-        assertEquals(4, databaseJson.getValue("version").jsonPrimitive.content.toInt())
+        assertEquals(5, databaseJson.getValue("version").jsonPrimitive.content.toInt())
         assertEquals(
-            "464f2403aa5bd84c3a352d1e49b4786c",
+            "36814ba6ee8df90dc47d5bdcf9af2fda",
             databaseJson.getValue("identityHash").jsonPrimitive.content
         )
         assertEquals(EXPECTED_SCHEMA, exportedSchemaSnapshot(databaseJson))
@@ -222,6 +222,50 @@ class WalletDatabaseTest {
         }
     }
 
+    @Test
+    fun `migration 4 to 5 preserves usage rows and initializes content revision`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "wallet-v4-to-v5-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE usage_snapshots (
+                                id TEXT PRIMARY KEY NOT NULL,
+                                account_id TEXT NOT NULL,
+                                captured_at INTEGER NOT NULL,
+                                identity_discriminator TEXT NOT NULL DEFAULT '',
+                                migration_operation_id TEXT DEFAULT NULL,
+                                migration_source_ordinal INTEGER DEFAULT NULL
+                            )
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        try {
+            val sqlite = helper.writableDatabase
+            sqlite.execSQL(
+                "INSERT INTO usage_snapshots(id, account_id, captured_at) " +
+                    "VALUES ('usage-old', 'account', 33)"
+            )
+
+            WalletDatabase.MIGRATION_4_5.migrate(sqlite)
+
+            assertEquals("usage-old", queryText(sqlite, "SELECT id FROM usage_snapshots"))
+            assertEquals(0L, queryLong(sqlite, "SELECT content_revision FROM usage_snapshots"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     companion object {
         private val EXPECTED_SCHEMA = """
             account_alert_settings|account_id:TEXT:1:<null>:1,currency:TEXT:1:<null>:2,balance_alert_enabled:INTEGER:1:0:0,change_alert_enabled:INTEGER:1:0:0||account_id->accounts(id):CASCADE:NO ACTION
@@ -242,7 +286,7 @@ class WalletDatabaseTest {
             refresh_runs|id:TEXT:1:<null>:1,source:TEXT:1:<null>:0,owner_process_session_id:TEXT:0:NULL:0,state:TEXT:1:'RUNNING':0,started_at:INTEGER:1:<null>:0,completed_at:INTEGER:0:NULL:0,account_count:INTEGER:1:0:0,success_count:INTEGER:1:0:0,failure_count:INTEGER:1:0:0,cancelled_count:INTEGER:1:0:0,error_code:TEXT:0:NULL:0|index_refresh_runs_owner_process_session_id_state:0:owner_process_session_id+state,index_refresh_runs_state_started_at:0:state+started_at|
             snooze_state|account_id:TEXT:1:<null>:1,snoozed_until:INTEGER:1:<null>:0||account_id->accounts(id):CASCADE:NO ACTION
             usage_records|snapshot_id:TEXT:1:<null>:1,record_ordinal:INTEGER:1:<null>:2,model_name:TEXT:1:<null>:0,total_tokens:INTEGER:1:0:0,prompt_tokens:INTEGER:1:0:0,completion_tokens:INTEGER:1:0:0|index_usage_records_snapshot_id_model_name:0:snapshot_id+model_name|snapshot_id->usage_snapshots(id):CASCADE:NO ACTION
-            usage_snapshots|id:TEXT:1:<null>:1,account_id:TEXT:1:<null>:0,captured_at:INTEGER:1:<null>:0,identity_discriminator:TEXT:1:'':0,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0|index_usage_snapshots_account_id_captured_at_identity_discriminator:1:account_id+captured_at+identity_discriminator,index_usage_snapshots_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal|account_id->accounts(id):CASCADE:NO ACTION
+            usage_snapshots|id:TEXT:1:<null>:1,account_id:TEXT:1:<null>:0,captured_at:INTEGER:1:<null>:0,identity_discriminator:TEXT:1:'':0,migration_operation_id:TEXT:0:NULL:0,migration_source_ordinal:INTEGER:0:NULL:0,content_revision:INTEGER:1:0:0|index_usage_snapshots_account_id_captured_at_identity_discriminator:1:account_id+captured_at+identity_discriminator,index_usage_snapshots_migration_operation_id_migration_source_ordinal:1:migration_operation_id+migration_source_ordinal|account_id->accounts(id):CASCADE:NO ACTION
         """.trimIndent()
     }
 }
@@ -352,8 +396,8 @@ private suspend fun WalletDatabase.pragmaSchemaSnapshot(): String = withContext(
 private fun walletSchemaFile(): File {
     val root = File(System.getProperty("user.dir"))
     return listOf(
-        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/4.json"),
-        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/4.json")
+        File(root, "app/schemas/com.balancesentinel.app.data.local.WalletDatabase/5.json"),
+        File(root, "schemas/com.balancesentinel.app.data.local.WalletDatabase/5.json")
     ).first { it.isFile }
 }
 

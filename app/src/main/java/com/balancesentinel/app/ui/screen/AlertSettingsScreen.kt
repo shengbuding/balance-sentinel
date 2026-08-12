@@ -18,10 +18,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.data.model.AccountInfo
@@ -31,6 +37,8 @@ import com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity
 import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
+import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
+import com.balancesentinel.app.ui.components.NotificationCapabilityBanner
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 
 internal enum class AlertSettingsContentMode { LOADING, READY }
@@ -49,6 +57,7 @@ internal fun alertSettingsContentMode(settingsLoading: Boolean): AlertSettingsCo
 @Composable
 fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val capabilityViewModel: CapabilityViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accountLoadState = uiState.accountLoadState
     val accounts = (accountLoadState as? AccountLoadState.Ready)?.accounts.orEmpty()
@@ -125,6 +134,7 @@ fun AlertSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // ── Snooze 状态横幅 ──
+            NotificationCapabilityBanner(capabilityViewModel)
             if (alertSettingsContentMode(uiState.settingsLoading) == AlertSettingsContentMode.LOADING) {
                 SettingsLoadingCard()
             } else {
@@ -549,6 +559,13 @@ private fun CurrencyAlertRow(
     onBalanceToggle: (Boolean) -> Unit,
     onChangeToggle: (Boolean) -> Unit
 ) {
+    val enabledState = stringResource(R.string.accessibility_enabled)
+    val disabledState = stringResource(R.string.accessibility_disabled)
+    val moveUpDescription = stringResource(R.string.accessibility_move_up)
+    val moveDownDescription = stringResource(R.string.accessibility_move_down)
+    val notificationDescription = stringResource(R.string.alert_settings_notification_wallet)
+    val balanceDescription = stringResource(R.string.alert_settings_balance_switch)
+    val changeDescription = stringResource(R.string.alert_settings_change_switch)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -580,11 +597,11 @@ private fun CurrencyAlertRow(
                     IconButton(
                         onClick = onMoveUp,
                         enabled = canMoveUp,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.KeyboardArrowUp,
-                            contentDescription = "↑",
+                            contentDescription = moveUpDescription,
                             tint = if (canMoveUp) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier.size(18.dp)
@@ -594,11 +611,11 @@ private fun CurrencyAlertRow(
                     IconButton(
                         onClick = onMoveDown,
                         enabled = canMoveDown,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "↓",
+                            contentDescription = moveDownDescription,
                             tint = if (canMoveDown) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier.size(18.dp)
@@ -608,7 +625,13 @@ private fun CurrencyAlertRow(
                 Checkbox(
                     checked = notificationChecked,
                     onCheckedChange = onNotificationToggle,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics {
+                            role = Role.Checkbox
+                            contentDescription = "$currency $notificationDescription"
+                            stateDescription = if (notificationChecked) enabledState else disabledState
+                        }
                 )
             }
             Spacer(modifier = Modifier.width(4.dp))
@@ -618,7 +641,14 @@ private fun CurrencyAlertRow(
         Switch(
             checked = balanceEnabled,
             onCheckedChange = onBalanceToggle,
-            modifier = Modifier.width(56.dp)
+            modifier = Modifier
+                .width(56.dp)
+                .heightIn(min = 48.dp)
+                .semantics {
+                    role = Role.Switch
+                    contentDescription = "$currency $balanceDescription"
+                    stateDescription = if (balanceEnabled) enabledState else disabledState
+                }
         )
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -627,7 +657,14 @@ private fun CurrencyAlertRow(
         Switch(
             checked = changeEnabled,
             onCheckedChange = onChangeToggle,
-            modifier = Modifier.width(56.dp)
+            modifier = Modifier
+                .width(56.dp)
+                .heightIn(min = 48.dp)
+                .semantics {
+                    role = Role.Switch
+                    contentDescription = "$currency $changeDescription"
+                    stateDescription = if (changeEnabled) enabledState else disabledState
+                }
         )
     }
 }
@@ -838,6 +875,11 @@ private fun NotificationHintCard(
     onMoveTotalUp: () -> Unit,
     onMoveTotalDown: () -> Unit
 ) {
+    val enabledState = stringResource(R.string.accessibility_enabled)
+    val disabledState = stringResource(R.string.accessibility_disabled)
+    val moveUpDescription = stringResource(R.string.accessibility_move_up)
+    val moveDownDescription = stringResource(R.string.accessibility_move_down)
+    val totalDescription = stringResource(R.string.alert_settings_show_total)
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -878,11 +920,11 @@ private fun NotificationHintCard(
                     IconButton(
                         onClick = onMoveTotalUp,
                         enabled = totalOrderPos > 0,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.KeyboardArrowUp,
-                            contentDescription = "↑",
+                            contentDescription = moveUpDescription,
                             tint = if (totalOrderPos > 0) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier.size(18.dp)
@@ -891,11 +933,11 @@ private fun NotificationHintCard(
                     IconButton(
                         onClick = onMoveTotalDown,
                         enabled = totalOrderPos < totalCount - 1,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "↓",
+                            contentDescription = moveDownDescription,
                             tint = if (totalOrderPos < totalCount - 1) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier.size(18.dp)
@@ -905,7 +947,13 @@ private fun NotificationHintCard(
                 Checkbox(
                     checked = showTotal,
                     onCheckedChange = onShowTotalChange,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics {
+                            role = Role.Checkbox
+                            contentDescription = totalDescription
+                            stateDescription = if (showTotal) enabledState else disabledState
+                        }
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(

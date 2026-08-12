@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -143,6 +144,57 @@ class EncryptedPreferencesCredentialStoreTest {
     }
 
     @Test
+    fun `config import recovery manifests round trip list and clear independently`() = runTest {
+        val store = store()
+
+        store.writeConfigImportManifest("operation-a", "manifest-a")
+        store.writeConfigImportManifest("operation-b", "manifest-b")
+
+        assertEquals("manifest-a", store.readConfigImportManifest("operation-a"))
+        assertEquals("manifest-b", store.readConfigImportManifest("operation-b"))
+        assertEquals(setOf("operation-a", "operation-b"), store.listConfigImportManifestIds())
+
+        store.clearConfigImportManifest("operation-a")
+
+        assertNull(store.readConfigImportManifest("operation-a"))
+        assertEquals(setOf("operation-b"), store.listConfigImportManifestIds())
+    }
+
+    @Test
+    fun `clear removes credential payload and every recovery manifest but keeps unrelated preferences`() = runTest {
+        val store = store()
+        store.write(payload())
+        store.writeConfigImportManifest("operation-a", "manifest-a")
+        store.writeConfigImportManifest("operation-b", "manifest-b")
+        assertTrue(prefs.edit().putString("unrelated", "keep").commit())
+
+        store.clear()
+
+        assertSame(CredentialReadResult.Missing, store.read())
+        assertTrue(store.listConfigImportManifestIds().isEmpty())
+        assertEquals("keep", prefs.getString("unrelated", null))
+    }
+
+    @Test
+    fun `recovery manifest operations report explicit commit failures`() = runTest {
+        val store = store(CommitFailingPreferences(prefs))
+
+        try {
+            store.writeConfigImportManifest("operation-a", "manifest-a")
+            fail("Expected recovery manifest write failure")
+        } catch (error: IllegalStateException) {
+            assertEquals("Configuration import recovery manifest write failed", error.message)
+        }
+
+        try {
+            store.clearConfigImportManifest("operation-a")
+            fail("Expected recovery manifest clear failure")
+        } catch (error: IllegalStateException) {
+            assertEquals("Configuration import recovery manifest clear failed", error.message)
+        }
+    }
+
+    @Test
     fun `second store cannot corrupt after first store inspection before persistence`() = runTest {
         val firstCommitEntered = CountDownLatch(1)
         val allowFirstCommit = CountDownLatch(1)
@@ -234,6 +286,11 @@ class EncryptedPreferencesCredentialStoreTest {
             return object : SharedPreferences.Editor by editor {
                 override fun putString(key: String?, value: String?): SharedPreferences.Editor {
                     editor.putString(key, value)
+                    return this
+                }
+
+                override fun remove(key: String?): SharedPreferences.Editor {
+                    editor.remove(key)
                     return this
                 }
 

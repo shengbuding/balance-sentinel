@@ -61,14 +61,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import java.util.concurrent.atomic.AtomicLong
 
 data class HomeUiState(
     val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     val accounts: List<AccountInfo> = emptyList(),
     val accountBalances: Map<String, BalanceResponse?> = emptyMap(),
+    val refreshStates: Map<String, AccountRefreshUiState> = emptyMap(),
     val isLoading: Boolean = false,
+    /** Error produced by a refresh operation, also represented on each account state. */
+    val refreshErrorMessage: String? = null,
+    /** Error produced by account loading or account mutations. */
+    val operationErrorMessage: String? = null,
+    /** Backward-compatible effective error for existing callers. */
     val errorMessage: String? = null,
     val lastRefreshTime: Long = 0L,
     val crashLogs: List<CrashLogger.CrashEntry> = emptyList(),
@@ -97,7 +106,7 @@ class HomeViewModel @JvmOverloads constructor(
     private val gateway: com.balancesentinel.app.data.refresh.RefreshGateway? = null,
     private val injectedAccountUiRepository: AccountUiRepository? = null,
     private val injectedAccountMutationCoordinator: AccountMutationCoordinator? = null,
-    private val cleanupAction: suspend (Context) -> Unit = { context ->
+    @Suppress("UNUSED_PARAMETER") cleanupAction: suspend (Context) -> Unit = { context ->
         CleanupScheduler.runCleanup(context)
     }
 ) : AndroidViewModel(application) {
@@ -117,6 +126,12 @@ class HomeViewModel @JvmOverloads constructor(
 
     private val _refreshStats = MutableStateFlow<RefreshStats?>(null)
     val refreshStats: StateFlow<RefreshStats?> = _refreshStats.asStateFlow()
+
+    private val _events = Channel<HomeUiEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
+    val uiEvents = events
+    private val refreshRequestCounter = AtomicLong(0L)
+    private var nonRefreshErrorMessage: String? = null
 
     fun loadRefreshStats() {
         viewModelScope.launch {
@@ -188,21 +203,29 @@ class HomeViewModel @JvmOverloads constructor(
                             _uiState.value = _uiState.value.copy(accountLoadState = state)
                         }
                         is AccountLoadState.Ready -> {
+                            if (nonRefreshErrorMessage == accountCorruptionMessage()) {
+                                nonRefreshErrorMessage = null
+                            }
                             _uiState.value = _uiState.value.copy(
                                 accountLoadState = state,
                                 accounts = state.accounts,
-                                errorMessage = _uiState.value.errorMessage
-                                    ?.takeUnless { it == accountCorruptionMessage() }
+                                operationErrorMessage = nonRefreshErrorMessage,
+                                errorMessage = nonRefreshErrorMessage
                             )
+                            syncRefreshStates(state.accounts)
                             loadCachedBalancesForReadyAccounts()
                         }
                         is AccountLoadState.Corrupt -> {
+                            nonRefreshErrorMessage = accountCorruptionMessage()
                             _uiState.value = _uiState.value.copy(
                                 accountLoadState = state,
                                 accounts = emptyList(),
                                 accountBalances = emptyMap(),
+                                refreshStates = emptyMap(),
                                 isLoading = false,
                                 lastRefreshTime = 0L,
+                                refreshErrorMessage = null,
+                                operationErrorMessage = accountCorruptionMessage(),
                                 errorMessage = accountCorruptionMessage()
                             )
                         }
@@ -221,6 +244,161 @@ class HomeViewModel @JvmOverloads constructor(
     private fun readyAccount(accountId: String): AccountInfo? =
         readyAccounts()?.firstOrNull { it.id == accountId }
 
+    private fun syncRefreshStates(accounts: List<AccountInfo>) {
+        val ids = accounts.map { it.id }.toSet()
+        val retained = _uiState.value.refreshStates
+            .filterKeys { it in ids }
+            .toMutableMap()
+        accounts.forEach { account ->
+            retained.putIfAbsent(account.id, AccountRefreshUiState())
+        }
+        publishRefreshStates(retained)
+    }
+
+    private fun publishRefreshStates(states: Map<String, AccountRefreshUiState>) {
+        val current = _uiState.value
+        val refreshError = states.values.firstOrNull { it.errorMessage != null }?.errorMessage
+        _uiState.value = current.copy(
+            refreshStates = states,
+            isLoading = states.values.any { it.isLoading },
+            lastRefreshTime = states.values.mapNotNull { it.lastSuccessAt }.maxOrNull() ?: 0L,
+            refreshErrorMessage = refreshError,
+            errorMessage = nonRefreshErrorMessage ?: refreshError
+        )
+    }
+
+    private fun setNonRefreshError(message: String?) {
+        nonRefreshErrorMessage = message
+        val refreshError = _uiState.value.refreshStates.values
+            .firstOrNull { it.errorMessage != null }
+            ?.errorMessage
+        _uiState.value = _uiState.value.copy(
+            operationErrorMessage = message,
+            refreshErrorMessage = refreshError,
+            errorMessage = message ?: refreshError
+        )
+    }
+
+    private fun clearNonRefreshError() = setNonRefreshError(null)
+
+    private fun beginRefresh(accountId: String): Long {
+        val requestId = refreshRequestCounter.incrementAndGet()
+        val previous = _uiState.value.refreshStates[accountId] ?: AccountRefreshUiState()
+        val states = _uiState.value.refreshStates.toMutableMap()
+        states[accountId] = previous.copy(
+            requestId = requestId,
+            isLoading = true,
+            errorMessage = null
+        )
+        publishRefreshStates(states)
+        return requestId
+    }
+
+    private fun isCurrentRefresh(accountId: String, requestId: Long): Boolean =
+        _uiState.value.refreshStates[accountId]?.requestId == requestId
+
+    private fun updateRefreshState(
+        accountId: String,
+        requestId: Long,
+        transform: (AccountRefreshUiState) -> AccountRefreshUiState
+    ): Boolean {
+        val current = _uiState.value.refreshStates[accountId] ?: return false
+        if (current.requestId != requestId) return false
+        val states = _uiState.value.refreshStates.toMutableMap()
+        states[accountId] = transform(current)
+        publishRefreshStates(states)
+        return true
+    }
+
+    private suspend fun emitError(accountId: String?, message: String) {
+        _events.send(HomeUiEvent.ShowError(accountId, message))
+    }
+
+    private suspend fun markRefreshFailure(
+        account: AccountInfo,
+        requestId: Long,
+        message: String,
+        dataTimestamp: Long? = null,
+        emitSnackbar: Boolean = true,
+        cause: Throwable? = null
+    ) {
+        if (isCurrentRefresh(account.id, requestId)) {
+            val updated = updateRefreshState(account.id, requestId) { state ->
+                state.copy(
+                    isLoading = false,
+                    dataTimestamp = dataTimestamp ?: state.dataTimestamp,
+                    stale = true,
+                    errorMessage = message
+                )
+            }
+            if (updated && emitSnackbar) emitError(account.id, message)
+        }
+        cause?.let {
+            Logger.e("HomeViewModel", "refresh failed for ${account.label}", it)
+        }
+    }
+
+    private fun toBalanceResponse(balance: com.balancesentinel.app.data.api.UnifiedBalance): BalanceResponse =
+        BalanceResponse(
+            isAvailable = balance.isAvailable,
+            balanceInfos = balance.balances.map { entry ->
+                BalanceInfo(
+                    currency = entry.currency,
+                    totalBalance = entry.totalBalance.toString(),
+                    grantedBalance = entry.grantedBalance.toString(),
+                    toppedUpBalance = entry.toppedUpBalance.toString()
+                )
+            }
+        )
+
+    private suspend fun applyRefreshResult(
+        account: AccountInfo,
+        requestId: Long,
+        result: com.balancesentinel.app.data.refresh.AccountRefreshResult
+    ) {
+        when (result) {
+            is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
+                if (!isCurrentRefresh(account.id, requestId)) return
+                val balances = _uiState.value.accountBalances.toMutableMap()
+                balances[account.id] = toBalanceResponse(result.balance)
+                _uiState.value = _uiState.value.copy(accountBalances = balances)
+                updateRefreshState(account.id, requestId) { state ->
+                    state.copy(
+                        isLoading = false,
+                        lastSuccessAt = System.currentTimeMillis(),
+                        dataTimestamp = result.dataTimestamp ?: System.currentTimeMillis(),
+                        stale = false,
+                        errorMessage = null
+                    )
+                }
+            }
+            is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
+                if (!isCurrentRefresh(account.id, requestId)) return
+                val message = "[${account.label}] ${result.failure.message}"
+                markRefreshFailure(
+                    account = account,
+                    requestId = requestId,
+                    message = message,
+                    dataTimestamp = result.dataTimestamp
+                )
+            }
+            is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
+                if (!isCurrentRefresh(account.id, requestId)) return
+                markRefreshFailure(
+                    account = account,
+                    requestId = requestId,
+                    message = result.failure.message,
+                    emitSnackbar = false
+                )
+            }
+            is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
+                if (!isCurrentRefresh(account.id, requestId)) return
+                val message = "[${account.label}] ${result.reason}"
+                markRefreshFailure(account, requestId, message)
+            }
+        }
+    }
+
     private fun asCorruption(error: Throwable): DataCorruptionException =
         error as? DataCorruptionException
             ?: DataCorruptionException("Account UI state cannot be read", error)
@@ -238,7 +416,6 @@ class HomeViewModel @JvmOverloads constructor(
         try {
             _uiState.value = _uiState.value.copy(
                 accountBalances = emptyMap(),
-                lastRefreshTime = 0L,
                 settingsLoading = _uiState.value.settingsLoading
             )
             val accounts = _uiState.value.accounts
@@ -253,6 +430,7 @@ class HomeViewModel @JvmOverloads constructor(
             val byAccount = allBalances.groupBy { it.accountId }
 
             val accountBalances = mutableMapOf<String, BalanceResponse>()
+            val cachedTimestamps = mutableMapOf<String, Long>()
             for (account in accounts) {
                 val entries = byAccount[account.id]
                 if (entries == null) {
@@ -270,14 +448,22 @@ class HomeViewModel @JvmOverloads constructor(
                         )
                     }
                 )
+                cachedTimestamps[account.id] = entries.maxOfOrNull { it.lastUpdated } ?: 0L
                 Logger.i("HomeViewModel", "loadCachedBalances: loaded ${account.label}, isAvailable=${entries.all { it.isAvailable }}")
             }
 
             if (accountBalances.isNotEmpty()) {
                 _uiState.value = _uiState.value.copy(
-                    accountBalances = accountBalances,
-                    lastRefreshTime = allBalances.maxOfOrNull { it.lastUpdated } ?: 0L
+                    accountBalances = accountBalances
                 )
+                val states = _uiState.value.refreshStates.toMutableMap()
+                cachedTimestamps.forEach { (accountId, timestamp) ->
+                    val state = states[accountId] ?: AccountRefreshUiState()
+                    if (state.dataTimestamp == null) {
+                        states[accountId] = state.copy(dataTimestamp = timestamp)
+                    }
+                }
+                publishRefreshStates(states)
                 Logger.i("HomeViewModel", "loadCachedBalances: updated UI with ${accountBalances.size} accounts")
             }
             if (gateway == null && getApplication<Application>() !is com.balancesentinel.app.DeepSeekApp) {
@@ -295,9 +481,6 @@ class HomeViewModel @JvmOverloads constructor(
                     getApplication(),
                     zoneId = MidnightMaintenanceDependencies.zoneIdProvider()
                 )
-            }
-            viewModelScope.launch {
-                cleanupAction(getApplication())
             }
         } catch (e: Exception) { Logger.w("HomeViewModel", "midnight_reconcile_failed", e) }
     }
@@ -365,11 +548,9 @@ class HomeViewModel @JvmOverloads constructor(
                 when (val result = mutationCoordinator.save(existingId = null, draft = draft)) {
                     is com.balancesentinel.app.data.repository.AccountMutationResult.Saved -> {
                         if (result.result is AccountSaveResult.Conflict) {
-                            _uiState.value = _uiState.value.copy(
-                                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
-                            )
+                            setNonRefreshError(getApplication<Application>().getString(R.string.account_key_conflict))
                         } else {
-                            _uiState.value = _uiState.value.copy(errorMessage = null)
+                            clearNonRefreshError()
                             resubscribeAccounts()
                             refreshBalance()
                         }
@@ -377,7 +558,7 @@ class HomeViewModel @JvmOverloads constructor(
                     else -> Unit
                 }
             } catch (error: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户保存失败")
+                setNonRefreshError(error.message ?: "账户保存失败")
             }
         }
     }
@@ -387,13 +568,13 @@ class HomeViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             try {
                 mutationCoordinator.delete(id)
+                clearNonRefreshError()
                 _uiState.value = _uiState.value.copy(
-                    accountBalances = _uiState.value.accountBalances - id,
-                    errorMessage = null
+                    accountBalances = _uiState.value.accountBalances - id
                 )
                 resubscribeAccounts()
             } catch (error: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户删除失败")
+                setNonRefreshError(error.message ?: "账户删除失败")
             }
         }
     }
@@ -432,11 +613,9 @@ class HomeViewModel @JvmOverloads constructor(
                 when (val result = mutationCoordinator.save(existingId = id, draft = draft)) {
                     is com.balancesentinel.app.data.repository.AccountMutationResult.Saved -> {
                         if (result.result is AccountSaveResult.Conflict) {
-                            _uiState.value = _uiState.value.copy(
-                                errorMessage = getApplication<Application>().getString(R.string.account_key_conflict)
-                            )
+                            setNonRefreshError(getApplication<Application>().getString(R.string.account_key_conflict))
                         } else {
-                            _uiState.value = _uiState.value.copy(errorMessage = null)
+                            clearNonRefreshError()
                             resubscribeAccounts()
                             refreshBalance()
                         }
@@ -444,7 +623,7 @@ class HomeViewModel @JvmOverloads constructor(
                     else -> Unit
                 }
             } catch (error: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = error.message ?: "账户保存失败")
+                setNonRefreshError(error.message ?: "账户保存失败")
             }
         }
     }
@@ -670,70 +849,34 @@ class HomeViewModel @JvmOverloads constructor(
 
     fun refreshSingleAccount(accountId: String) {
         val account = readyAccount(accountId) ?: return
-
         viewModelScope.launch {
             if (readyAccount(accountId) == null) return@launch
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            clearNonRefreshError()
+            val requestId = beginRefresh(accountId)
             try {
-
-            val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
-            if (gw != null) {
-                // Task 4: route through shared gateway — committer owns all persistence
-                try {
+                val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
+                if (gw != null) {
                     val result = gw.refreshAccount(accountId, RefreshTrigger.MANUAL_ACCOUNT)
-                    if (readyAccount(accountId) == null) return@launch
-                    when (result) {
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
-                            val balance = result.balance
-                            val balanceResponse = BalanceResponse(
-                                isAvailable = balance.isAvailable,
-                                balanceInfos = balance.balances.map { entry ->
-                                    BalanceInfo(
-                                        currency = entry.currency,
-                                        totalBalance = entry.totalBalance.toString(),
-                                        grantedBalance = entry.grantedBalance.toString(),
-                                        toppedUpBalance = entry.toppedUpBalance.toString()
-                                    )
-                                }
-                            )
-                            val currentBalances = _uiState.value.accountBalances.toMutableMap()
-                            currentBalances[accountId] = balanceResponse
-                            _uiState.value = _uiState.value.copy(
-                                accountBalances = currentBalances,
-                                lastRefreshTime = System.currentTimeMillis()
-                            )
-                        }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
-                            _uiState.value = _uiState.value.copy(
-                                errorMessage = "[$account.label] ${result.failure.message}"
-                            )
-                        }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
-                            // stale — no-op, preserve cached values
-                        }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
-                            _uiState.value = _uiState.value.copy(
-                                errorMessage = "[$account.label] ${result.reason}"
-                            )
-                        }
+                    if (readyAccount(accountId) != null) {
+                        applyRefreshResult(account, requestId, result)
                     }
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    if (readyAccount(accountId) == null) return@launch
-                    Logger.e("HomeViewModel", "refreshSingleAccount failed for ${account.label}", e)
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = "[$account.label] ${e.message ?: "查询失败"}"
-                    )
+                } else {
+                    Logger.w("HomeViewModel", "refreshSingleAccount: no gateway available")
                 }
-            } else {
-                Logger.w("HomeViewModel", "refreshSingleAccount: no gateway available")
-            }
-
-            if (readyAccount(accountId) == null) return@launch
-            updateAllWidgets()
+                if (readyAccount(accountId) != null && isCurrentRefresh(accountId, requestId)) {
+                    updateAllWidgets()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (readyAccount(accountId) != null && isCurrentRefresh(accountId, requestId)) {
+                    val message = "[${account.label}] ${e.message ?: "Refresh failed"}"
+                    markRefreshFailure(account, requestId, message, cause = e)
+                }
             } finally {
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                updateRefreshState(accountId, requestId) { state ->
+                    state.copy(isLoading = false)
+                }
             }
         }
     }
@@ -743,75 +886,52 @@ class HomeViewModel @JvmOverloads constructor(
     fun refreshBalance() {
         val accounts = readyAccounts() ?: return
         if (accounts.isEmpty()) {
-            _uiState.value = _uiState.value.copy(
-                errorMessage = getApplication<Application>().getString(R.string.no_key)
-            )
+            setNonRefreshError(getApplication<Application>().getString(R.string.no_key))
             return
         }
 
         viewModelScope.launch {
             if (readyAccounts() == null) return@launch
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            clearNonRefreshError()
+            val requestIds = accounts.associate { it.id to beginRefresh(it.id) }
             try {
-            val now = System.currentTimeMillis()
-            val newBalances = mutableMapOf<String, BalanceResponse?>()
-            var firstError: String? = null
-
-            val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
-            if (gw != null) {
-                // Task 4: route through shared gateway — committer owns all persistence
-                val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL).results
-                if (readyAccounts() == null) return@launch
-                for (result in results) {
-                    val accountId = result.accountId
-                    when (result) {
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
-                            val balance = result.balance
-                            newBalances[accountId] = BalanceResponse(
-                                isAvailable = balance.isAvailable,
-                                balanceInfos = balance.balances.map { entry ->
-                                    BalanceInfo(
-                                        currency = entry.currency,
-                                        totalBalance = entry.totalBalance.toString(),
-                                        grantedBalance = entry.grantedBalance.toString(),
-                                        toppedUpBalance = entry.toppedUpBalance.toString()
-                                    )
-                                }
+                val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
+                if (gw != null) {
+                    val results = gw.refreshAll(RefreshTrigger.MANUAL_ALL).results
+                    if (readyAccounts() == null) return@launch
+                    val byAccount = results.associateBy { it.accountId }
+                    accounts.forEach { account ->
+                        val result = byAccount[account.id]
+                            ?: com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped(
+                                account.id,
+                                "No refresh result"
                             )
+                        requestIds[account.id]?.let { requestId ->
+                            applyRefreshResult(account, requestId, result)
                         }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
-                            val label = accounts.find { it.id == accountId }?.label ?: accountId
-                            if (firstError == null) firstError = "[$label] ${result.failure.message}"
-                            _uiState.value.accountBalances[accountId]?.let { existing ->
-                                newBalances[accountId] = existing
-                            }
-                        }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
-                            // stale — preserve cached value
-                            _uiState.value.accountBalances[accountId]?.let { existing ->
-                                newBalances[accountId] = existing
-                            }
-                        }
-                        is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
-                            newBalances[accountId] = null
+                    }
+                } else {
+                    Logger.w("HomeViewModel", "refreshBalance: no gateway available")
+                }
+                if (readyAccounts() != null) updateAllWidgets()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                accounts.forEach { account ->
+                    requestIds[account.id]?.let { requestId ->
+                        if (isCurrentRefresh(account.id, requestId)) {
+                            val message = "[${account.label}] ${e.message ?: "Refresh failed"}"
+                            markRefreshFailure(account, requestId, message)
                         }
                     }
                 }
-            }
-            if (gw == null) {
-                Logger.w("HomeViewModel", "refreshBalance: no gateway available")
-            }
-
-            if (readyAccounts() == null) return@launch
-            _uiState.value = _uiState.value.copy(
-                accountBalances = newBalances,
-                lastRefreshTime = now,
-                errorMessage = firstError
-            )
-
-            updateAllWidgets()
+                Logger.e("HomeViewModel", "refreshBalance failed", e)
             } finally {
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                requestIds.forEach { (accountId, requestId) ->
+                    updateRefreshState(accountId, requestId) { state ->
+                        state.copy(isLoading = false)
+                    }
+                }
             }
         }
     }

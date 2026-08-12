@@ -13,6 +13,7 @@ import com.balancesentinel.app.receiver.SnoozeReceiver
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.widget.AccountBalance
 import com.balancesentinel.app.ui.navigation.AppRoute
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -32,15 +33,12 @@ class NotificationHelper(private val context: Context) {
     /** 每账户 alert 通知 ID：10000 + hash，范围 [10000, 75535] */
     fun alertNotificationId(accountId: String, currency: String = ""): Int =
         if (currency.isBlank()) 10000 + (accountId.hashCode() and 0xFFFF)
-        else stablePairId("alert", accountId, currency)
+        else stablePairId(KIND_ALERT, accountId, currency, ALERT_ID_BASE)
 
     /** Stable notification ID isolated by account and normalized currency. */
     fun changeNotificationId(accountId: String, currency: String = ""): Int =
         if (currency.isBlank()) 20000 + (accountId.hashCode() and 0xFFFF)
-        else stablePairId("change", accountId, currency)
-
-    private fun stablePairId(kind: String, accountId: String, currency: String): Int =
-        pairHash(kind, accountId, currency)
+        else stablePairId(KIND_CHANGE, accountId, currency, CHANGE_ID_BASE)
 
 
     // ── PendingIntent 工厂 ──
@@ -57,24 +55,27 @@ class NotificationHelper(private val context: Context) {
         AppRoute.Insights(accountId, currency).toUri()
 
     fun deepLinkRequestCode(accountId: String, currency: String): Int =
-        pairRequestCode("deep-link", accountId, currency)
+        stablePairId(KIND_DEEP_LINK, accountId, currency, DEEP_LINK_ID_BASE)
 
     fun snoozeRequestCode(accountId: String, currency: String = ""): Int =
-        pairRequestCode("snooze", accountId, currency)
+        stablePairId(KIND_SNOOZE, accountId, currency, SNOOZE_ID_BASE)
 
-    private fun pairRequestCode(kind: String, accountId: String, currency: String): Int {
-        val hash = pairHash(kind, accountId, currency)
-        return if (kind == "deep-link") hash and 0x3FFFFFFF else hash or 0x40000000
-    }
-
-    private fun pairHash(kind: String, accountId: String, currency: String): Int {
+    private fun stablePairId(
+        kind: String,
+        accountId: String,
+        currency: String,
+        base: Int
+    ): Int {
         val normalized = currency.trim().uppercase(Locale.ROOT)
-        val bytes = MessageDigest.getInstance("SHA-256")
-            .digest("\u0000$kind\u0000$accountId\u0000$normalized".toByteArray())
-        return ((bytes[0].toInt() and 0xFF) shl 24 or
-            ((bytes[1].toInt() and 0xFF) shl 16) or
-            ((bytes[2].toInt() and 0xFF) shl 8) or
-            (bytes[3].toInt() and 0xFF)) and 0x7FFFFFFF
+        val input = "$kind\u0000$accountId\u0000$normalized"
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray(StandardCharsets.UTF_8))
+        val firstFourBytes =
+            ((digest[0].toInt() and 0xFF) shl 24) or
+                ((digest[1].toInt() and 0xFF) shl 16) or
+                ((digest[2].toInt() and 0xFF) shl 8) or
+                (digest[3].toInt() and 0xFF)
+        return (firstFourBytes and Int.MAX_VALUE) + base
     }
 
 
@@ -350,5 +351,16 @@ class NotificationHelper(private val context: Context) {
     }
 
     // ── 工具 ──
+
+    private companion object {
+        const val KIND_ALERT = "alert"
+        const val KIND_CHANGE = "change"
+        const val KIND_DEEP_LINK = "deep_link"
+        const val KIND_SNOOZE = "snooze"
+        const val ALERT_ID_BASE = 10_000
+        const val CHANGE_ID_BASE = 20_000
+        const val DEEP_LINK_ID_BASE = 30_000
+        const val SNOOZE_ID_BASE = 40_000
+    }
 
 }

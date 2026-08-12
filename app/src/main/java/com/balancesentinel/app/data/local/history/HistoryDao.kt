@@ -31,6 +31,17 @@ data class SummaryKeyProjection(
     val currency: String
 )
 
+data class HistorySeriesKeyProjection(
+    @ColumnInfo(name = "account_id") val accountId: String,
+    val currency: String
+)
+
+data class HistoryCountProjection(
+    @ColumnInfo(name = "row_count") val count: Long,
+    @ColumnInfo(name = "generated_sum") val generatedSum: Long,
+    @ColumnInfo(name = "generated_max") val generatedMax: Long
+)
+
 @Dao
 interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -201,6 +212,62 @@ interface HistoryDao {
 
     @Query(
         """
+        SELECT MIN(recorded_at) FROM balance_records
+        WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive
+        """
+    )
+    suspend fun nextRecordedAt(fromInclusive: Long, toExclusive: Long): Long?
+
+    @Query("SELECT COALESCE(MAX(id), 0) FROM balance_records")
+    suspend fun maxRecordId(): Long
+
+    @Query("SELECT COUNT(*) FROM balance_records WHERE id <= :maxId")
+    suspend fun countRecordsUpTo(maxId: Long): Long
+
+    @Query(
+        """
+        SELECT * FROM balance_records
+        WHERE id <= :maxId
+          AND (
+            :afterRecordedAt IS NULL
+            OR recorded_at < :afterRecordedAt
+            OR (recorded_at = :afterRecordedAt AND id < :afterId)
+          )
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun exportPageUpTo(
+        maxId: Long,
+        afterRecordedAt: Long?,
+        afterId: Long?,
+        limit: Int
+    ): List<BalanceRecordEntity>
+
+    @Query(
+        """
+        SELECT account_id, currency FROM balance_records
+        WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive
+          AND (
+            :afterAccountId IS NULL
+            OR account_id > :afterAccountId
+            OR (account_id = :afterAccountId AND currency > :afterCurrency)
+          )
+        GROUP BY account_id, currency
+        ORDER BY account_id, currency
+        LIMIT :limit
+        """
+    )
+    suspend fun rawSeriesKeyPage(
+        fromInclusive: Long,
+        toExclusive: Long,
+        afterAccountId: String?,
+        afterCurrency: String?,
+        limit: Int
+    ): List<HistorySeriesKeyProjection>
+
+    @Query(
+        """
         SELECT * FROM balance_records
         WHERE account_id = :accountId AND currency = :currency
           AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive
@@ -339,6 +406,16 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM daily_summaries")
     suspend fun countSummaries(): Long
 
+    @Query(
+        """
+        SELECT COUNT(*) AS row_count,
+            COALESCE(SUM(generated_at), 0) AS generated_sum,
+            COALESCE(MAX(generated_at), 0) AS generated_max
+        FROM daily_summaries
+        """
+    )
+    suspend fun summaryCountProjection(): HistoryCountProjection
+
     @Query("DELETE FROM balance_records")
     suspend fun clearRecords(): Int
 
@@ -409,6 +486,25 @@ interface HistoryDao {
     )
     suspend fun publishedSummaryKeys(excludedIdentity: String): List<SummaryKeyProjection>
 
+    @Query(
+        """
+        SELECT account_id, currency FROM daily_summaries
+        WHERE (
+            :afterAccountId IS NULL
+            OR account_id > :afterAccountId
+            OR (account_id = :afterAccountId AND currency > :afterCurrency)
+        )
+        GROUP BY account_id, currency
+        ORDER BY account_id, currency
+        LIMIT :limit
+        """
+    )
+    suspend fun summarySeriesKeyPage(
+        afterAccountId: String?,
+        afterCurrency: String?,
+        limit: Int
+    ): List<HistorySeriesKeyProjection>
+
     @Query("DELETE FROM balance_records WHERE recorded_at >= :fromInclusive AND recorded_at < :toExclusive")
     suspend fun deleteRawForDate(fromInclusive: Long, toExclusive: Long): Int
 
@@ -443,6 +539,37 @@ interface HistoryDao {
         """
     )
     suspend fun getSummary(date: String, accountId: String, currency: String): DailySummaryEntity?
+
+    @Query(
+        """
+        SELECT summary.* FROM daily_summaries AS summary
+        WHERE summary.account_id = :accountId
+          AND summary.currency = :currency
+          AND (:afterDate IS NULL OR summary.date > :afterDate)
+          AND summary.identity_discriminator = (
+            SELECT candidate.identity_discriminator
+            FROM daily_summaries AS candidate
+            WHERE candidate.date = summary.date
+              AND candidate.account_id = summary.account_id
+              AND candidate.currency = summary.currency
+            ORDER BY CASE
+                WHEN candidate.identity_discriminator = '' THEN 0
+                WHEN candidate.identity_discriminator = '__continuity__' THEN 2
+                ELSE 1
+              END,
+              candidate.generated_at DESC, candidate.identity_discriminator
+            LIMIT 1
+          )
+        ORDER BY summary.date
+        LIMIT :limit
+        """
+    )
+    suspend fun canonicalSummaryPageForSeries(
+        accountId: String,
+        currency: String,
+        afterDate: String?,
+        limit: Int
+    ): List<DailySummaryEntity>
 
     @Query(
         """

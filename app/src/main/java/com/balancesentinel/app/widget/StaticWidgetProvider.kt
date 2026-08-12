@@ -3,7 +3,6 @@ package com.balancesentinel.app.widget
 import android.app.PendingIntent
 import android.content.ComponentName
 import com.balancesentinel.app.data.util.Logger
-import com.balancesentinel.app.util.FormatUtils
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
@@ -30,17 +29,15 @@ import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
-import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshRuntime
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.repository.RoomAccountRepository
 import com.balancesentinel.app.data.repository.RoomAccountUiRepository
+import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.platform.permission.AndroidCapabilityChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -129,100 +126,38 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             isExpanded             -> R.layout.widget_balance
             else                   -> R.layout.widget_balance_compact
         }
-        val views = RemoteViews(context.packageName, layoutRes)
-
-        // 读取 per-widget 配置
+        // Read each bounded summary snapshot once, then resolve and render one explicit state.
         val config = WidgetConfigStore.getConfig(context, widgetId)
-        val activeAccountIds = (accountState as? AccountLoadState.Ready)
-            ?.accounts?.map { it.id }?.toSet().orEmpty()
+        val activeAccounts = (accountState as? AccountLoadState.Ready)
+            ?.accounts?.associate { it.id to it.label }.orEmpty()
+        val activeAccountIds = activeAccounts.keys
         val lastRefreshStatus = WidgetRefreshStatusStore.read(context)
-        val lastRefreshFailed = lastRefreshStatus != null &&
-            lastRefreshStatus.state != RefreshBatchState.SUCCEEDED
-        val agg = if (config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID) {
-            // 总余额模式：仅聚合当前有效账户
-            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
-            if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
-        } else if (config != null) {
-            // 仅显示选定账户+币种
-            val accountBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
-            val matching = accountBalances.filter {
-                it.accountId == config.accountId && it.currency == config.currency
-            }
-            if (matching.isNotEmpty()) {
-                val acc = matching.first()
-                AggregatedBalance(
-                    totalBalance = acc.totalBalance,
-                    currency = acc.currency,
-                    isAvailable = acc.isAvailable && !acc.stale,
-                    grantedBalance = acc.grantedBalance,
-                    toppedUpBalance = acc.toppedUpBalance,
-                    accountCount = 1,
-                    lastUpdated = acc.lastUpdated
-                )
-            } else null
-        } else {
-            // 未配置 → 汇总显示（legacy），同样仅聚合有效账户
-            val validBalances = WidgetBalanceVisibility.filter(accountState, BalanceWidgetDataStore.getSummaryBalances(context))
-            if (validBalances.isEmpty()) null else aggregateBalances(validBalances)
-        }
-
-        if (agg != null) {
-            val balanceText = formatBalanceDisplay(agg)
-            val timeText = formatRefreshTime(context, agg.lastUpdated)
-
-            // 标题显示钱包来源
-            val label = when {
-                config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
-                    context.getString(R.string.widget_title_total)
-                config != null -> {
-                    val accountBalances = BalanceWidgetDataStore.getSummaryBalances(context)
-                    val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
-                    accLabel.ifEmpty { context.getString(R.string.widget_default_title) }
-                }
-                agg.accountCount > 1 -> context.getString(R.string.widget_title_multi, agg.accountCount)
-                else -> context.getString(R.string.widget_default_title)
-            }
-
-            if (isExpanded) {
-                views.setTextViewText(R.id.widget_title, label)
-                views.setTextViewText(R.id.widget_status, if (agg.isAvailable) context.getString(R.string.widget_status_available)
-                    else context.getString(R.string.widget_status_partial))
-                views.setTextViewText(R.id.widget_balance, balanceText)
-                val symbol = currencySymbol(agg.currency)
-                views.setTextViewText(R.id.widget_granted, context.getString(R.string.balance_granted, "$symbol${FormatUtils.formatAmount(agg.grantedBalance)}"))
-                views.setTextViewText(R.id.widget_topped_up, context.getString(R.string.balance_topped_up, "$symbol${FormatUtils.formatAmount(agg.toppedUpBalance)}"))
-                views.setTextViewText(R.id.widget_refresh_time, timeText)
-                views.setViewVisibility(R.id.widget_detail_row, android.view.View.VISIBLE)
-            } else {
-                // 紧凑模式标题同样显示钱包来源
-                val compactLabel = when {
-                    config != null && config.accountId == WidgetConfig.TOTAL_ACCOUNT_ID ->
-                        context.getString(R.string.widget_title_total)
-                    config != null -> {
-                        val accountBalances = BalanceWidgetDataStore.getSummaryBalances(context)
-                        val accLabel = accountBalances.find { it.accountId == config.accountId }?.label ?: ""
-                        accLabel.ifEmpty { context.getString(R.string.widget_title_compact) }
-                    }
-                    agg.accountCount > 1 -> context.getString(R.string.widget_title_compact_multi, agg.accountCount)
-                    else -> context.getString(R.string.widget_title_compact)
-                }
-                views.setTextViewText(R.id.widget_title, compactLabel)
-                views.setTextViewText(R.id.widget_balance, balanceText)
-                views.setTextViewText(R.id.widget_status, if (agg.isAvailable) context.getString(R.string.widget_status_available)
-                    else context.getString(R.string.widget_status_insufficient))
-                views.setTextViewText(R.id.widget_refresh_time, timeText)
-            }
-        } else {
-            views.setTextViewText(R.id.widget_balance, context.getString(R.string.widget_query_balance))
-            views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_title_compact))
-            views.setTextViewText(
-                R.id.widget_status,
-                if (lastRefreshFailed) context.getString(R.string.widget_status_partial) else "--"
+        val summaryBalances = WidgetBalanceVisibility.filter(
+            accountState,
+            BalanceWidgetDataStore.getSummaryBalances(context)
+        )
+        val capability = AndroidCapabilityChecker(context).read(
+            WidgetPrefs(context).notificationPermissionPermanentlyDenied
+        )
+        val state = WidgetStateResolver.resolve(
+            WidgetStateInput(
+                config = config,
+                activeAccounts = activeAccounts,
+                balances = summaryBalances,
+                lastRefresh = lastRefreshStatus,
+                capabilityRestricted = !capability.monitoringAllowed
             )
-            views.setTextViewText(R.id.widget_refresh_time, "")
-            if (isExpanded) {
-                views.setViewVisibility(R.id.widget_detail_row, android.view.View.GONE)
-            }
+        )
+        val (views, renderModel) = WidgetRemoteViewsRenderer.render(
+            context = context,
+            layoutRes = layoutRes,
+            state = state,
+            expanded = isExpanded
+        )
+        val agg = when (state) {
+            is WidgetViewState.Fresh -> state.balance
+            is WidgetViewState.Stale -> state.balance
+            else -> null
         }
 
         // Sparkline 迷你趋势线（仅 expanded layout）
@@ -248,13 +183,12 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         }
 
         // 点击余额/标题 → deep-link 到 Insights 页面
-        val configuredAccount = configuredDeepLinkAccountId(config?.accountId, activeAccountIds)
-        val appRoute = if (configuredAccount != null && agg != null) {
-            AppRoute.Insights(configuredAccount, agg.currency)
-        } else {
-            AppRoute.Home
-        }
-        val appIntent = Intent(context, MainActivity::class.java).apply {
+        val appRoute = renderModel.route
+        val appIntent = if (renderModel.primaryAction == WidgetPrimaryAction.CONFIGURE) {
+            Intent(context, WidgetConfigActivity::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            }
+        } else Intent(context, MainActivity::class.java).apply {
             if (appRoute is AppRoute.Insights) {
                 putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
                 putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, appRoute.accountId)
@@ -275,7 +209,14 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         )
         views.setOnClickPendingIntent(R.id.widget_refresh_btn, refreshPending)
 
-        views.setViewVisibility(R.id.widget_refresh_progress, android.view.View.GONE)
+        views.setViewVisibility(
+            R.id.widget_refresh_progress,
+            if (WidgetRefreshProgressState.isRefreshing()) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.GONE
+            }
+        )
 
         manager.updateAppWidget(widgetId, views)
     }
@@ -333,38 +274,6 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             } catch (_: Exception) {}
         }
     }
-
-    private fun formatRefreshTime(context: Context, timestamp: Long): String {
-        if (timestamp <= 0) return ""
-        val diff = System.currentTimeMillis() - timestamp
-        return when {
-            diff < 60_000 -> context.getString(R.string.time_just_now)
-            diff < 3_600_000 -> context.getString(R.string.time_minutes_ago, (diff / 60_000).toInt())
-            diff < 86_400_000 -> context.getString(R.string.time_hours_ago, (diff / 3_600_000).toInt())
-            else -> SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
-        }
-    }
-
-    /**
-     * 从有效余额列表中聚合总余额（最多两个非零币种）。
-     */
-    private fun aggregateBalances(balances: List<AccountBalance>): AggregatedBalance? {
-        return BalanceWidgetDataStore.aggregateTopTwo(balances)
-    }
-
-    /** 格式化余额展示文本，双币种用 · 分隔 */
-    private fun formatBalanceDisplay(agg: AggregatedBalance): String {
-        val sb = StringBuilder()
-        sb.append("${currencySymbol(agg.currency)}${FormatUtils.formatAmount(agg.totalBalance)}")
-        val hasSecond = agg.totalBalance2.isNotEmpty() && (agg.totalBalance2.toDoubleOrNull() ?: 0.0) > 0
-        if (hasSecond) {
-            sb.append(" · ${currencySymbol(agg.currency2)}${FormatUtils.formatAmount(agg.totalBalance2)}")
-        }
-        return sb.toString()
-    }
-
-    private fun currencySymbol(currency: String): String =
-        when (currency.uppercase()) { "CNY" -> "¥"; "USD" -> "$"; "EUR" -> "€"; else -> currency }
 
     companion object {
         const val LEGACY_WIDGET_ALARM_REQUEST_CODE = 100

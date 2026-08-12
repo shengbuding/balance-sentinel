@@ -7,6 +7,7 @@ import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.DailySummaryEntity
 import com.balancesentinel.app.data.local.history.HistoryAggregateProjection
+import com.balancesentinel.app.data.local.history.HistorySeriesKeyProjection
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
@@ -204,6 +205,101 @@ open class RoomHistoryRepository(
 ) : HistoryRepository {
     internal suspend fun countRecords(): Long = database.historyDao().countRecords()
 
+    internal open suspend fun nextRecordedAt(fromInclusive: Long, toExclusive: Long): Long? =
+        database.historyDao().nextRecordedAt(fromInclusive, toExclusive)
+
+    internal open suspend fun rawSeriesKeyPage(
+        fromInclusive: Long,
+        toExclusive: Long,
+        after: HistorySeriesKeyProjection?,
+        limit: Int = CLEANUP_KEY_PAGE_SIZE
+    ): List<HistorySeriesKeyProjection> = database.historyDao().rawSeriesKeyPage(
+        fromInclusive = fromInclusive,
+        toExclusive = toExclusive,
+        afterAccountId = after?.accountId,
+        afterCurrency = after?.currency,
+        limit = limit.coerceIn(1, CLEANUP_KEY_PAGE_SIZE)
+    )
+
+    internal data class CleanupArchiveResult(
+        val hadRecords: Boolean,
+        val deletedRecords: Int
+    )
+
+    internal open suspend fun archiveDateSeries(
+        date: String,
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long,
+        cutoff: Long,
+        generatedAt: Long
+    ): CleanupArchiveResult = database.withTransaction {
+        val canonicalCurrency = requireIsoCurrency(currency)
+        val dao = database.historyDao()
+        val recordCount = dao.countRecordsForDay(
+            accountId,
+            canonicalCurrency,
+            fromInclusive,
+            toExclusive
+        )
+        if (recordCount == 0L) {
+            return@withTransaction CleanupArchiveResult(false, 0)
+        }
+
+        if (dao.countPublishedSummaryKey(
+                date,
+                accountId,
+                canonicalCurrency,
+                CONTINUITY_SUMMARY_IDENTITY
+            ) == 0L
+        ) {
+            val aggregate = dao.aggregateSemantic(
+                accountId,
+                canonicalCurrency,
+                fromInclusive,
+                toExclusive
+            ).toHistoryAggregateOrNull(accountId, canonicalCurrency)
+                ?: return@withTransaction CleanupArchiveResult(false, 0)
+            dao.deleteSummaryIdentity(
+                date,
+                accountId,
+                canonicalCurrency,
+                CONTINUITY_SUMMARY_IDENTITY
+            )
+            dao.insertSummariesIfAbsent(
+                listOf(
+                    DailySummary(
+                        accountId = accountId,
+                        date = date,
+                        currency = canonicalCurrency,
+                        open = aggregate.open,
+                        close = aggregate.close,
+                        consumed = aggregate.consumed,
+                        toppedUp = aggregate.toppedUp,
+                        granted = aggregate.granted,
+                        avgBalance = aggregate.avgBalance,
+                        sampleCount = aggregate.sampleCount,
+                        toppedUpBalanceClose = aggregate.toppedUpBalanceClose,
+                        grantedBalanceClose = aggregate.grantedBalanceClose,
+                        generatedAt = generatedAt
+                    ).toEntity()
+                )
+            )
+        }
+
+        CleanupArchiveResult(
+            hadRecords = true,
+            deletedRecords = dao.deleteExpiredForDate(
+                cutoff = cutoff,
+                fromInclusive = fromInclusive,
+                toExclusive = toExclusive,
+                accountId = accountId,
+                currency = canonicalCurrency
+            )
+        )
+    }
+
     internal suspend fun archiveAndDelete(
         summaries: List<DailySummary>,
         recordIds: List<Long>
@@ -261,31 +357,138 @@ open class RoomHistoryRepository(
     internal suspend fun purgeExpiredSummarizedRecords(
         now: Long,
         zoneId: java.time.ZoneId
-    ): Int =
-        database.withTransaction {
-            val today = java.time.Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate()
-            val cutoff = now - 24L * 3_600_000L
-            database.historyDao()
-                .publishedSummaryKeys(CONTINUITY_SUMMARY_IDENTITY)
-                .asSequence()
-                .mapNotNull { key ->
-                    val date = runCatching { java.time.LocalDate.parse(key.date) }.getOrNull()
-                        ?: return@mapNotNull null
-                    if (date == today) return@mapNotNull null
-                    val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
-                    val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
-                    Triple(from, to, key.accountId to key.currency)
+    ): Int {
+        val cutoff = now - 24L * 3_600_000L
+        val todayStart = java.time.Instant.ofEpochMilli(now)
+            .atZone(zoneId)
+            .toLocalDate()
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        val upperExclusive = minOf(cutoff, todayStart)
+        var searchFrom = Long.MIN_VALUE
+        var deleted = 0
+        while (searchFrom < upperExclusive) {
+            val timestamp = nextRecordedAt(searchFrom, upperExclusive) ?: break
+            val date = java.time.Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+            val from = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val to = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+            var after: HistorySeriesKeyProjection? = null
+            while (true) {
+                val keys = rawSeriesKeyPage(from, to, after)
+                if (keys.isEmpty()) break
+                keys.forEach { key ->
+                    deleted += database.withTransaction {
+                        val canonicalCurrency = requireIsoCurrency(key.currency)
+                        if (database.historyDao().countPublishedSummaryKey(
+                                date.toString(),
+                                key.accountId,
+                                canonicalCurrency,
+                                CONTINUITY_SUMMARY_IDENTITY
+                            ) == 0L
+                        ) {
+                            0
+                        } else {
+                            database.historyDao().deleteExpiredForDate(
+                                cutoff,
+                                from,
+                                to,
+                                key.accountId,
+                                canonicalCurrency
+                            )
+                        }
+                    }
                 }
-                .sumOf { (from, to, key) ->
-                    database.historyDao().deleteExpiredForDate(
-                        cutoff = cutoff,
-                        fromInclusive = from,
-                        toExclusive = to,
-                        accountId = key.first,
-                        currency = key.second
-                    )
-                }
+                after = keys.last()
+                if (keys.size < CLEANUP_KEY_PAGE_SIZE) break
+            }
+            searchFrom = if (to > searchFrom) to else timestamp + 1
         }
+        return deleted
+    }
+
+    internal suspend fun fillContinuityThrough(
+        throughDate: java.time.LocalDate,
+        generatedAt: Long,
+        zoneId: java.time.ZoneId
+    ) {
+        var afterSeries: HistorySeriesKeyProjection? = null
+        while (true) {
+            val seriesPage = database.historyDao().summarySeriesKeyPage(
+                afterSeries?.accountId,
+                afterSeries?.currency,
+                CLEANUP_KEY_PAGE_SIZE
+            )
+            if (seriesPage.isEmpty()) break
+            seriesPage.forEach { series ->
+                fillContinuitySeries(series, throughDate, generatedAt, zoneId)
+            }
+            afterSeries = seriesPage.last()
+            if (seriesPage.size < CLEANUP_KEY_PAGE_SIZE) break
+        }
+    }
+
+    private suspend fun fillContinuitySeries(
+        series: HistorySeriesKeyProjection,
+        throughDate: java.time.LocalDate,
+        generatedAt: Long,
+        zoneId: java.time.ZoneId
+    ) {
+        var afterDate: String? = null
+        var previous: DailySummary? = null
+        val pending = ArrayList<DailySummary>(CLEANUP_KEY_PAGE_SIZE)
+
+        suspend fun flush() {
+            if (pending.isEmpty()) return
+            insertContinuitySummariesIfNoRaw(pending.toList(), zoneId)
+            pending.clear()
+        }
+
+        suspend fun appendGap(untilExclusive: java.time.LocalDate) {
+            var cursor = previous?.let { java.time.LocalDate.parse(it.date).plusDays(1) } ?: return
+            while (cursor.isBefore(untilExclusive) && !cursor.isAfter(throughDate)) {
+                val seed = requireNotNull(previous)
+                pending += seed.copy(
+                    date = cursor.toString(),
+                    open = seed.close,
+                    close = seed.close,
+                    consumed = 0f,
+                    toppedUp = 0f,
+                    granted = 0f,
+                    avgBalance = seed.close,
+                    sampleCount = 0,
+                    generatedAt = generatedAt
+                )
+                previous = pending.last()
+                if (pending.size == CLEANUP_KEY_PAGE_SIZE) flush()
+                cursor = cursor.plusDays(1)
+            }
+        }
+
+        while (true) {
+            val page = database.historyDao().canonicalSummaryPageForSeries(
+                series.accountId,
+                requireIsoCurrency(series.currency),
+                afterDate,
+                CLEANUP_KEY_PAGE_SIZE
+            ).map { it.toDomain() }
+            if (page.isEmpty()) break
+            page.forEach { summary ->
+                val summaryDate = runCatching { java.time.LocalDate.parse(summary.date) }.getOrNull()
+                    ?: return@forEach
+                if (previous != null) appendGap(summaryDate)
+                previous = summary
+            }
+            afterDate = page.last().date
+            if (page.size < CLEANUP_KEY_PAGE_SIZE) break
+        }
+        appendGap(throughDate.plusDays(1))
+        flush()
+    }
+
+    private companion object {
+        const val CLEANUP_KEY_PAGE_SIZE = 200
+    }
     override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
         if (records.isEmpty()) return 0
         var written = 0

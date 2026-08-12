@@ -56,6 +56,44 @@ class LegacyAccountMigrationTest {
     }
 
     @Test
+    fun completedMigrationNeverReplaysLegacyCredentialsAfterEditOrDelete() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val legacy = AccountInfo("legacy-id", "Legacy", "key-before", ProviderType.DEEPSEEK)
+            var sourceReads = 0
+            val reader = LegacyAccountReader {
+                sourceReads++
+                CredentialReadResult.Valid(
+                    CredentialPayload(listOf(legacy)),
+                    com.balancesentinel.app.data.credentials.CredentialGeneration.LEGACY
+                )
+            }
+            val store = RecordingCredentialStore()
+            val migration = LegacyAccountMigration(database, reader, store)
+
+            migration.run()
+            val edited = CredentialPayload(listOf(legacy.copy(label = "Edited", apiKey = "key-after")))
+            store.write(edited)
+            val writesAfterEdit = store.writeCount
+
+            migration.run()
+            assertEquals(1, sourceReads)
+            assertEquals(writesAfterEdit, store.writeCount)
+            assertEquals(edited, (store.read() as CredentialReadResult.Valid).payload)
+
+            store.write(CredentialPayload(emptyList()))
+            val writesAfterDelete = store.writeCount
+            migration.run()
+            assertEquals(1, sourceReads)
+            assertEquals(writesAfterDelete, store.writeCount)
+            assertEquals(CredentialPayload(emptyList()), (store.read() as CredentialReadResult.Valid).payload)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun missingCredentialReadbackFailsBeforeRoomWrites() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
@@ -194,6 +232,8 @@ class LegacyAccountMigrationTest {
     ) : CredentialStore {
         var operationSeenBeforeWrite = false
         var manifestSeenBeforeWrite = false
+        var writeCount = 0
+            private set
         private var payload: CredentialPayload? = null
 
         override fun read(): CredentialReadResult = payload?.let {
@@ -201,6 +241,7 @@ class LegacyAccountMigrationTest {
         } ?: CredentialReadResult.Missing
 
         override suspend fun write(payload: CredentialPayload) {
+            writeCount++
             this.payload = payload
             database?.let {
                 val operation = it.mutationOperationDao().listRecoverable().firstOrNull()

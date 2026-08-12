@@ -7,18 +7,23 @@ import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.balance.ScriptInspection
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppConfig
 import com.balancesentinel.app.data.repository.BackupImportPlanner
 import com.balancesentinel.app.data.repository.ConfigSettings
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -48,10 +53,6 @@ class BackupRestoreScreenTest {
         manager = ApiKeyManager(app, accountStorage)
         widgetPrefs = WidgetPrefs(app)
         widgetPrefs.resetAll()
-        val planner = BackupImportPlanner(manager, widgetPrefs) { _, _ ->
-            ScriptInspection(null, emptySet(), staticallyDeterminable = true)
-        }
-        viewModel = DataManagementViewModel(app, manager, widgetPrefs, planner)
     }
 
     @After
@@ -66,6 +67,7 @@ class BackupRestoreScreenTest {
             // Mutation caught: the file-selection path writes accounts/settings before the preview action.
             val local = AccountInfo(LOCAL_ID, "Local", LOCAL_KEY)
             manager.replaceAll(listOf(local))
+            viewModel = createViewModel()
             widgetPrefs.refreshIntervalSeconds = 222
             val config = config(
                 credentialsIncluded = false,
@@ -84,7 +86,9 @@ class BackupRestoreScreenTest {
                     BackupRestoreScreen(viewModel = viewModel, onBack = {})
                 }
             }
-            composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
+            composeRule.onNodeWithTag("config_import_preview").assertExists()
+            composeRule.onNodeWithText(app.getString(R.string.data_config_import_preview_title))
+                .assertIsDisplayed()
         }
     }
 
@@ -95,6 +99,7 @@ class BackupRestoreScreenTest {
             val local = AccountInfo(OLD_ID, "Old", OLD_KEY)
             val replacement = AccountInfo(NEW_ID, "New", NEW_KEY)
             manager.replaceAll(listOf(local))
+            viewModel = createViewModel()
             viewModel.previewConfiguration(config(true, listOf(replacement)))
             composeRule.setContent {
                 DeepSeekBalanceTheme {
@@ -102,7 +107,9 @@ class BackupRestoreScreenTest {
                 }
             }
 
-            composeRule.onNodeWithTag("config_import_preview").assertIsDisplayed()
+            composeRule.onNodeWithTag("config_import_preview").assertExists()
+            composeRule.onNodeWithText(app.getString(R.string.data_config_import_preview_title))
+                .assertIsDisplayed()
             composeRule.onNodeWithTag("import_mode_replace").performClick()
             composeRule.waitUntil(5_000) {
                 viewModel.uiState.value.pendingImportPlan?.mode ==
@@ -121,6 +128,26 @@ class BackupRestoreScreenTest {
                 manager.getAccounts()
             )
         }
+    }
+
+    private fun createViewModel(): DataManagementViewModel {
+        val accounts = manager.getAccounts()
+        val planner = BackupImportPlanner(manager, widgetPrefs) { _, _ ->
+            ScriptInspection(null, emptySet(), staticallyDeterminable = true)
+        }
+        lateinit var created: DataManagementViewModel
+        composeRule.runOnIdle {
+            created = DataManagementViewModel(
+                application = app,
+                apiKeyManager = manager,
+                widgetPrefs = widgetPrefs,
+                importPlanner = planner,
+                injectedAccountUiRepository = AccountUiRepository {
+                    flowOf(AccountLoadState.Ready(accounts))
+                }
+            )
+        }
+        return created
     }
 
     private fun config(

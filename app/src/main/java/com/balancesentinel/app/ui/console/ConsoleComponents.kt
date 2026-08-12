@@ -19,6 +19,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,6 +32,7 @@ import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.DebugReportLabels
 import com.balancesentinel.app.data.debug.DebugReportFormatter
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.debugReportLabels
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -85,10 +91,9 @@ fun ApiDebugPanel(
                 .padding(16.dp)
         ) {
             // 标题栏
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -101,44 +106,47 @@ fun ApiDebugPanel(
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "调试面板",
+                        text = stringResource(R.string.console_debug_panel),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Row {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     // 复制全部调试信息
                     IconButton(
                         onClick = {
                             copyDebugInfoToClipboard(context, apiLogs, sessionInfo, reportLabels)
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(CustomIcons.ContentCopy, "复制全部", modifier = Modifier.size(18.dp))
+                        Icon(CustomIcons.ContentCopy, stringResource(R.string.console_copy_all), modifier = Modifier.size(18.dp))
                     }
                     // 保存文件
                     IconButton(
                         onClick = { saveToFile(context, apiLogs, sessionInfo, reportLabels) },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(CustomIcons.SaveAlt, "保存", modifier = Modifier.size(18.dp))
+                        Icon(CustomIcons.SaveAlt, stringResource(R.string.console_save), modifier = Modifier.size(18.dp))
                     }
                     // 清空
                     IconButton(
                         onClick = {
                             onClear()
-                            Toast.makeText(context, "已清空", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.console_cleared), Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(Icons.Filled.Delete, "清空", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Delete, stringResource(R.string.console_clear), modifier = Modifier.size(18.dp))
                     }
                     // 关闭
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(Icons.Filled.Close, "关闭", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Close, stringResource(R.string.console_close), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -154,17 +162,17 @@ fun ApiDebugPanel(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("API 请求 (${apiLogs.size})") }
+                    text = { Text(stringResource(R.string.console_api_requests, apiLogs.size)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("会话状态") }
+                    text = { Text(stringResource(R.string.console_session_status)) }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("调试日志") }
+                    text = { Text(stringResource(R.string.console_debug_logs)) }
                 )
             }
 
@@ -194,7 +202,7 @@ private fun ApiLogsTab(
     ) {
         if (apiLogs.isEmpty()) {
             Text(
-                text = "暂无 API 请求\n浏览控制台页面会自动记录",
+                text = stringResource(R.string.console_no_api_requests),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -220,7 +228,7 @@ private fun SessionInfoTab(sessionInfo: SessionDebugInfo?, onLogout: (() -> Unit
     ) {
         if (sessionInfo == null) {
             Text(
-                text = "无会话信息",
+                text = stringResource(R.string.console_no_session_info),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -234,21 +242,21 @@ private fun SessionInfoTab(sessionInfo: SessionDebugInfo?, onLogout: (() -> Unit
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "会话状态",
+                        text = stringResource(R.string.console_session_status),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    DebugInfoRow("平台", sessionInfo.platformName)
-                    DebugInfoRow("平台 ID", sessionInfo.platformId)
-                    DebugInfoRow("登录状态", if (sessionInfo.isLoggedIn) "✅ 已登录" else "❌ 未登录")
-                    DebugInfoRow("Session 有效性", if (sessionInfo.isSessionValid) "✅ 有效" else "❌ 无效/已过期")
-                    DebugInfoRow("Cookies 数量", "${sessionInfo.cookieCount}")
-                    DebugInfoRow("LocalStorage 数量", "${sessionInfo.localStorageCount}")
-                    DebugInfoRow("邮箱", sessionInfo.email ?: "未记录")
-                    DebugInfoRow("当前 URL", sessionInfo.currentUrl ?: "无")
-                    DebugInfoRow("Session 创建时间", sessionInfo.sessionCreatedAt ?: "未知")
-                    DebugInfoRow("Session 过期时间", sessionInfo.sessionExpiresAt ?: "未知")
+                    DebugInfoRow(stringResource(R.string.console_label_platform), sessionInfo.platformName)
+                    DebugInfoRow(stringResource(R.string.console_label_platform_id), sessionInfo.platformId)
+                    DebugInfoRow(stringResource(R.string.console_label_login_status), if (sessionInfo.isLoggedIn) stringResource(R.string.console_status_logged_in) else stringResource(R.string.console_status_not_logged_in))
+                    DebugInfoRow(stringResource(R.string.console_label_session_validity), if (sessionInfo.isSessionValid) stringResource(R.string.console_status_valid) else stringResource(R.string.console_status_invalid))
+                    DebugInfoRow(stringResource(R.string.console_label_cookies_count), "${sessionInfo.cookieCount}")
+                    DebugInfoRow(stringResource(R.string.console_label_local_storage_count), "${sessionInfo.localStorageCount}")
+                    DebugInfoRow(stringResource(R.string.console_label_email), sessionInfo.email ?: stringResource(R.string.console_not_recorded))
+                    DebugInfoRow(stringResource(R.string.console_label_current_url), sessionInfo.currentUrl ?: stringResource(R.string.console_none))
+                    DebugInfoRow(stringResource(R.string.console_label_session_created), sessionInfo.sessionCreatedAt ?: stringResource(R.string.console_unknown))
+                    DebugInfoRow(stringResource(R.string.console_label_session_expires), sessionInfo.sessionExpiresAt ?: stringResource(R.string.console_unknown))
                 }
             }
 
@@ -262,7 +270,7 @@ private fun SessionInfoTab(sessionInfo: SessionDebugInfo?, onLogout: (() -> Unit
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("重新登录")
+                    Text(stringResource(R.string.console_relogin))
                 }
             }
         }
@@ -285,7 +293,7 @@ private fun DebugLogsTab() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "调试日志 (${debugLogs.size})",
+                text = stringResource(R.string.console_debug_logs_count, debugLogs.size),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -295,17 +303,17 @@ private fun DebugLogsTab() {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText("Debug Logs", text)
                     clipboard.setPrimaryClip(clip)
-                    Toast.makeText(context, "已复制调试日志", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.console_debug_logs_copied), Toast.LENGTH_SHORT).show()
                 },
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(48.dp)
             ) {
-                Icon(CustomIcons.ContentCopy, "复制", modifier = Modifier.size(16.dp))
+                Icon(CustomIcons.ContentCopy, stringResource(R.string.console_copy), modifier = Modifier.size(16.dp))
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (debugLogs.isEmpty()) {
             Text(
-                text = "暂无调试日志",
+                text = stringResource(R.string.console_no_debug_logs),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -350,6 +358,8 @@ private fun ApiLogItem(
     reportLabels: DebugReportLabels,
     onCopy: () -> Unit
 ) {
+    val expandedState = stringResource(R.string.accessibility_expanded)
+    val collapsedState = stringResource(R.string.accessibility_collapsed)
     var expanded by remember { mutableStateOf(false) }
 
     Card(
@@ -363,10 +373,9 @@ private fun ApiLogItem(
             modifier = Modifier.padding(12.dp)
         ) {
             // URL 和状态码
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -398,20 +407,30 @@ private fun ApiLogItem(
                         )
                     }
                 }
-                Row {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     IconButton(
                         onClick = onCopy,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(CustomIcons.ContentCopy, "复制", modifier = Modifier.size(14.dp))
+                        Icon(CustomIcons.ContentCopy, stringResource(R.string.console_copy), modifier = Modifier.size(14.dp))
                     }
                     IconButton(
                         onClick = { expanded = !expanded },
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics {
+                                role = Role.Button
+                                stateDescription = if (expanded) expandedState else collapsedState
+                            }
                     ) {
                         Icon(
                             if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                            contentDescription = if (expanded) "收起" else "展开",
+                            contentDescription = stringResource(
+                                if (expanded) R.string.console_collapse else R.string.console_expand
+                            ),
                             modifier = Modifier.size(14.dp)
                         )
                     }
@@ -493,9 +512,9 @@ private fun copyDebugInfoToClipboard(
     })
 
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("调试信息", content)
+    val clip = ClipData.newPlainText(context.getString(R.string.console_clip_debug_info), content)
     clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "已复制全部调试信息到剪贴板", Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, context.getString(R.string.console_all_debug_copied), Toast.LENGTH_SHORT).show()
 }
 
 private fun copySingleLogToClipboard(
@@ -505,9 +524,9 @@ private fun copySingleLogToClipboard(
 ) {
     val content = DebugReportFormatter.formatEntry(log, reportLabels)
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("API 日志", content)
+    val clip = ClipData.newPlainText(context.getString(R.string.console_clip_api_log), content)
     clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, context.getString(R.string.console_copied), Toast.LENGTH_SHORT).show()
 }
 
 private fun saveToFile(
@@ -555,15 +574,15 @@ private fun saveToFile(
             resolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(content.toByteArray())
             }
-            Toast.makeText(context, "已保存到: Download/WalletSentinel/$fileName", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.console_saved_download, fileName), Toast.LENGTH_LONG).show()
         } else {
             // 备用方案：保存到应用内部存储
             val file = java.io.File(context.filesDir, fileName)
             file.writeText(content)
-            Toast.makeText(context, "已保存到应用内部: ${file.absolutePath}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.console_saved_internal, file.absolutePath), Toast.LENGTH_LONG).show()
         }
     } catch (e: Exception) {
         val message = DebugReportFormatter.formatText(e.message.orEmpty())
-        Toast.makeText(context, "保存失败: $message", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.console_save_failed, message), Toast.LENGTH_SHORT).show()
     }
 }

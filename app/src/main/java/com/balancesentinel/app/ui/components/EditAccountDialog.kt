@@ -155,7 +155,7 @@ fun EditAccountDialog(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(200.dp),
+                                .heightIn(min = 120.dp, max = 240.dp),
                             shape = RoundedCornerShape(8.dp),
                             textStyle = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = FontFamily.Monospace

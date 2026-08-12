@@ -40,6 +40,7 @@ class BackupImportPlanner(
     private val apiKeyManager: ApiKeyManager,
     @Suppress("UNUSED_PARAMETER") private val widgetPrefs: WidgetPrefs,
     private val settingsRepository: SettingsRepository? = null,
+    private val configImportCoordinator: ConfigImportCoordinator? = null,
     private val inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection =
         { script, account -> UsageScriptExecutor.inspect(script, account) }
 ) {
@@ -47,7 +48,14 @@ class BackupImportPlanner(
         apiKeyManager: ApiKeyManager,
         widgetPrefs: WidgetPrefs,
         inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection
-    ) : this(apiKeyManager, widgetPrefs, null, inspectScript)
+    ) : this(apiKeyManager, widgetPrefs, null, null, inspectScript)
+
+    constructor(
+        apiKeyManager: ApiKeyManager,
+        widgetPrefs: WidgetPrefs,
+        settingsRepository: SettingsRepository,
+        inspectScript: suspend (UsageScript, AccountInfo) -> ScriptInspection
+    ) : this(apiKeyManager, widgetPrefs, settingsRepository, null, inspectScript)
 
     internal val usesAtomicSettingsPublication: Boolean
         get() = settingsRepository != null
@@ -273,6 +281,10 @@ class BackupImportPlanner(
 
     suspend fun applyAsync(plan: BackupImportPlan, confirmedFullReplace: Boolean) {
         validateApply(plan, confirmedFullReplace)
+        configImportCoordinator?.let { coordinator ->
+            coordinator.apply(plan)
+            return
+        }
         val repository = settingsRepository
         if (repository == null) {
             // Source-compatible tests and legacy callers have no Room seam. Keep this
@@ -338,6 +350,7 @@ class BackupImportPlanner(
         if (!hasCompleteCredentials(account)) return NormalizedAccount(account.id, null)
         val fullId = apiKeyManager.computeId(account.apiKey)
         val normalizedId = when {
+            account.id.matches(UUID_ID) -> account.id.lowercase()
             account.id.matches(FULL_ID) && account.id == fullId -> fullId
             version == 1 && account.id.matches(LEGACY_ID) &&
                 account.id == apiKeyManager.computeLegacyId(account.apiKey) -> fullId
@@ -351,6 +364,9 @@ class BackupImportPlanner(
         version: Int,
         localAccounts: List<AccountInfo>
     ): NormalizedAccount {
+        if (account.id.matches(UUID_ID)) {
+            return NormalizedAccount(account.id, account.copy(id = account.id.lowercase()))
+        }
         if (account.id.matches(FULL_ID)) return NormalizedAccount(account.id, account)
         if (version != 1 || !account.id.matches(LEGACY_ID)) {
             return NormalizedAccount(account.id, null)
@@ -390,6 +406,7 @@ class BackupImportPlanner(
     )
 
     private companion object {
+        val UUID_ID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}")
         val FULL_ID = Regex("[0-9a-f]{16}")
         val LEGACY_ID = Regex("[0-9a-f]{8}")
         const val BLOCK_CREDENTIALS_REQUIRED = "credentials_required"

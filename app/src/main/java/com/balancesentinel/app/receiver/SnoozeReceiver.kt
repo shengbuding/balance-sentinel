@@ -24,10 +24,14 @@ class SnoozeReceiver : BroadcastReceiver() {
             manager.cancel(helper.changeNotificationId(accountId, currency))
         }.onFailure { Logger.w("SnoozeReceiver", "notification cancellation failed", it) }
 
+        val repository = runCatching { SettingsRepositoryProvider.get(context) }
+            .getOrElse {
+                Logger.w("SnoozeReceiver", "settings repository unavailable", it)
+                return
+            }
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val repository = SettingsRepositoryProvider.get(context)
                 val snapshot = repository.readSnapshot()
                 val durationMs = snapshot.appSettings.snoozeDurationMinutes * 60_000L
                 val until = System.currentTimeMillis() + durationMs
@@ -40,7 +44,7 @@ class SnoozeReceiver : BroadcastReceiver() {
             } catch (e: Exception) {
                 Logger.w("SnoozeReceiver", "snooze persistence failed", e)
             } finally {
-                pending.finish()
+                pending?.finish()
             }
         }
     }

@@ -114,6 +114,25 @@ data class WidgetRefreshStatus(
     val cancelledCount: Int
 )
 
+/** Preserves the in-flight refresh indicator across concurrent full renders. */
+internal object WidgetRefreshProgressState {
+    private val refreshing = AtomicBoolean(false)
+
+    fun start() {
+        refreshing.set(true)
+    }
+
+    fun finish() {
+        refreshing.set(false)
+    }
+
+    fun isRefreshing(): Boolean = refreshing.get()
+
+    fun reset() {
+        refreshing.set(false)
+    }
+}
+
 object WidgetRefreshStatusStore {
     private const val PREFS_NAME = "widget_refresh_status"
     private const val KEY_RUN_ID = "run_id"
@@ -183,6 +202,7 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             processingRefresh.set(false)
+            WidgetRefreshProgressState.reset()
             Logger.e("StaticWidget", "onReceive error", e)
             WidgetErrorLogger.log(context, e)
         }
@@ -203,11 +223,11 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
         val widgetIds = allIds.toIntArray()
         val provider = StaticWidgetProvider()
 
+        WidgetRefreshProgressState.start()
         provider.setRefreshProgress(context, manager, allIds, visible = true)
         if (decision.watchdog) {
             RefreshScheduler.markFired(context)
         }
-        provider.onUpdate(context, manager, widgetIds)
 
         val pendingResult = goAsync()
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -218,15 +238,19 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         WidgetRefreshCoroutineDispatcher(scope).dispatch(
                 action = {
-                    WidgetRefreshExecution(
-                        gateway = refreshGatewayProvider(context),
-                        serviceStarter = serviceStarter,
-                        resultConsumer = WidgetRefreshResultConsumer { result ->
-                            WidgetRefreshStatusStore.record(context, result)
-                        }
-                    ).execute(context, decision)
-                    provider.setRefreshProgress(context, manager, allIds, visible = false)
-                    provider.onUpdate(context, manager, widgetIds)
+                    try {
+                        WidgetRefreshExecution(
+                            gateway = refreshGatewayProvider(context),
+                            serviceStarter = serviceStarter,
+                            resultConsumer = WidgetRefreshResultConsumer { result ->
+                                WidgetRefreshStatusStore.record(context, result)
+                            }
+                        ).execute(context, decision)
+                    } finally {
+                        WidgetRefreshProgressState.finish()
+                        provider.setRefreshProgress(context, manager, allIds, visible = false)
+                        provider.onUpdate(context, manager, widgetIds)
+                    }
                 },
                 finish = {
                     pendingResult.finish()
@@ -244,6 +268,7 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
 
         internal fun resetTestOverrides() {
             processingRefresh.set(false)
+            WidgetRefreshProgressState.reset()
             refreshGatewayProvider = RefreshRuntime::from
         }
     }

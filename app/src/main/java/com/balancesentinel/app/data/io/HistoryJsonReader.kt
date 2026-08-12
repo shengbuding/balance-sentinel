@@ -52,21 +52,14 @@ class HistoryJsonReader(
         var usageCounts = 0 to 0
         var logCounts = 0 to 0
         val seen = mutableSetOf<String>()
-        val required = setOf(
-            "version",
-            "exportedAt",
-            "appVersion",
-            "dailySummaries",
-            "rawRecords",
-            "usageSnapshots",
-            "refreshLogs"
-        )
+        val required = setOf("exportedAt", "appVersion", "dailySummaries", "rawRecords")
+        val known = required + setOf("version", "usageSnapshots", "refreshLogs")
 
         beginObject(reader)
         while (reader.hasNext()) {
             currentCoroutineContext().ensureActive()
             val name = nextName(reader)
-            if (name in required) require(seen.add(name)) { "Duplicate top-level field: $name" }
+            if (name in known) require(seen.add(name)) { "Duplicate top-level field: $name" }
             when (name) {
                 "version" -> version = reader.nextInt()
                 "exportedAt" -> exportedAt = nextString(reader)

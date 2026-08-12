@@ -1,143 +1,110 @@
-@file:Suppress("DEPRECATION")
 package com.balancesentinel.app.data.update
 
-import com.balancesentinel.app.data.model.GitHubAsset
-import com.balancesentinel.app.data.model.GitHubRelease
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
-@RunWith(RobolectricTestRunner::class)
 class ApkDownloaderIntegrationTest {
-
     private lateinit var server: MockWebServer
-    private lateinit var downloader: ApkDownloader
-    private lateinit var tempDir: File
+    private lateinit var directory: File
 
     @Before
     fun setUp() {
         server = MockWebServer()
         server.start()
-        downloader = ApkDownloader()
-        tempDir = createTempDir("apk-test")
-        injectMockServer()
+        directory = createTempDir(prefix = "apk-downloader-")
     }
 
     @After
     fun tearDown() {
         server.shutdown()
-        tempDir.deleteRecursively()
-    }
-
-    private fun injectMockServer() {
-        val mockBase = server.url("/").toString().trimEnd('/')
-        val mockClient = OkHttpClient.Builder()
-            .addInterceptor(Interceptor { chain ->
-                val original = chain.request()
-                val newUrl = original.url.toString()
-                    .replace("https://github.com", mockBase)
-                chain.proceed(original.newBuilder().url(newUrl).build())
-            })
-            .build()
-
-        val clientField = ApkDownloader::class.java.getDeclaredField("client")
-        clientField.isAccessible = true
-        clientField.set(downloader, mockClient)
-    }
-
-    private fun createDownloadRelease(): GitHubRelease {
-        return GitHubRelease(
-            tagName = "v1.0.0",
-            name = "Release v1.0.0",
-            body = "",
-            prerelease = false,
-            publishedAt = "2026-01-01T00:00:00Z",
-            htmlUrl = "https://github.com/test/releases/v1.0.0",
-            assets = listOf(
-                GitHubAsset(
-                    name = "app-release.apk",
-                    downloadUrl = "https://github.com/shengbuding/balance-sentinel/releases/download/v1.0.0/app-release.apk",
-                    size = 100
-                )
-            )
-        )
+        directory.deleteRecursively()
     }
 
     @Test
-    fun `download returns Error when no APK asset found`() = runTest {
-        // Release with empty tag and no assets → resolveDownloadUrl returns null
-        val release = GitHubRelease(
-            tagName = "",
-            name = "Release",
-            body = "",
-            prerelease = false,
-            publishedAt = "",
-            htmlUrl = "",
-            assets = emptyList()
-        )
+    fun `valid apk is validated before atomic publication`() = runTest {
+        val apk = validApkBytes()
+        server.enqueue(MockResponse().setBody(Buffer().write(apk)))
+        val part = File(directory, "op.part")
+        val target = File(directory, "release.apk")
+        val downloader = ApkDownloader(OkHttpClient())
 
-        var progressCalled = false
-        val result = downloader.download(release, tempDir) { progressCalled = true }
+        val result = downloader.downloadToPart(
+            DownloadTarget("op", server.url("/release.apk").toString(), part, target)
+        ) { _, _ -> }
 
-        assertTrue(result is DownloadResult.Error)
-        assertTrue((result as DownloadResult.Error).message.contains("APK"))
-        assertFalse(progressCalled)
+        assertTrue(result is DownloadFileResult.ReadyToPublish)
+        assertFalse(target.exists())
+        val published = downloader.publishAtomically(part, target)
+        assertTrue(published.toString(), published is DownloadFileResult.Published)
+        assertTrue(target.exists())
+        assertFalse(part.exists())
     }
 
     @Test
-    fun `download returns Error on HTTP failure`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(404).setBody("Not Found"))
+    fun `non apk is rejected without publishing target`() = runTest {
+        server.enqueue(MockResponse().setBody("not-an-apk"))
+        val part = File(directory, "bad.part")
+        val target = File(directory, "release.apk")
+        val downloader = ApkDownloader(OkHttpClient())
 
-        val release = createDownloadRelease()
-        val result = downloader.download(release, tempDir) {}
+        val result = downloader.downloadToPart(
+            DownloadTarget("bad", server.url("/bad.apk").toString(), part, target)
+        ) { _, _ -> }
 
-        assertTrue(result is DownloadResult.Error)
+        assertTrue(result is DownloadFileResult.Failure)
+        assertFalse(part.exists())
+        assertFalse(target.exists())
     }
 
     @Test
-    fun `download succeeds with valid response`() = runTest {
-        val apkData = ByteArray(100) { it.toByte() }
-        server.enqueue(MockResponse()
-            .setResponseCode(200)
-            .setBody(okio.Buffer().write(apkData))
-            .setHeader("Content-Length", "100")
+    fun `cancellation removes only current operation part`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(Buffer().write(ByteArray(512 * 1024)))
+                .throttleBody(1024, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
         )
+        val part = File(directory, "current.part")
+        val otherPart = File(directory, "other.part").apply { writeText("keep") }
+        val published = File(directory, "published.apk").apply { writeText("keep") }
+        val downloader = ApkDownloader(OkHttpClient())
 
-        val release = createDownloadRelease()
-        var lastProgress = -1f
-        val result = downloader.download(release, tempDir) { progress ->
-            lastProgress = progress
+        val job = async {
+            downloader.downloadToPart(
+                DownloadTarget("current", server.url("/slow.apk").toString(), part, File(directory, "new.apk"))
+            ) { _, _ -> }
         }
+        delay(150)
+        job.cancelAndJoin()
 
-        assertTrue(result is DownloadResult.Success)
-        val file = (result as DownloadResult.Success).file
-        assertTrue(file.exists())
-        assertEquals(100, file.length())
-        assertTrue(lastProgress > 0f)
+        assertFalse(part.exists())
+        assertTrue(otherPart.exists())
+        assertTrue(published.exists())
     }
 
-    @Test
-    fun `download returns Error when download incomplete`() = runTest {
-        // Server reports 200 bytes but only sends 100
-        val apkData = ByteArray(100) { it.toByte() }
-        server.enqueue(MockResponse()
-            .setResponseCode(200)
-            .setBody(okio.Buffer().write(apkData))
-            .setHeader("Content-Length", "200")
-        )
-
-        val release = createDownloadRelease()
-        val result = downloader.download(release, tempDir) {}
-
-        assertTrue(result is DownloadResult.Error)
+    private fun validApkBytes(): ByteArray {
+        val buffer = java.io.ByteArrayOutputStream()
+        ZipOutputStream(buffer).use { zip ->
+            zip.putNextEntry(ZipEntry("AndroidManifest.xml"))
+            zip.write(byteArrayOf(1, 2, 3))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("classes.dex"))
+            zip.write(byteArrayOf(4, 5, 6))
+            zip.closeEntry()
+        }
+        return buffer.toByteArray()
     }
 }

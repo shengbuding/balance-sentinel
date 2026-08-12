@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -135,12 +137,12 @@ private fun OnboardingPageContent(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.padding(horizontal = 32.dp),
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 32.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Spacer(modifier = Modifier.weight(0.3f))
-
         // 图标圆形容器
         Surface(
             modifier = Modifier.size(120.dp),
@@ -192,7 +194,7 @@ private fun OnboardingPageContent(
             }
         }
 
-        Spacer(modifier = Modifier.weight(0.7f))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -293,7 +295,9 @@ private fun OnboardingBottomBar(
 
             // 下一步/开始按钮
             Button(
-                modifier = Modifier.testTag("onboarding_primary_action"),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("onboarding_primary_action"),
                 onClick = onNext,
                 shape = RoundedCornerShape(24.dp)
             ) {

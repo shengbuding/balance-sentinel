@@ -6,7 +6,16 @@ import kotlinx.serialization.json.Json
 import org.junit.Test
 import org.junit.Assert.*
 import com.balancesentinel.app.data.io.HistoryJsonLimits
+import com.balancesentinel.app.data.io.HistoryJsonConsumer
+import com.balancesentinel.app.data.io.HistoryJsonReader
+import com.balancesentinel.app.data.model.RefreshLogEntry
+import com.balancesentinel.app.data.model.UsageSnapshot
+import java.io.ByteArrayInputStream
+import kotlinx.coroutines.test.runTest
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class DataExporterImportTest {
 
     @Test
@@ -109,5 +118,30 @@ class DataExporterImportTest {
         assertEquals(447, result.dailySummaries[0].sampleCount)
         assertEquals(0, result.usageSnapshots.size)  // default
         assertEquals(1, result.version)              // default
+    }
+
+    @Test
+    fun `streaming reader accepts legacy export without optional top level fields`() = runTest {
+        val sample = """
+            {
+              "exportedAt":"2026-07-08T15:56:31",
+              "appVersion":"1.1.1",
+              "dailySummaries":[],
+              "rawRecords":[]
+            }
+        """.trimIndent()
+        val result = HistoryJsonReader().read(
+            ByteArrayInputStream(sample.toByteArray()),
+            object : HistoryJsonConsumer {
+                override suspend fun dailySummaries(items: List<DailySummary>) = items.size
+                override suspend fun rawRecords(items: List<RawRecord>) = items.size
+                override suspend fun usageSnapshots(items: List<UsageSnapshot>) = items.size
+                override suspend fun refreshLogs(items: List<RefreshLogEntry>) = items.size
+            }
+        )
+
+        assertEquals(1, result.header.version)
+        assertEquals(0, result.snapshotsInFile)
+        assertEquals(0, result.logsInFile)
     }
 }

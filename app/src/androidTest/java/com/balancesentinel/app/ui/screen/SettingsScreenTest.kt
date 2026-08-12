@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
@@ -86,19 +87,13 @@ class SettingsScreenTest {
 
     @Test
     fun `about page shows privacy policy row`() {
-        val vm = createViewModel()
         composeTestRule.setContent {
-            SettingsScreen(
-                viewModel = vm,
-                onBack = {},
-                onNavigateToLog = {},
-                onNavigateToDataManagement = {},
-                onNavigateToAlertSettings = {}
-            )
+            AboutScreen(onBack = {})
         }
 
-        composeTestRule.onNodeWithText(string(R.string.settings_about)).performClick()
-        composeTestRule.onNodeWithText(string(R.string.settings_privacy_policy)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(string(R.string.settings_privacy_policy))
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -144,17 +139,16 @@ class SettingsScreenTest {
         val vm = createViewModel()
         var called = false
         composeTestRule.setContent {
-            SettingsScreen(
+            SystemStatusScreen(
                 viewModel = vm,
                 onBack = {},
-                onNavigateToLog = { called = true },
-                onNavigateToDataManagement = {},
-                onNavigateToAlertSettings = {}
+                onNavigateToLog = { called = true }
             )
         }
 
-        composeTestRule.onNodeWithText(string(R.string.settings_system_status)).performClick()
-        composeTestRule.onNodeWithText(string(R.string.settings_log_entry)).performClick()
+        composeTestRule.onNodeWithText(string(R.string.settings_log_entry))
+            .performScrollTo()
+            .performClick()
         assert(called) { "onNavigateToLog should be called" }
     }
 

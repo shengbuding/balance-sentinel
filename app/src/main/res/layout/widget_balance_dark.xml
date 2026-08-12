@@ -34,8 +34,8 @@
 
         <ImageView
             android:id="@+id/widget_refresh_btn"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:src="@drawable/ic_refresh"
             android:clickable="true"
             android:contentDescription="@string/home_refresh"
@@ -50,7 +50,8 @@
         android:text="--"
         android:textColor="#E4E5F0"
         android:textSize="24sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        android:maxLines="2" />
 
     <LinearLayout
         android:id="@+id/widget_detail_row"

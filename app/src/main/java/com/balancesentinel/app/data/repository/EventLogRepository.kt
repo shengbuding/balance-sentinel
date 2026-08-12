@@ -1,6 +1,7 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.log.EventLogEntity
@@ -34,13 +35,19 @@ class RoomEventLogRepository(
     private val database: WalletDatabase
 ) : EventLogRepository {
     override suspend fun append(entries: List<RefreshLogEntry>) {
-        entries.chunked(HistoryRepository.INSERT_CHUNK_SIZE).forEach { chunk ->
-            database.eventLogDao().insertAll(chunk.map(::toEntity))
+        database.withTransaction {
+            entries.chunked(HistoryRepository.INSERT_CHUNK_SIZE).forEach { chunk ->
+                database.eventLogDao().insertAll(chunk.map(::toEntity))
+            }
+            logLimit()?.let { database.eventLogDao().trimToLatest(it) }
         }
     }
 
     override suspend fun newest(limit: Int): List<RefreshLogEntry> =
         database.eventLogDao().newest(limit.coerceAtLeast(0)).map(::toDomain)
+
+    private suspend fun logLimit(): Int? =
+        database.appSettingsDao().get()?.logMaxEntries?.coerceIn(10, 1000)
 }
 
 fun appendRoomEvent(context: Context, entry: RefreshLogEntry) {

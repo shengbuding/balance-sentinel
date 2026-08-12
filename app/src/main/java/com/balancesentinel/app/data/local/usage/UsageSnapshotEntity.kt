@@ -40,5 +40,7 @@ data class UsageSnapshotEntity(
     @ColumnInfo(name = "migration_operation_id", defaultValue = "NULL")
     val migrationOperationId: String? = null,
     @ColumnInfo(name = "migration_source_ordinal", defaultValue = "NULL")
-    val migrationSourceOrdinal: Int? = null
+    val migrationSourceOrdinal: Int? = null,
+    @ColumnInfo(name = "content_revision", defaultValue = "0")
+    val contentRevision: Long = 0
 )

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.Json
 class EncryptedPreferencesCredentialStore(
     private val appContext: Context,
     private val injectedPrefs: SharedPreferences? = null
-) : CredentialStore {
+) : CredentialStore, ConfigImportRecoveryStore {
 
     private val prefs: SharedPreferences by lazy {
         injectedPrefs ?: run {
@@ -58,10 +58,50 @@ class EncryptedPreferencesCredentialStore(
     override suspend fun clear() = withContext(Dispatchers.IO) {
         DataMutationCoordinator.withMutation {
             requireWritable()
-            check(prefs.edit().remove(KEY_PAYLOAD).commit()) {
+            val editor = prefs.edit().remove(KEY_PAYLOAD)
+            prefs.all.keys
+                .filter { it.startsWith(CONFIG_IMPORT_MANIFEST_PREFIX) }
+                .forEach(editor::remove)
+            check(editor.commit()) {
                 "Credential payload clear commit failed"
             }
         }
+    }
+
+    override fun readConfigImportManifest(operationId: String): String? =
+        prefs.getString(configImportManifestKey(operationId), null)
+
+    override fun listConfigImportManifestIds(): Set<String> = prefs.all.keys
+        .filter { it.startsWith(CONFIG_IMPORT_MANIFEST_PREFIX) }
+        .mapTo(mutableSetOf()) { it.removePrefix(CONFIG_IMPORT_MANIFEST_PREFIX) }
+
+    override suspend fun writeConfigImportManifest(operationId: String, manifest: String) =
+        withContext(Dispatchers.IO) {
+            DataMutationCoordinator.withMutation {
+                requireWritable()
+                check(
+                    prefs.edit()
+                        .putString(configImportManifestKey(operationId), manifest)
+                        .commit()
+                ) { "Configuration import recovery manifest write failed" }
+            }
+        }
+
+    override suspend fun clearConfigImportManifest(operationId: String) =
+        withContext(Dispatchers.IO) {
+            DataMutationCoordinator.withMutation {
+                requireWritable()
+                check(prefs.edit().remove(configImportManifestKey(operationId)).commit()) {
+                    "Configuration import recovery manifest clear failed"
+                }
+            }
+        }
+
+    private fun configImportManifestKey(operationId: String): String {
+        require(operationId.isNotBlank() && operationId.length <= 128) {
+            "Configuration import operation id is invalid"
+        }
+        return CONFIG_IMPORT_MANIFEST_PREFIX + operationId
     }
 
     private fun requireWritable() {
@@ -72,5 +112,6 @@ class EncryptedPreferencesCredentialStore(
     private companion object {
         const val PREFS_NAME = "balance_sentinel_credentials"
         const val KEY_PAYLOAD = "credential_payload"
+        const val CONFIG_IMPORT_MANIFEST_PREFIX = "config_import_manifest:"
     }
 }

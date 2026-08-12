@@ -60,7 +60,7 @@ import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
         MonitoringStateEntity::class,
         MonitoringSessionEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -80,7 +80,7 @@ abstract class WalletDatabase : RoomDatabase() {
     abstract fun monitoringSessionDao(): MonitoringSessionDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 5
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -178,6 +178,15 @@ abstract class WalletDatabase : RoomDatabase() {
                 database.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS `index_daily_summaries_migration_operation_id_migration_source_ordinal` " +
                         "ON `daily_summaries` (`migration_operation_id`, `migration_source_ordinal`)"
+                )
+            }
+        }
+
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE `usage_snapshots` " +
+                        "ADD COLUMN `content_revision` INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

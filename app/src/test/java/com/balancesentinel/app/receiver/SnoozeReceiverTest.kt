@@ -10,9 +10,11 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.testing.MutableSettingsRepository
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.robolectric.Shadows
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +24,18 @@ import org.robolectric.RobolectricTestRunner
 class SnoozeReceiverTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
+    private lateinit var repository: MutableSettingsRepository
+
+    @Before
+    fun setUp() {
+        repository = MutableSettingsRepository()
+        SettingsRepositoryProvider.factory = { repository }
+    }
+
+    @After
+    fun tearDown() {
+        SettingsRepositoryProvider.resetForTests()
+    }
 
     @Test
     fun `onReceive with accountId does not throw`() {
@@ -40,25 +54,21 @@ class SnoozeReceiverTest {
     }
     @Test
     fun `snooze persists an account level state through settings repository`() = runBlocking {
-        val repository = MutableSettingsRepository(
+        repository = MutableSettingsRepository(
             SettingsSnapshot(AppSettingsEntity(snoozeDurationMinutes = 10, updatedAt = 0L))
         )
         SettingsRepositoryProvider.factory = { repository }
-        try {
-            val before = System.currentTimeMillis()
-            SnoozeReceiver().onReceive(context, Intent().putExtra("account_id", "persisted-account"))
+        val before = System.currentTimeMillis()
+        SnoozeReceiver().onReceive(context, Intent().putExtra("account_id", "persisted-account"))
 
-            val deadline = System.currentTimeMillis() + 2_000L
-            while (repository.readSnapshot().snoozeUntil("persisted-account") <= before &&
-                System.currentTimeMillis() < deadline
-            ) {
-                Thread.sleep(10)
-            }
-
-            assertTrue(repository.readSnapshot().snoozeUntil("persisted-account") >= before + 600_000L)
-        } finally {
-            SettingsRepositoryProvider.resetForTests()
+        val deadline = System.currentTimeMillis() + 2_000L
+        while (repository.readSnapshot().snoozeUntil("persisted-account") <= before &&
+            System.currentTimeMillis() < deadline
+        ) {
+            Thread.sleep(10)
         }
+
+        assertTrue(repository.readSnapshot().snoozeUntil("persisted-account") >= before + 600_000L)
     }
     @Test
     fun `snoozing one currency does not cancel another currency notification`() {

@@ -17,6 +17,8 @@ import com.balancesentinel.app.data.io.HistoryJsonWriter
 import com.balancesentinel.app.data.io.HistoryLogCursor
 import com.balancesentinel.app.data.io.HistoryLogPage
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
+import com.balancesentinel.app.data.local.history.DailySummaryEntity
+import com.balancesentinel.app.data.local.usage.UsageSnapshotEntity
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
@@ -60,6 +62,9 @@ data class DataExport(
 )
 
 object DataExporter {
+
+    private class SnapshotChangedException : IllegalStateException("History changed while it was being exported")
+    private const val MAX_SNAPSHOT_RETRIES = 3
 
     private val json = Json {
         prettyPrint = true
@@ -145,17 +150,25 @@ object DataExporter {
     ): Boolean {
         val staged = File.createTempFile("history-export-", ".json", context.cacheDir)
         try {
-            source.withConsistentSnapshot {
-                staged.outputStream().buffered().use { output ->
-                    HistoryJsonWriter(limits).write(
-                        output,
-                        HistoryExportHeader(
-                            version = 1,
-                            exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
-                            appVersion = appVersion(context)
-                        ),
-                        source
-                    )
+            var attempt = 0
+            while (true) {
+                try {
+                    source.withConsistentSnapshot {
+                        staged.outputStream().buffered().use { output ->
+                            HistoryJsonWriter(limits).write(
+                                output,
+                                HistoryExportHeader(
+                                    version = 1,
+                                    exportedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+                                    appVersion = appVersion(context)
+                                ),
+                                source
+                            )
+                        }
+                    }
+                    break
+                } catch (changed: SnapshotChangedException) {
+                    if (++attempt >= MAX_SNAPSHOT_RETRIES) throw changed
                 }
             }
             staged.inputStream().buffered().use { input ->
@@ -307,9 +320,18 @@ object DataExporter {
         limits: HistoryJsonLimits = HistoryJsonLimits(),
         consumer: HistoryJsonConsumer = roomHistoryImportConsumer(database)
     ): ImportResult? {
+        val staged = File.createTempFile("history-import-", ".json", context.cacheDir)
         return try {
             val input = storage.openInput(uri) ?: return null
             input.use { stream ->
+                staged.outputStream().buffered().use { output ->
+                    copy(stream, output, cancellable = true, maximumBytes = limits.maxFileBytes)
+                }
+            }
+            staged.inputStream().buffered().use { input ->
+                HistoryJsonReader(limits).read(input, ValidatingHistoryConsumer)
+            }
+            staged.inputStream().buffered().use { stream ->
                 database.withTransaction {
                     val result = HistoryJsonReader(limits).read(stream, consumer)
                     ImportResult(
@@ -328,6 +350,8 @@ object DataExporter {
             throw cancelled
         } catch (_: Exception) {
             null
+        } finally {
+            staged.delete()
         }
     }
 
@@ -355,11 +379,23 @@ object DataExporter {
         private val usageDao = database.usageDao()
         private val eventLogDao = database.eventLogDao()
 
-        override suspend fun <T> withConsistentSnapshot(block: suspend () -> T): T =
-            database.withTransaction { block() }
+        private var snapshot: RoomExportSnapshot? = null
+
+        override suspend fun <T> withConsistentSnapshot(block: suspend () -> T): T {
+            val captured = database.withTransaction { captureSnapshot() }
+            snapshot = captured
+            return try {
+                val result = block()
+                if (!isSnapshotStable(captured)) throw SnapshotChangedException()
+                result
+            } finally {
+                snapshot = null
+            }
+        }
 
         override suspend fun dailySummaryPage(offset: Int, limit: Int): List<DailySummary> {
             pageObserver("dailySummaries", limit)
+            snapshot?.let { return it.summaries.drop(offset).take(limit) }
             return historyDao.exportSummaryPage(offset, limit).map { entity ->
                 DailySummary(
                     entity.accountId, entity.date, entity.currency,
@@ -374,12 +410,10 @@ object DataExporter {
 
         override suspend fun rawRecordPage(after: HistoryCursor?, limit: Int): HistoryPage {
             pageObserver("rawRecords", limit)
-            val rows = historyDao.keysetPageAll(
-                Long.MIN_VALUE,
-                Long.MAX_VALUE,
-                after?.recordedAt,
-                after?.id,
-                limit
+            val rows = snapshot?.let {
+                historyDao.exportPageUpTo(it.rawMaxId, after?.recordedAt, after?.id, limit)
+            } ?: historyDao.keysetPageAll(
+                Long.MIN_VALUE, Long.MAX_VALUE, after?.recordedAt, after?.id, limit
             )
             val records = rows.map { entity ->
                 HistoryRecord(
@@ -402,8 +436,10 @@ object DataExporter {
 
         override suspend fun usageSnapshotPage(offset: Int, limit: Int): List<UsageSnapshot> {
             pageObserver("usageSnapshots", limit)
-            return usageDao.exportPage(offset, limit).map { snapshot ->
-                val recordCount = usageDao.countRecords(snapshot.id)
+            val entities = snapshot?.usageSnapshots?.drop(offset)?.take(limit)
+                ?: usageDao.exportPage(offset, limit)
+            return entities.map { entity ->
+                val recordCount = usageDao.countRecords(entity.id)
                 require(recordCount <= limits.maxUsageRecordsPerSnapshot.toLong()) {
                     "Usage snapshot exceeds record limit ${limits.maxUsageRecordsPerSnapshot}"
                 }
@@ -413,7 +449,7 @@ object DataExporter {
                     currentCoroutineContext().ensureActive()
                     val recordLimit = minOf(HistoryJsonLimits.PAGE_SIZE, recordCount.toInt() - recordOffset)
                     pageObserver("usageRecords", recordLimit)
-                    val page = usageDao.exportRecordPage(snapshot.id, recordOffset, recordLimit)
+                    val page = usageDao.exportRecordPage(entity.id, recordOffset, recordLimit)
                     require(page.isNotEmpty()) { "Usage record page ended before reported count" }
                     records += page.map { record ->
                         UsageRecord(record.modelName, record.totalTokens, record.promptTokens, record.completionTokens)
@@ -421,8 +457,8 @@ object DataExporter {
                     recordOffset += page.size
                 }
                 UsageSnapshot(
-                    snapshot.accountId,
-                    snapshot.capturedAt,
+                    entity.accountId,
+                    entity.capturedAt,
                     records
                 )
             }
@@ -430,7 +466,9 @@ object DataExporter {
 
         override suspend fun refreshLogPage(after: HistoryLogCursor?, limit: Int): HistoryLogPage {
             pageObserver("refreshLogs", limit)
-            val rows = eventLogDao.newestPage(after?.recordedAt, after?.id, limit)
+            val rows = snapshot?.let {
+                eventLogDao.newestPageUpTo(it.logMaxId, after?.recordedAt, after?.id, limit)
+            } ?: eventLogDao.newestPage(after?.recordedAt, after?.id, limit)
             return HistoryLogPage(
                 rows.map { entity ->
                     RefreshLogEntry(
@@ -452,7 +490,100 @@ object DataExporter {
                 rows.lastOrNull()?.let { HistoryLogCursor(it.recordedAt, it.id) }
             )
         }
+
+        private suspend fun captureSnapshot(): RoomExportSnapshot {
+            val summaries = ArrayList<DailySummary>()
+            var offset = 0
+            while (true) {
+                val page = historyDao.exportSummaryPage(offset, limits.pageSize)
+                if (page.isEmpty()) break
+                summaries += page.map { it.toExportDomain() }
+                offset += page.size
+                require(summaries.size <= limits.maxSummaries) {
+                    "History export exceeds summary limit ${limits.maxSummaries}"
+                }
+                if (page.size < limits.pageSize) break
+            }
+
+            val rawMaxId = historyDao.maxRecordId()
+            val rawCount = historyDao.countRecordsUpTo(rawMaxId)
+            require(rawCount <= limits.maxRawRecords.toLong()) {
+                "History export exceeds raw-record limit ${limits.maxRawRecords}"
+            }
+
+            val usageSnapshots = ArrayList<UsageSnapshotEntity>()
+            offset = 0
+            while (true) {
+                val page = usageDao.exportPage(offset, limits.pageSize)
+                if (page.isEmpty()) break
+                usageSnapshots += page
+                offset += page.size
+                require(usageSnapshots.size <= limits.maxUsageSnapshots) {
+                    "History export exceeds usage-snapshot limit ${limits.maxUsageSnapshots}"
+                }
+                if (page.size < limits.pageSize) break
+            }
+            var usageRecordCount = 0L
+            usageSnapshots.map { it.id }.chunked(500).forEach { ids ->
+                if (ids.isNotEmpty()) usageRecordCount += usageDao.countRecordsForSnapshots(ids)
+            }
+
+            val logMaxId = eventLogDao.maxId()
+            val logCount = eventLogDao.countUpTo(logMaxId)
+            require(logCount <= limits.maxRefreshLogs.toLong()) {
+                "History export exceeds log limit ${limits.maxRefreshLogs}"
+            }
+            return RoomExportSnapshot(
+                summaries = summaries,
+                rawMaxId = rawMaxId,
+                rawCount = rawCount,
+                usageSnapshots = usageSnapshots,
+                usageRecordCount = usageRecordCount,
+                logMaxId = logMaxId,
+                logCount = logCount
+            )
+        }
+
+        private suspend fun isSnapshotStable(captured: RoomExportSnapshot): Boolean {
+            val currentSummaries = ArrayList<DailySummary>()
+            var offset = 0
+            while (true) {
+                val page = historyDao.exportSummaryPage(offset, limits.pageSize)
+                if (page.isEmpty()) break
+                currentSummaries += page.map { it.toExportDomain() }
+                offset += page.size
+                if (page.size < limits.pageSize) break
+            }
+            if (currentSummaries != captured.summaries) return false
+            if (historyDao.countRecordsUpTo(captured.rawMaxId) != captured.rawCount) return false
+            if (eventLogDao.countUpTo(captured.logMaxId) != captured.logCount) return false
+            val currentUsageSnapshots = ArrayList<UsageSnapshotEntity>()
+            offset = 0
+            while (true) {
+                val page = usageDao.exportPage(offset, limits.pageSize)
+                if (page.isEmpty()) break
+                currentUsageSnapshots += page
+                offset += page.size
+                if (page.size < limits.pageSize) break
+            }
+            if (currentUsageSnapshots != captured.usageSnapshots) return false
+            var currentUsageRecordCount = 0L
+            captured.usageSnapshots.map { it.id }.chunked(500).forEach { ids ->
+                if (ids.isNotEmpty()) currentUsageRecordCount += usageDao.countRecordsForSnapshots(ids)
+            }
+            return currentUsageRecordCount == captured.usageRecordCount
+        }
     }
+
+    private data class RoomExportSnapshot(
+        val summaries: List<DailySummary>,
+        val rawMaxId: Long,
+        val rawCount: Long,
+        val usageSnapshots: List<UsageSnapshotEntity>,
+        val usageRecordCount: Long,
+        val logMaxId: Long,
+        val logCount: Long
+    )
 
     private class RoomHistoryImportConsumer(
         private val database: WalletDatabase
@@ -594,12 +725,22 @@ object DataExporter {
         }
     }
 
-    private suspend fun copy(input: InputStream, output: OutputStream, cancellable: Boolean) {
+    private suspend fun copy(
+        input: InputStream,
+        output: OutputStream,
+        cancellable: Boolean,
+        maximumBytes: Long = Long.MAX_VALUE
+    ) {
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
         while (true) {
             if (cancellable) currentCoroutineContext().ensureActive()
             val read = input.read(buffer)
             if (read < 0) return
+            require(read.toLong() <= maximumBytes - total) {
+                "History JSON exceeds file limit $maximumBytes"
+            }
+            total += read
             output.write(buffer, 0, read)
         }
     }
@@ -713,3 +854,19 @@ object DataExporter {
         return snapshots
     }
 }
+
+private fun DailySummaryEntity.toExportDomain() = DailySummary(
+    accountId = accountId,
+    date = date,
+    currency = currency,
+    open = openBalance.toFloat(),
+    close = closeBalance.toFloat(),
+    consumed = consumedBalance.toFloat(),
+    toppedUp = toppedUpBalance.toFloat(),
+    granted = grantedBalance.toFloat(),
+    avgBalance = averageBalance.toFloat(),
+    sampleCount = sampleCount,
+    toppedUpBalanceClose = toppedUpBalanceClose.toFloat(),
+    grantedBalanceClose = grantedBalanceClose.toFloat(),
+    generatedAt = generatedAt
+)

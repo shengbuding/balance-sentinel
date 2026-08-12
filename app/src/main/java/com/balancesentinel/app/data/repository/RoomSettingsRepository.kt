@@ -85,6 +85,7 @@ class RoomSettingsRepository(
                 showTotalBalanceInNotification = app.showTotalBalanceInNotification,
                 updatedAt = publishedAt
             )
+            database.eventLogDao().trimToLatest(app.logMaxEntries.coerceIn(10, 1000))
             database.settingsDao().replaceAccountAlertSettings(accountAlerts)
             database.settingsDao().replaceNotificationSelections(notificationRows)
             database.settingsDao().replaceAlertRuntimeStates(snapshot.alertRuntimeStates)

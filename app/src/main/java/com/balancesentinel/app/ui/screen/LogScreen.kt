@@ -32,7 +32,7 @@ import com.balancesentinel.app.ui.viewmodel.LogViewModel
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import com.balancesentinel.app.util.FormatUtils
+import com.balancesentinel.app.util.LocalizedFormatter
 import com.balancesentinel.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -279,7 +279,7 @@ private fun RefreshLogItem(entry: RefreshLogEntry) {
 
 @Composable
 private fun ManualAutoLogItem(entry: RefreshLogEntry) {
-    val cs = FormatUtils.currencySymbol(entry.currency)
+    val formatter = rememberLocalizedFormatter()
     val isManual = entry.type == RefreshLogType.MANUAL
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -298,7 +298,7 @@ private fun ManualAutoLogItem(entry: RefreshLogEntry) {
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-                Text("$cs${FormatUtils.formatAmount(entry.totalBalance)}",
+                Text(formatter.formatCurrency(entry.totalBalance.toDoubleOrNull() ?: 0.0, entry.currency),
                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 if (entry.message.isNotEmpty()) {
                     Text(entry.message, style = MaterialTheme.typography.labelSmall,
@@ -314,6 +314,7 @@ private fun ManualAutoLogItem(entry: RefreshLogEntry) {
 
 @Composable
 private fun ScheduleLogItem(entry: RefreshLogEntry) {
+    val formatter = rememberLocalizedFormatter()
     val isDegraded = entry.alarmMethod == "inexact"
     val isFailed = entry.alarmMethod == "failed"
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -341,7 +342,7 @@ private fun ScheduleLogItem(entry: RefreshLogEntry) {
                 else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
         }
         if (entry.intervalSeconds > 0) {
-            Text("间隔: ${FormatUtils.formatInterval(entry.intervalSeconds)}",
+            Text(stringResource(R.string.log_interval_format, formatter.formatInterval(entry.intervalSeconds)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -350,6 +351,7 @@ private fun ScheduleLogItem(entry: RefreshLogEntry) {
 
 @Composable
 private fun MissedLogItem(entry: RefreshLogEntry) {
+    val formatter = rememberLocalizedFormatter()
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
@@ -375,7 +377,11 @@ private fun MissedLogItem(entry: RefreshLogEntry) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
         }
         if (entry.expectedTime > 0) {
-            Text("预定: ${FormatUtils.formatFullTime(entry.expectedTime)} · 间隔: ${FormatUtils.formatInterval(entry.intervalSeconds)}",
+            Text(stringResource(
+                R.string.log_scheduled_interval_format,
+                formatter.formatDateTime(entry.expectedTime),
+                formatter.formatInterval(entry.intervalSeconds)
+            ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -439,7 +445,7 @@ private fun ServiceStartLogItem(entry: RefreshLogEntry) {
 
 @Composable
 private fun WatchdogLogItem(entry: RefreshLogEntry) {
-    val isFailed = entry.message.contains("失败")
+    val isFailed = entry.alarmMethod == "failed" || entry.message.contains("failed", ignoreCase = true)
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(4.dp),
@@ -520,15 +526,17 @@ private fun CrashLogCard(
 // 工具函数
 // ═══════════════════════════════════════════════════════════
 
+@Composable
 private fun formatTimeAgo(timestamp: Long): String {
     if (timestamp <= 0) return ""
-    val diff = System.currentTimeMillis() - timestamp
-    return when {
-        diff < 60_000 -> "刚刚"
-        diff < 3_600_000 -> "${diff / 60_000}分钟前"
-        diff < 86_400_000 -> "${diff / 3_600_000}小时前"
-        else -> FormatUtils.formatFullTime(timestamp)
-    }
+    return rememberLocalizedFormatter().formatRelativeTime(timestamp)
+}
+
+@Composable
+private fun rememberLocalizedFormatter(): LocalizedFormatter {
+    val context = LocalContext.current
+    val locale = context.resources.configuration.locales[0]
+    return remember(context, locale) { LocalizedFormatter(context, locale) }
 }
 
 // ═══════════════════════════════════════════════════════════

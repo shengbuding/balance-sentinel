@@ -77,6 +77,14 @@ class WidgetPrefs(context: Context) {
         get() = prefs.getInt(KEY_LOG_MAX, DEFAULT_LOG_MAX)
         set(value) = prefs.edit().putInt(KEY_LOG_MAX, value.coerceIn(10, 1000)).apply()
 
+    var notificationPermissionRequested: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, value).apply()
+
+    var notificationPermissionPermanentlyDenied: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_PERMANENTLY_DENIED, false)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_PERMANENTLY_DENIED, value).apply()
+
     var alertEnabled: Boolean
         get() = prefs.getBoolean(KEY_ALERT_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_ALERT_ENABLED, value).apply()
@@ -729,6 +737,8 @@ class WidgetPrefs(context: Context) {
         const val KEY_NOTIFICATION_WALLET_ORDER = "notification_wallet_order"
         const val KEY_NOTIFICATION_TOTAL = "__total__"
         const val KEY_LANGUAGE = "pref_language"
+        const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"
+        const val KEY_NOTIFICATION_PERMISSION_PERMANENTLY_DENIED = "notification_permission_permanently_denied"
 
         private val PAIR_STATE_PREFIXES = listOf(
             KEY_LAST_ALERTED_BALANCE,

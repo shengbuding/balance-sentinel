@@ -125,7 +125,7 @@ class AccountRepositoryTest {
     }
 
     @Test
-    fun addingAccountAfterMigrationReusesExistingMappingsAndAddsOnlyOneRow() = runBlocking {
+    fun addingAccountToLegacyStoreAfterMigrationDoesNotReplayCompletedSource() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = context.getSharedPreferences("task3-round2-add", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
@@ -138,9 +138,10 @@ class AccountRepositoryTest {
             val originalMapping = initial.mappings.single()
             manager.addAccount("B", "key-b")
             val recovered = LegacyAccountMigration(database, manager.legacyAccountReader(), store).run()
-            assertEquals(originalMapping, recovered.mappings.first { it.legacyStorageId == original.id })
-            assertEquals(2, database.accountDao().getAllForMigration().size)
-            assertEquals(2, database.accountDao().observeVerified().first().size)
+            assertEquals(listOf(originalMapping), recovered.mappings)
+            assertEquals(original.id, recovered.mappings.single().legacyStorageId)
+            assertEquals(1, database.accountDao().getAllForMigration().size)
+            assertEquals(1, database.accountDao().observeVerified().first().size)
         } finally {
             database.close()
             prefs.edit().clear().commit()

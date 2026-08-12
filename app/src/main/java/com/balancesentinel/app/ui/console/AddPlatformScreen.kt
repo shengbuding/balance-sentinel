@@ -14,11 +14,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.console.ConsoleOriginPolicy
+import com.balancesentinel.app.R
 
 /**
  * 添加平台页面 - 选择预设平台或添加自定义平台
@@ -80,14 +82,14 @@ private fun PresetPlatformList(
             TopAppBar(
                 title = {
                     Text(
-                        text = "添加平台",
+                        text = stringResource(R.string.console_add_platform),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -116,13 +118,13 @@ private fun PresetPlatformList(
 
             // 预设平台部分
             Text(
-                text = "预设平台",
+                text = stringResource(R.string.console_presets_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
 
             Text(
-                text = "已适配的 AI 平台，可直接使用",
+                text = stringResource(R.string.console_presets_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -162,11 +164,11 @@ private fun SearchBar(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        placeholder = { Text("搜索平台...") },
+        placeholder = { Text(stringResource(R.string.console_search_hint)) },
         leadingIcon = {
             Icon(
                 Icons.Default.Search,
-                contentDescription = "搜索",
+                contentDescription = stringResource(R.string.console_search),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
@@ -175,7 +177,7 @@ private fun SearchBar(
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(
                         Icons.Default.Clear,
-                        contentDescription = "清除",
+                        contentDescription = stringResource(R.string.console_clear_search),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -205,12 +207,12 @@ private fun EmptySearchResult(searchQuery: String) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "未找到匹配的平台",
+                text = stringResource(R.string.console_no_match),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "尝试其他关键词，或添加自定义平台",
+                text = stringResource(R.string.console_no_match_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -224,13 +226,13 @@ private fun CustomPlatformSection(onAddCustom: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "自定义平台",
+            text = stringResource(R.string.console_custom_platform),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
 
         Text(
-            text = "添加任意 OpenAI 兼容的 AI 平台",
+            text = stringResource(R.string.console_custom_description),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -240,9 +242,9 @@ private fun CustomPlatformSection(onAddCustom: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(Icons.Default.Add, "添加")
+            Icon(Icons.Default.Add, stringResource(R.string.console_add))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("添加自定义平台")
+            Text(stringResource(R.string.console_add_custom_platform))
         }
     }
 }
@@ -286,14 +288,14 @@ private fun PresetPlatformCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = platform.description ?: "预设平台",
+                    text = platform.description ?: stringResource(R.string.console_preset_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (isAdded) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "已添加",
+                        text = stringResource(R.string.console_added),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -302,7 +304,7 @@ private fun PresetPlatformCard(
             if (!isAdded) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = "添加",
+                    contentDescription = stringResource(R.string.console_add),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -328,14 +330,14 @@ private fun CustomPlatformForm(
             TopAppBar(
                 title = {
                     Text(
-                        text = "添加自定义平台",
+                        text = stringResource(R.string.console_add_custom_platform),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -357,11 +359,11 @@ private fun CustomPlatformForm(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("平台名称 *") },
-                placeholder = { Text("例如：模力方舟") },
+                label = { Text(stringResource(R.string.console_platform_name_label)) },
+                placeholder = { Text(stringResource(R.string.console_platform_name_hint)) },
                 isError = showErrors && name.isBlank(),
                 supportingText = if (showErrors && name.isBlank()) {
-                    { Text("请输入平台名称") }
+                    { Text(stringResource(R.string.console_platform_name_required)) }
                 } else null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -373,11 +375,11 @@ private fun CustomPlatformForm(
             OutlinedTextField(
                 value = loginUrl,
                 onValueChange = { loginUrl = it },
-                label = { Text("登录页面 URL *") },
+                label = { Text(stringResource(R.string.console_login_url_label)) },
                 placeholder = { Text("https://ai.gitee.com/login") },
                 isError = showErrors && !isValidUrl(loginUrl),
                 supportingText = if (showErrors && !isValidUrl(loginUrl)) {
-                    { Text("请输入有效的 URL（以 http:// 或 https:// 开头）") }
+                    { Text(stringResource(R.string.console_url_http_required)) }
                 } else null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
@@ -392,11 +394,11 @@ private fun CustomPlatformForm(
             OutlinedTextField(
                 value = dashboardUrl,
                 onValueChange = { dashboardUrl = it },
-                label = { Text("仪表盘 URL *") },
+                label = { Text(stringResource(R.string.console_dashboard_url_label)) },
                 placeholder = { Text("https://ai.gitee.com/dashboard") },
                 isError = showErrors && !isValidUrl(dashboardUrl),
                 supportingText = if (showErrors && !isValidUrl(dashboardUrl)) {
-                    { Text("请输入有效的 URL") }
+                    { Text(stringResource(R.string.console_url_required)) }
                 } else null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
@@ -411,10 +413,10 @@ private fun CustomPlatformForm(
             OutlinedTextField(
                 value = successUrlPatterns,
                 onValueChange = { successUrlPatterns = it },
-                label = { Text("登录成功 URL 模式 *") },
+                label = { Text(stringResource(R.string.console_success_pattern_label)) },
                 placeholder = { Text("ai.gitee.com/dashboard,ai.gitee.com/console") },
                 supportingText = {
-                    Text("多个模式用逗号分隔，用于判断登录是否成功")
+                    Text(stringResource(R.string.console_success_pattern_help))
                 },
                 isError = showErrors && successUrlPatterns.isBlank(),
                 singleLine = true,
@@ -427,8 +429,8 @@ private fun CustomPlatformForm(
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("描述（可选）") },
-                placeholder = { Text("查看账户余额、用量统计") },
+                label = { Text(stringResource(R.string.console_description_label)) },
+                placeholder = { Text(stringResource(R.string.console_description_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp)
@@ -455,9 +457,9 @@ private fun CustomPlatformForm(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Icon(Icons.Default.Add, "添加")
+                Icon(Icons.Default.Add, stringResource(R.string.console_add))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("添加平台")
+                Text(stringResource(R.string.console_add_platform))
             }
         }
     }

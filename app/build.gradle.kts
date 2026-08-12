@@ -69,11 +69,38 @@ kover {
 }
 
 // Release 签名配置 — 从 keystore.properties 读取（该文件不提交到 git）
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = Properties()
-val hasKeystoreConfig = keystorePropertiesFile.exists()
-if (hasKeystoreConfig) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
+private val RELEASE_SIGNING_ERROR = "RELEASE_SIGNING_CONFIG_REQUIRED"
+private val signingConfigPath = providers.gradleProperty("walletSentinel.signingConfigFile")
+    .orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "keystore.properties"
+private val keystorePropertiesFile = rootProject.file(signingConfigPath)
+private val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.isFile) {
+        keystorePropertiesFile.inputStream().use(::load)
+    }
+}
+private val signingKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+private val missingSigningKeys = signingKeys.filter {
+    keystoreProperties.getProperty(it).isNullOrBlank()
+}
+private val configuredStoreFile = keystoreProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { path -> keystorePropertiesFile.parentFile.resolve(path).canonicalFile }
+private val releaseSigningReady = keystorePropertiesFile.isFile &&
+    missingSigningKeys.isEmpty() &&
+    configuredStoreFile?.isFile == true
+private val releaseSigningProblem = when {
+    !keystorePropertiesFile.isFile -> "config file not found: ${keystorePropertiesFile.absolutePath}"
+    missingSigningKeys.isNotEmpty() -> "missing fields: ${missingSigningKeys.joinToString()}"
+    configuredStoreFile?.isFile != true -> "keystore not found: ${configuredStoreFile?.absolutePath}"
+    else -> "unknown signing configuration error"
+}
+private val requestedReleaseArtifact = gradle.startParameter.taskNames.any { taskPath ->
+    taskPath.substringAfterLast(':') in setOf("assembleRelease", "bundleRelease", "packageRelease")
+}
+if (requestedReleaseArtifact && !releaseSigningReady) {
+    throw GradleException("$RELEASE_SIGNING_ERROR: $releaseSigningProblem")
 }
 
 android {
@@ -92,12 +119,12 @@ android {
     // Release 签名配置（签名文件路径和密码从 keystore.properties 读取）
     // 必须在 buildTypes 之前定义，否则 signingConfigs.findByName("release") 找不到
     signingConfigs {
-        if (hasKeystoreConfig) {
+        if (releaseSigningReady) {
             create("release") {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = configuredStoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
     }
@@ -111,7 +138,7 @@ android {
                 "proguard-rules.pro"
             )
             // 有 keystore.properties 时使用正式签名，否则回退 debug 签名（仅用于测试）
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
         // Debug builds keep full debugging support; use assembleRelease for size testing
     }
@@ -141,6 +168,16 @@ android {
     }
 
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+}
+
+tasks.matching { task ->
+    task.name in setOf("assembleRelease", "bundleRelease", "packageRelease")
+}.configureEach {
+    doFirst {
+        if (!releaseSigningReady) {
+            throw GradleException("$RELEASE_SIGNING_ERROR: $releaseSigningProblem")
+        }
+    }
 }
 
 kapt {

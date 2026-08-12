@@ -2,6 +2,7 @@ package com.balancesentinel.app.util
 
 import android.content.Context
 import com.balancesentinel.app.R
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -20,7 +21,12 @@ object FormatUtils {
 
     /** 格式化余额为两位小数；解析失败返回原值 */
     fun formatAmount(amount: String): String {
-        return try { "%.2f".format(amount.toDouble()) } catch (_: NumberFormatException) { amount }
+        val value = amount.toDoubleOrNull() ?: return amount
+        return NumberFormat.getNumberInstance(Locale.getDefault()).apply {
+            isGroupingUsed = false
+            minimumFractionDigits = 2
+            maximumFractionDigits = 2
+        }.format(value)
     }
 
     /** 币种代码 → 符号 */
@@ -45,10 +51,12 @@ object FormatUtils {
     /** 时间戳 → MM-dd HH:mm */
     fun formatFullTime(timestamp: Long): String {
         return try {
-            val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-            fmt.format(Date(timestamp))
+            SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
         } catch (_: Exception) { timestamp.toString() }
     }
+
+    /** Entry point for locale-aware formatting in user-visible surfaces. */
+    fun localized(context: Context): LocalizedFormatter = LocalizedFormatter(context)
 
     /** 闹钟调度方式 → 人类可读标签 */
     fun methodLabel(context: Context, method: String): String = when (method) {

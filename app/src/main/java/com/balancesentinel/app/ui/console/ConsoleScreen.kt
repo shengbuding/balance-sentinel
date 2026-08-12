@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,7 @@ import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.network.ResponseBudget
 import com.balancesentinel.app.ui.CustomIcons
+import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.viewmodel.ConsoleUiState
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.text.SimpleDateFormat
@@ -131,7 +133,7 @@ private fun ConsoleConfigurationError(
                 title = { Text(platform.name) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
                     }
                 }
             )
@@ -144,7 +146,7 @@ private fun ConsoleConfigurationError(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Filled.Warning, contentDescription = null)
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Invalid platform configuration")
+                Text(stringResource(R.string.console_invalid_platform))
             }
         }
     }
@@ -174,6 +176,7 @@ private fun ConsoleLogin(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val loadFailedText = stringResource(R.string.console_load_failed)
     val navigationHandler = remember(context, policy) {
         ConsoleNavigationHandler(policy, consoleExternalNavigator(context))
     }
@@ -242,23 +245,23 @@ private fun ConsoleLogin(
             TopAppBar(
                 title = {
                     Text(
-                        text = "登录 ${platform.name}",
+                        text = stringResource(R.string.console_login_title, platform.name),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
                     }
                 },
                 actions = {
                     // 跳过登录按钮
                     TextButton(onClick = { skipLogin = true }) {
-                        Text("跳过登录")
+                        Text(stringResource(R.string.console_skip_login))
                     }
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.Close, "关闭")
+                        Icon(Icons.Filled.Close, stringResource(R.string.console_close))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -310,7 +313,7 @@ private fun ConsoleLogin(
                                 super.onReceivedError(view, request, error)
                                 if (request?.isForMainFrame == true) {
                                     hasError = true
-                                    errorMessage = error?.description?.toString() ?: "加载失败"
+                                    errorMessage = error?.description?.toString() ?: loadFailedText
                                     isLoading = false
                                 }
                             }
@@ -369,7 +372,7 @@ private fun ConsoleLogin(
                             strokeWidth = 2.dp
                         )
                         Text(
-                            text = "登录成功，正在保存...",
+                            text = stringResource(R.string.console_login_saving),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -393,7 +396,7 @@ private fun ConsoleLogin(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "加载失败",
+                            text = stringResource(R.string.console_load_failed),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onErrorContainer
@@ -409,7 +412,7 @@ private fun ConsoleLogin(
                             loginDetected = false
                             webView?.reload()
                         }) {
-                            Text("重试")
+                            Text(stringResource(R.string.console_retry))
                         }
                     }
                 }
@@ -491,19 +494,19 @@ private fun ConsoleDashboard(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text("登录已失效") },
-            text = { Text("检测到您的登录状态已失效，请重新登录") },
+            title = { Text(stringResource(R.string.console_login_expired_title)) },
+            text = { Text(stringResource(R.string.console_login_expired_message)) },
             confirmButton = {
                 Button(onClick = {
                     loginExpired = false
                     onLogout()
                 }) {
-                    Text("重新登录")
+                    Text(stringResource(R.string.console_relogin))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { loginExpired = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.console_cancel))
                 }
             }
         )
@@ -520,13 +523,13 @@ private fun ConsoleDashboard(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text("清除登录状态") },
+            title = { Text(stringResource(R.string.console_clear_session_title)) },
             text = {
                 Column {
-                    Text("确定要清除「${platform.name}」的登录状态吗？")
+                    Text(stringResource(R.string.console_clear_session_prompt, platform.name))
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "• 所有登录信息将被清除\n• 需要重新登录才能访问控制台",
+                        stringResource(R.string.console_clear_session_details),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -542,12 +545,12 @@ private fun ConsoleDashboard(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("确认清除")
+                    Text(stringResource(R.string.console_clear_session_confirm))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showClearSessionDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.console_cancel))
                 }
             }
         )
@@ -573,7 +576,7 @@ private fun ConsoleDashboard(
                 title = {
                     Column {
                         Text(
-                            text = "${platform.name} 控制台",
+                            text = stringResource(R.string.console_dashboard_title, platform.name),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -588,13 +591,13 @@ private fun ConsoleDashboard(
                 },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
                     }
                 },
                 actions = {
                     Box {
                         IconButton(onClick = { showMenu = !showMenu }) {
-                            Icon(Icons.Default.MoreVert, "更多")
+                            Icon(Icons.Default.MoreVert, stringResource(R.string.console_more))
                         }
                         DropdownMenu(
                             expanded = showMenu,
@@ -612,7 +615,7 @@ private fun ConsoleDashboard(
                                                 contentDescription = null,
                                                 modifier = Modifier.size(20.dp)
                                             )
-                                            Text("调试面板")
+                                            Text(stringResource(R.string.console_debug_panel))
                                         }
                                     },
                                     onClick = {
@@ -632,7 +635,7 @@ private fun ConsoleDashboard(
                                             contentDescription = null,
                                             modifier = Modifier.size(20.dp)
                                         )
-                                        Text("刷新页面")
+                                        Text(stringResource(R.string.console_refresh_page))
                                     }
                                 },
                                 onClick = {
@@ -656,7 +659,7 @@ private fun ConsoleDashboard(
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                         Text(
-                                            "清除登录状态",
+                                            stringResource(R.string.console_clear_session_title),
                                             color = MaterialTheme.colorScheme.error
                                         )
                                     }

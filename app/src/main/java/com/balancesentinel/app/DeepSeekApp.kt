@@ -9,9 +9,12 @@ import android.os.LocaleList
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.repository.AppResetCheckpointStore
+import com.balancesentinel.app.data.repository.AppResetCoordinator
 import com.balancesentinel.app.data.repository.AccountMutationRecovery
 import com.balancesentinel.app.data.repository.RoomAccountMutationCoordinator
 import com.balancesentinel.app.data.repository.RoomAccountMutationRecovery
+import com.balancesentinel.app.data.repository.RoomConfigImportCoordinator
 import com.balancesentinel.app.data.migration.LegacyAccountMigration
 import com.balancesentinel.app.data.migration.LegacyDataMigration
 import com.balancesentinel.app.data.migration.LegacyDataVerifier
@@ -39,14 +42,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.UUID
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.Configuration
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import com.balancesentinel.app.work.MonitoringHealthWorker
 
-open class DeepSeekApp : Application() {
+open class DeepSeekApp : Application(), Configuration.Provider {
 
     /** Stable for one process and intentionally changes after process death. */
     val processSessionId: String = UUID.randomUUID().toString()
@@ -63,15 +68,25 @@ open class DeepSeekApp : Application() {
         roomAccountMutationRecovery().recover()
     }
 
+    internal var configImportRecoveryRunner: suspend () -> Unit = {
+        roomConfigImportCoordinator().recover()
+    }
+
+    internal var appResetRecoveryRunner: suspend () -> Unit = {
+        appResetCoordinator().recoverIfNeeded()
+    }
+
     internal var settingsMigrationRunner: suspend () -> Unit = {
         legacySettingsMigration().migrate()
     }
 
-    private val startupMigrationJob = SupervisorJob()
-    private val startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
+    private var startupMigrationJob = SupervisorJob()
+    private var startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
 
     internal suspend fun cancelStartupMigrationsForTests() {
         startupMigrationJob.cancelAndJoin()
+        startupMigrationJob = SupervisorJob()
+        startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
     }
 
     lateinit var refreshGateway: RefreshGateway
@@ -85,9 +100,15 @@ open class DeepSeekApp : Application() {
     var credentialCorruption: DataCorruptionException? = null
         private set
 
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().build()
+
     override fun onCreate() {
         super.onCreate()
         settingsRepository = SettingsRepositoryProvider.get(this)
+        if (AppResetCheckpointStore.hasPending(this)) {
+            runBlocking(Dispatchers.IO) { appResetRecoveryRunner() }
+        }
         refreshGateway = RefreshRuntime.create(this)
         runCatching {
             MidnightWorkSchedulingGate.withLock {
@@ -102,7 +123,7 @@ open class DeepSeekApp : Application() {
                 Logger.w("MidnightWorkScheduler", "startup_reconcile_failed", error)
             }
         launchBackgroundWorkReconcile()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        ensureWorkManager().enqueueUniquePeriodicWork(
             "monitoring-health",
             ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<MonitoringHealthWorker>(15, TimeUnit.MINUTES).build()
@@ -138,6 +159,16 @@ open class DeepSeekApp : Application() {
         }
 
         CrashLogger.breadcrumb("App", "onCreate complete")
+    }
+
+    private fun ensureWorkManager(): WorkManager {
+        try {
+            return WorkManager.getInstance(this)
+        } catch (_: IllegalStateException) {
+            // Robolectric and other hosts may omit WorkManager's manifest initializer.
+            WorkManager.initialize(this, workManagerConfiguration)
+        }
+        return WorkManager.getInstance(this)
     }
 
     /**
@@ -196,9 +227,14 @@ open class DeepSeekApp : Application() {
     }
 
     internal fun launchLegacyAccountMigration() {
+        if (!startupMigrationJob.isActive) {
+            startupMigrationJob = SupervisorJob()
+            startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
+        }
         startupMigrationScope.launch {
             try {
                 legacyMigrationRunner()
+                configImportRecoveryRunner()
                 legacyDataMigrationRunner()
                 settingsMigrationRunner()
                 WidgetPrefs(this@DeepSeekApp).apply {
@@ -223,6 +259,19 @@ open class DeepSeekApp : Application() {
                 EncryptedPreferencesCredentialStore(this)
             )
         )
+
+    internal fun roomConfigImportCoordinator() = RoomConfigImportCoordinator(
+        WalletDatabaseProvider.get(this),
+        EncryptedPreferencesCredentialStore(this),
+        settingsRepository
+    )
+
+    internal fun appResetCoordinator() = AppResetCoordinator(
+        this,
+        WalletDatabaseProvider.get(this),
+        EncryptedPreferencesCredentialStore(this),
+        settingsRepository
+    )
 
     internal fun legacySettingsMigration(): LegacySettingsMigration = LegacySettingsMigration(
         WidgetPrefsLegacySettingsSource(WidgetPrefs(this)),

@@ -13,6 +13,9 @@ enum class DownloadState {
     FAILED,
     COMPLETED;
 
+    val isTerminal: Boolean
+        get() = this == CANCELLED || this == FAILED || this == COMPLETED
+
     companion object {
         fun fromStorage(value: String): DownloadState = entries.firstOrNull {
             it.name == value

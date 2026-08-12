@@ -46,6 +46,7 @@ class LegacyAccountMigration(
     ) : this(database, source, credentialStore, now)
 
     suspend fun run(): LegacyAccountMigrationResult = withContext(Dispatchers.IO) {
+        completedResult()?.let { return@withContext it }
         val payload = discoverAndValidate() ?: return@withContext LegacyAccountMigrationResult(
             LegacyAccountMigrationStage.DISCOVERED,
             emptyList()
@@ -69,6 +70,15 @@ class LegacyAccountMigration(
         verifyRowsAndLedgers(operationId, orderedMappings)
         onStage(LegacyAccountMigrationStage.VERIFIED)
         LegacyAccountMigrationResult(LegacyAccountMigrationStage.VERIFIED, orderedMappings)
+    }
+
+    private suspend fun completedResult(): LegacyAccountMigrationResult? = database.withTransaction {
+        database.mutationOperationDao().getCompletedLegacyAccountMigration()?.let { operation ->
+            LegacyAccountMigrationResult(
+                stage = LegacyAccountMigrationStage.VERIFIED,
+                mappings = decodeMappings(operation.targetsJson)
+            )
+        }
     }
 
     private suspend fun discoverAndValidate(): CredentialPayload? {

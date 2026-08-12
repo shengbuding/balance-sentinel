@@ -148,7 +148,9 @@ class InsightsViewModel @JvmOverloads constructor(
                         is AccountLoadState.Ready -> {
                             _uiState.update { current ->
                                 val selected = current.selectedAccountId
-                                    ?.takeIf { id -> state.accounts.any { it.id == id } }
+                                    ?.takeIf { id ->
+                                        state.accounts.isEmpty() || state.accounts.any { it.id == id }
+                                    }
                                 current.copy(
                                     accountLoadState = state,
                                     accounts = state.accounts,

@@ -16,11 +16,59 @@ interface MutationOperationDao {
     @Query(
         """
         SELECT * FROM mutation_operations
+        WHERE operation_type = 'LEGACY_ACCOUNT_MIGRATION'
+          AND stage IN ('VERIFIED', 'PUBLISHED', 'ACTIVE', 'CLEANED', 'COMPLETED')
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getCompletedLegacyAccountMigration(): MutationOperationEntity?
+
+    @Query(
+        """
+        SELECT * FROM mutation_operations
         WHERE stage NOT IN ('COMPLETED', 'FAILED')
         ORDER BY updated_at, id
         """
     )
     suspend fun listRecoverable(): List<MutationOperationEntity>
+
+    @Query(
+        """
+        SELECT * FROM mutation_operations
+        WHERE operation_type = :operationType
+          AND stage NOT IN ('COMPLETED', 'FAILED')
+        ORDER BY updated_at, id
+        """
+    )
+    suspend fun listRecoverableByType(operationType: MutationOperationType): List<MutationOperationEntity>
+
+    @Query(
+        """
+        SELECT * FROM mutation_operations
+        WHERE operation_type = :operationType
+        ORDER BY updated_at, id
+        """
+    )
+    suspend fun listByType(operationType: MutationOperationType): List<MutationOperationEntity>
+
+    @Query(
+        """
+        UPDATE mutation_operations SET
+            staged_generation_manifest_json = :newManifestJson,
+            manifest_version = :newManifestVersion,
+            updated_at = :updatedAt
+        WHERE id = :id
+          AND staged_generation_manifest_json = :expectedManifestJson
+        """
+    )
+    suspend fun replaceStagedManifestIfCurrent(
+        id: String,
+        expectedManifestJson: String,
+        newManifestJson: String,
+        newManifestVersion: Int,
+        updatedAt: Long
+    ): Int
 
     @Query(
         """

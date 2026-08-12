@@ -24,13 +24,16 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.BackupImportPlan
 import com.balancesentinel.app.data.repository.ImportMode
 import com.balancesentinel.app.data.api.balance.WebOrigin
-import com.balancesentinel.app.data.repository.DataExporter
 import com.balancesentinel.app.data.repository.LogExporter
 import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import com.balancesentinel.app.ui.viewmodel.DataManagementUiState
+import com.balancesentinel.app.ui.viewmodel.DataOperationKind
+import com.balancesentinel.app.ui.viewmodel.DataOperationState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 备份与迁移子页面 — 历史数据 + 配置的导入导出 + 调试报告。
@@ -46,8 +49,9 @@ fun BackupRestoreScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var isImporting by remember { mutableStateOf(false) }
     var isConfigImporting by remember { mutableStateOf(false) }
+    val dataOperation = uiState.dataOperationState
+    val historyOperationRunning = dataOperation is DataOperationState.Running
 
     // 配置导出选项
     var showConfigExportDialog by remember { mutableStateOf(false) }
@@ -61,15 +65,10 @@ fun BackupRestoreScreen(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            if (DataExporter.hasData(context)) {
-                scope.launch {
-                    val ok = viewModel.exportHistory(uri)
-                    if (ok) {
-                        Toast.makeText(context, context.getString(R.string.data_export_success), Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, context.getString(R.string.data_export_fail), Toast.LENGTH_SHORT).show()
-                    }
-                }
+            val hasData = uiState.dailySummaryCount > 0 || uiState.rawRecordCount > 0 ||
+                uiState.usageSnapshotCount > 0 || uiState.refreshLogCount > 0
+            if (uiState.statisticsLoaded && hasData) {
+                viewModel.startHistoryExport(uri)
             } else {
                 Toast.makeText(context, context.getString(R.string.data_no_data), Toast.LENGTH_SHORT).show()
             }
@@ -81,23 +80,52 @@ fun BackupRestoreScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            isImporting = true
-            scope.launch {
-                val result = viewModel.importHistory(uri)
-                isImporting = false
-                if (result != null) {
-                    val detail = context.getString(
-                        R.string.data_import_history_detail,
-                        result.summariesInFile, result.summariesImported,
-                        result.recordsInFile, result.recordsImported,
-                        result.snapshotsInFile, result.snapshotsImported,
-                        result.logsInFile, result.logsImported
-                    )
-                    Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
+            viewModel.startHistoryImport(uri)
+        }
+    }
+
+    LaunchedEffect(dataOperation) {
+        when (val state = dataOperation) {
+            is DataOperationState.Succeeded -> {
+                if (state.kind == DataOperationKind.EXPORT_HISTORY) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.data_export_success),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
-                    Toast.makeText(context, context.getString(R.string.data_import_history_fail), Toast.LENGTH_SHORT).show()
+                    val result = state.importSummary
+                    if (result != null) {
+                        val detail = context.getString(
+                            R.string.data_import_history_detail,
+                            result.summariesInFile, result.summariesImported,
+                            result.recordsInFile, result.recordsImported,
+                            result.snapshotsInFile, result.snapshotsImported,
+                            result.logsInFile, result.logsImported
+                        )
+                        Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
+                    }
                 }
+                viewModel.acknowledgeHistoryOperation(state.operationId)
             }
+            is DataOperationState.Failed -> {
+                val message = if (state.kind == DataOperationKind.EXPORT_HISTORY) {
+                    R.string.data_export_fail
+                } else {
+                    R.string.data_import_history_fail
+                }
+                Toast.makeText(context, context.getString(message), Toast.LENGTH_SHORT).show()
+                viewModel.acknowledgeHistoryOperation(state.operationId)
+            }
+            is DataOperationState.Cancelled -> {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.data_operation_cancelled),
+                    Toast.LENGTH_SHORT
+                ).show()
+                viewModel.acknowledgeHistoryOperation(state.operationId)
+            }
+            DataOperationState.Idle, is DataOperationState.Running -> Unit
         }
     }
 
@@ -190,17 +218,41 @@ fun BackupRestoreScreen(
                 title = stringResource(R.string.data_export_history_title),
                 description = stringResource(R.string.data_export_history_desc),
                 buttonText = stringResource(R.string.data_export_btn),
-                onAction = { exportDataLauncher.launch("wallet_sentinel_data.json") }
+                onAction = { exportDataLauncher.launch("wallet_sentinel_data.json") },
+                loading = historyOperationRunning || !uiState.statisticsLoaded
             )
 
             BackupActionCard(
                 icon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
                 title = stringResource(R.string.data_import_history_title),
                 description = stringResource(R.string.data_import_history_desc),
-                buttonText = if (isImporting) stringResource(R.string.data_importing) else stringResource(R.string.data_import_history_btn),
+                buttonText = stringResource(R.string.data_import_history_btn),
                 onAction = { importDataLauncher.launch(arrayOf("application/json", "*/*")) },
-                loading = isImporting
+                loading = historyOperationRunning
             )
+
+            (dataOperation as? DataOperationState.Running)?.let { operation ->
+                LinearProgressIndicator(
+                    progress = operation.progressPercent?.div(100f) ?: 0f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.data_operation_progress,
+                            operation.progressPercent ?: 0
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(onClick = viewModel::cancelHistoryOperation) {
+                        Text(stringResource(R.string.data_operation_cancel))
+                    }
+                }
+            }
 
             // ── 配置 ──
             SectionLabel(stringResource(R.string.data_backup_section_config))
@@ -314,13 +366,17 @@ fun BackupRestoreScreen(
                     onDismiss = viewModel::dismissImportPreview,
                     onApply = {
                         val accountCount = plan.finalAccounts.size
-                        if (viewModel.requestApplyImport()) {
-                            onConfigImported()
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.data_config_import_success, accountCount),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        scope.launch {
+                            if (viewModel.requestApplyImport()) {
+                                withContext(Dispatchers.Main.immediate) {
+                                    onConfigImported()
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.data_config_import_success, accountCount),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
                         }
                     }
                 )
@@ -340,15 +396,20 @@ fun BackupRestoreScreen(
                 confirmButton = {
                     TextButton(
                         modifier = Modifier.testTag("replace_confirm_apply"),
+                        enabled = !uiState.importInProgress,
                         onClick = {
                             val accountCount = uiState.pendingImportPlan?.finalAccounts?.size ?: 0
-                            if (viewModel.confirmReplaceImport()) {
-                                onConfigImported()
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.data_config_import_success, accountCount),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            scope.launch {
+                                if (viewModel.confirmReplaceImport()) {
+                                    withContext(Dispatchers.Main.immediate) {
+                                        onConfigImported()
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.data_config_import_success, accountCount),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
                             }
                         }
                     ) {
@@ -492,7 +553,7 @@ private fun ConfigImportPreviewDialog(
             TextButton(
                 modifier = Modifier.testTag("import_apply"),
                 onClick = onApply,
-                enabled = plan.canApply
+                enabled = plan.canApply && !uiState.importInProgress
             ) {
                 Text(stringResource(R.string.data_config_import_apply))
             }

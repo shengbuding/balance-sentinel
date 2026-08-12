@@ -24,9 +24,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.console.store.ConsoleStore
+import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.CustomIcons
 
 /**
@@ -59,8 +65,8 @@ fun ConsoleSelectScreen(
                 showDeleteDialog = false
                 platformToDelete = null
             },
-            title = { Text("删除平台") },
-            text = { Text("确定要删除「${platformToDelete?.name}」吗？删除后将清除所有登录数据。") },
+            title = { Text(stringResource(R.string.console_delete_platform_title)) },
+            text = { Text(stringResource(R.string.console_delete_platform_message, platformToDelete?.name.orEmpty())) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -72,7 +78,7 @@ fun ConsoleSelectScreen(
                         platformToDelete = null
                     }
                 ) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.console_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -82,7 +88,7 @@ fun ConsoleSelectScreen(
                         platformToDelete = null
                     }
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.console_cancel))
                 }
             }
         )
@@ -93,7 +99,7 @@ fun ConsoleSelectScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "控制台",
+                        text = stringResource(R.string.console_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -115,7 +121,7 @@ fun ConsoleSelectScreen(
         ) {
             // 说明文字
             Text(
-                text = "选择要进入的控制台",
+                text = stringResource(R.string.console_select_prompt),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -186,12 +192,12 @@ private fun EmptyStateCard(onAddPlatform: () -> Unit) {
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
             )
             Text(
-                text = "暂无控制台",
+                text = stringResource(R.string.console_empty_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "添加控制台后可以查看账户余额、用量统计等信息",
+                text = stringResource(R.string.console_empty_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -201,9 +207,9 @@ private fun EmptyStateCard(onAddPlatform: () -> Unit) {
                 onClick = onAddPlatform,
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Add, "添加")
+                Icon(Icons.Default.Add, stringResource(R.string.console_add))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("添加控制台")
+                Text(stringResource(R.string.console_add_console))
             }
         }
     }
@@ -217,6 +223,8 @@ private fun PlatformCard(
     onDelete: () -> Unit,
     onFixConfig: (() -> Unit)? = null
 ) {
+    val expandedState = stringResource(R.string.accessibility_expanded)
+    val collapsedState = stringResource(R.string.accessibility_collapsed)
     var isExpanded by remember { mutableStateOf(false) }
 
     Card(
@@ -271,7 +279,7 @@ private fun PlatformCard(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                             ) {
                                 Text(
-                                    text = "已登录",
+                                    text = stringResource(R.string.console_logged_in),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -281,7 +289,7 @@ private fun PlatformCard(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = platform.description ?: "控制台",
+                        text = platform.description ?: stringResource(R.string.console_default_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -295,11 +303,16 @@ private fun PlatformCard(
                     // 更多按钮
                     IconButton(
                         onClick = { isExpanded = !isExpanded },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics {
+                                role = Role.Button
+                                stateDescription = if (isExpanded) expandedState else collapsedState
+                            }
                     ) {
                         Icon(
                             Icons.Default.MoreVert,
-                            "更多",
+                            stringResource(R.string.console_more),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -308,11 +321,11 @@ private fun PlatformCard(
                     // 进入按钮
                     IconButton(
                         onClick = { onClick() },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            "进入",
+                            stringResource(R.string.console_enter),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -347,12 +360,12 @@ private fun PlatformCard(
                         ) {
                             Icon(
                                 Icons.Default.Build,
-                                "修复",
+                                        stringResource(R.string.console_repair),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "修复配置",
+                                        stringResource(R.string.console_repair_config),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -371,12 +384,12 @@ private fun PlatformCard(
                     ) {
                         Icon(
                             Icons.Default.Delete,
-                            "删除",
+                                    stringResource(R.string.console_delete),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "删除平台",
+                                    stringResource(R.string.console_delete_platform_title),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -425,9 +438,9 @@ private fun AddPlatformButton(onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Icon(Icons.Default.Add, "添加")
+            Icon(Icons.Default.Add, stringResource(R.string.console_add))
         Spacer(modifier = Modifier.width(8.dp))
-        Text("添加平台")
+            Text(stringResource(R.string.console_add_platform))
     }
 }
 

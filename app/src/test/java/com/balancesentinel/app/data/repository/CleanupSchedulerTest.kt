@@ -93,7 +93,7 @@ class CleanupSchedulerTest {
         assertEquals(1, db.historyDao().countRecords())
     }
 
-    @Test fun `date scoped cleanup passes local-day bounds to Room repository`() = runBlocking {
+    @Test fun `date scoped cleanup uses bounded key pages with local-day bounds`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         val target = LocalDate.of(1970, 1, 1)
         db.historyDao().insertBalanceBatch(
@@ -104,15 +104,22 @@ class CleanupSchedulerTest {
         )
         val observedRanges = mutableListOf<LongRange>()
         val repository = object : RoomHistoryRepository(db) {
+            override suspend fun rawSeriesKeyPage(
+                fromInclusive: Long,
+                toExclusive: Long,
+                after: com.balancesentinel.app.data.local.history.HistorySeriesKeyProjection?,
+                limit: Int
+            ): List<com.balancesentinel.app.data.local.history.HistorySeriesKeyProjection> {
+                observedRanges += fromInclusive until toExclusive
+                return super.rawSeriesKeyPage(fromInclusive, toExclusive, after, limit)
+            }
+
             override suspend fun pageAll(
                 fromInclusive: Long,
                 toExclusive: Long,
                 after: HistoryCursor?,
                 limit: Int
-            ): HistoryPage {
-                observedRanges += fromInclusive until toExclusive
-                return super.pageAll(fromInclusive, toExclusive, after, limit)
-            }
+            ): HistoryPage = error("Room cleanup must not materialize raw-record pages")
         }
 
         CleanupScheduler.runCleanupForDate(
@@ -124,7 +131,8 @@ class CleanupSchedulerTest {
         )
 
         assertTrue(observedRanges.isNotEmpty())
-        assertTrue(observedRanges.all { it.first == 0L && it.last == 86_400_000L - 1L })
+        assertTrue(observedRanges.any { it.first == 0L && it.last == 86_400_000L - 1L })
+        assertTrue(observedRanges.all { it.last - it.first + 1L == 86_400_000L })
     }
 
     @Test fun `next date cleanup preserves frozen summary and sweeps expired retained tail`() = runBlocking {

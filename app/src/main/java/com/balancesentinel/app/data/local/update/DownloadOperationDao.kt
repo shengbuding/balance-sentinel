@@ -17,6 +17,22 @@ interface DownloadOperationDao {
     @Query("SELECT * FROM download_operations WHERE id = :id")
     fun observe(id: String): Flow<DownloadOperationEntity?>
 
+    @Query("SELECT * FROM download_operations WHERE tag = :tag ORDER BY created_at DESC, id DESC LIMIT 1")
+    fun observeLatestForTag(tag: String): Flow<DownloadOperationEntity?>
+
+    @Query("SELECT * FROM download_operations WHERE tag = :tag ORDER BY created_at DESC, id DESC LIMIT 1")
+    suspend fun getLatestForTag(tag: String): DownloadOperationEntity?
+
+    @Query("SELECT * FROM download_operations WHERE active_tag = :tag LIMIT 1")
+    suspend fun getActiveForTag(tag: String): DownloadOperationEntity?
+
+    @Query(
+        "SELECT COUNT(*) FROM download_operations " +
+            "WHERE id = :id AND owner_id = :ownerId AND state = 'RUNNING' " +
+            "AND active_tag IS NOT NULL AND active_target_path IS NOT NULL"
+    )
+    suspend fun isActiveOwner(id: String, ownerId: String): Int
+
     @Query(
         """
         UPDATE download_operations SET
@@ -30,11 +46,14 @@ interface DownloadOperationDao {
             updated_at = :updatedAt,
             completed_at = :completedAt
         WHERE id = :id AND owner_id = :ownerId
+            AND state IN (:expectedStates)
+            AND active_tag IS NOT NULL AND active_target_path IS NOT NULL
         """
     )
     suspend fun transitionOwnedOperation(
         id: String,
         ownerId: String,
+        expectedStates: List<DownloadState>,
         state: DownloadState,
         downloadedBytes: Long,
         totalBytes: Long?,

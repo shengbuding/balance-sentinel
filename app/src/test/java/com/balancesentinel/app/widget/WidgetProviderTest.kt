@@ -1,10 +1,14 @@
 package com.balancesentinel.app.widget
 
+import android.Manifest
+import android.app.Application
+import android.app.NotificationManager
 import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.os.Bundle
 import android.os.Looper
+import android.view.View
 import android.widget.TextView
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -60,6 +64,13 @@ class WidgetProviderTest {
         database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
         WalletDatabaseProvider.installForTests(database)
         SettingsRepositoryProvider.factory = { MutableSettingsRepository() }
+        Shadows.shadowOf(context as Application).grantPermissions(
+            Manifest.permission.POST_NOTIFICATIONS,
+            Manifest.permission.FOREGROUND_SERVICE,
+            Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC
+        )
+        Shadows.shadowOf(context.getSystemService(NotificationManager::class.java))
+            .setNotificationsEnabled(true)
         BalanceWidgetDataStore.clearAll(context)
         WidgetConfigStore.clearAll(context)
     }
@@ -154,7 +165,7 @@ class WidgetProviderTest {
         val rendered = awaitWidgetStatus(manager, widgetId)
         pending.future.get(2, TimeUnit.SECONDS)
 
-        assertEquals(context.getString(R.string.widget_status_insufficient), rendered)
+        assertEquals(context.getString(R.string.widget_state_stale_status), rendered)
     }
 
     @Test
@@ -187,6 +198,49 @@ class WidgetProviderTest {
         release.complete(Unit)
         pending.future.get(2, TimeUnit.SECONDS)
         assertTrue(pending.future.isDone)
+    }
+
+    @Test
+    fun concurrentProviderUpdateKeepsProgressVisibleUntilRefreshGatewayCompletes() {
+        StaticWidgetProvider.accountStateLoaderOverride = { AccountLoadState.Ready(emptyList()) }
+        val manager = AppWidgetManager.getInstance(context)
+        val widgetId = Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        val started = CountDownLatch(1)
+        val release = CompletableDeferred<Unit>()
+        WidgetRefreshReceiver.refreshGatewayProvider = {
+            gateway {
+                started.countDown()
+                release.await()
+                emptyList()
+            }
+        }
+        val receiver = WidgetRefreshReceiver()
+        val receiverPending = attachPendingResult(receiver)
+
+        try {
+            receiver.onReceive(context, WidgetRefreshIntents.manual(context))
+            assertTrue("refresh gateway must be suspended", started.await(1, TimeUnit.SECONDS))
+            awaitWidgetProgressVisibility(manager, widgetId, View.VISIBLE)
+
+            val provider = StaticWidgetProvider_2x1()
+            val providerPending = attachPendingResult(provider)
+            provider.onUpdate(context, manager, intArrayOf(widgetId))
+            awaitPending(providerPending)
+
+            assertEquals(
+                "a concurrent full render must preserve in-flight refresh progress",
+                View.VISIBLE,
+                awaitWidgetProgressVisibility(manager, widgetId, View.VISIBLE)
+            )
+        } finally {
+            release.complete(Unit)
+            receiverPending.future.get(2, TimeUnit.SECONDS)
+        }
+
+        awaitWidgetProgressVisibility(manager, widgetId, View.GONE)
     }
 
     @Test
@@ -333,6 +387,38 @@ class WidgetProviderTest {
         }
         fail("widget status did not render; last value was '$rendered'")
         return rendered
+    }
+
+    private fun widgetProgressVisibility(manager: AppWidgetManager, widgetId: Int): Int {
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        val progress = Shadows.shadowOf(manager).getViewFor(widgetId)
+            ?.findViewById<View>(R.id.widget_refresh_progress)
+            ?: throw AssertionError("widget progress view was not rendered")
+        return progress.visibility
+    }
+
+    private fun awaitWidgetProgressVisibility(
+        manager: AppWidgetManager,
+        widgetId: Int,
+        expected: Int
+    ): Int {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        var actual = widgetProgressVisibility(manager, widgetId)
+        while (actual != expected && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+            actual = widgetProgressVisibility(manager, widgetId)
+        }
+        assertEquals(expected, actual)
+        return actual
+    }
+
+    private fun awaitPending(pending: ShadowBroadcastPendingResult) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (!pending.future.isDone && System.nanoTime() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        pending.future.get(0, TimeUnit.MILLISECONDS)
     }
 
     // Finding 5 RED: WidgetRefreshDispatcher must guarantee finish callback
