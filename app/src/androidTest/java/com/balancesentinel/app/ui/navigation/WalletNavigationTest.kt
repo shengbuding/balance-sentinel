@@ -24,10 +24,10 @@ class WalletNavigationTest {
         composeRule.runOnIdle {
             controller.navigate(AppRoute.Settings.route)
             controller.navigate(AppRoute.About.route)
+            assertEquals(AppRoute.About.route, controller.currentDestination?.route)
+            controller.popBackStack()
+            assertEquals(AppRoute.Settings.route, controller.currentDestination?.route)
         }
-        assertEquals(AppRoute.About.route, controller.currentDestination?.route)
-        controller.popBackStack()
-        assertEquals(AppRoute.Settings.route, controller.currentDestination?.route)
     }
 
     @Test
@@ -40,8 +40,8 @@ class WalletNavigationTest {
         composeRule.runOnIdle {
             controller.navigate("insights") { launchSingleTop = true }
             controller.navigate("insights") { launchSingleTop = true }
+            assertEquals("insights", controller.currentDestination?.route)
+            assertEquals(1, controller.currentBackStack.value.count { it.destination.route == "insights" })
         }
-        assertEquals("insights", controller.currentDestination?.route)
-        assertEquals(1, controller.currentBackStack.value.count { it.destination.route == "insights" })
     }
 }
