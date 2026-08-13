@@ -4,10 +4,18 @@ import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 object AccountMapper {
+    private val json = Json { ignoreUnknownKeys = true }
+
     fun toEntity(
         account: AccountInfo,
         accountId: String,
@@ -43,5 +51,46 @@ object AccountMapper {
         activeCredentialGeneration = entity.activeCredentialGeneration,
         revision = entity.revision,
         legacyStorageId = entity.legacyStorageId
+    )
+
+    fun toCredentialFreeAccount(entity: AccountEntity): AccountInfo {
+        val config = json.parseToJsonElement(entity.providerConfigJson) as? JsonObject
+            ?: throw IllegalArgumentException("Account provider config must be a JSON object")
+        val usageScriptEnabled = config["usageScriptEnabled"]
+            ?.jsonPrimitive
+            ?.booleanOrNull
+            ?: true
+        val authorizedScriptOrigins = config["authorizedScriptOrigins"]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            .orEmpty()
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+        val extraSettings = config
+            .filterKeys { it !in PROVIDER_METADATA_KEYS }
+            .mapValues { (key, value) ->
+                (value as? JsonPrimitive)?.contentOrNull
+                    ?: throw IllegalArgumentException("Provider setting $key must be a JSON primitive")
+            }
+
+        return AccountInfo(
+            id = entity.id,
+            label = entity.label,
+            apiKey = "",
+            providerType = entity.providerType,
+            extraSettings = extraSettings,
+            usageScript = null,
+            usageScriptEnabled = usageScriptEnabled,
+            authorizedScriptOrigins = authorizedScriptOrigins,
+            revision = entity.revision
+        )
+    }
+
+    private val PROVIDER_METADATA_KEYS = setOf(
+        "usageScript",
+        "usageScriptEnabled",
+        "authorizedScriptOrigins"
     )
 }

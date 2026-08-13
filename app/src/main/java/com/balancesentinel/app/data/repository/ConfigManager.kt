@@ -214,7 +214,8 @@ object ConfigManager {
     ): Boolean {
         return try {
             val content = buildConfig(context, accounts, roomSnapshot(context), includeTokens)
-            context.contentResolver.openOutputStream(uri)?.use { out ->
+            val output = context.contentResolver.openOutputStream(uri) ?: return false
+            output.use { out ->
                 out.write(content.toByteArray(Charsets.UTF_8))
             }
             true
@@ -232,7 +233,8 @@ object ConfigManager {
     ): Boolean {
         return try {
             val content = buildConfig(context, accounts, snapshot, includeTokens)
-            context.contentResolver.openOutputStream(uri)?.use { out ->
+            val output = context.contentResolver.openOutputStream(uri) ?: return false
+            output.use { out ->
                 out.write(content.toByteArray(Charsets.UTF_8))
             }
             true

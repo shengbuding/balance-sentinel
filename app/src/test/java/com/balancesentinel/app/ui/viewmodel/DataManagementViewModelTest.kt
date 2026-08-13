@@ -751,6 +751,89 @@ class DataManagementViewModelTest {
     }
 
     @Test
+    fun `corrupt account flow still allows credential-free configuration export`() = runTest {
+        val accountStorage = context.getSharedPreferences("corrupt-export-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val corruption = DataCorruptionException("account payload corrupt")
+        val source = RecordingAccountUiRepository(AccountLoadState.Corrupt(corruption))
+        manager.replaceAll(
+            listOf(
+                AccountInfo(
+                    id = "ABCDEF12",
+                    label = "Stale legacy account",
+                    apiKey = "sk-stale-secret",
+                    providerType = ProviderType.DEEPSEEK
+                )
+            )
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE accounts SET provider_type = ?, provider_config_json = ? WHERE id = ?",
+            arrayOf(
+                ProviderType.CUSTOM.id,
+                """{"baseUrl":"https://custom.example.com","usageScript":"secret script","usageScriptEnabled":true,"authorizedScriptOrigins":"https://usage.example.com"}""",
+                DATA_ACCOUNT_ID
+            )
+        )
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            source
+        )
+        val exportFile = java.io.File(context.filesDir, "corrupt-export-${System.nanoTime()}.json")
+
+        awaitCondition { viewModel.uiState.value.accountLoadState is AccountLoadState.Corrupt }
+        assertTrue(viewModel.exportConfiguration(Uri.fromFile(exportFile), includeTokens = false))
+        val credentialFreeConfig = Json { ignoreUnknownKeys = true }
+            .decodeFromString<AppConfig>(exportFile.readText())
+        val exported = credentialFreeConfig.accounts.single()
+        assertEquals(DATA_ACCOUNT_ID, exported.id)
+        assertEquals(ProviderType.CUSTOM, exported.providerType)
+        assertEquals("https://custom.example.com", exported.extraSettings["baseUrl"])
+        assertEquals("", exported.apiKey)
+        assertNull(exported.usageScript)
+        assertFalse(exported.usageScriptEnabled)
+        assertTrue(exported.authorizedScriptOrigins.isEmpty())
+        assertFalse(exportFile.readText().contains("sk-stale-secret"))
+        assertFalse(exportFile.readText().contains("ABCDEF12"))
+        assertFalse(exportFile.readText().contains("secret script"))
+        assertFalse(viewModel.exportConfiguration(Uri.fromFile(exportFile), includeTokens = true))
+
+        accountStorage.edit().clear().commit()
+        exportFile.delete()
+    }
+
+    @Test
+    fun `corrupt account flow exports global settings when no accounts remain`() = runTest {
+        withContext(kotlinx.coroutines.Dispatchers.IO) { database.clearAllTables() }
+        val accountStorage = context.getSharedPreferences("corrupt-empty-export-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, accountStorage)
+        val prefs = WidgetPrefs(context)
+        val source = RecordingAccountUiRepository(
+            AccountLoadState.Corrupt(DataCorruptionException("account payload corrupt"))
+        )
+        val viewModel = DataManagementViewModel(
+            app,
+            manager,
+            prefs,
+            BackupImportPlanner(manager, prefs, ::staticInspection),
+            source
+        )
+        val exportFile = java.io.File(context.filesDir, "corrupt-empty-${System.nanoTime()}.json")
+
+        awaitCondition { viewModel.uiState.value.accountLoadState is AccountLoadState.Corrupt }
+        assertTrue(viewModel.exportConfiguration(Uri.fromFile(exportFile), includeTokens = false))
+        val config = Json { ignoreUnknownKeys = true }.decodeFromString<AppConfig>(exportFile.readText())
+        assertTrue(config.accounts.isEmpty())
+        assertFalse(viewModel.exportConfiguration(Uri.fromFile(exportFile), includeTokens = true))
+
+        accountStorage.edit().clear().commit()
+        exportFile.delete()
+    }
+
+    @Test
     fun `recreated data management view model subscribes to account repository again`() {
         // Mutation caught: retaining a legacy snapshot across page recreation.
         val accountStorage = context.getSharedPreferences("recreate-preview-${System.nanoTime()}", Context.MODE_PRIVATE)

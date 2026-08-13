@@ -2,6 +2,7 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.content.ContentResolver
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
@@ -258,6 +259,25 @@ class ConfigManagerTest {
         // The code catches Exception, so either outcome is valid
         // We test that no crash occurs
         assertNotNull(result)
+    }
+
+    @Test
+    fun `exportToUri returns false when resolver provides no output stream`() {
+        val resolver = mockk<ContentResolver>()
+        val mockContext = mockk<Context>(relaxed = true)
+        val uri = Uri.parse("content://test/export.json")
+        every { mockContext.contentResolver } returns resolver
+        every { resolver.openOutputStream(uri) } returns null
+
+        val result = ConfigManager.exportToUri(
+            mockContext,
+            uri,
+            emptyList(),
+            snapshot,
+            includeTokens = false
+        )
+
+        assertFalse(result)
     }
 
     // ═══════════════════════════════════════════════════════════

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /** Typed account state consumed by UI-facing repositories. */
 sealed interface AccountLoadState {
@@ -82,7 +83,7 @@ class RoomAccountUiRepository(
                 val used = mutableSetOf<Int>()
                 val accounts = rows.sortedBy { it.displayOrder }.map { row ->
                     val index = result.payload.accounts.indexOfFirst { account ->
-                        account.id == row.id || account.id == row.legacyStorageId
+                        account.id == row.id || legacyIdsMatch(account.id, row.legacyStorageId)
                     }
                     require(index >= 0) { "Credential payload has no account ${row.id}" }
                     require(used.add(index)) { "Credential payload maps more than once to ${row.id}" }
@@ -113,4 +114,16 @@ class RoomAccountUiRepository(
     private fun asCorruption(error: Throwable): DataCorruptionException =
         error as? DataCorruptionException
             ?: DataCorruptionException("Account repository state cannot be read", error)
+
+    private fun legacyIdsMatch(credentialId: String, legacyStorageId: String?): Boolean {
+        if (legacyStorageId == null) return false
+        return canonicalLegacyId(credentialId) == canonicalLegacyId(legacyStorageId)
+    }
+
+    private fun canonicalLegacyId(id: String): String =
+        if (STABLE_LEGACY_ID.matches(id)) id.lowercase(Locale.ROOT) else id
+
+    private companion object {
+        val STABLE_LEGACY_ID = Regex("(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{16})")
+    }
 }

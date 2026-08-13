@@ -8,6 +8,7 @@ import com.balancesentinel.app.data.console.store.ConsoleStore
 import com.balancesentinel.app.data.credentials.CredentialStore
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
+import com.balancesentinel.app.data.refresh.RefreshMutationBarrier
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.widget.WidgetConfigStore
 import com.balancesentinel.app.widget.WidgetErrorLogger
@@ -83,16 +84,20 @@ class AppResetCoordinator internal constructor(
         AppResetCheckpointStore(context.applicationContext)
     )
 
-    suspend fun reset() = MUTEX.withLock {
-        withContext(Dispatchers.IO) {
-            checkpointStore.begin()
-            resumeLocked()
+    suspend fun reset() = RefreshMutationBarrier.withAccountMutation(null) {
+        MUTEX.withLock {
+            withContext(Dispatchers.IO) {
+                checkpointStore.begin()
+                resumeLocked()
+            }
         }
     }
 
-    suspend fun recoverIfNeeded() = MUTEX.withLock {
-        withContext(Dispatchers.IO) {
-            if (checkpointStore.current() != null) resumeLocked()
+    suspend fun recoverIfNeeded() = RefreshMutationBarrier.withAccountMutation(null) {
+        MUTEX.withLock {
+            withContext(Dispatchers.IO) {
+                if (checkpointStore.current() != null) resumeLocked()
+            }
         }
     }
 

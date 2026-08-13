@@ -13,6 +13,7 @@ import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.refresh.RefreshMutationBarrier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -46,39 +47,127 @@ class LegacyAccountMigration(
         now: () -> Long = { System.currentTimeMillis() }
     ) : this(database, source, credentialStore, now)
 
-    suspend fun run(): LegacyAccountMigrationResult = withContext(Dispatchers.IO) {
-        completedResult()?.let { return@withContext it }
-        val payload = discoverAndValidate() ?: return@withContext LegacyAccountMigrationResult(
-            LegacyAccountMigrationStage.DISCOVERED,
-            emptyList()
-        )
-        val operationId = operationId(payload)
-        val mappings = prepareOperation(operationId, payload)
-        val mappingsByLegacyId = mappings.associateBy { it.legacyStorageId }
-        val orderedMappings = payload.accounts.map { account ->
-            requireNotNull(mappingsByLegacyId[account.id.trim()]) {
-                "Migration manifest is missing legacy account ${account.id.trim()}"
+    suspend fun run(): LegacyAccountMigrationResult =
+        RefreshMutationBarrier.withAccountMutation(null) {
+            withContext(Dispatchers.IO) {
+                completedResult()?.let { return@withContext it }
+                val payload = discoverAndValidate() ?: return@withContext LegacyAccountMigrationResult(
+                    LegacyAccountMigrationStage.DISCOVERED,
+                    emptyList()
+                )
+                val operationId = operationId(payload)
+                val mappings = prepareOperation(operationId, payload)
+                val mappingsByLegacyId = mappings.associateBy { it.legacyStorageId }
+                val orderedMappings = payload.accounts.map { account ->
+                    requireNotNull(mappingsByLegacyId[canonicalLegacyId(account.id.trim())]) {
+                        "Migration manifest is missing legacy account ${account.id.trim()}"
+                    }
+                }
+
+                stageAndVerifyCredentials(payload)
+                advanceOperation(operationId, MutationStage.CREDENTIALS_STAGED, orderedMappings.size.toLong())
+                advanceMetadata(LegacyAccountMigrationStage.CREDENTIALS_STAGED)
+
+                writePendingRows(operationId, payload, orderedMappings)
+                advanceMetadata(LegacyAccountMigrationStage.ROOM_WRITTEN)
+
+                verifyRowsAndLedgers(operationId, orderedMappings)
+                onStage(LegacyAccountMigrationStage.VERIFIED)
+                LegacyAccountMigrationResult(LegacyAccountMigrationStage.VERIFIED, orderedMappings)
             }
         }
 
-        stageAndVerifyCredentials(payload)
-        advanceOperation(operationId, MutationStage.CREDENTIALS_STAGED, orderedMappings.size.toLong())
-        advanceMetadata(LegacyAccountMigrationStage.CREDENTIALS_STAGED)
-
-        writePendingRows(operationId, payload, orderedMappings)
-        advanceMetadata(LegacyAccountMigrationStage.ROOM_WRITTEN)
-
-        verifyRowsAndLedgers(operationId, orderedMappings)
-        onStage(LegacyAccountMigrationStage.VERIFIED)
-        LegacyAccountMigrationResult(LegacyAccountMigrationStage.VERIFIED, orderedMappings)
+    private suspend fun completedResult(): LegacyAccountMigrationResult? {
+        val operation = database.withTransaction {
+            database.mutationOperationDao().getCompletedLegacyAccountMigration()
+        } ?: return null
+        repairCompletedCredentialRevisions(operation)
+        return LegacyAccountMigrationResult(
+            stage = LegacyAccountMigrationStage.VERIFIED,
+            mappings = decodeMappings(operation.targetsJson)
+        )
     }
 
-    private suspend fun completedResult(): LegacyAccountMigrationResult? = database.withTransaction {
-        database.mutationOperationDao().getCompletedLegacyAccountMigration()?.let { operation ->
-            LegacyAccountMigrationResult(
-                stage = LegacyAccountMigrationStage.VERIFIED,
-                mappings = decodeMappings(operation.targetsJson)
-            )
+    /**
+     * Builds 682/early-683 accounts may have published Room revision zero
+     * while retaining a non-zero revision in the encrypted legacy payload.
+     * A completed operation used to short-circuit recovery forever, leaving
+     * the UI in Corrupt even though the account identity was otherwise valid.
+     * Only repair rows still owned by this migration generation; user edits
+     * use a different generation and must never be overwritten here.
+     */
+    private suspend fun repairCompletedCredentialRevisions(operation: MutationOperationEntity) {
+        val read = credentialStore.read()
+        if (read !is CredentialReadResult.Valid) return
+        val mappings = decodeMappings(operation.targetsJson)
+        val rows = database.accountDao().getAllForMigration().associateBy { it.id }
+        val mappingsByCredentialId = buildMap {
+            mappings.forEach { mapping ->
+                listOf(mapping.accountId, canonicalLegacyId(mapping.legacyStorageId)).distinct().forEach { id ->
+                    val previous = put(id, mapping)
+                    require(previous == null) {
+                        "Completed legacy migration contains duplicate credential id $id"
+                    }
+                }
+            }
+        }
+        data class RepairTarget(
+            val accountId: String,
+            val revision: Long,
+            val generation: String,
+            val legacyStorageId: String
+        )
+        val repairedRows = mutableListOf<RepairTarget>()
+        var changed = false
+        val repaired = read.payload.copy(
+            accounts = read.payload.accounts.map { account ->
+                val mapping = mappingsByCredentialId[canonicalLegacyId(account.id)]
+                val row = mapping?.let { rows[it.accountId] }
+                val normalizedId = when {
+                    mapping == null -> account.id
+                    account.id == mapping.accountId -> mapping.accountId
+                    canonicalLegacyId(account.id) == mapping.legacyStorageId -> mapping.legacyStorageId
+                    else -> account.id
+                }
+                if (
+                    mapping != null &&
+                    row != null &&
+                    row.state == AccountState.VERIFIED &&
+                    canonicalLegacyId(row.legacyStorageId.orEmpty()) == mapping.legacyStorageId &&
+                    row.activeCredentialGeneration == mapping.credentialGeneration &&
+                    row.activeCredentialGeneration.startsWith("legacy:") &&
+                    (account.revision != row.revision || account.id != normalizedId)
+                ) {
+                    changed = true
+                    repairedRows += RepairTarget(
+                        accountId = row.id,
+                        revision = row.revision,
+                        generation = row.activeCredentialGeneration,
+                        legacyStorageId = requireNotNull(row.legacyStorageId)
+                    )
+                    account.copy(id = normalizedId, revision = row.revision)
+                } else {
+                    account
+                }
+            }
+        )
+        if (!changed) return
+        repaired.validate()
+        credentialStore.write(repaired)
+        val readback = credentialStore.read()
+        require(readback is CredentialReadResult.Valid && readback.payload == repaired) {
+            "Repaired legacy credential revision readback does not match"
+        }
+        repairedRows.forEach { target ->
+            require(
+                database.accountDao().touchAfterCredentialRepair(
+                    id = target.accountId,
+                    expectedRevision = target.revision,
+                    expectedGeneration = target.generation,
+                    expectedLegacyStorageId = target.legacyStorageId,
+                    updatedAt = now()
+                ) == 1
+            ) { "Legacy account changed while repairing credential revision" }
         }
     }
 
@@ -119,7 +208,13 @@ class LegacyAccountMigration(
             .mapNotNull { account ->
                 account.legacyStorageId?.let { canonicalLegacyId(it) to account }
             }
-            .toMap()
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (legacyStorageId, accounts) ->
+                require(accounts.size == 1) {
+                    "Multiple Room accounts map to legacy id $legacyStorageId"
+                }
+                accounts.single()
+            }
         val mappings = payload.accounts.map { account ->
             val legacyStorageId = canonicalLegacyId(account.id.trim())
             existingByLegacyStorageId[legacyStorageId]?.let { existing ->
@@ -199,16 +294,15 @@ class LegacyAccountMigration(
                         )
                     )
                 } else {
-                    require(existing.legacyStorageId == mapping.legacyStorageId) {
+                    require(canonicalLegacyId(existing.legacyStorageId.orEmpty()) == mapping.legacyStorageId) {
                         "Persisted migration mapping does not match Room account ${mapping.accountId}"
                     }
                     if (AccountEntity.isLegacyOrphan(existing)) {
                         require(
                             database.accountDao().hydrateLegacyOrphan(
                                 id = existing.id,
-                                legacyStorageId = mapping.legacyStorageId,
-                                expectedOrphanGeneration =
-                                    AccountEntity.LEGACY_ORPHAN_GENERATION_PREFIX + mapping.legacyStorageId,
+                                legacyStorageId = requireNotNull(existing.legacyStorageId),
+                                expectedOrphanGeneration = existing.activeCredentialGeneration,
                                 displayOrder = index,
                                 label = account.label.trim(),
                                 providerType = account.providerType,
@@ -231,7 +325,7 @@ class LegacyAccountMigration(
         database.withTransaction {
             mappings.forEach { mapping ->
                 val row = requireNotNull(database.accountDao().get(mapping.accountId))
-                require(row.legacyStorageId == mapping.legacyStorageId)
+                require(canonicalLegacyId(row.legacyStorageId.orEmpty()) == mapping.legacyStorageId)
                 when (row.state) {
                     AccountState.PENDING -> markVerified(row.id)
                     AccountState.VERIFIED -> Unit

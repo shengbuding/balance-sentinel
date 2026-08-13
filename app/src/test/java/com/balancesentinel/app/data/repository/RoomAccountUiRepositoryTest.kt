@@ -68,6 +68,16 @@ class RoomAccountUiRepositoryTest {
     }
 
     @Test
+    fun `stable legacy ids reconcile without case sensitivity`() = withRepository(
+        validResult(payloadAccount().copy(id = "abcdef12")),
+        account = roomAccount().copy(legacyStorageId = "ABCDEF12")
+    ) { repository, _ ->
+        val state = repository.terminalState()
+        assertTrue(state is AccountLoadState.Ready)
+        assertEquals(ROOM_ID, (state as AccountLoadState.Ready).accounts.single().id)
+    }
+
+    @Test
     fun `fresh subscription recovers after credential payload becomes valid`() = withRepository(
         CredentialReadResult.Corrupt(DataCorruptionException("temporarily unreadable"))
     ) { repository, store ->
@@ -83,6 +93,7 @@ class RoomAccountUiRepositoryTest {
 
     private fun withRepository(
         initialResult: CredentialReadResult,
+        account: AccountEntity = roomAccount(),
         block: suspend (RoomAccountUiRepository, MutableCredentialStore) -> Unit
     ) = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -93,7 +104,7 @@ class RoomAccountUiRepositoryTest {
         val dispatcher = executor.asCoroutineDispatcher()
         val store = MutableCredentialStore(initialResult)
         try {
-            database.accountDao().insertCreate(roomAccount())
+            database.accountDao().insertCreate(account)
             val repository = RoomAccountUiRepository(
                 RoomAccountRepository(database),
                 store,

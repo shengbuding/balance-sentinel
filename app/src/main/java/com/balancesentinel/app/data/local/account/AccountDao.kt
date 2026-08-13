@@ -73,6 +73,30 @@ interface AccountDao {
         updatedAt: Long
     ): Int
 
+    /**
+     * Re-publish an already verified account after its external credential
+     * payload has been repaired. Keeping revision unchanged preserves the
+     * payload/Room consistency contract while the UPDATE invalidates Room
+     * observers.
+     */
+    @Query(
+        """
+        UPDATE accounts SET updated_at = :updatedAt
+        WHERE id = :id
+          AND state = 'VERIFIED'
+          AND revision = :expectedRevision
+          AND active_credential_generation = :expectedGeneration
+          AND legacy_storage_id = :expectedLegacyStorageId
+        """
+    )
+    suspend fun touchAfterCredentialRepair(
+        id: String,
+        expectedRevision: Long,
+        expectedGeneration: String,
+        expectedLegacyStorageId: String,
+        updatedAt: Long
+    ): Int
+
     @Query("DELETE FROM accounts WHERE id = :id AND revision = :expectedRevision")
     suspend fun deleteWhereRevision(id: String, expectedRevision: Long): Int
 }

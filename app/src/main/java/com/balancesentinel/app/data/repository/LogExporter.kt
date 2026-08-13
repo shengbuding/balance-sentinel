@@ -5,6 +5,8 @@ import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.credentials.CredentialReadResult
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import java.io.File
 import java.text.SimpleDateFormat
@@ -73,7 +75,13 @@ object LogExporter {
             sb.appendLine("  制造商     : ${android.os.Build.MANUFACTURER}")
             sb.appendLine("  型号       : ${android.os.Build.MODEL}")
             sb.appendLine("  Android    : ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
+            val appVersion = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull()
+            sb.appendLine("  App version : ${appVersion ?: "unknown"}")
             sb.appendLine()
+
+            appendAccountDiagnostics(context, sb)
 
             // ── 刷新日志 ──
             val entries = kotlinx.coroutines.runBlocking {
@@ -110,6 +118,40 @@ object LogExporter {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun appendAccountDiagnostics(context: Context, sb: StringBuilder) {
+        sb.appendLine("鈹€鈹€ Account consistency (metadata only) 鈹€鈹€")
+        runCatching {
+            val database = WalletDatabaseProvider.get(context)
+            val rows = kotlinx.coroutines.runBlocking {
+                database.accountDao().getAllForMigration()
+            }
+            sb.appendLine("  Room rows: ${rows.size}")
+            rows.forEach { row ->
+                sb.appendLine(
+                    "  Room account id=${row.id}, state=${row.state}, provider=${row.providerType}, " +
+                        "revision=${row.revision}, legacy=${row.legacyStorageId ?: "-"}, " +
+                        "generation=${row.activeCredentialGeneration.take(48)}"
+                )
+            }
+            when (val read = EncryptedPreferencesCredentialStore(context).read()) {
+                CredentialReadResult.Missing -> sb.appendLine("  Credential payload: MISSING")
+                is CredentialReadResult.Corrupt -> sb.appendLine("  Credential payload: CORRUPT")
+                is CredentialReadResult.Valid -> {
+                    sb.appendLine("  Credential payload: VALID accounts=${read.payload.accounts.size}")
+                    read.payload.accounts.forEach { account ->
+                        sb.appendLine(
+                            "  Credential account id=${account.id}, provider=${account.providerType}, " +
+                                "revision=${account.revision}"
+                        )
+                    }
+                }
+            }
+        }.onFailure { error ->
+            sb.appendLine("  Account diagnostics unavailable: ${error::class.simpleName ?: "unknown"}")
+        }
+        sb.appendLine()
     }
 
     /**

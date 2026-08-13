@@ -5,8 +5,11 @@ import androidx.test.core.app.ApplicationProvider
 import android.app.Application
 import androidx.room.Room
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import kotlinx.coroutines.runBlocking
@@ -79,6 +82,31 @@ class LogExporterTest {
         assertTrue(content.contains("设备信息"))
         assertTrue(content.contains("制造商"))
         assertTrue(content.contains("Android"))
+    }
+
+    @Test
+    fun `export file contains account consistency metadata without credentials`() = runBlocking {
+        database.accountDao().insertCreate(
+            AccountEntity(
+                id = "room-account",
+                displayOrder = 0,
+                label = "Private label",
+                providerType = ProviderType.DEEPSEEK,
+                activeCredentialGeneration = "legacy:operation:room-account",
+                revision = 3,
+                state = AccountState.VERIFIED,
+                legacyStorageId = "abcdef12",
+                createdAt = 1,
+                updatedAt = 1
+            )
+        )
+
+        val content = File(checkNotNull(LogExporter.export(context))).readText()
+
+        assertTrue(content.contains("Account consistency (metadata only)"))
+        assertTrue(content.contains("id=room-account"))
+        assertTrue(content.contains("revision=3"))
+        assertFalse(content.contains("Private label"))
     }
 
     @Test

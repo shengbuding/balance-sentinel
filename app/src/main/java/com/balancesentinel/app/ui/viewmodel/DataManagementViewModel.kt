@@ -6,11 +6,14 @@ import androidx.lifecycle.AndroidViewModel
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.CrashLogger
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.repository.ApiKeyManager
 import com.balancesentinel.app.data.repository.AppResetCoordinator
 import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.AccountMapper
 import com.balancesentinel.app.data.repository.AccountLifecycleManager
 import com.balancesentinel.app.data.repository.AccountMutationCoordinator
 import com.balancesentinel.app.data.repository.AccountUiRepository
@@ -426,7 +429,7 @@ class DataManagementViewModel @JvmOverloads constructor(
     }
 
     suspend fun exportConfiguration(uri: Uri, includeTokens: Boolean): Boolean {
-        val accounts = readyAccounts() ?: return false
+        val accounts = exportableAccounts(includeTokens) ?: return false
         return withContext(Dispatchers.IO) {
             val settings = SettingsRepositoryProvider.get(getApplication()).readSnapshot()
             ConfigManager.exportToUri(
@@ -437,6 +440,21 @@ class DataManagementViewModel @JvmOverloads constructor(
                 includeTokens
             )
         }
+    }
+
+    /**
+     * Configuration backup must remain available while account reconciliation
+     * is broken. Prefer the validated UI payload, then non-secret Room metadata
+     * for a credential-free export. Corrupt state never trusts legacy credentials: Room supplies the
+     * canonical account IDs and the only provider settings retained here are
+     * the non-secret values already published in provider_config_json.
+     */
+    private suspend fun exportableAccounts(includeTokens: Boolean): List<AccountInfo>? {
+        readyAccounts()?.let { return it }
+        if (includeTokens) return null
+        val rows = database.accountDao().getAllForMigration()
+            .filter { it.state == AccountState.VERIFIED }
+        return runCatching { rows.map(AccountMapper::toCredentialFreeAccount) }.getOrNull()
     }
 
     fun startHistoryExport(uri: Uri): String? = startHistoryOperation(
