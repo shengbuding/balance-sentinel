@@ -130,6 +130,53 @@ class LegacyDataMigrationTest {
     }
 
     @Test
+    fun uppercaseStableLegacyIdIsCanonicalizedBeforeVerification() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val uppercaseLegacyId = "1ABCDEF234567890"
+            val snapshot = LegacyDataSnapshot(
+                records = listOf(RawRecord(uppercaseLegacyId, 10, "USD", 1f, 0f, 1f)),
+                summaries = listOf(
+                    DailySummary(
+                        accountId = uppercaseLegacyId,
+                        date = "2026-08-13",
+                        currency = "usd",
+                        open = 1f,
+                        close = 0f,
+                        consumed = 1f,
+                        toppedUp = 0f,
+                        granted = 0f,
+                        avgBalance = 0.5f,
+                        sampleCount = 2,
+                        toppedUpBalanceClose = 0f,
+                        grantedBalanceClose = 0f,
+                        generatedAt = 11
+                    )
+                ),
+                usage = listOf(
+                    UsageSnapshot(
+                        accountId = uppercaseLegacyId,
+                        timestamp = 12,
+                        records = listOf(UsageRecord("deepseek-chat", 3, 1, 2))
+                    )
+                )
+            )
+
+            val result = LegacyDataMigration(db, retainingSource(snapshot)).run()
+
+            assertEquals(1L, result.records)
+            assertEquals(1L, result.summaries)
+            assertEquals(1L, result.usage)
+            val orphan = db.accountDao().getAllForMigration().single()
+            assertEquals("1abcdef234567890", orphan.legacyStorageId)
+            assertEquals(1L, db.historyDao().countMigrationRecords(legacyDataOperation(db).id))
+            assertEquals(1L, db.historyDao().countMigrationSummaries(legacyDataOperation(db).id))
+            assertEquals(1L, db.usageDao().countMigrationSnapshots(legacyDataOperation(db).id))
+        } finally { db.close() }
+    }
+
+    @Test
     fun cleanupExceptionPersistsFailedAndDoesNotReportCleaned() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()

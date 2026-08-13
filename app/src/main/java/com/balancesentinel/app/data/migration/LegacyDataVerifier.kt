@@ -39,6 +39,7 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
     companion object {
         private const val MANIFEST_VERSION = 2
         private const val VERIFY_BATCH_SIZE = 500
+        private val STABLE_LEGACY_ID = Regex("(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{16})")
     }
 
     suspend fun verify(
@@ -306,6 +307,10 @@ class LegacyDataVerifier(private val database: WalletDatabase) {
     ).toString()
 
     private fun requireMapping(legacyId: String, mappings: Map<String, String>): String =
-        mappings[legacyId]?.also { UUID.fromString(it) }
+        (mappings[legacyId] ?: mappings[canonicalLegacyId(legacyId)])
+            ?.also { UUID.fromString(it) }
             ?: error("No stable account mapping for legacy id $legacyId")
+
+    private fun canonicalLegacyId(legacyId: String): String =
+        if (STABLE_LEGACY_ID.matches(legacyId)) legacyId.lowercase(Locale.ROOT) else legacyId
 }
