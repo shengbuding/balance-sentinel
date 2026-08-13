@@ -48,4 +48,17 @@ data class AccountEntity(
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long
-)
+) {
+    companion object {
+        const val LEGACY_ORPHAN_GENERATION_PREFIX = "legacy-orphan:"
+
+        fun isLegacyOrphan(account: AccountEntity): Boolean =
+            account.state == AccountState.PENDING &&
+                account.revision == 0L &&
+                account.legacyStorageId?.let { legacyStorageId ->
+                    legacyStorageId.isNotBlank() &&
+                        account.activeCredentialGeneration ==
+                        LEGACY_ORPHAN_GENERATION_PREFIX + legacyStorageId
+                } == true
+    }
+}

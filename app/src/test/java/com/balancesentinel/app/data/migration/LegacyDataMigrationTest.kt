@@ -21,7 +21,9 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -79,6 +81,51 @@ class LegacyDataMigrationTest {
             }
             assertTrue(runCatching { LegacyDataMigration(db, source).run() }.isFailure)
             assertEquals(0, db.historyDao().countLegacyRecords())
+        } finally { db.close() }
+    }
+
+    @Test
+    fun stableOrphanLegacyAccountIdGetsHiddenRoomMapping() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val orphanLegacyId = "1ac8657256cd4df2"
+            val source = retainingSource(
+                LegacyDataSnapshot(
+                    records = listOf(RawRecord(orphanLegacyId, 10, "USD", 1f, 0f, 1f))
+                )
+            )
+
+            val result = LegacyDataMigration(db, source).run()
+
+            assertEquals(1L, result.records)
+            val orphan = db.accountDao().getAllForMigration().single { it.legacyStorageId == orphanLegacyId }
+            assertEquals(AccountState.PENDING, orphan.state)
+            assertTrue(orphan.id.matches(Regex("[0-9a-f-]{36}")))
+            assertEquals(1L, queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE account_id = '${orphan.id}'"))
+
+            val operation = legacyDataOperation(db)
+            val originalManifest = Json.decodeFromString<LegacyMigrationManifest>(operation.targetsJson)
+            val uppercaseLegacyId = orphanLegacyId.uppercase()
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE mutation_operations SET targets_json = ? WHERE id = ?",
+                arrayOf(
+                    Json.encodeToString(
+                        originalManifest.copy(mappings = mapOf(uppercaseLegacyId to orphan.id))
+                    ),
+                    operation.id
+                )
+            )
+
+            LegacyDataMigration(db, source).run()
+            val rerunOrphan = db.accountDao().getAllForMigration().single { it.legacyStorageId == orphanLegacyId }
+            val repairedManifest = Json.decodeFromString<LegacyMigrationManifest>(
+                requireNotNull(db.mutationOperationDao().get(operation.id)).targetsJson
+            )
+            assertEquals(orphan.id, rerunOrphan.id)
+            assertEquals(mapOf(orphanLegacyId to orphan.id), repairedManifest.mappings)
+            assertEquals(1L, queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE account_id = '${orphan.id}'"))
+            assertTrue(db.accountDao().observeVerified().first().none { it.id == orphan.id })
         } finally { db.close() }
     }
 
@@ -253,6 +300,44 @@ class LegacyDataMigrationTest {
                     "SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = '${operation.id}'"
                 )
             )
+        } finally { db.close() }
+    }
+
+    @Test
+    fun incompleteV2ManifestRepairsMappingsWithoutResettingProgress() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val accountId = "550e8400-e29b-41d4-a716-446655440016"
+            insertLegacyAccount(db, accountId)
+            val snapshot = LegacyDataSnapshot(
+                records = listOf(RawRecord("legacy", 41, "USD", 7f, 2f, 5f))
+            )
+            val source = retainingSource(snapshot)
+            LegacyDataMigration(db, source).run()
+            val operation = legacyDataOperation(db)
+            val original = Json.decodeFromString<LegacyMigrationManifest>(operation.targetsJson)
+            db.openHelper.writableDatabase.execSQL(
+                """
+                UPDATE mutation_operations
+                SET targets_json = ?, manifest_version = 2,
+                    stage = 'ROOM_WRITTEN', batch_cursor = 1
+                WHERE id = ?
+                """.trimIndent(),
+                arrayOf("{\"version\":2,\"mappings\":{\"legacy\":\"$accountId\"}}", operation.id)
+            )
+
+            LegacyDataMigration(db, source).run()
+
+            val repairedOperation = requireNotNull(db.mutationOperationDao().get(operation.id))
+            val repaired = Json.decodeFromString<LegacyMigrationManifest>(repairedOperation.targetsJson)
+            assertEquals(original.baselineLegacyRecordCount, repaired.baselineLegacyRecordCount)
+            assertEquals(original.baselineSummaryCount, repaired.baselineSummaryCount)
+            assertEquals(original.baselineUsageCount, repaired.baselineUsageCount)
+            assertEquals(original.baselineLogCount, repaired.baselineLogCount)
+            assertEquals(original.expectedRecordCount, repaired.expectedRecordCount)
+            assertEquals(1L, repairedOperation.batchCursor)
+            assertEquals(1L, queryLong(db, "SELECT COUNT(*) FROM balance_records WHERE migration_operation_id = '${operation.id}'"))
         } finally { db.close() }
     }
 

@@ -121,6 +121,28 @@ interface MutationOperationDao {
     @Query(
         """
         UPDATE mutation_operations SET
+            targets_json = :newTargetsJson,
+            updated_at = :updatedAt
+        WHERE id = :id
+          AND targets_json = :expectedTargetsJson
+          AND manifest_version = :expectedManifestVersion
+          AND stage = :expectedStage
+          AND batch_cursor = :expectedBatchCursor
+        """
+    )
+    suspend fun replaceLegacyDataTargetsIfCurrent(
+        id: String,
+        expectedTargetsJson: String,
+        expectedManifestVersion: Int,
+        expectedStage: MutationStage,
+        expectedBatchCursor: Long,
+        newTargetsJson: String,
+        updatedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE mutation_operations SET
             stage = 'PUBLISHED', published_at = :publishedAt, updated_at = :publishedAt
         WHERE id = :id AND stage NOT IN ('PUBLISHED', 'COMPLETED', 'FAILED')
         """

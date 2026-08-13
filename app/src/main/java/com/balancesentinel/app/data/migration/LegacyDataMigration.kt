@@ -1,7 +1,10 @@
 package com.balancesentinel.app.data.migration
 
 import androidx.room.withTransaction
+import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.local.WalletDatabase
+import com.balancesentinel.app.data.local.account.AccountEntity
+import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.history.DailySummaryEntity
@@ -37,6 +40,9 @@ class LegacyDataMigration(
         const val BATCH_SIZE = 500
         private const val MANIFEST_VERSION = 2
         private const val READ_FAILURE_OPERATION = "legacy-data-read-failure"
+        private const val ORPHAN_ACCOUNT_NAMESPACE = "wallet-sentinel:orphan-legacy-account:v1|"
+        private const val ORPHAN_ACCOUNT_LABEL = "Recovered legacy history"
+        private val STABLE_LEGACY_ID = Regex("(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{16})")
     }
 
     suspend fun run(): LegacyDataVerification = withContext(Dispatchers.IO) {
@@ -91,9 +97,41 @@ class LegacyDataMigration(
                 existing.manifestVersion == MANIFEST_VERSION &&
                 stored.version == MANIFEST_VERSION
             ) {
-                stored
+                val mappings = ensureMappingsInsideTransaction(snapshot, stored.mappings)
+                val generated = createManifest(snapshot, mappings, id)
+                val repaired = stored.copy(
+                    mappings = mappings,
+                    baselineLegacyRecordCount = stored.baselineLegacyRecordCount,
+                    baselineLegacyRecordMaxId = stored.baselineLegacyRecordMaxId,
+                    baselineSummaryCount = stored.baselineSummaryCount,
+                    baselineUsageCount = stored.baselineUsageCount,
+                    baselineLogCount = stored.baselineLogCount,
+                    expectedRecordCount = generated.expectedRecordCount,
+                    expectedSummaryCount = generated.expectedSummaryCount,
+                    expectedUsageCount = generated.expectedUsageCount,
+                    expectedUsageRecordCount = generated.expectedUsageRecordCount,
+                    expectedLogCount = generated.expectedLogCount,
+                    expectedSummaryKeys = generated.expectedSummaryKeys,
+                    expectedUsageIds = generated.expectedUsageIds,
+                    expectedLogIds = generated.expectedLogIds
+                )
+                if (repaired != stored) {
+                    require(
+                        database.mutationOperationDao().replaceLegacyDataTargetsIfCurrent(
+                            id = id,
+                            expectedTargetsJson = existing.targetsJson,
+                            expectedManifestVersion = existing.manifestVersion,
+                            expectedStage = existing.stage,
+                            expectedBatchCursor = existing.batchCursor,
+                            newTargetsJson = Json.encodeToString(repaired),
+                            updatedAt = now()
+                        ) == 1
+                    ) { "Legacy migration manifest changed concurrently" }
+                }
+                repaired
             } else {
-                val upgraded = createManifest(snapshot, stored.mappings, id)
+                val mappings = ensureMappingsInsideTransaction(snapshot, stored.mappings)
+                val upgraded = createManifest(snapshot, mappings, id)
                 require(
                     database.mutationOperationDao().upgradeLegacyDataManifestIfCurrent(
                         id = id,
@@ -125,10 +163,7 @@ class LegacyDataMigration(
             return@withTransaction manifest
         }
 
-        val accounts = database.accountDao().getAllForMigration()
-        val mappings = accounts.mapNotNull { account ->
-            account.legacyStorageId?.let { it to account.id }
-        }.toMap()
+        val mappings = ensureMappingsInsideTransaction(snapshot, emptyMap())
         database.appMetadataDao().ensureSingleton(now())
         val metadata = requireNotNull(database.appMetadataDao().get())
         val manifest = createManifest(snapshot, mappings, id)
@@ -145,6 +180,99 @@ class LegacyDataMigration(
         )
         manifest
     }
+
+    /**
+     * Account-id migration can commit the account JSON before the legacy stores
+     * are rewritten. On the next process start those stores may still contain a
+     * valid deterministic account id that no longer has an active credential row.
+     * Keep that history attached to a hidden Room placeholder instead of
+     * assigning it to an unrelated account or blocking all migration.
+     */
+    private suspend fun ensureMappingsInsideTransaction(
+        snapshot: LegacyDataSnapshot,
+        storedMappings: Map<String, String>
+    ): Map<String, String> {
+        val accounts = database.accountDao().getAllForMigration()
+        val mappings = mutableMapOf<String, String>()
+        val storedByCanonicalId = mutableMapOf<String, String>()
+        storedMappings.forEach { (legacyId, accountId) ->
+            UUID.fromString(accountId)
+            val canonicalId = canonicalLegacyId(legacyId)
+            val previous = storedByCanonicalId.putIfAbsent(canonicalId, accountId)
+            require(previous == null || previous == accountId) {
+                "Conflicting stored mappings for legacy id $legacyId"
+            }
+            mappings[canonicalId] = accountId
+        }
+
+        val accountsByCanonicalId = mutableMapOf<String, AccountEntity>()
+        accounts.forEach { account ->
+            val legacyId = account.legacyStorageId ?: return@forEach
+            val canonicalId = canonicalLegacyId(legacyId)
+            val previous = accountsByCanonicalId.putIfAbsent(canonicalId, account)
+            require(previous == null || previous.id == account.id) {
+                "Conflicting Room mappings for legacy id $legacyId"
+            }
+        }
+        var nextDisplayOrder = (accounts.maxOfOrNull { it.displayOrder } ?: -1) + 1
+
+        referencedAccountIds(snapshot).forEach { legacyId ->
+            val canonicalId = canonicalLegacyId(legacyId)
+            val storedAccountId = storedByCanonicalId[canonicalId]
+            val roomAccount = accountsByCanonicalId[canonicalId]
+            require(storedAccountId == null || roomAccount == null || storedAccountId == roomAccount.id) {
+                "Stored mapping conflicts with Room account for legacy id $legacyId"
+            }
+            val accountId = storedAccountId ?: roomAccount?.id ?: run {
+                require(STABLE_LEGACY_ID.matches(legacyId)) {
+                    "No stable account mapping for legacy id $legacyId"
+                }
+                orphanAccountId(canonicalId)
+            }
+
+            val existing = database.accountDao().get(accountId)
+            if (existing == null) {
+                val persistedLegacyId = canonicalId
+                database.accountDao().insertCreate(
+                    AccountEntity(
+                        id = accountId,
+                        displayOrder = nextDisplayOrder++,
+                        label = ORPHAN_ACCOUNT_LABEL,
+                        providerType = ProviderType.DEEPSEEK,
+                        providerConfigJson = "{}",
+                        activeCredentialGeneration =
+                            AccountEntity.LEGACY_ORPHAN_GENERATION_PREFIX + persistedLegacyId,
+                        state = AccountState.PENDING,
+                        legacyStorageId = persistedLegacyId,
+                        createdAt = now(),
+                        updatedAt = now()
+                    )
+                )
+                accountsByCanonicalId[canonicalId] = requireNotNull(database.accountDao().get(accountId))
+            } else {
+                require(existing.legacyStorageId?.let(::canonicalLegacyId) == canonicalId) {
+                    "Legacy account id collision for $legacyId"
+                }
+            }
+            mappings[canonicalId] = accountId
+            storedByCanonicalId[canonicalId] = accountId
+        }
+        return mappings
+    }
+
+    private fun referencedAccountIds(snapshot: LegacyDataSnapshot): List<String> =
+        (snapshot.records.map { it.accountId } +
+            snapshot.summaries.map { it.accountId } +
+            snapshot.usage.map { it.accountId })
+            .distinct()
+
+    private fun canonicalLegacyId(legacyId: String): String =
+        if (STABLE_LEGACY_ID.matches(legacyId)) legacyId.lowercase(Locale.ROOT) else legacyId
+
+    private fun orphanAccountId(canonicalLegacyId: String): String = UUID.nameUUIDFromBytes(
+        (ORPHAN_ACCOUNT_NAMESPACE + canonicalLegacyId)
+            .toByteArray(StandardCharsets.UTF_8)
+    ).toString()
 
     private suspend fun createManifest(
         snapshot: LegacyDataSnapshot,
@@ -165,14 +293,25 @@ class LegacyDataMigration(
             expectedUsageCount = snapshot.usage.size,
             expectedUsageRecordCount = snapshot.usage.sumOf { it.records.size },
             expectedLogCount = snapshot.logs.size,
-            expectedSummaryKeys = snapshot.summaries.map {
-                summaryKey(it.date, requireMapping(it.accountId, mappings), it.currency)
-            },
-            expectedUsageIds = snapshot.usage.mapIndexed { ordinal, usage ->
-                usageId(usage, mappings, operationId, ordinal)
-            },
+            expectedSummaryKeys = expectedSummaryKeys(snapshot, mappings),
+            expectedUsageIds = expectedUsageIds(snapshot, mappings, operationId),
             expectedLogIds = snapshot.logs.map { it.id }
         )
+    }
+
+    private fun expectedSummaryKeys(
+        snapshot: LegacyDataSnapshot,
+        mappings: Map<String, String>
+    ): List<String> = snapshot.summaries.map {
+        summaryKey(it.date, requireMapping(it.accountId, mappings), it.currency)
+    }
+
+    private fun expectedUsageIds(
+        snapshot: LegacyDataSnapshot,
+        mappings: Map<String, String>,
+        operationId: String
+    ): List<String> = snapshot.usage.mapIndexed { ordinal, usage ->
+        usageId(usage, mappings, operationId, ordinal)
     }
 
     private fun decodeStoredManifest(json: String, manifestVersion: Int): LegacyMigrationManifest {
@@ -416,7 +555,8 @@ class LegacyDataMigration(
     }
 
     private fun requireMapping(legacyId: String, mappings: Map<String, String>): String =
-        mappings[legacyId]?.also { UUID.fromString(it) }
+        (mappings[legacyId] ?: mappings[canonicalLegacyId(legacyId)])
+            ?.also { UUID.fromString(it) }
             ?: error("No stable account mapping for legacy id $legacyId")
 
     private suspend fun recordReadFailure(error: Exception) {

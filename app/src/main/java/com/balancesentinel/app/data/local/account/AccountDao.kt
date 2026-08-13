@@ -45,6 +45,34 @@ interface AccountDao {
         updatedAt: Long
     ): Int
 
+    @Query(
+        """
+        UPDATE accounts SET
+            display_order = :displayOrder,
+            label = :label,
+            provider_type = :providerType,
+            provider_config_json = :providerConfigJson,
+            active_credential_generation = :activeCredentialGeneration,
+            updated_at = :updatedAt
+        WHERE id = :id
+          AND state = 'PENDING'
+          AND revision = 0
+          AND legacy_storage_id = :legacyStorageId
+          AND active_credential_generation = :expectedOrphanGeneration
+        """
+    )
+    suspend fun hydrateLegacyOrphan(
+        id: String,
+        legacyStorageId: String,
+        expectedOrphanGeneration: String,
+        displayOrder: Int,
+        label: String,
+        providerType: ProviderType,
+        providerConfigJson: String,
+        activeCredentialGeneration: String,
+        updatedAt: Long
+    ): Int
+
     @Query("DELETE FROM accounts WHERE id = :id AND revision = :expectedRevision")
     suspend fun deleteWhereRevision(id: String, expectedRevision: Long): Int
 }

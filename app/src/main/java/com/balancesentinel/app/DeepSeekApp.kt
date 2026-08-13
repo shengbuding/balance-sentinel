@@ -25,6 +25,7 @@ import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.util.Logger
 import com.balancesentinel.app.data.repository.DailySummaryStore
 import com.balancesentinel.app.data.repository.RawRecordStore
+import com.balancesentinel.app.data.repository.UsageDataStore
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.data.repository.LegacySettingsMigration
 import com.balancesentinel.app.data.repository.SettingsRepository
@@ -235,13 +236,13 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             try {
                 legacyMigrationRunner()
                 configImportRecoveryRunner()
+                accountMutationRecoveryRunner()
                 legacyDataMigrationRunner()
                 settingsMigrationRunner()
                 WidgetPrefs(this@DeepSeekApp).apply {
                     cleanupInvalidEntries()
                     cleanupLegacyIdData()
                 }
-                accountMutationRecoveryRunner()
             } catch (error: DataCorruptionException) {
                 credentialCorruption = error
                 CrashLogger.breadcrumb("App", "Credential corruption blocked Room migration")
@@ -297,6 +298,7 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             // 迁移关联数据
             RawRecordStore.migrateAccountIds(this, migrationMap)
             DailySummaryStore.migrateAccountIds(this, migrationMap)
+            UsageDataStore.migrateAccountIds(this, migrationMap)
             BalanceWidgetDataStore.migrateAccountIds(this, migrationMap)
 
             CrashLogger.breadcrumb("App", "Account ID migration complete")

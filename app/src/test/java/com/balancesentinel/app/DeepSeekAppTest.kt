@@ -37,6 +37,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
@@ -172,15 +173,36 @@ class DeepSeekAppTest {
     }
 
     @Test
-    fun `startup invokes account mutation recovery after migration`() {
+    fun `startup recovers account mutations before a failing legacy data migration`() = runBlocking {
         val app = context as DeepSeekApp
-        val invoked = CountDownLatch(1)
+        app.cancelStartupMigrationsForTests()
+
+        val recoveryRan = AtomicBoolean(false)
+        val recoveryObservedAtLegacyFailure = AtomicBoolean(false)
+        val legacyFailureThrown = CountDownLatch(1)
+
         app.legacyMigrationRunner = { }
-        app.accountMutationRecoveryRunner = { invoked.countDown() }
+        app.configImportRecoveryRunner = { }
+        app.accountMutationRecoveryRunner = { recoveryRan.set(true) }
+        app.legacyDataMigrationRunner = {
+            recoveryObservedAtLegacyFailure.set(recoveryRan.get())
+            try {
+                throw IllegalStateException("injected legacy data migration failure")
+            } finally {
+                legacyFailureThrown.countDown()
+            }
+        }
 
         app.launchLegacyAccountMigration()
 
-        assertTrue("DeepSeekApp startup must launch account mutation recovery", invoked.await(10, TimeUnit.SECONDS))
+        assertTrue(
+            "legacy data migration failure was not reached",
+            legacyFailureThrown.await(2, TimeUnit.SECONDS)
+        )
+        assertTrue(
+            "account mutation recovery must run before legacy data migration throws",
+            recoveryObservedAtLegacyFailure.get()
+        )
     }
 
     @Test

@@ -11,6 +11,8 @@ import com.balancesentinel.app.data.credentials.CredentialStore
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
+import com.balancesentinel.app.data.local.history.BalanceRecordEntity
+import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
@@ -185,6 +187,69 @@ class ConfigImportCoordinatorTest {
             assertTrue(database.mutationOperationDao().listRecoverableByType(
                 com.balancesentinel.app.data.local.mutation.MutationOperationType.CONFIG_IMPORT
             ).isEmpty())
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            widgetPrefs.resetAll()
+        }
+    }
+
+    @Test
+    fun `replace all preserves hidden legacy orphan and its migrated history`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        val prefs = context.getSharedPreferences("config-import-${System.nanoTime()}", Context.MODE_PRIVATE)
+        val manager = ApiKeyManager(context, prefs)
+        val widgetPrefs = WidgetPrefs(context)
+        val settingsRepository = RoomSettingsRepository(database)
+        val credentialStore = RecordingCredentialStore()
+        val coordinator = RoomConfigImportCoordinator(database, credentialStore, settingsRepository)
+        val planner = BackupImportPlanner(manager, widgetPrefs, settingsRepository, coordinator)
+        val legacyId = "1ac8657256cd4df2"
+        val orphanId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val operationId = "legacy-orphan-preservation"
+        val imported = AccountInfo(NEW_ACCOUNT_ID, "Imported", NEW_SECRET)
+
+        try {
+            database.accountDao().insertCreate(
+                AccountEntity(
+                    id = orphanId,
+                    displayOrder = 0,
+                    label = "Recovered legacy history",
+                    providerType = ProviderType.DEEPSEEK,
+                    providerConfigJson = "{}",
+                    activeCredentialGeneration = AccountEntity.LEGACY_ORPHAN_GENERATION_PREFIX + legacyId,
+                    state = AccountState.PENDING,
+                    legacyStorageId = legacyId,
+                    createdAt = 1L,
+                    updatedAt = 1L
+                )
+            )
+            database.historyDao().insertBalanceBatch(
+                listOf(
+                    BalanceRecordEntity(
+                        accountId = orphanId,
+                        currency = "USD",
+                        recordedAt = 10L,
+                        totalBalance = 5.0,
+                        source = BalanceRecordSource.LEGACY_MIGRATION,
+                        migrationOperationId = operationId,
+                        migrationSourceOrdinal = 0
+                    )
+                )
+            )
+            val plan = planner.plan(
+                config(accounts = listOf(imported)),
+                emptyList(),
+                ImportMode.REPLACE_ALL
+            )
+
+            planner.applyAsync(plan, confirmedFullReplace = true)
+
+            val orphan = requireNotNull(database.accountDao().get(orphanId))
+            assertEquals(AccountState.PENDING, orphan.state)
+            assertEquals(1L, database.historyDao().countMigrationRecords(operationId))
+            assertEquals(listOf(NEW_ACCOUNT_ID), credentialStore.payload.accounts.map { it.id })
         } finally {
             database.close()
             prefs.edit().clear().commit()

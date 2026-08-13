@@ -20,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.UUID
 
 fun interface LegacyAccountReader {
@@ -93,9 +94,14 @@ class LegacyAccountMigration(
             }
             is CredentialReadResult.Valid -> {
                 advanceMetadata(LegacyAccountMigrationStage.DISCOVERED)
-                read.payload.validate()
+                val normalized = read.payload.copy(
+                    accounts = read.payload.accounts.map { account ->
+                        account.copy(id = canonicalLegacyId(account.id.trim()))
+                    }
+                )
+                normalized.validate()
                 advanceMetadata(LegacyAccountMigrationStage.VALIDATED)
-                read.payload
+                normalized
             }
         }
     }
@@ -110,15 +116,21 @@ class LegacyAccountMigration(
         database.appMetadataDao().ensureSingleton(now())
         val metadata = requireNotNull(database.appMetadataDao().get())
         val existingByLegacyStorageId = database.accountDao().getAllForMigration()
-            .mapNotNull { account -> account.legacyStorageId?.let { it to account } }
+            .mapNotNull { account ->
+                account.legacyStorageId?.let { canonicalLegacyId(it) to account }
+            }
             .toMap()
         val mappings = payload.accounts.map { account ->
-            val legacyStorageId = account.id.trim()
+            val legacyStorageId = canonicalLegacyId(account.id.trim())
             existingByLegacyStorageId[legacyStorageId]?.let { existing ->
                 LegacyAccountMapping(
                     legacyStorageId = legacyStorageId,
                     accountId = existing.id,
-                    credentialGeneration = existing.activeCredentialGeneration
+                    credentialGeneration = if (AccountEntity.isLegacyOrphan(existing)) {
+                        "legacy:$operationId:${existing.id}"
+                    } else {
+                        existing.activeCredentialGeneration
+                    }
                 )
             } ?: run {
                 val accountId = UUID.randomUUID().toString()
@@ -145,7 +157,10 @@ class LegacyAccountMigration(
     }
 
     private suspend fun stageAndVerifyCredentials(payload: CredentialPayload) {
-        credentialStore.write(payload)
+        val normalizedPayload = payload.copy(
+            accounts = payload.accounts.map { it.copy(revision = 0) }
+        )
+        credentialStore.write(normalizedPayload)
         val readback = credentialStore.read()
         require(readback is CredentialReadResult.Valid) {
             "Staged legacy credentials are missing or corrupt"
@@ -153,7 +168,7 @@ class LegacyAccountMigration(
         require(readback.generation == CredentialGeneration.ENCRYPTED_PREFERENCES) {
             "Staged legacy credentials were read from the wrong generation"
         }
-        require(readback.payload == payload) {
+        require(readback.payload == normalizedPayload) {
             "Staged legacy credential readback does not match the source"
         }
         readback.payload.validate()
@@ -186,6 +201,22 @@ class LegacyAccountMigration(
                 } else {
                     require(existing.legacyStorageId == mapping.legacyStorageId) {
                         "Persisted migration mapping does not match Room account ${mapping.accountId}"
+                    }
+                    if (AccountEntity.isLegacyOrphan(existing)) {
+                        require(
+                            database.accountDao().hydrateLegacyOrphan(
+                                id = existing.id,
+                                legacyStorageId = mapping.legacyStorageId,
+                                expectedOrphanGeneration =
+                                    AccountEntity.LEGACY_ORPHAN_GENERATION_PREFIX + mapping.legacyStorageId,
+                                displayOrder = index,
+                                label = account.label.trim(),
+                                providerType = account.providerType,
+                                providerConfigJson = providerConfig(account),
+                                activeCredentialGeneration = mapping.credentialGeneration,
+                                updatedAt = now()
+                            ) == 1
+                        ) { "Legacy orphan account changed concurrently" }
                     }
                 }
             }
@@ -285,6 +316,13 @@ class LegacyAccountMigration(
 
     private fun decodeMappings(json: String): List<LegacyAccountMapping> =
         Json.decodeFromString(json)
+
+    private fun canonicalLegacyId(id: String): String =
+        if (STABLE_LEGACY_ID.matches(id)) id.lowercase(Locale.ROOT) else id
+
+    private companion object {
+        private val STABLE_LEGACY_ID = Regex("(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{16})")
+    }
 
     private fun providerConfig(account: AccountInfo): String = buildJsonObject {
         account.extraSettings.forEach { (key, value) -> put(key, value) }

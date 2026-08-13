@@ -115,7 +115,7 @@ class RoomConfigImportCoordinator(
         val desiredAccounts = plan.finalAccounts.map { account ->
             account.copy(revision = rowsById[account.id]?.revision?.plus(1) ?: 0L)
         }
-        val rollbackPayload = readCredentialPayload(currentRows.isEmpty())
+        val rollbackPayload = readCredentialPayload(currentRows.none { it.state == AccountState.VERIFIED })
         val operationId = UUID.randomUUID().toString()
         val manifest = ConfigImportManifest(
             desiredPayload = CredentialPayload(desiredAccounts),
@@ -262,7 +262,9 @@ class RoomConfigImportCoordinator(
                     )
                 }
             }
-            currentRows.filter { it.id !in desiredIds }.forEach { row ->
+            currentRows
+                .filter { it.id !in desiredIds && !AccountEntity.isLegacyOrphan(it) }
+                .forEach { row ->
                 add(AccountMutation.Delete(row.id, row.revision))
             }
         }

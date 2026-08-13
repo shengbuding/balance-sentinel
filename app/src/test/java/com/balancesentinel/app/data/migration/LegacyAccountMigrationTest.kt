@@ -12,6 +12,9 @@ import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -50,6 +53,37 @@ class LegacyAccountMigrationTest {
             val operation = database.mutationOperationDao().listRecoverable().single()
             assertEquals(MutationStage.VERIFIED, operation.stage)
             assertTrue(operation.stagedGenerationManifestJson.contains(first.mappings.single().credentialGeneration))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun legacyCredentialRevisionIsNormalizedToNewRoomMetadata() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
+        try {
+            val account = AccountInfo(
+                id = "legacy-id",
+                label = "Legacy",
+                apiKey = "key-before",
+                providerType = ProviderType.DEEPSEEK,
+                revision = 7L
+            )
+            val store = RecordingCredentialStore()
+
+            val result = LegacyAccountMigration(database, validReader(account), store).run()
+
+            val row = requireNotNull(database.accountDao().get(result.mappings.single().accountId))
+            assertEquals(0L, row.revision)
+            val staged = (store.read() as CredentialReadResult.Valid).payload.accounts.single()
+            assertEquals(0L, staged.revision)
+
+            val state = RoomAccountUiRepository(RoomAccountRepository(database), store)
+                .observe()
+                .first { it !is AccountLoadState.Loading }
+            assertTrue(state is AccountLoadState.Ready)
+            assertEquals(row.id, (state as AccountLoadState.Ready).accounts.single().id)
         } finally {
             database.close()
         }
