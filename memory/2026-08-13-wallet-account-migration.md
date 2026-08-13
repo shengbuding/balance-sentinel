@@ -97,3 +97,27 @@ scope and can briefly expose an empty VERIFIED flow. It did not correspond to
 ## Final status
 
 DONE. The fix is committed on `master`; no push was performed.
+
+## Final follow-up (2026-08-14)
+
+The remaining account-corruption symptom was traced to completed legacy account
+migration metadata drift: Room kept a verified account at revision `0` while
+the encrypted credential payload retained the old non-zero revision. Repairing
+the payload alone was insufficient because the existing Room observer did not
+re-read it. Build 685 therefore performs the repair only for rows still owned
+by the legacy migration generation, then executes a revision-preserving
+`accounts.updated_at` update so the observable Room table emits again.
+
+Build 685 also permits a credential-free configuration export while account
+reconciliation is corrupt. It reconstructs verified accounts from Room
+metadata, omits credentials/scripts/grants, and still blocks token-inclusive
+export. Empty-account exports retain global settings. Debug reports include
+only non-secret account consistency metadata.
+
+Verification on the retained-data emulator used `versionCode=685`,
+`v1.4.2-496-g0a43e2e`: the home screen recovered one account, historical Room
+rows remained present, no new migration/account-corruption exception appeared,
+and a real UI configuration export produced `credentialsIncluded=false` with
+an empty API key and no extra credentials. Full unit-test/lint/build gates
+recorded 1396 tests with 0 failures and 0 errors. The reported physical OnePlus
+has not been verified with build 685; its old attachments identify build 682.
