@@ -6,6 +6,10 @@ import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Widget 与 App 共享的余额缓存存储（多账户版）。
@@ -17,6 +21,7 @@ object BalanceWidgetDataStore {
     private const val TAG = "BalanceWidgetDataStore"
     private const val PREFS_NAME = "widget_balance_cache"
     private const val KEY_BALANCES = "account_balances"
+    private const val KEY_FAILURES = "account_balance_failures"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val STORE_LOCK = Any()
@@ -32,35 +37,63 @@ object BalanceWidgetDataStore {
         toppedUpBalance: String
     ) {
         synchronized(STORE_LOCK) {
-        val p = getPrefs(context)
-        val balances = getAllBalances(p).toMutableList()
-        val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
-        val entry = AccountBalance(
-            accountId = accountId,
-            label = label,
-            totalBalance = totalBalance,
-            currency = currency,
-            isAvailable = isAvailable,
-            grantedBalance = grantedBalance,
-            toppedUpBalance = toppedUpBalance,
-            lastUpdated = System.currentTimeMillis()
-        )
-        if (idx >= 0) balances[idx] = entry else balances.add(entry)
-        check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+            val p = getPrefs(context)
+            val balances = getAllBalances(p).toMutableList()
+            val idx = balances.indexOfFirst { it.accountId == accountId && it.currency == currency }
+            val entry = AccountBalance(
+                accountId = accountId,
+                label = label,
+                totalBalance = totalBalance,
+                currency = currency,
+                isAvailable = isAvailable,
+                grantedBalance = grantedBalance,
+                toppedUpBalance = toppedUpBalance,
+                lastUpdated = System.currentTimeMillis()
+            )
+            if (idx >= 0) balances[idx] = entry else balances.add(entry)
+            val failures = getFailures(p).filterNot { it.accountId == accountId }
+            check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances))
+                .putFailures(failures)
+                .commit())
         }
     }
 
     fun removeAccountBalance(context: Context, accountId: String) {
         synchronized(STORE_LOCK) {
-        val p = getPrefs(context)
-        val balances = getAllBalances(p).filter { it.accountId != accountId }
-        check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+            val p = getPrefs(context)
+            val balances = getAllBalances(p).filter { it.accountId != accountId }
+            val failures = getFailures(p).filterNot { it.accountId == accountId }
+            check(p.edit().putString(KEY_BALANCES, json.encodeToString(balances))
+                .putFailures(failures)
+                .commit())
         }
     }
 
     fun getAllBalances(context: Context): List<AccountBalance> = synchronized(STORE_LOCK) {
         getAllBalances(getPrefs(context))
     }
+
+    /** Current balance and failure state. The two lists are published atomically. */
+    fun getSnapshot(context: Context): BalanceCacheSnapshot = synchronized(STORE_LOCK) {
+        getSnapshot(getPrefs(context))
+    }
+
+    /**
+     * Observe the shared cache, including the current value immediately after subscription.
+     * SharedPreferences is sufficient here because all app components run in the default
+     * application process (there is no android:process split in the manifest).
+     */
+    fun observeSnapshot(context: Context): Flow<BalanceCacheSnapshot> = callbackFlow {
+        val prefs = getPrefs(context.applicationContext)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_BALANCES || key == KEY_FAILURES) {
+                trySend(getSnapshot(context.applicationContext))
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(getSnapshot(context.applicationContext))
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
 
     /** Bounded summary snapshot for UI/Widget consumers. */
     fun getSummaryBalances(context: Context): List<AccountBalance> = getAllBalances(context)
@@ -73,6 +106,27 @@ object BalanceWidgetDataStore {
             Logger.w(TAG, "Failed to parse widget balances: ${e.message}")
             emptyList()
         }
+    }
+
+    private fun getFailures(p: SharedPreferences): List<AccountBalanceFailure> {
+        val raw = p.getString(KEY_FAILURES, null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<AccountBalanceFailure>>(raw)
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to parse widget balance failures: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun getSnapshot(p: SharedPreferences): BalanceCacheSnapshot =
+        BalanceCacheSnapshot(getAllBalances(p), getFailures(p))
+
+    private fun SharedPreferences.Editor.putFailures(
+        failures: List<AccountBalanceFailure>
+    ): SharedPreferences.Editor = if (failures.isEmpty()) {
+        remove(KEY_FAILURES)
+    } else {
+        putString(KEY_FAILURES, json.encodeToString(failures))
     }
 
     /**
@@ -140,7 +194,7 @@ object BalanceWidgetDataStore {
     /** 清除所有缓存的账户余额。 */
     fun clearAll(context: Context) {
         synchronized(STORE_LOCK) {
-            check(getPrefs(context).edit().remove(KEY_BALANCES).commit())
+            check(getPrefs(context).edit().remove(KEY_BALANCES).remove(KEY_FAILURES).commit())
         }
     }
 
@@ -159,6 +213,7 @@ object BalanceWidgetDataStore {
             try {
                 val prefs = getPrefs(context)
                 val balances = getAllBalances(prefs).toMutableList()
+                val failures = getFailures(prefs).toMutableList()
                 var migrated = false
 
                 for (i in balances.indices) {
@@ -170,9 +225,18 @@ object BalanceWidgetDataStore {
                     }
                 }
 
+                for (i in failures.indices) {
+                    val failure = failures[i]
+                    val newId = migrationMap[failure.accountId]
+                    if (newId != null) {
+                        failures[i] = failure.copy(accountId = newId)
+                        migrated = true
+                    }
+                }
+
                 if (migrated) {
                     val serialized = json.encodeToString(balances)
-                    check(prefs.edit().putString(KEY_BALANCES, serialized).commit())
+                    check(prefs.edit().putString(KEY_BALANCES, serialized).putFailures(failures).commit())
                 }
             } catch (e: Exception) {
                 // Widget 数据迁移失败不影响主功能。
@@ -189,7 +253,10 @@ object BalanceWidgetDataStore {
         synchronized(STORE_LOCK) {
             val prefs = getPrefs(context)
             val balances = getAllBalances(prefs).filter { it.accountId != accountId } + replacements
-            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(balances)).commit())
+            val failures = getFailures(prefs).filterNot { it.accountId == accountId }
+            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(balances))
+                .putFailures(failures)
+                .commit())
         }
     }
 
@@ -205,7 +272,15 @@ object BalanceWidgetDataStore {
                     balance
                 }
             }
-            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(projected)).commit())
+            val failures = getFailures(prefs).filterNot { it.accountId == accountId }.toMutableList()
+            failures += AccountBalanceFailure(
+                accountId = accountId,
+                reason = reason,
+                failedAt = System.currentTimeMillis()
+            )
+            check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(projected))
+                .putFailures(failures)
+                .commit())
         }
     }
 
@@ -229,6 +304,18 @@ data class AccountBalance(
     val lastUpdated: Long,
     val stale: Boolean = false,
     val staleReason: String? = null
+)
+
+@Serializable
+data class AccountBalanceFailure(
+    val accountId: String,
+    val reason: String,
+    val failedAt: Long
+)
+
+data class BalanceCacheSnapshot(
+    val balances: List<AccountBalance>,
+    val failures: List<AccountBalanceFailure>
 )
 
 data class AggregatedBalance(

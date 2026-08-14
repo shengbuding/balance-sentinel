@@ -158,6 +158,7 @@ class SettingsFixRound1RedTest {
         assertEquals(900, decoded.settings.backgroundRefreshInterval)
         assertEquals(123, decoded.settings.foregroundMonitoringInterval)
         assertEquals(123, decoded.settings.refreshIntervalSeconds)
+        assertEquals(true, decoded.settings.backgroundRefreshEnabled)
     }
 
     @Test

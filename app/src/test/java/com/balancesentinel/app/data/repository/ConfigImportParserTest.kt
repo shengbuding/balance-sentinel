@@ -86,6 +86,8 @@ class ConfigImportParserTest {
         database.accountDao().insertCreate(testAccount(local.id))
         val beforeSettings = SettingsSnapshot(
             appSettings = AppSettingsEntity(
+                backgroundRefreshIntervalSeconds = 30,
+                foregroundMonitoringIntervalSeconds = 30,
                 alertEnabled = false,
                 alertThreshold = 3.0,
                 updatedAt = 1

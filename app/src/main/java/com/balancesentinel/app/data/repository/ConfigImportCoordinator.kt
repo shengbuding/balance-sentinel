@@ -285,20 +285,14 @@ class RoomConfigImportCoordinator(
         current: SettingsSnapshot,
         accountIds: Set<String>
     ): SettingsPublication {
-        val legacyInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
-        val background = settings.backgroundRefreshInterval
-            ?: legacyInterval.coerceAtLeast(RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS)
-        val foreground = settings.foregroundMonitoringInterval
-            ?: if (legacyInterval < RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS) {
-                legacyInterval
-            } else {
-                RoomSettingsRepository.DEFAULT_FOREGROUND_INTERVAL_SECONDS
-            }
+        val sharedInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
         return SettingsPublication(
             appSettings = AppSettingsWrite.ReplaceAll(
                 AppSettingsValues(
-                    backgroundRefreshIntervalSeconds = background,
-                    foregroundMonitoringIntervalSeconds = foreground,
+                    backgroundRefreshIntervalSeconds = if (
+                        settings.backgroundRefreshEnabledForImport()
+                    ) sharedInterval else null,
+                    foregroundMonitoringIntervalSeconds = sharedInterval,
                     alertEnabled = settings.alertEnabled,
                     alertThreshold = settings.alertThreshold.toDouble(),
                     changeAlertEnabled = settings.changeAlertEnabled,

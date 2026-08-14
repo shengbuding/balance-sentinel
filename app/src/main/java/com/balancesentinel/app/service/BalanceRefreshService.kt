@@ -1,7 +1,5 @@
 package com.balancesentinel.app.service
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -36,6 +34,7 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.refresh.RefreshBatchState
+import com.balancesentinel.app.work.RefreshWorkScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -107,7 +106,6 @@ class BalanceRefreshService : Service() {
         refreshGateway = RefreshRuntime.from(this)
         val processId = (application as? DeepSeekApp)?.processSessionId ?: java.util.UUID.randomUUID().toString()
         monitoringController = ContinuousMonitoringController(WalletDatabaseProvider.get(this), processId)
-        createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -119,30 +117,30 @@ class BalanceRefreshService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!monitoringSessionStarted) {
+        val userInitiated = intent?.getBooleanExtra(EXTRA_USER_INITIATED, false) == true
+        refreshScope.launch {
+            val session = runCatching {
+                monitoringController.start(userInitiated = userInitiated)
+            }.getOrNull()
+            if (session == null) {
+                // A system restart must never turn a disabled or platform-paused
+                // monitoring preference back on.
+                monitoringSessionStarted = false
+                Logger.i(TAG, "Service start ignored: monitoring is not desired")
+                stopLoop()
+                stopSelf()
+                return@launch
+            }
             monitoringSessionStarted = true
-            refreshScope.launch {
-                monitoringController.start(
-                    userInitiated = intent?.getBooleanExtra(EXTRA_USER_INITIATED, false) == true
-                )
+            if (!isLoopRunning) {
+                startLoop()
+            } else {
+                // Apply a changed cadence immediately without changing intent.
+                handler.removeCallbacks(refreshTask)
+                handler.post(refreshTask)
             }
         }
-
-        if (!isLoopRunning) {
-            try {
-                val now = System.currentTimeMillis()
-                appendRoomEvent(this, RefreshLogEntry(
-                    id = now, type = RefreshLogType.SERVICE_START, timestamp = now,
-                    message = "前台刷新服务已启动", alarmMethod = "foreground_service"
-                ))
-            } catch (_: Exception) {}
-            startLoop()
-        } else {
-            // 服务已在运行 — 用最新间隔重新调度（用户可能改了设置）
-            handler.removeCallbacks(refreshTask)
-            handler.post(refreshTask)
-        }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -156,8 +154,13 @@ class BalanceRefreshService : Service() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
         if (!isSelfDestructing) {
-            refreshScope.launch(NonCancellable) {
-                runCatching { monitoringController.stop(MonitoringSessionEndReason.SERVICE_DESTROYED) }
+            CoroutineScope(SupervisorJob() + Dispatchers.IO + NonCancellable).launch {
+                runCatching {
+                    monitoringController.stop(
+                        reason = MonitoringSessionEndReason.SERVICE_DESTROYED,
+                        preserveDesired = true
+                    )
+                }
             }
         }
         refreshScope.cancel()
@@ -165,8 +168,13 @@ class BalanceRefreshService : Service() {
         super.onDestroy()
     }
 
-    // Task removal does not restart a bounded, user-owned monitoring session.
+    // Keep the persistent background plan healthy; do not start an FGS from
+    // this callback because Android may classify the app as background.
     override fun onTaskRemoved(rootIntent: Intent?) {
+        refreshScope.launch {
+            runCatching { RefreshWorkScheduler().reconcileFromRepository(this@BalanceRefreshService) }
+                .onFailure { Logger.w(TAG, "task_removal_reconcile_failed", it) }
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -313,7 +321,7 @@ class BalanceRefreshService : Service() {
     private fun scheduleNext() {
         val baseIntervalSec =
             ((settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value)
-                ?.foregroundMonitoringIntervalSeconds ?: DEFAULT_FOREGROUND_INTERVAL_SECONDS
+                ?.sharedRefreshIntervalSeconds ?: DEFAULT_FOREGROUND_INTERVAL_SECONDS
         val baseIntervalMs = if (baseIntervalSec > 0) baseIntervalSec * 1000L else 30_000L
 
         // 保护模式下降频到每小时一次
@@ -358,18 +366,9 @@ class BalanceRefreshService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            DeepSeekApp.CHANNEL_ID, getString(R.string.channel_service_name), NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.channel_service_desc)
-            setShowBadge(false)
-        }
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(channel)
-    }
-
-    // buildNotification / updateNotification replaced by NotificationHelper
+    // Notification channels are created centrally by DeepSeekApp. Keeping the
+    // service on that single path prevents a stale low-priority channel from
+    // being recreated during a process restart.
 
 
     companion object {

@@ -67,7 +67,7 @@ class RefreshCoordinator(
             val handle = runRecorder?.begin(trigger, accounts, clock(), ownerProcessSessionId)
             val runId = handle?.runId ?: UUID.randomUUID().toString()
             try {
-                val results = accounts.map { account ->
+                val tasks = accounts.map { account ->
                     async {
                         try {
                             refreshAccountInternal(account.id, trigger, handle?.runId)
@@ -95,11 +95,43 @@ class RefreshCoordinator(
                             }
                         }
                     }
-                }.awaitAll()
+                }
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.RUN_AWAIT_STARTED,
+                    runId = runId,
+                    trigger = trigger,
+                    timestamp = clock(),
+                    detail = "accounts=${accounts.size}"
+                )
+                val results = tasks.awaitAll()
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.RUN_AWAIT_COMPLETED,
+                    runId = runId,
+                    trigger = trigger,
+                    timestamp = clock(),
+                    detail = "results=${results.size}"
+                )
                 val aggregate = runRecorder?.finish(runId, clock())
                     ?: deriveRefreshBatchAggregate(results)
+                if (runRecorder == null) {
+                    RefreshDiagnostics.record(
+                        stage = RefreshDiagnosticStage.RUN_FINISHED,
+                        runId = runId,
+                        trigger = trigger,
+                        timestamp = clock(),
+                        detail = "state=${aggregate.state}",
+                        terminal = true
+                    )
+                }
                 RefreshBatchResult(runId, results, aggregate)
             } catch (cancelled: CancellationException) {
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.RUN_CANCELLED,
+                    runId = runId,
+                    trigger = trigger,
+                    timestamp = clock(),
+                    detail = cancelled.javaClass.simpleName
+                )
                 withContext(NonCancellable) {
                     runCatching {
                         runRecorder?.cancelRunning(runId, clock())
@@ -107,6 +139,16 @@ class RefreshCoordinator(
                     }
                 }
                 throw cancelled
+            } catch (error: Exception) {
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.RUN_FAILED,
+                    runId = runId,
+                    trigger = trigger,
+                    timestamp = clock(),
+                    detail = error.javaClass.simpleName,
+                    terminal = true
+                )
+                throw error
             }
         }
 
@@ -126,6 +168,14 @@ class RefreshCoordinator(
         var activeRequest: RefreshRequest? = null
         try {
             val token = nextToken(accountId)
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.ACCOUNT_STARTED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = token,
+                timestamp = clock()
+            )
             RefreshMutationBarrier.register(accountId) { invalidate(accountId) }
             val account = when (val read = accountStore.readAccount(accountId)) {
                 is AccountStoreRead.Ready -> read.accounts.firstOrNull()
@@ -144,6 +194,14 @@ class RefreshCoordinator(
             }
             val request = requestFor(account.id, trigger, token, account.revision, runId)
             activeRequest = request
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.FETCH_STARTED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = token,
+                timestamp = clock()
+            )
             val fetched = try {
                 withContext(backgroundScope.coroutineContext.minusKey(Job)) {
                     source.fetch(account)
@@ -155,10 +213,54 @@ class RefreshCoordinator(
                     RefreshFailure.NetworkFailure("Balance request failed")
                 )
             }
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.FETCH_RETURNED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = token,
+                timestamp = clock(),
+                detail = when (fetched) {
+                    is BalanceFetchResult.Success -> "SUCCESS"
+                    is BalanceFetchResult.Failure -> fetched.failure.javaClass.simpleName
+                }
+            )
 
             val current = accountStore.readAccount(accountId)
-            return RefreshMutationBarrier.withRefreshCommitSuspend {
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.COMMIT_BARRIER_WAIT,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = token,
+                timestamp = clock()
+            )
+            val result = RefreshMutationBarrier.withRefreshCommitSuspend {
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.COMMIT_BARRIER_ENTERED,
+                    runId = runId,
+                    accountId = accountId,
+                    trigger = trigger,
+                    generation = token,
+                    timestamp = clock()
+                )
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.ACCOUNT_LOCK_WAIT,
+                    runId = runId,
+                    accountId = accountId,
+                    trigger = trigger,
+                    generation = token,
+                    timestamp = clock()
+                )
                 accountLock(accountId).withLock {
+                    RefreshDiagnostics.record(
+                        stage = RefreshDiagnosticStage.ACCOUNT_LOCK_ENTERED,
+                        runId = runId,
+                        accountId = accountId,
+                        trigger = trigger,
+                        generation = token,
+                        timestamp = clock()
+                    )
                     if (!isLatest(accountId, token)) {
                         return@withLock recordTerminal(runId, request, stale(accountId))
                     }
@@ -192,6 +294,17 @@ class RefreshCoordinator(
                     }
                 }
             }
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.ACCOUNT_COMPLETED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = token,
+                timestamp = clock(),
+                detail = result.javaClass.simpleName,
+                terminal = true
+            )
+            return result
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 activeRequest?.let { request ->
@@ -207,7 +320,29 @@ class RefreshCoordinator(
                     }
                 }
             }
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.ACCOUNT_CANCELLED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = activeRequest?.token,
+                timestamp = clock(),
+                detail = cancelled.javaClass.simpleName,
+                terminal = true
+            )
             throw cancelled
+        } catch (error: Exception) {
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.ACCOUNT_FAILED,
+                runId = runId,
+                accountId = accountId,
+                trigger = trigger,
+                generation = activeRequest?.token,
+                timestamp = clock(),
+                detail = error.javaClass.simpleName,
+                terminal = true
+            )
+            throw error
         }
     }
 
@@ -217,9 +352,29 @@ class RefreshCoordinator(
         result: AccountRefreshResult
     ): AccountRefreshResult {
         if (runRecorder == null || runId == null) return result
-        return RefreshMutationBarrier.withRefreshCommitSuspend {
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.ACCOUNT_TERMINAL_WRITE_STARTED,
+            runId = runId,
+            accountId = request.accountId,
+            trigger = request.trigger,
+            generation = request.token,
+            timestamp = clock(),
+            detail = result.javaClass.simpleName
+        )
+        val recorded = RefreshMutationBarrier.withRefreshCommitSuspend {
             runRecorder.recordAccount(runId, request, result)
         }
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.ACCOUNT_TERMINAL_RECORDED,
+            runId = runId,
+            accountId = request.accountId,
+            trigger = request.trigger,
+            generation = request.token,
+            timestamp = clock(),
+            detail = recorded.javaClass.simpleName,
+            terminal = true
+        )
+        return recorded
     }
 
     private fun requestFor(

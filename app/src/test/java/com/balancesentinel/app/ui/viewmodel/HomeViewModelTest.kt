@@ -36,6 +36,7 @@ import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEn
 import com.balancesentinel.app.data.local.settings.SnoozeStateEntity
 import com.balancesentinel.app.testing.MutableSettingsRepository
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.widget.AccountBalance
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -89,6 +90,7 @@ class HomeViewModelTest {
         SettingsRepositoryProvider.factory = { settingsRepository }
         mainDispatcher = UnconfinedTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
+        BalanceWidgetDataStore.clearAll(context)
     }
 
     @After
@@ -96,6 +98,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
         SettingsRepositoryProvider.resetForTests()
         ApiDebugStore.clearAll()
+        BalanceWidgetDataStore.clearAll(context)
         context.getSharedPreferences(testPrefsName, Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -202,6 +205,48 @@ class HomeViewModelTest {
         assertEquals(77, vm.uiState.value.refreshIntervalSeconds)
         assertTrue(vm.uiState.value.alertEnabled)
         assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `durable balance cache updates are projected without reloading accounts`() {
+        val account = apiKeyManager.addAccount("Cached", "sk-cache-observer")
+        val vm = createViewModel()
+
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            account.id,
+            listOf(AccountBalance(account.id, account.label, "88.00", "USD", true, "0", "0", 42L))
+        )
+        drainMain()
+
+        val state = vm.uiState.value
+        assertEquals("88.00", state.accountBalances[account.id]?.balanceInfos?.single()?.totalBalance)
+        assertEquals(42L, state.refreshStates.getValue(account.id).dataTimestamp)
+        assertFalse(state.refreshStates.getValue(account.id).isLoading)
+    }
+
+    @Test
+    fun `first durable failure survives view model rebuild without replaying snackbar`() = runBlocking {
+        val account = apiKeyManager.addAccount("DeepSeek", "sk-first-failure")
+        BalanceWidgetDataStore.markAccountStale(context, account.id, "TLS certificate pinning failure")
+
+        val first = createViewModel()
+        drainMain()
+        assertEquals(
+            "[DeepSeek] TLS certificate pinning failure",
+            first.uiState.value.refreshStates.getValue(account.id).errorMessage
+        )
+
+        val rebuilt = createViewModel()
+        drainMain()
+        val state = rebuilt.uiState.value
+        assertFalse(state.refreshStates.getValue(account.id).isLoading)
+        assertNull(state.accountBalances[account.id])
+        assertEquals(
+            "[DeepSeek] TLS certificate pinning failure",
+            state.refreshStates.getValue(account.id).errorMessage
+        )
+        assertNull(withTimeoutOrNull(100) { rebuilt.events.first() })
     }
 
     @Test
@@ -691,7 +736,12 @@ class HomeViewModelTest {
     fun `setRefreshInterval updates state`() {
         val vm = createViewModel()
         vm.setRefreshInterval(300)
+        drainMain()
+
         assertEquals(300, vm.uiState.value.refreshIntervalSeconds)
+        val snapshot = currentSettings()
+        assertEquals(300, snapshot.foregroundMonitoringIntervalSeconds)
+        assertEquals(300, snapshot.backgroundRefreshIntervalSeconds)
     }
 
     @Test
@@ -868,6 +918,56 @@ class HomeViewModelTest {
 
         assertFalse(vm.uiState.value.isLoading)
         assertEquals("444.0", vm.uiState.value.accountBalances[account.id]?.balanceInfos?.single()?.totalBalance)
+    }
+
+    @Test
+    fun `completed provider is visible while another provider is still refreshing`() {
+        val accountA = apiKeyManager.addAccount("Fast", "sk-fast-provider")
+        val accountB = apiKeyManager.addAccount("DeepSeek", "sk-deepseek-provider")
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            accountB.id,
+            listOf(AccountBalance(accountB.id, accountB.label, "10.00", "CNY", true, "0", "0", 10L))
+        )
+        val gateway = ControlledRefreshGateway()
+        val vm = createViewModel(gateway)
+
+        vm.refreshBalance()
+        assertTrue(vm.uiState.value.refreshStates.getValue(accountA.id).isLoading)
+        assertTrue(vm.uiState.value.refreshStates.getValue(accountB.id).isLoading)
+
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            accountA.id,
+            listOf(AccountBalance(accountA.id, accountA.label, "88.00", "USD", true, "0", "0", 88L))
+        )
+        drainMain()
+
+        val partial = vm.uiState.value
+        assertEquals("88.00", partial.accountBalances[accountA.id]?.balanceInfos?.single()?.totalBalance)
+        assertFalse(partial.refreshStates.getValue(accountA.id).isLoading)
+        assertTrue("Unchanged DeepSeek cache must not look complete", partial.refreshStates.getValue(accountB.id).isLoading)
+        assertTrue(partial.isLoading)
+
+        gateway.completeNextAll(
+            listOf(
+                committed(accountA.id, 88.0).copy(dataTimestamp = 88L),
+                AccountRefreshResult.Failed(
+                    accountB.id,
+                    RefreshFailure.NetworkFailure("TLS certificate pinning failure"),
+                    stale = true,
+                    dataTimestamp = 10L
+                )
+            )
+        )
+        drainMain()
+
+        val completed = vm.uiState.value
+        assertFalse(completed.isLoading)
+        assertFalse(completed.refreshStates.getValue(accountA.id).isLoading)
+        assertFalse(completed.refreshStates.getValue(accountB.id).isLoading)
+        assertEquals("88.0", completed.accountBalances[accountA.id]?.balanceInfos?.single()?.totalBalance)
+        assertEquals("10.00", completed.accountBalances[accountB.id]?.balanceInfos?.single()?.totalBalance)
     }
 
     @Test

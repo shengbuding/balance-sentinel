@@ -41,4 +41,19 @@ class NetworkSecurityConfigPinParityTest {
         assertEquals(2, pins.distinct().size)
         assertTrue(pins.all { it.removePrefix("sha256/").length == 44 })
     }
+
+    @Test
+    fun `manifest exposes network state for diagnostics`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val packageInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+
+        assertTrue(
+            packageInfo.requestedPermissions.orEmpty().contains(
+                "android.permission.ACCESS_NETWORK_STATE"
+            )
+        )
+    }
 }

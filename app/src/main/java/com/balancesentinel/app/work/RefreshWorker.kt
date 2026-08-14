@@ -5,10 +5,15 @@ import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
+import com.balancesentinel.app.DeepSeekApp
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
+import com.balancesentinel.app.data.local.monitoring.MonitoringObservedState
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.refresh.RefreshTrigger
+import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import kotlinx.coroutines.CancellationException
 
 /** Injectable seams for the worker's unified refresh engine and retry queue. */
@@ -45,19 +50,24 @@ class RefreshWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): ListenableWorker.Result {
+        val continuousRecovery =
+            inputData.getString(RefreshWorkScheduler.KEY_CONTINUOUS_RECOVERY).toBoolean()
         return try {
             val gateway = RefreshWorkerDependencies.gatewayFactory(applicationContext)
             val accountId = inputData.getString(KEY_ACCOUNT_ID)
             val previousAttempt = inputData.getInt(KEY_ATTEMPT, 0)
             if (accountId == null) {
-                val batch = gateway.refreshAll(RefreshTrigger.BACKGROUND)
-                batch.results.forEach { result ->
-                    enqueueRetryIfNeeded(result.accountId, result, previousAttempt)
+                if (!hasHealthyForegroundSession()) {
+                    val batch = gateway.refreshAll(RefreshTrigger.BACKGROUND)
+                    batch.results.forEach { result ->
+                        enqueueRetryIfNeeded(result.accountId, result, previousAttempt)
+                    }
                 }
             } else {
                 val result = gateway.refreshAccount(accountId, RefreshTrigger.BACKGROUND)
                 enqueueRetryIfNeeded(accountId, result, previousAttempt)
             }
+            if (continuousRecovery) continueContinuousRecovery()
             ListenableWorker.Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -65,9 +75,32 @@ class RefreshWorker(
             if (runAttemptCount < MAX_WORKER_RETRY_ATTEMPTS) {
                 ListenableWorker.Result.retry()
             } else {
+                if (continuousRecovery) {
+                    runCatching { continueContinuousRecovery() }
+                }
                 ListenableWorker.Result.failure()
             }
         }
+    }
+
+    private suspend fun hasHealthyForegroundSession(): Boolean {
+        val state = runCatching {
+            WalletDatabaseProvider.get(applicationContext).monitoringStateDao().get()
+        }.getOrNull() ?: return false
+        val processSessionId = (applicationContext as? DeepSeekApp)?.processSessionId ?: return false
+        return isHealthyForegroundSession(
+            state = state,
+            currentProcessSessionId = processSessionId,
+            now = System.currentTimeMillis()
+        )
+    }
+
+    private suspend fun continueContinuousRecovery() {
+        val interval = SettingsRepositoryProvider.get(applicationContext)
+            .readSnapshot()
+            .effectiveBackgroundCadenceSeconds
+            ?.toLong()
+        RefreshWorkScheduler().continueRecovery(applicationContext, interval)
     }
 
     private fun enqueueRetryIfNeeded(
@@ -95,3 +128,12 @@ class RefreshWorker(
                 .build()
     }
 }
+
+internal fun isHealthyForegroundSession(
+    state: MonitoringStateEntity,
+    currentProcessSessionId: String,
+    now: Long
+): Boolean = state.desired &&
+    state.observedState == MonitoringObservedState.RUNNING &&
+    state.processSessionId == currentProcessSessionId &&
+    (state.leaseExpiresAt ?: 0L) > now

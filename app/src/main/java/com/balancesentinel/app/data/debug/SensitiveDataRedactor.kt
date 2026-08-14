@@ -33,8 +33,10 @@ object SensitiveDataRedactor {
     private val url = Regex("""https?://[^\s<>'\"]+""")
 
     fun redactUrl(url: HttpUrl): String {
-        if (url.querySize == 0) return bounded(url.toString())
-        val builder = url.newBuilder().query(null)
+        val builder = url.newBuilder()
+            .username("")
+            .password("")
+            .query(null)
         repeat(url.querySize) { index ->
             builder.addQueryParameter(url.queryParameterName(index), REDACTED)
         }

@@ -45,6 +45,11 @@ data class ScheduleState(
     val totalDropped: Int
 )
 
+data class BackgroundPlanState(
+    val intervalSeconds: Long,
+    val mode: String
+)
+
 /** App 首页状态面板数据 */
 data class StatusSummary(
     val serviceAlive: Boolean,
@@ -84,6 +89,8 @@ object RefreshScheduler {
     private const val KEY_TOTAL_ALARMS_DROPPED = "total_alarms_dropped"
     private const val KEY_SERVICE_START_REQUESTED_AT = "service_start_requested_at"
     private const val KEY_REFRESH_DEADLINE_AT = "refresh_deadline_at"
+    private const val KEY_BACKGROUND_PLAN_INTERVAL = "background_plan_interval"
+    private const val KEY_BACKGROUND_PLAN_MODE = "background_plan_mode"
 
     // ── 写入调度状态 ──
 
@@ -166,6 +173,33 @@ object RefreshScheduler {
             putLong(KEY_ALARM_FIRED_AT, 0)
             putLong(KEY_EXPECTED_NEXT, 0)
         }.apply()
+    }
+
+    fun recordBackgroundPlan(context: Context, intervalSeconds: Long, mode: String) {
+        getPrefs(context).edit()
+            .putLong(KEY_BACKGROUND_PLAN_INTERVAL, intervalSeconds)
+            .putString(KEY_BACKGROUND_PLAN_MODE, mode)
+            .apply()
+    }
+
+    fun getBackgroundPlan(context: Context): BackgroundPlanState? {
+        val prefs = getPrefs(context)
+        val mode = prefs.getString(KEY_BACKGROUND_PLAN_MODE, null) ?: return null
+        val interval = prefs.getLong(KEY_BACKGROUND_PLAN_INTERVAL, 0L)
+        if (interval <= 0L) return null
+        return BackgroundPlanState(interval, mode)
+    }
+
+    fun clearBackgroundPlan(context: Context) {
+        getPrefs(context).edit()
+            .remove(KEY_BACKGROUND_PLAN_INTERVAL)
+            .remove(KEY_BACKGROUND_PLAN_MODE)
+            .apply()
+    }
+
+    /** Clears the diagnostic scheduler ledger for deterministic lifecycle tests. */
+    internal fun resetForTests(context: Context) {
+        getPrefs(context).edit().clear().apply()
     }
 
     // ── 读取状态 ──

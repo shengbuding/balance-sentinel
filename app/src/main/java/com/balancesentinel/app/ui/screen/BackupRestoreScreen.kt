@@ -50,6 +50,7 @@ fun BackupRestoreScreen(
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var isConfigImporting by remember { mutableStateOf(false) }
+    var isDebugReportExporting by remember { mutableStateOf(false) }
     val dataOperation = uiState.dataOperationState
     val historyOperationRunning = dataOperation is DataOperationState.Running
 
@@ -171,16 +172,19 @@ fun BackupRestoreScreen(
     }
 
     // ── 调试报告导出 ──
-    val exportDebugReport = {
-        try {
-            val path = LogExporter.export(context)
-            if (path != null) {
-                Toast.makeText(context, context.getString(R.string.data_debug_report_success, java.io.File(path).name), Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(context, context.getString(R.string.data_export_fail), Toast.LENGTH_SHORT).show()
+    val exportDebugReportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            isDebugReportExporting = true
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    LogExporter.exportToUri(context, uri)
+                }
+                isDebugReportExporting = false
+                val message = if (ok) R.string.data_debug_report_success else R.string.data_export_fail
+                Toast.makeText(context, context.getString(message), Toast.LENGTH_SHORT).show()
             }
-        } catch (e: Exception) {
-            Toast.makeText(context, context.getString(R.string.data_export_exception, e.message), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -285,8 +289,13 @@ fun BackupRestoreScreen(
                 icon = { Icon(CustomIcons.SaveAlt, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
                 title = stringResource(R.string.data_debug_report_title),
                 description = stringResource(R.string.data_debug_report_desc),
-                buttonText = stringResource(R.string.data_debug_report_btn),
-                onAction = exportDebugReport
+                buttonText = if (isDebugReportExporting) {
+                    stringResource(R.string.data_exporting)
+                } else {
+                    stringResource(R.string.data_debug_report_btn)
+                },
+                onAction = { exportDebugReportLauncher.launch(LogExporter.suggestedFileName()) },
+                loading = isDebugReportExporting
             )
 
             Spacer(modifier = Modifier.height(8.dp))

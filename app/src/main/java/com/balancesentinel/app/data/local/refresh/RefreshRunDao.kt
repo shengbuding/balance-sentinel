@@ -16,8 +16,14 @@ interface RefreshRunDao {
     @Query("SELECT * FROM refresh_runs WHERE id = :id")
     suspend fun getRun(id: String): RefreshRunEntity?
 
+    @Query("SELECT * FROM refresh_runs ORDER BY started_at DESC LIMIT :limit")
+    suspend fun newestRuns(limit: Int): List<RefreshRunEntity>
+
     @Query("SELECT * FROM refresh_account_results WHERE run_id = :runId AND account_id = :accountId")
     suspend fun getAccountResult(runId: String, accountId: String): RefreshAccountResultEntity?
+
+    @Query("SELECT * FROM refresh_account_results WHERE run_id = :runId ORDER BY started_at ASC")
+    suspend fun getAccountResults(runId: String): List<RefreshAccountResultEntity>
 
     @Query(
         """

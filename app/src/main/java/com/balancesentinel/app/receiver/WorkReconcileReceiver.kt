@@ -8,6 +8,11 @@ import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
 import com.balancesentinel.app.work.MidnightWorkSchedulingGate
 import com.balancesentinel.app.work.MidnightWorkScheduler
+import com.balancesentinel.app.work.RefreshWorkScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Injectable entry point for process/package/time-zone recovery reconciliation. */
 fun interface WorkReconcileDelegate {
@@ -48,7 +53,11 @@ class WorkReconcileReceiver(
                 Logger.w("WorkReconcileReceiver", "midnight_reconcile_failed", error)
             }
         }
-    }
+    },
+    private val refreshWorkReconcileDelegate: RefreshWorkReconcileDelegate =
+        RefreshWorkReconcileDelegate { context ->
+            RefreshWorkScheduler().reconcileFromRepository(context)
+        }
 ) : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in RECONCILE_ACTIONS) return
@@ -61,6 +70,21 @@ class WorkReconcileReceiver(
             .onFailure { error ->
                 Logger.w("WorkReconcileReceiver", "midnight_reconcile_failed", error)
             }
+        val pending = runCatching { goAsync() }.getOrNull()
+        if (pending == null) {
+            Logger.w("WorkReconcileReceiver", "refresh_reconcile_deferred_no_pending_result")
+            return
+        }
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                refreshWorkReconcileDelegate.reconcile(context.applicationContext)
+                Logger.i("WorkReconcileReceiver", "refresh_work_reconciled")
+            } catch (error: Throwable) {
+                Logger.w("WorkReconcileReceiver", "refresh_work_reconcile_failed", error)
+            } finally {
+                pending.finish()
+            }
+        }
     }
 
     companion object {

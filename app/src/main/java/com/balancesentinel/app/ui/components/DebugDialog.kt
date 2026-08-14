@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,11 +36,19 @@ import java.util.*
 fun DebugDialog(
     accountId: String,
     accountLabel: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit = {},
+    isRefreshing: Boolean = false
 ) {
     val context = LocalContext.current
     val reportLabels = remember(context) { context.debugReportLabels() }
     var entries by remember { mutableStateOf(ApiDebugStore.getEntries(accountId)) }
+
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) {
+            entries = ApiDebugStore.getEntries(accountId)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -88,6 +97,22 @@ fun DebugDialog(
         },
         confirmButton = {
             Row {
+                TextButton(
+                    onClick = {
+                        onRefresh()
+                        entries = ApiDebugStore.getEntries(accountId)
+                    },
+                    enabled = !isRefreshing
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("刷新")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
                 // 全部复制按钮
                 TextButton(
                     onClick = {

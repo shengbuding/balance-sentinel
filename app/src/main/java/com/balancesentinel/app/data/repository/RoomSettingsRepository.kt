@@ -55,13 +55,13 @@ class RoomSettingsRepository(
     }
 
     private suspend fun publishSnapshotLocked(snapshot: SettingsSnapshot, publishedAt: Long) {
-        val backgroundInterval = snapshot.backgroundRefreshIntervalSeconds
-        require(backgroundInterval == null ||
-            backgroundInterval >= MIN_BACKGROUND_INTERVAL_SECONDS) {
-            "Background refresh interval must be disabled or at least 900 seconds"
+        val app = snapshot.appSettings.normalizedForSharedRefresh()
+        val backgroundInterval = app.backgroundRefreshIntervalSeconds
+        require(backgroundInterval == null || backgroundInterval > 0) {
+            "Refresh interval must be disabled or positive"
         }
-        require(snapshot.foregroundMonitoringIntervalSeconds > 0) {
-            "Foreground monitoring interval must be positive"
+        require(app.foregroundMonitoringIntervalSeconds > 0) {
+            "Refresh interval must be positive"
         }
         val selections = snapshot.notificationSelections.mapIndexed { index, value ->
             value.copy(displayOrder = index)
@@ -71,7 +71,6 @@ class RoomSettingsRepository(
         val notificationRows = selections.filter { it.accountId in knownAccountIds }
             .mapIndexed { index, value -> value.copy(displayOrder = index) }
         database.withTransaction {
-            val app = snapshot.appSettings
             database.appSettingsDao().upsert(
                 backgroundRefreshIntervalSeconds = app.backgroundRefreshIntervalSeconds,
                 foregroundMonitoringIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
@@ -138,19 +137,13 @@ class RoomSettingsRepository(
     }
 
     private fun SettingsSnapshot.withConfigSettings(settings: ConfigSettings): SettingsSnapshot {
-        val legacyInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
-        val background = settings.backgroundRefreshInterval
-            ?: legacyInterval.coerceAtLeast(MIN_BACKGROUND_INTERVAL_SECONDS)
-        val foreground = settings.foregroundMonitoringInterval
-            ?: if (legacyInterval < MIN_BACKGROUND_INTERVAL_SECONDS) {
-                legacyInterval
-            } else {
-                DEFAULT_FOREGROUND_INTERVAL_SECONDS
-            }
+        val sharedInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
         return copy(
             appSettings = appSettings.copy(
-                backgroundRefreshIntervalSeconds = background,
-                foregroundMonitoringIntervalSeconds = foreground,
+                backgroundRefreshIntervalSeconds = if (
+                    settings.backgroundRefreshEnabledForImport()
+                ) sharedInterval else null,
+                foregroundMonitoringIntervalSeconds = sharedInterval,
                 alertEnabled = settings.alertEnabled,
                 alertThreshold = settings.alertThreshold.toDouble(),
                 changeAlertEnabled = settings.changeAlertEnabled,
@@ -179,13 +172,24 @@ class RoomSettingsRepository(
     }
 
     private suspend fun loadSnapshot(): SettingsSnapshot = database.withTransaction {
-        val app = database.appSettingsDao().get() ?: AppSettingsEntity(updatedAt = 0L)
+        val app = (database.appSettingsDao().get() ?: AppSettingsEntity(updatedAt = 0L))
+            .normalizedForSharedRefresh()
         SettingsSnapshot(
             appSettings = app,
             accountAlertSettings = database.settingsDao().getAccountAlertSettings().toList(),
             notificationSelections = database.settingsDao().getNotificationSelections().toList(),
             alertRuntimeStates = database.settingsDao().getAlertRuntimeStates().toList(),
             snoozes = database.settingsDao().getSnoozes().toList()
+        )
+    }
+
+    private fun AppSettingsEntity.normalizedForSharedRefresh(): AppSettingsEntity {
+        val shared = foregroundMonitoringIntervalSeconds.takeIf { it > 0 }
+            ?: backgroundRefreshIntervalSeconds?.takeIf { it > 0 }
+            ?: DEFAULT_FOREGROUND_INTERVAL_SECONDS
+        return copy(
+            foregroundMonitoringIntervalSeconds = shared,
+            backgroundRefreshIntervalSeconds = backgroundRefreshIntervalSeconds?.let { shared }
         )
     }
 

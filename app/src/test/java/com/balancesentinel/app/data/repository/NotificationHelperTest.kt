@@ -1,8 +1,11 @@
 package com.balancesentinel.app.data.repository
 
 import android.app.NotificationManager
+import android.app.Notification
 import android.content.Context
+import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.util.FormatUtils
@@ -231,6 +234,25 @@ class NotificationHelperTest {
     fun `buildForegroundNotification returns non-null notification`() {
         val notification = helper.buildForegroundNotification("Test Title", "Test Content")
         assertNotNull(notification)
+        assertEquals(DeepSeekApp.CHANNEL_ID_PINNED, notification.channelId)
+        assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertEquals(NotificationCompat.CATEGORY_SERVICE, notification.category)
+        assertTrue(notification.priority >= NotificationCompat.PRIORITY_HIGH)
+    }
+
+    @Test
+    fun `balance notification keeps the foreground notification pinned`() {
+        val notification = helper.buildBalanceNotification(
+            totalBalance = "100.00",
+            totalCurrency = "CNY",
+            status = "正常",
+            extraWallets = emptyList()
+        )
+
+        assertEquals(DeepSeekApp.CHANNEL_ID_PINNED, notification.channelId)
+        assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertEquals(NotificationCompat.CATEGORY_SERVICE, notification.category)
+        assertTrue(notification.priority >= NotificationCompat.PRIORITY_HIGH)
     }
 
     // ═══════════════════════════════════════════════════════════

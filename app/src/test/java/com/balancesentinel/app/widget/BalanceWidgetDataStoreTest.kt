@@ -4,12 +4,20 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLooper
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -357,6 +365,70 @@ class BalanceWidgetDataStoreTest {
         BalanceWidgetDataStore.removeAccountBalance(context, "acc1")
         val balances = BalanceWidgetDataStore.getAllBalances(context)
         assertTrue(balances.isEmpty())
+    }
+
+    @Test
+    fun `failure without a cached balance is durable`() {
+        BalanceWidgetDataStore.markAccountStale(context, "acc1", "TLS pin failure")
+
+        val snapshot = BalanceWidgetDataStore.getSnapshot(context)
+        assertTrue(snapshot.balances.isEmpty())
+        assertEquals(
+            AccountBalanceFailure("acc1", "TLS pin failure", snapshot.failures.single().failedAt),
+            snapshot.failures.single()
+        )
+    }
+
+    @Test
+    fun `snapshot observer publishes failure and following success atomically`() = runBlocking {
+        val updates = Channel<BalanceCacheSnapshot>(Channel.UNLIMITED)
+        val collection = launch(start = CoroutineStart.UNDISPATCHED) {
+            BalanceWidgetDataStore.observeSnapshot(context).collect(updates::send)
+        }
+        assertEquals(BalanceCacheSnapshot(emptyList(), emptyList()), withTimeout(2_000) { updates.receive() })
+
+        BalanceWidgetDataStore.markAccountStale(context, "acc1", "offline")
+        ShadowLooper.idleMainLooper()
+        val failed = withTimeout(2_000) { updates.receive() }
+
+        assertEquals("offline", failed.failures.single().reason)
+        assertTrue(failed.balances.isEmpty())
+
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            "acc1",
+            listOf(AccountBalance("acc1", "A", "12.00", "USD", true, "0", "0", 42L))
+        )
+        ShadowLooper.idleMainLooper()
+        val succeeded = withTimeout(2_000) { updates.receive() }
+
+        assertEquals("12.00", succeeded.balances.single().totalBalance)
+        assertTrue(succeeded.failures.isEmpty())
+        collection.cancelAndJoin()
+    }
+
+    @Test
+    fun `failure follows account migration and is removed with the account`() {
+        BalanceWidgetDataStore.markAccountStale(context, "old", "offline")
+
+        BalanceWidgetDataStore.migrateAccountIds(context, mapOf("old" to "new"))
+        val migrated = BalanceWidgetDataStore.getSnapshot(context)
+        assertEquals("new", migrated.failures.single().accountId)
+
+        BalanceWidgetDataStore.removeAccountBalance(context, "new")
+        assertTrue(BalanceWidgetDataStore.getSnapshot(context).failures.isEmpty())
+    }
+
+    @Test
+    fun `clear removes balances and failures together`() {
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "balance", "Balance", "10.00", "USD", true, "0", "0"
+        )
+        BalanceWidgetDataStore.markAccountStale(context, "failure", "offline")
+
+        BalanceWidgetDataStore.clearAll(context)
+
+        assertEquals(BalanceCacheSnapshot(emptyList(), emptyList()), BalanceWidgetDataStore.getSnapshot(context))
     }
 
     // ═══════════════════════════════════════════════════════════

@@ -1,6 +1,8 @@
 package com.balancesentinel.app.widget
 
 import android.content.Context
+import android.content.res.Configuration
+import android.os.LocaleList
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import org.junit.Assert.assertEquals
@@ -53,5 +55,33 @@ class WidgetRenderingTest {
         assertEquals(context.getString(R.string.widget_state_permission_restricted_status), model.status)
         assertEquals(context.getString(R.string.widget_state_permission_restricted_balance), model.balance)
         assertTrue(!model.showDetails)
+    }
+
+    @Test
+    fun `compact widget uses short currency symbol in chinese locale`() {
+        val chineseContext = localizedContext("zh-CN")
+        val state = WidgetViewState.Fresh(
+            selection = WidgetSelection("account-1", "USD", "Primary"),
+            balance = AggregatedBalance(
+                totalBalance = "0",
+                currency = "USD",
+                isAvailable = true,
+                grantedBalance = "0",
+                toppedUpBalance = "0",
+                accountCount = 1,
+                lastUpdated = 1
+            )
+        )
+
+        val model = WidgetRemoteViewsRenderer.model(chineseContext, state, expanded = false)
+
+        assertEquals("\$0.00", model.balance)
+    }
+
+    private fun localizedContext(languageTag: String): Context {
+        val configuration = Configuration(context.resources.configuration).apply {
+            setLocales(LocaleList.forLanguageTags(languageTag))
+        }
+        return context.createConfigurationContext(configuration)
     }
 }

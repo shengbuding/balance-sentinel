@@ -7,6 +7,8 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import com.balancesentinel.app.data.api.BalanceEntry
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.UnifiedBalance
+import com.balancesentinel.app.data.local.monitoring.MonitoringObservedState
+import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
@@ -16,6 +18,7 @@ import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -84,6 +87,21 @@ class RefreshWorkerTest {
         assertTrue(scheduledRetries.isEmpty())
         assertEquals(listOf("permanent"), cancelledRetries)
         assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
+    }
+
+    @Test
+    fun `foreground lease is healthy only for the current process session`() {
+        val state = MonitoringStateEntity(
+            desired = true,
+            observedState = MonitoringObservedState.RUNNING,
+            processSessionId = "old-process",
+            leaseExpiresAt = 2_000L,
+            updatedAt = 1L
+        )
+
+        assertFalse(isHealthyForegroundSession(state, "new-process", now = 1_000L))
+        assertTrue(isHealthyForegroundSession(state, "old-process", now = 1_000L))
+        assertFalse(isHealthyForegroundSession(state, "old-process", now = 2_000L))
     }
 
     private fun fakeGateway(): RefreshGateway = object : RefreshGateway {

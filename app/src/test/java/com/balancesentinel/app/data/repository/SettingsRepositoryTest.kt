@@ -52,7 +52,7 @@ class SettingsRepositoryTest {
         database.accountDao().insertCreate(testAccount("acct"))
         val expected = SettingsSnapshot(
             appSettings = AppSettingsEntity(
-                backgroundRefreshIntervalSeconds = 900,
+                backgroundRefreshIntervalSeconds = 45,
                 foregroundMonitoringIntervalSeconds = 45,
                 alertEnabled = true,
                 alertThreshold = 10.0,
@@ -104,6 +104,28 @@ class SettingsRepositoryTest {
             listOf(NotificationWalletSelectionEntity(importedAccountId, "USD", 0)),
             actual.notificationSelections
         )
+    }
+
+    @Test
+    fun `explicitly disabled background refresh remains disabled through config import`() = runTest {
+        repository.applyConfigSettings(
+            ConfigSettings(
+                refreshIntervalSeconds = 45,
+                alertEnabled = false,
+                alertThreshold = 0f,
+                changeAlertEnabled = false,
+                changeAlertThreshold = 0f,
+                changeAlertPeriodMinutes = 0,
+                logMaxEntries = 100,
+                backgroundRefreshEnabled = false
+            )
+        )
+
+        val snapshot = repository.readSnapshot()
+        assertEquals(45, snapshot.foregroundMonitoringIntervalSeconds)
+        assertEquals(null, snapshot.backgroundRefreshIntervalSeconds)
+        assertEquals(null, snapshot.effectiveBackgroundCadenceSeconds)
+        assertEquals(false, ConfigManager.toConfigSettings(snapshot).backgroundRefreshEnabled)
     }
 
     @Test
@@ -176,6 +198,7 @@ class SettingsRepositoryTest {
 
         assertTrue(json.contains("\"backgroundRefreshInterval\": 900"))
         assertTrue(json.contains("\"foregroundMonitoringInterval\": 30"))
+        assertTrue(json.contains("\"backgroundRefreshEnabled\": true"))
     }
 
     @Test
@@ -296,7 +319,11 @@ class SettingsRepositoryTest {
 
         planner.applyAsync(plan, confirmedFullReplace = false)
 
-        assertEquals(importedSettings, ConfigManager.toConfigSettings(repository.readSnapshot()))
+        val exported = ConfigManager.toConfigSettings(repository.readSnapshot())
+        assertEquals(45, exported.refreshIntervalSeconds)
+        assertEquals(900, exported.backgroundRefreshInterval)
+        assertEquals(45, exported.foregroundMonitoringInterval)
+        assertEquals(true, exported.backgroundRefreshEnabled)
         accountStorage.edit().clear().commit()
     }
 
@@ -322,7 +349,13 @@ class SettingsRepositoryTest {
         database.accountDao().insertCreate(testAccount(original.id))
 
         val beforeSettings = SettingsSnapshot(
-            appSettings = AppSettingsEntity(alertEnabled = false, alertThreshold = 1.0, updatedAt = 1),
+            appSettings = AppSettingsEntity(
+                backgroundRefreshIntervalSeconds = 30,
+                foregroundMonitoringIntervalSeconds = 30,
+                alertEnabled = false,
+                alertThreshold = 1.0,
+                updatedAt = 1
+            ),
             accountAlertSettings = listOf(AccountAlertSettingEntity(original.id, "USD", false, false)),
             notificationSelections = emptyList(),
             alertRuntimeStates = emptyList(),

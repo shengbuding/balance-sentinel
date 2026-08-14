@@ -188,11 +188,18 @@ class NotificationHelper(private val context: Context) {
 
     /** 构建前台 Service 通知（返回 Notification 对象，用于 startForeground） */
     fun buildForegroundNotification(title: String, content: String) =
-        NotificationCompat.Builder(context, DeepSeekApp.CHANNEL_ID)
+        NotificationCompat.Builder(context, DeepSeekApp.CHANNEL_ID_PINNED)
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(createOpenAppIntent())
             .build()
 
@@ -254,9 +261,16 @@ class NotificationHelper(private val context: Context) {
             }
         }
 
-        val builder = NotificationCompat.Builder(context, DeepSeekApp.CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, DeepSeekApp.CHANNEL_ID_PINNED)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(createOpenAppIntent())
 
         if (entries.isEmpty()) {

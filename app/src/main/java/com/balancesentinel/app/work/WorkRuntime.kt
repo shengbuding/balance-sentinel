@@ -24,8 +24,17 @@ data class OneShotWorkSpec(
     val uniqueName: String,
     val delayMillis: Long,
     val input: Map<String, String> = emptyMap(),
-    val attempt: Int = 0
+    val attempt: Int = 0,
+    val requiresNetwork: Boolean = false,
+    val policy: OneShotWorkPolicy = OneShotWorkPolicy.REPLACE
 )
+
+/** How a one-shot request interacts with an existing unique work chain. */
+enum class OneShotWorkPolicy {
+    KEEP,
+    REPLACE,
+    APPEND_OR_REPLACE
+}
 
 /**
  * Scheduler-facing WorkManager seam. Production delegates to WorkManager;
@@ -66,18 +75,32 @@ object DefaultWorkRuntime : WorkRuntime {
     }
 
     override fun enqueueOneShot(context: Context, spec: OneShotWorkSpec) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(
+                if (spec.requiresNetwork) NetworkType.CONNECTED else NetworkType.NOT_REQUIRED
+            )
+            .build()
         val input = Data.Builder().apply {
             spec.input.forEach { (key, value) -> putString(key, value) }
             putInt(RefreshWorker.KEY_ATTEMPT, spec.attempt)
         }.build()
         val request = OneTimeWorkRequest.Builder(RefreshWorker::class.java)
             .setInitialDelay(spec.delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            .setConstraints(constraints)
             .setInputData(input)
             .addTag(RefreshWorkScheduler.RETRY_WORK_TAG)
             .addTag(spec.uniqueName)
             .build()
         WorkManager.getInstance(context.applicationContext)
-            .enqueueUniqueWork(spec.uniqueName, ExistingWorkPolicy.REPLACE, request)
+            .enqueueUniqueWork(
+                spec.uniqueName,
+                when (spec.policy) {
+                    OneShotWorkPolicy.KEEP -> ExistingWorkPolicy.KEEP
+                    OneShotWorkPolicy.REPLACE -> ExistingWorkPolicy.REPLACE
+                    OneShotWorkPolicy.APPEND_OR_REPLACE -> ExistingWorkPolicy.APPEND_OR_REPLACE
+                },
+                request
+            )
     }
 
     override fun cancelUnique(context: Context, uniqueName: String) {

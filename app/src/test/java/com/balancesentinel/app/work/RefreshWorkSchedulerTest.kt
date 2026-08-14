@@ -8,6 +8,7 @@ import com.balancesentinel.app.widget.StaticWidgetProvider
 import com.balancesentinel.app.widget.WidgetRefreshActionHandler
 import com.balancesentinel.app.widget.WidgetRefreshDecision
 import com.balancesentinel.app.widget.WidgetRefreshIntents
+import com.balancesentinel.app.data.repository.RefreshScheduler
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +28,7 @@ class RefreshWorkSchedulerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        RefreshScheduler.resetForTests(context)
         runtime = RecordingWorkRuntime()
         scheduler = RefreshWorkScheduler(runtime)
     }
@@ -58,14 +60,73 @@ class RefreshWorkSchedulerTest {
     }
 
     @Test
-    fun `background interval below fifteen minutes is clamped while foreground session owns short cadence`() {
+    fun `background interval below fifteen minutes uses a persistent recovery chain`() {
         scheduler.reconcile(
             context,
             backgroundIntervalSeconds = 300,
             foregroundSessionActive = false
         )
 
-        assertEquals(900L, runtime.periodic.values.single().intervalSeconds)
+        assertTrue(runtime.periodic.isEmpty())
+        val spec = runtime.oneShot.getValue(RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME)
+        assertEquals(300_000L, spec.delayMillis)
+        assertTrue(spec.requiresNetwork)
+        assertEquals(OneShotWorkPolicy.REPLACE, spec.policy)
+        assertEquals("true", spec.input[RefreshWorkScheduler.KEY_CONTINUOUS_RECOVERY])
+    }
+
+    @Test
+    fun `recovery continuation appends instead of replacing the running chain`() {
+        scheduler.continueRecovery(context, intervalSeconds = 45)
+
+        val spec = runtime.oneShot.getValue(RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME)
+        assertEquals(45_000L, spec.delayMillis)
+        assertEquals(OneShotWorkPolicy.APPEND_OR_REPLACE, spec.policy)
+    }
+
+    @Test
+    fun `same short cadence keeps the persistent recovery chain across process bootstrap`() {
+        scheduler.reconcile(context, backgroundIntervalSeconds = 45)
+        assertEquals(
+            OneShotWorkPolicy.REPLACE,
+            runtime.oneShot.getValue(RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME).policy
+        )
+
+        RefreshScheduler.recordSchedule(
+            context,
+            intervalSeconds = 45,
+            expectedTriggerTime = System.currentTimeMillis() + 45_000L,
+            method = "foreground_service"
+        )
+        scheduler.reconcile(context, backgroundIntervalSeconds = 45)
+
+        assertEquals(
+            OneShotWorkPolicy.KEEP,
+            runtime.oneShot.getValue(RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME).policy
+        )
+    }
+
+    @Test
+    fun `changed short cadence replaces the old recovery chain`() {
+        scheduler.reconcile(context, backgroundIntervalSeconds = 45)
+        scheduler.reconcile(context, backgroundIntervalSeconds = 60)
+
+        assertEquals(
+            OneShotWorkPolicy.REPLACE,
+            runtime.oneShot.getValue(RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME).policy
+        )
+    }
+
+    @Test
+    fun `effective interval helper is the value used by scheduler metadata`() {
+        assertEquals(
+            RefreshWorkScheduler.MIN_BACKGROUND_INTERVAL_SECONDS,
+            RefreshWorkScheduler.effectiveBackgroundIntervalSeconds(300)
+        )
+        assertEquals(
+            1_800L,
+            RefreshWorkScheduler.effectiveBackgroundIntervalSeconds(1_800)
+        )
     }
 
     @Test
@@ -92,10 +153,12 @@ class RefreshWorkSchedulerTest {
     @Test
     fun `disabling background refresh cancels queued account retries`() {
         scheduler.scheduleRetry(context, RetrySchedule("account", attempt = 1, delayMillis = 1_000L))
+        RefreshScheduler.recordSchedule(context, 900, System.currentTimeMillis() + 900_000L, "work_manager")
         scheduler.reconcile(context, backgroundIntervalSeconds = null)
 
         assertTrue(runtime.oneShot.isEmpty())
         assertEquals(1, runtime.cancelAllRetriesCalls)
+        assertEquals(0L, RefreshScheduler.getState(context).expectedNextAt)
     }
 
     @Test

@@ -46,17 +46,11 @@ class LegacySettingsMigration(
         if (repository.hasPersistedSnapshot()) return repository.readSnapshot()
         val legacy = source.read()
         val oldInterval = legacy.refreshIntervalSeconds.coerceAtLeast(1)
-        val foreground = if (oldInterval < RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS) {
-            oldInterval
-        } else {
-            WidgetPrefs.DEFAULT_INTERVAL
-        }
-        val background = oldInterval.coerceAtLeast(RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS)
         val publishedAt = now()
         val snapshot = SettingsSnapshot(
             appSettings = com.balancesentinel.app.data.local.settings.AppSettingsEntity(
-                backgroundRefreshIntervalSeconds = background,
-                foregroundMonitoringIntervalSeconds = foreground,
+                backgroundRefreshIntervalSeconds = oldInterval,
+                foregroundMonitoringIntervalSeconds = oldInterval,
                 alertEnabled = legacy.alertEnabled,
                 alertThreshold = legacy.alertThreshold.toDouble(),
                 changeAlertEnabled = legacy.changeAlertEnabled,

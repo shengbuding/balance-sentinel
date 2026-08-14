@@ -21,33 +21,33 @@ class LegacySettingsMigrationTest {
     fun tearDown() = database.close()
 
     @Test
-    fun `899 seconds becomes foreground cadence and a 900 second background floor`() = runTest {
+    fun `legacy interval is shared by foreground and background settings`() = runTest {
         val source = source(refreshIntervalSeconds = 899)
         val migration = LegacySettingsMigration(source, RoomSettingsRepository(database))
 
         val snapshot = migration.migrate()
 
         assertEquals(899, snapshot.foregroundMonitoringIntervalSeconds)
-        assertEquals(900, snapshot.backgroundRefreshIntervalSeconds)
+        assertEquals(899, snapshot.backgroundRefreshIntervalSeconds)
     }
 
     @Test
-    fun `900 seconds remains a background cadence`() = runTest {
+    fun `900 seconds remains the shared cadence`() = runTest {
         val migration = LegacySettingsMigration(source(refreshIntervalSeconds = 900), RoomSettingsRepository(database))
 
         val snapshot = migration.migrate()
 
-        assertEquals(30, snapshot.foregroundMonitoringIntervalSeconds)
+        assertEquals(900, snapshot.foregroundMonitoringIntervalSeconds)
         assertEquals(900, snapshot.backgroundRefreshIntervalSeconds)
     }
 
     @Test
-    fun `901 seconds remains a background cadence`() = runTest {
+    fun `901 seconds remains the shared cadence`() = runTest {
         val migration = LegacySettingsMigration(source(refreshIntervalSeconds = 901), RoomSettingsRepository(database))
 
         val snapshot = migration.migrate()
 
-        assertEquals(30, snapshot.foregroundMonitoringIntervalSeconds)
+        assertEquals(901, snapshot.foregroundMonitoringIntervalSeconds)
         assertEquals(901, snapshot.backgroundRefreshIntervalSeconds)
     }
 

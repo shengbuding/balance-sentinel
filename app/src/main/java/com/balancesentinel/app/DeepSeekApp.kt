@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.LocaleManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Notification
 import android.content.Context
 import android.os.LocaleList
 import com.balancesentinel.app.data.refresh.RefreshGateway
@@ -41,7 +42,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
@@ -83,6 +87,7 @@ open class DeepSeekApp : Application(), Configuration.Provider {
 
     private var startupMigrationJob = SupervisorJob()
     private var startupMigrationScope = CoroutineScope(startupMigrationJob + Dispatchers.IO)
+    private var backgroundWorkReconcileJob: kotlinx.coroutines.Job? = null
 
     internal suspend fun cancelStartupMigrationsForTests() {
         startupMigrationJob.cancelAndJoin()
@@ -179,23 +184,23 @@ open class DeepSeekApp : Application(), Configuration.Provider {
      * 3. 清理旧版数据
      */
     internal fun launchBackgroundWorkReconcile() {
-        val current = settingsRepository.snapshot.value
-        if (current is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready) {
-            reconcileBackgroundWork(current)
-            return
-        }
-        startupMigrationScope.launch {
-            val ready = settingsRepository.snapshot.first { it is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready }
-            if (ready is com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready) {
-                reconcileBackgroundWork(ready)
-            }
+        backgroundWorkReconcileJob?.cancel()
+        backgroundWorkReconcileJob = startupMigrationScope.launch {
+            settingsRepository.snapshot
+                .filterIsInstance<com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready>()
+                .map { it.value.effectiveBackgroundCadenceSeconds?.toLong() }
+                .distinctUntilChanged()
+                .collect { interval -> reconcileBackgroundWork(interval) }
         }
     }
 
     internal fun reconcileBackgroundWork(
         state: com.balancesentinel.app.data.repository.SettingsSnapshotState.Ready
     ) {
-        val interval = state.value.backgroundRefreshIntervalSeconds?.toLong()
+        reconcileBackgroundWork(state.value.effectiveBackgroundCadenceSeconds?.toLong())
+    }
+
+    private fun reconcileBackgroundWork(interval: Long?) {
         runCatching { refreshWorkSchedulerFactory(this).reconcile(this, interval) }
             .onFailure { CrashLogger.logNonFatal("RefreshWorkScheduler", it) }
     }
@@ -310,7 +315,7 @@ open class DeepSeekApp : Application(), Configuration.Provider {
     private fun createNotificationChannel() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // 前台 Service 常驻通知（低优先级，不弹横幅）
+        // 旧版服务渠道：保留其 ID 以兼容升级后的用户设置。
         val svcChannel = NotificationChannel(
             CHANNEL_ID,
             getString(R.string.channel_service_name),
@@ -320,6 +325,23 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             setShowBadge(false)
         }
         nm.createNotificationChannel(svcChannel)
+
+        // Android 不允许在渠道创建后提升其重要性。使用独立的高重要性
+        // 渠道承接升级安装，确保常驻监控通知不会继续受旧渠道的低优先级限制。
+        val pinnedChannel = NotificationChannel(
+            CHANNEL_ID_PINNED,
+            getString(R.string.channel_service_name),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = getString(R.string.channel_service_desc)
+            setShowBadge(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        nm.createNotificationChannel(pinnedChannel)
+        // Clear an old low-priority instance once so the next service update
+        // is recreated on the pinned channel rather than left in the legacy
+        // channel after an in-place upgrade.
+        nm.cancel(NOTIFICATION_ID)
 
         // 余额预警通知（高优先级，弹横幅）
         val alertChannel = NotificationChannel(
@@ -346,6 +368,7 @@ open class DeepSeekApp : Application(), Configuration.Provider {
 
     companion object {
         const val CHANNEL_ID = "balance_refresh_channel"
+        const val CHANNEL_ID_PINNED = "balance_refresh_channel_pinned"
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID_ALERT = "balance_alert_channel"
         const val CHANNEL_ID_USAGE = "balance_usage_channel"

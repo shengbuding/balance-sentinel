@@ -48,6 +48,13 @@ class RoomRefreshRunRecorder(
                 )
             }
         }
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.RUN_CREATED,
+            runId = runId,
+            trigger = trigger,
+            timestamp = startedAt,
+            detail = "accounts=${accounts.size} owner=$ownerProcessSessionId"
+        )
         return RefreshRunHandle(runId, ownerProcessSessionId)
     }
 
@@ -58,8 +65,27 @@ class RoomRefreshRunRecorder(
         persist: suspend () -> Unit
     ): AccountRefreshResult {
         val terminal = result.toTerminal(request)
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.ACCOUNT_TERMINAL_WRITE_STARTED,
+            runId = runId,
+            accountId = request.accountId,
+            trigger = request.trigger,
+            generation = request.token,
+            timestamp = clock(),
+            detail = terminal.state.name
+        )
         try {
             writeTerminal(runId, request, terminal, persist, invokeHook = true)
+            RefreshDiagnostics.record(
+                stage = RefreshDiagnosticStage.ACCOUNT_TERMINAL_RECORDED,
+                runId = runId,
+                accountId = request.accountId,
+                trigger = request.trigger,
+                generation = request.token,
+                timestamp = clock(),
+                detail = terminal.state.name,
+                terminal = true
+            )
             return result
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -75,13 +101,25 @@ class RoomRefreshRunRecorder(
             } catch (_: Exception) {
                 AccountRefreshResult.Failed(request.accountId, failure)
             }
-            runCatching {
+            val compensated = runCatching {
                 writeTerminal(
                     runId,
                     request,
                     projected.toTerminal(request),
                     persist = {},
                     invokeHook = false
+                )
+            }
+            if (compensated.isSuccess) {
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.ACCOUNT_TERMINAL_RECORDED,
+                    runId = runId,
+                    accountId = request.accountId,
+                    trigger = request.trigger,
+                    generation = request.token,
+                    timestamp = clock(),
+                    detail = "PERSISTENCE_FAILED_COMPENSATED",
+                    terminal = true
                 )
             }
             return projected
@@ -116,16 +154,29 @@ class RoomRefreshRunRecorder(
     }
 
     override suspend fun finish(runId: String, completedAt: Long): RefreshBatchAggregate {
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.RUN_FINISH_STARTED,
+            runId = runId,
+            timestamp = completedAt
+        )
         database.refreshRunDao().deriveAndUpdateAggregate(runId, completedAt)
         val run = database.refreshRunDao().getRun(runId)
             ?: return RefreshBatchAggregate(RefreshBatchState.FAILED, 0, 0, 0, 0)
-        return RefreshBatchAggregate(
+        val aggregate = RefreshBatchAggregate(
             state = run.state.toBatchState(),
             accountCount = run.accountCount,
             successCount = run.successCount,
             failureCount = run.failureCount,
             cancelledCount = run.cancelledCount
         )
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.RUN_FINISHED,
+            runId = runId,
+            timestamp = clock(),
+            detail = "state=${aggregate.state}",
+            terminal = true
+        )
+        return aggregate
     }
 
     override suspend fun cancelRunning(runId: String, completedAt: Long): Int =

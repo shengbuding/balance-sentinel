@@ -52,6 +52,8 @@ import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
 import com.balancesentinel.app.data.update.UpdatePrefs
 import com.balancesentinel.app.data.repository.WidgetPrefs
+import com.balancesentinel.app.work.RefreshWorkScheduler
+import com.balancesentinel.app.work.BackgroundRefreshMode
 import android.app.LocaleManager
 import android.os.LocaleList
 import kotlinx.coroutines.Dispatchers
@@ -979,16 +981,22 @@ private fun WidgetSettingsSection(
     uiState: com.balancesentinel.app.ui.viewmodel.HomeUiState
 ) {
     val currentIntervalSec = uiState.refreshIntervalSeconds
+    val backgroundPlan = uiState.backgroundRefreshIntervalSeconds
+        ?.let { RefreshWorkScheduler.planFor(it.toLong()) }
     var expanded by remember { mutableStateOf(false) }
     var inputValue by remember(currentIntervalSec) { mutableStateOf((currentIntervalSec / 60).toString()) }
     var isMinutes by remember { mutableStateOf(true) }
 
     fun applyInterval() {
-        val num = inputValue.toIntOrNull()
-        if (num != null && num > 0) {
-            val seconds = if (isMinutes) num * 60 else num
-            viewModel.setRefreshInterval(seconds)
+        val value = inputValue.toLongOrNull() ?: return
+        if (value <= 0L) return
+        val bounded = value.coerceAtMost(Int.MAX_VALUE.toLong())
+        val seconds = if (isMinutes) {
+            (bounded * 60L).coerceAtMost(Int.MAX_VALUE.toLong())
+        } else {
+            bounded
         }
+        viewModel.setRefreshInterval(seconds.toInt())
     }
 
     val refreshLabel = stringResource(R.string.settings_auto_refresh)
@@ -998,6 +1006,17 @@ private fun WidgetSettingsSection(
     )
     val minutesLabel = stringResource(R.string.settings_minutes)
     val secondsLabel = stringResource(R.string.settings_seconds)
+    val backgroundPlanLabel = when (backgroundPlan?.mode) {
+        BackgroundRefreshMode.RECOVERY_CHAIN -> stringResource(
+            R.string.settings_refresh_plan_recovery,
+            backgroundPlan.scheduledIntervalSeconds
+        )
+        BackgroundRefreshMode.PERIODIC -> stringResource(
+            R.string.settings_refresh_plan_periodic,
+            backgroundPlan.scheduledIntervalSeconds
+        )
+        null -> stringResource(R.string.settings_cadence_disabled)
+    }
 
     val displayLabel = if (isMinutes) {
         val min = currentIntervalSec / 60
@@ -1047,8 +1066,7 @@ private fun WidgetSettingsSection(
                     stringResource(
                         R.string.settings_refresh_cadences,
                         uiState.refreshIntervalSeconds,
-                        uiState.backgroundRefreshIntervalSeconds?.toString()
-                            ?: stringResource(R.string.settings_cadence_disabled),
+                        backgroundPlanLabel,
                         uiState.refreshIntervalSeconds
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -1095,6 +1113,11 @@ private fun WidgetSettingsSection(
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.settings_refresh_min_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Text(stringResource(R.string.settings_current_label, displayLabel),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

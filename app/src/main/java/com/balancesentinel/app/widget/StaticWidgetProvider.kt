@@ -18,11 +18,7 @@ import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.navigation.AppRoute
-import com.balancesentinel.app.data.model.RefreshLogEntry
-import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.repository.RoomHistoryRepository
-import com.balancesentinel.app.data.repository.appendRoomEvent
-import com.balancesentinel.app.data.repository.RefreshScheduler
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.service.ForegroundServiceStarter
@@ -224,7 +220,7 @@ open class StaticWidgetProvider : AppWidgetProvider() {
     private fun scheduleRefresh(context: Context) {
         val published = SettingsRepositoryProvider.get(context).snapshot.value
             as? SettingsSnapshotState.Ready ?: return
-        val intervalSec = published.value.backgroundRefreshIntervalSeconds ?: run {
+        val intervalSec = published.value.effectiveBackgroundCadenceSeconds ?: run {
             workSchedulerFactory(context).reconcile(context, null, widgetEnabled = true)
             return
         }
@@ -234,22 +230,9 @@ open class StaticWidgetProvider : AppWidgetProvider() {
                 backgroundIntervalSeconds = intervalSec.toLong(),
                 widgetEnabled = true
             )
-            val expectedRefreshTime = System.currentTimeMillis() + intervalSec * 1000L
-            RefreshScheduler.recordSchedule(context, intervalSec, expectedRefreshTime, "work_manager")
-            logSchedule(context, intervalSec, expectedRefreshTime, "work_manager", "")
         }.onFailure { error ->
             Logger.w("StaticWidget", "Failed to reconcile widget refresh work", error)
         }
-    }
-
-    private fun logSchedule(context: Context, intervalSec: Int, triggerTime: Long, method: String, message: String) {
-        try {
-            appendRoomEvent(context, RefreshLogEntry(
-                id = System.currentTimeMillis(), type = RefreshLogType.SCHEDULE,
-                timestamp = System.currentTimeMillis(), message = message,
-                intervalSeconds = intervalSec, expectedTime = triggerTime, alarmMethod = method
-            ))
-        } catch (_: Exception) {}
     }
 
     internal fun setRefreshProgress(context: Context, manager: AppWidgetManager, widgetIds: List<Int>, visible: Boolean) {

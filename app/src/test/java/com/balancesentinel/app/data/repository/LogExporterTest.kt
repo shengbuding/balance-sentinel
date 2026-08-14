@@ -1,10 +1,17 @@
 package com.balancesentinel.app.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import android.app.Application
 import androidx.room.Room
 import com.balancesentinel.app.CrashLogger
+import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.local.refresh.RefreshAccountResultEntity
+import com.balancesentinel.app.data.local.refresh.RefreshAccountResultState
+import com.balancesentinel.app.data.local.refresh.RefreshRunEntity
+import com.balancesentinel.app.data.local.refresh.RefreshRunSource
+import com.balancesentinel.app.data.local.refresh.RefreshRunState
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
@@ -33,6 +40,7 @@ class LogExporterTest {
         database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
         WalletDatabaseProvider.installForTests(database)
         RefreshScheduler.resetAlarmCounters(context)
+        ApiDebugStore.clearAll()
     }
 
     @After
@@ -42,6 +50,7 @@ class LogExporterTest {
         database.close()
         CrashLogger.clear(context.applicationContext as Application)
         CrashLogger.resetForTests()
+        ApiDebugStore.clearAll()
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -55,6 +64,23 @@ class LogExporterTest {
         val file = File(path!!)
         assertTrue(file.exists())
         assertTrue(file.length() > 0)
+    }
+
+    @Test
+    fun `exportToUri writes the diagnostic report to a selected file`() {
+        val file = File(context.cacheDir, "debug-uri-${System.nanoTime()}.txt")
+        try {
+            assertTrue(LogExporter.exportToUri(context, Uri.fromFile(file)))
+            assertTrue(file.readText().contains("Wallet Sentinel"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `exportToUri returns false when a file destination cannot be opened`() {
+        val file = File(context.cacheDir, "missing-parent-${System.nanoTime()}/report.txt")
+        assertFalse(LogExporter.exportToUri(context, Uri.fromFile(file)))
     }
 
     @Test
@@ -79,9 +105,9 @@ class LogExporterTest {
     fun `export file contains device info section`() {
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
-        assertTrue(content.contains("设备信息"))
-        assertTrue(content.contains("制造商"))
-        assertTrue(content.contains("Android"))
+        assertTrue(content.contains("Application and device"))
+        assertTrue(content.contains("manufacturer="))
+        assertTrue(content.contains("android="))
     }
 
     @Test
@@ -126,10 +152,46 @@ class LogExporterTest {
     }
 
     @Test
+    fun `export includes network and refresh run diagnostics`() = runBlocking {
+        database.refreshRunDao().insertRun(
+            RefreshRunEntity(
+                id = "run-1",
+                source = RefreshRunSource.MANUAL,
+                state = RefreshRunState.FAILED,
+                startedAt = 1_000L,
+                completedAt = 2_000L,
+                accountCount = 1,
+                failureCount = 1,
+                errorCode = "NETWORK"
+            )
+        )
+        database.refreshRunDao().insertRunningResult(
+            RefreshAccountResultEntity(
+                runId = "run-1",
+                accountId = "account-1",
+                accountRevision = 3L,
+                state = RefreshAccountResultState.NETWORK_FAILED,
+                errorCode = "TIMEOUT",
+                startedAt = 1_000L,
+                completedAt = 2_000L,
+                attemptCount = 2
+            )
+        )
+
+        val content = File(checkNotNull(LogExporter.export(context))).readText()
+
+        assertTrue(content.contains("Network environment"))
+        assertTrue(content.contains("Recent refresh runs"))
+        assertTrue(content.contains("runs=1 limit=20"))
+        assertTrue(content.contains("run[0] id=run-1"))
+        assertTrue(content.contains("account[0] id=account-1"))
+    }
+
+    @Test
     fun `export shows no-records message when refresh log is empty`() {
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
-        assertTrue(content.contains("(无记录)") || content.contains("0 条"))
+        assertTrue(content.contains("(无记录 / no records)"))
     }
 
     @Test
@@ -233,8 +295,8 @@ class LogExporterTest {
         ))
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
-        assertTrue(content.contains("2分钟") || content.contains("120秒") || content.contains("间隔"))
-        assertTrue(content.contains("预定") || content.contains("expected"))
+        assertTrue(content.contains("intervalSeconds=120"))
+        assertTrue(content.contains("expected="))
     }
 
     @Test
@@ -307,7 +369,7 @@ class LogExporterTest {
 
         val path = LogExporter.export(context)
         val content = File(path!!).readText()
-        assertTrue(content.contains("延迟") || content.contains("delay"))
+        assertTrue(content.contains("alarmDelaySeconds="))
     }
 
     // Mutation caught: writing refresh/crash fields without a final shared redaction pass.
@@ -332,6 +394,24 @@ class LogExporterTest {
         assertFalse(content.contains(refreshSecret))
         assertFalse(content.contains(crashSecret))
         assertTrue(content.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun `export is bounded in utf8 bytes and identifies truncation`() = runBlocking {
+        val message = "diagnostic=" + "x".repeat(5_000)
+        addLogExporterRoomLogs((0 until 500).map { index ->
+            RefreshLogEntry(
+                id = 1_000_000L + index,
+                type = RefreshLogType.MANUAL,
+                timestamp = index.toLong(),
+                message = message
+            )
+        })
+
+        val content = File(checkNotNull(LogExporter.export(context))).readText()
+
+        assertTrue(content.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024)
+        assertTrue(content.contains("[REPORT TRUNCATED]"))
     }
     private fun addLogExporterRoomLogs(logs: List<RefreshLogEntry>) = runBlocking {
         RoomEventLogRepository(database).append(logs)

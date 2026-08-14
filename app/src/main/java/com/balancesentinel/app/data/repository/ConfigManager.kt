@@ -44,8 +44,12 @@ data class ConfigSettings(
     val showTotalBalance: Boolean = true,
     val notificationSelectedWallets: List<NotificationWalletSelection> = emptyList(),
     val backgroundRefreshInterval: Int? = null,
-    val foregroundMonitoringInterval: Int? = null
+    val foregroundMonitoringInterval: Int? = null,
+    val backgroundRefreshEnabled: Boolean? = null
 )
+
+internal fun ConfigSettings.backgroundRefreshEnabledForImport(): Boolean =
+    backgroundRefreshEnabled ?: true
 
 object ConfigManager {
 
@@ -117,8 +121,10 @@ object ConfigManager {
 
     internal fun toConfigSettings(snapshot: SettingsSnapshot): ConfigSettings {
         val app = snapshot.appSettings
+        val sharedInterval = snapshot.sharedRefreshIntervalSeconds
+        val backgroundEnabled = snapshot.effectiveBackgroundCadenceSeconds != null
         return ConfigSettings(
-            refreshIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
+            refreshIntervalSeconds = sharedInterval,
             alertEnabled = app.alertEnabled,
             alertThreshold = app.alertThreshold.toFloat(),
             changeAlertEnabled = app.changeAlertEnabled,
@@ -138,8 +144,15 @@ object ConfigManager {
             notificationSelectedWallets = snapshot.notificationSelections.map {
                 NotificationWalletSelection(it.accountId, it.currency)
             },
-            backgroundRefreshInterval = app.backgroundRefreshIntervalSeconds,
-            foregroundMonitoringInterval = app.foregroundMonitoringIntervalSeconds
+            // Keep the schema-v2 field valid for older app versions. New builds
+            // read the shared value above and only use this as an enablement hint.
+            backgroundRefreshInterval = if (backgroundEnabled) {
+                maxOf(sharedInterval, RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS)
+            } else {
+                null
+            },
+            foregroundMonitoringInterval = sharedInterval,
+            backgroundRefreshEnabled = backgroundEnabled
         )
     }
 

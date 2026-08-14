@@ -1,5 +1,6 @@
 package com.balancesentinel.app
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import androidx.room.Room
@@ -24,7 +25,16 @@ import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.testing.MutableSettingsRepository
+import com.balancesentinel.app.data.local.settings.AppSettingsEntity
+import com.balancesentinel.app.work.PeriodicWorkSpec
+import com.balancesentinel.app.work.OneShotWorkSpec
+import com.balancesentinel.app.work.RefreshWorkScheduler
+import com.balancesentinel.app.work.WorkRuntime
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -49,6 +59,7 @@ class DeepSeekAppTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        RefreshScheduler.resetForTests(context)
     }
 
     @After
@@ -73,6 +84,7 @@ class DeepSeekAppTest {
 
         val channelIds = channels.map { it.id }
         assertTrue("Missing service channel", channelIds.contains(DeepSeekApp.CHANNEL_ID))
+        assertTrue("Missing pinned service channel", channelIds.contains(DeepSeekApp.CHANNEL_ID_PINNED))
         assertTrue("Missing alert channel", channelIds.contains(DeepSeekApp.CHANNEL_ID_ALERT))
         assertTrue("Missing usage channel", channelIds.contains(DeepSeekApp.CHANNEL_ID_USAGE))
 
@@ -80,6 +92,11 @@ class DeepSeekAppTest {
         val svcChannel = channels.find { it.id == DeepSeekApp.CHANNEL_ID }
         assertNotNull(svcChannel)
         assertEquals(NotificationManager.IMPORTANCE_LOW, svcChannel!!.importance)
+
+        val pinnedChannel = channels.find { it.id == DeepSeekApp.CHANNEL_ID_PINNED }
+        assertNotNull(pinnedChannel)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, pinnedChannel!!.importance)
+        assertEquals(Notification.VISIBILITY_PUBLIC, pinnedChannel.lockscreenVisibility)
 
         val alertChannel = channels.find { it.id == DeepSeekApp.CHANNEL_ID_ALERT }
         assertNotNull(alertChannel)
@@ -145,6 +162,7 @@ class DeepSeekAppTest {
     @Test
     fun `companion object constants are correct`() {
         assertEquals("balance_refresh_channel", DeepSeekApp.CHANNEL_ID)
+        assertEquals("balance_refresh_channel_pinned", DeepSeekApp.CHANNEL_ID_PINNED)
         assertEquals(1001, DeepSeekApp.NOTIFICATION_ID)
         assertEquals("balance_alert_channel", DeepSeekApp.CHANNEL_ID_ALERT)
         assertEquals("balance_usage_channel", DeepSeekApp.CHANNEL_ID_USAGE)
@@ -202,6 +220,98 @@ class DeepSeekAppTest {
         assertTrue(
             "account mutation recovery must run before legacy data migration throws",
             recoveryObservedAtLegacyFailure.get()
+        )
+    }
+
+    @Test
+    fun `background reconciliation follows shared settings changes without duplicate bootstrap`() = runBlocking {
+        val app = context as DeepSeekApp
+        app.cancelStartupMigrationsForTests()
+        val events = mutableListOf<String>()
+        val runtime = object : WorkRuntime {
+            override fun enqueuePeriodic(context: Context, spec: PeriodicWorkSpec) {
+                synchronized(events) { events += "periodic:${spec.intervalSeconds}" }
+            }
+
+            override fun enqueueOneShot(context: Context, spec: OneShotWorkSpec) {
+                synchronized(events) {
+                    events += "recovery:${spec.delayMillis / 1000}:${spec.policy}"
+                }
+            }
+
+            override fun cancelUnique(context: Context, uniqueName: String) {
+                synchronized(events) { events += "cancel:$uniqueName" }
+            }
+
+            override fun cancelAllRetries(context: Context) = Unit
+        }
+        app.refreshWorkSchedulerFactory = { RefreshWorkScheduler(runtime) }
+        app.launchBackgroundWorkReconcile()
+
+        withTimeout(2_000) {
+            while (synchronized(events) { events.isEmpty() }) delay(10)
+        }
+        assertEquals(
+            listOf(
+                "cancel:${RefreshWorkScheduler.PERIODIC_WORK_NAME}",
+                "recovery:30:REPLACE"
+            ),
+            synchronized(events) { events.toList() }
+        )
+
+        val repository = app.settingsRepository as MutableSettingsRepository
+        repository.publishSnapshot(
+            SettingsSnapshot(
+                appSettings = AppSettingsEntity(
+                    backgroundRefreshIntervalSeconds = 1_800,
+                    foregroundMonitoringIntervalSeconds = 1_800,
+                    updatedAt = 1L
+                )
+            ),
+            publishedAt = 1L
+        )
+        withTimeout(2_000) {
+            while (synchronized(events) { "periodic:1800" !in events }) delay(10)
+        }
+        assertEquals(
+            listOf(
+                "cancel:${RefreshWorkScheduler.PERIODIC_WORK_NAME}",
+                "recovery:30:REPLACE",
+                "cancel:${RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME}",
+                "periodic:1800"
+            ),
+            synchronized(events) { events.toList() }
+        )
+
+        repository.publishSnapshot(
+            SettingsSnapshot(
+                appSettings = AppSettingsEntity(
+                    backgroundRefreshIntervalSeconds = null,
+                    foregroundMonitoringIntervalSeconds = 45,
+                    updatedAt = 2L
+                )
+            ),
+            publishedAt = 2L
+        )
+        withTimeout(2_000) {
+            while (synchronized(events) {
+                    events.count {
+                        it == "cancel:${RefreshWorkScheduler.PERIODIC_WORK_NAME}"
+                    } < 2 ||
+                        "cancel:${RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME}" !in events
+                }) delay(10)
+        }
+
+        assertEquals(
+            listOf(
+                "cancel:${RefreshWorkScheduler.PERIODIC_WORK_NAME}",
+                "recovery:30:REPLACE",
+                "cancel:${RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME}",
+                "periodic:1800",
+                "cancel:${RefreshWorkScheduler.PERIODIC_WORK_NAME}",
+                "cancel:${RefreshWorkScheduler.PROCESS_RECOVERY_WORK_NAME}"
+            ),
+            synchronized(events) { events.toList() }
         )
     }
 

@@ -220,11 +220,14 @@
     <string name="settings_about_version">钱包哨兵 v%1$s</string>
     <string name="settings_about_desc">在桌面查看多个AI供应商API账户余额，支持自动刷新和小组件。</string>
     <string name="settings_auto_refresh">自动刷新</string>
-    <string name="settings_refresh_desc">配置余额查询间隔和刷新策略</string>
+    <string name="settings_refresh_desc">配置前台服务与后台恢复任务共用的余额查询间隔</string>
     <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
     <string name="settings_loading">Loading</string>
     <string name="settings_cadence_disabled">已停用</string>
-    <string name="settings_refresh_cadences">前台 %1$d 秒 · 后台 %2$s 秒 · 当前生效 %3$d 秒</string>
+    <string name="settings_refresh_cadences">统一配置 %1$d 秒 · 后台任务实际 %2$s 秒 · 当前生效 %3$d 秒</string>
+    <string name="settings_refresh_min_hint">后台恢复链使用统一周期；15 分钟以上使用系统周期任务，低于 15 分钟使用持久恢复链，系统可能延迟执行。</string>
+    <string name="settings_refresh_plan_recovery">%1$d 秒（持久恢复链，系统可能延迟）</string>
+    <string name="settings_refresh_plan_periodic">%1$d 秒（系统周期任务，可能延迟）</string>
     <string name="settings_value">数值</string>
     <string name="settings_minutes">分钟</string>
     <string name="settings_seconds">秒</string>
@@ -363,8 +366,9 @@
     <string name="data_import_config_desc">从 JSON 文件预览账户和设置，确认后再应用</string>
     <string name="data_import_config_btn">导入配置</string>
     <string name="data_debug_report_title">调试报告</string>
-    <string name="data_debug_report_desc">导出系统状态、日志、崩溃和设备信息为文本文件</string>
+    <string name="data_debug_report_desc">导出网络环境、刷新调度、账户一致性、请求日志、组件错误和崩溃信息</string>
     <string name="data_debug_report_btn">导出报告</string>
+    <string name="data_exporting">导出中…</string>
     <string name="data_export_success">数据已导出</string>
     <string name="data_export_fail">导出失败</string>
     <string name="data_no_data">暂无数据可导出</string>
@@ -404,7 +408,7 @@
     <string name="data_config_import_replace_title">确认替换全部账户</string>
     <string name="data_config_import_replace_message">此操作将删除 %1$d 个本地账户，且无法撤销。</string>
     <string name="data_config_import_replace_confirm">删除并替换</string>
-    <string name="data_debug_report_success">调试报告已导出到 Downloads: %1$s</string>
+    <string name="data_debug_report_success">调试报告已保存到所选位置</string>
     <string name="data_export_exception">导出异常: %1$s</string>
     <string name="data_import_history_title">导入历史数据</string>
     <string name="data_import_history_desc">从 JSON 文件导入日摘要和原始记录（将合并到现有数据，已存在的条目不会覆盖）</string>

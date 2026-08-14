@@ -4,9 +4,7 @@ import android.app.Application
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import com.balancesentinel.app.data.util.Logger
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.CrashLogger
@@ -49,8 +47,11 @@ import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.data.repository.SnoozeInfo
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.R
-import com.balancesentinel.app.service.BalanceRefreshService
+import com.balancesentinel.app.service.ForegroundServiceStarter
+import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.widget.AccountBalanceFailure
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.widget.BalanceCacheSnapshot
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_3x1
@@ -120,6 +121,8 @@ class HomeViewModel @JvmOverloads constructor(
     private val mutationCoordinator: AccountMutationCoordinator = injectedAccountMutationCoordinator
         ?: AccountLifecycleManager(application).mutationCoordinator()
     private var accountCollectionJob: Job? = null
+    private var latestBalanceSnapshot = BalanceCacheSnapshot(emptyList(), emptyList())
+    private val refreshCacheBaselines = mutableMapOf<String, RefreshCacheBaseline>()
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -144,12 +147,29 @@ class HomeViewModel @JvmOverloads constructor(
     }
 
     init {
+        observeBalanceCache()
         observeAccounts()
         observeSettings()
         loadCrashLogs()
         checkMissedRefreshes()
         loadStatusSummary()
         scheduleMidnightAndCheckSummary()
+    }
+
+    private fun observeBalanceCache() {
+        viewModelScope.launch {
+            BalanceWidgetDataStore.observeSnapshot(getApplication())
+                .catch { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    Logger.w("HomeViewModel", "balance cache observation failed: ${error.message}")
+                }
+                .collect { snapshot ->
+                    latestBalanceSnapshot = snapshot
+                    if (readyAccounts() != null) {
+                        projectBalanceCacheSnapshot(snapshot)
+                    }
+                }
+        }
     }
 
     private fun observeSettings() {
@@ -168,9 +188,10 @@ class HomeViewModel @JvmOverloads constructor(
         val app = snapshot.appSettings
         val now = System.currentTimeMillis()
         val activeSnoozes = snapshot.snoozes.filter { it.snoozedUntil > now }
+        val sharedInterval = snapshot.sharedRefreshIntervalSeconds
         _uiState.value = _uiState.value.copy(
-            refreshIntervalSeconds = app.foregroundMonitoringIntervalSeconds,
-            backgroundRefreshIntervalSeconds = app.backgroundRefreshIntervalSeconds,
+            refreshIntervalSeconds = sharedInterval,
+            backgroundRefreshIntervalSeconds = snapshot.effectiveBackgroundCadenceSeconds,
             alertEnabled = app.alertEnabled,
             alertThreshold = app.alertThreshold.toFloat(),
             changeAlertEnabled = app.changeAlertEnabled,
@@ -217,6 +238,7 @@ class HomeViewModel @JvmOverloads constructor(
                         }
                         is AccountLoadState.Corrupt -> {
                             nonRefreshErrorMessage = accountCorruptionMessage()
+                            refreshCacheBaselines.clear()
                             _uiState.value = _uiState.value.copy(
                                 accountLoadState = state,
                                 accounts = emptyList(),
@@ -246,6 +268,7 @@ class HomeViewModel @JvmOverloads constructor(
 
     private fun syncRefreshStates(accounts: List<AccountInfo>) {
         val ids = accounts.map { it.id }.toSet()
+        refreshCacheBaselines.keys.retainAll(ids)
         val retained = _uiState.value.refreshStates
             .filterKeys { it in ids }
             .toMutableMap()
@@ -281,8 +304,15 @@ class HomeViewModel @JvmOverloads constructor(
 
     private fun clearNonRefreshError() = setNonRefreshError(null)
 
-    private fun beginRefresh(accountId: String): Long {
+    private fun beginRefresh(
+        accountId: String,
+        cacheSnapshot: BalanceCacheSnapshot = BalanceWidgetDataStore.getSnapshot(getApplication())
+    ): Long {
         val requestId = refreshRequestCounter.incrementAndGet()
+        refreshCacheBaselines[accountId] = RefreshCacheBaseline(
+            requestId = requestId,
+            accountSnapshot = cacheSnapshot.forAccount(accountId)
+        )
         val previous = _uiState.value.refreshStates[accountId] ?: AccountRefreshUiState()
         val states = _uiState.value.refreshStates.toMutableMap()
         states[accountId] = previous.copy(
@@ -292,6 +322,12 @@ class HomeViewModel @JvmOverloads constructor(
         )
         publishRefreshStates(states)
         return requestId
+    }
+
+    private fun clearRefreshCacheBaseline(accountId: String, requestId: Long) {
+        if (refreshCacheBaselines[accountId]?.requestId == requestId) {
+            refreshCacheBaselines.remove(accountId)
+        }
     }
 
     private fun isCurrentRefresh(accountId: String, requestId: Long): Boolean =
@@ -356,9 +392,10 @@ class HomeViewModel @JvmOverloads constructor(
         requestId: Long,
         result: com.balancesentinel.app.data.refresh.AccountRefreshResult
     ) {
+        if (!isCurrentRefresh(account.id, requestId)) return
+        clearRefreshCacheBaseline(account.id, requestId)
         when (result) {
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Committed -> {
-                if (!isCurrentRefresh(account.id, requestId)) return
                 val balances = _uiState.value.accountBalances.toMutableMap()
                 balances[account.id] = toBalanceResponse(result.balance)
                 _uiState.value = _uiState.value.copy(accountBalances = balances)
@@ -373,7 +410,6 @@ class HomeViewModel @JvmOverloads constructor(
                 }
             }
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Failed -> {
-                if (!isCurrentRefresh(account.id, requestId)) return
                 val message = "[${account.label}] ${result.failure.message}"
                 markRefreshFailure(
                     account = account,
@@ -383,7 +419,6 @@ class HomeViewModel @JvmOverloads constructor(
                 )
             }
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
-                if (!isCurrentRefresh(account.id, requestId)) return
                 markRefreshFailure(
                     account = account,
                     requestId = requestId,
@@ -392,7 +427,6 @@ class HomeViewModel @JvmOverloads constructor(
                 )
             }
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
-                if (!isCurrentRefresh(account.id, requestId)) return
                 val message = "[${account.label}] ${result.reason}"
                 markRefreshFailure(account, requestId, message)
             }
@@ -414,29 +448,42 @@ class HomeViewModel @JvmOverloads constructor(
     /** 从 Widget 缓存恢复首页余额数据，避免显示误导的"查询失败" */
     private fun loadCachedBalancesForReadyAccounts() {
         try {
-            _uiState.value = _uiState.value.copy(
-                accountBalances = emptyMap(),
-                settingsLoading = _uiState.value.settingsLoading
-            )
-            val accounts = _uiState.value.accounts
-            if (accounts.isEmpty()) {
-                Logger.i("HomeViewModel", "loadCachedBalances: no accounts")
-                return
+            projectBalanceCacheSnapshot(latestBalanceSnapshot)
+            if (gateway == null && getApplication<Application>() !is com.balancesentinel.app.DeepSeekApp) {
+                Logger.w("HomeViewModel", "loadCachedBalances: no cached data found")
             }
+        } catch (e: Exception) { Logger.e("HomeViewModel", "loadCachedBalances failed", e) }
+    }
 
-            val allBalances = BalanceWidgetDataStore.getAllBalances(getApplication())
-            Logger.i("HomeViewModel", "loadCachedBalances: found ${allBalances.size} cached balances")
+    /** Project durable cache changes without generating user-facing refresh events. */
+    private fun projectBalanceCacheSnapshot(snapshot: BalanceCacheSnapshot) {
+        val accounts = readyAccounts() ?: return
+        if (accounts.isEmpty()) {
+            Logger.i("HomeViewModel", "loadCachedBalances: no accounts")
+            return
+        }
 
-            val byAccount = allBalances.groupBy { it.accountId }
+        val byAccount = snapshot.balances.groupBy { it.accountId }
+        val failures = snapshot.failures.associateBy { it.accountId }
+        val accountIds = accounts.mapTo(mutableSetOf()) { it.id }
+        val accountBalances = _uiState.value.accountBalances
+            .filterKeys { it in accountIds }
+            .toMutableMap()
+        val states = _uiState.value.refreshStates.toMutableMap()
 
-            val accountBalances = mutableMapOf<String, BalanceResponse>()
-            val cachedTimestamps = mutableMapOf<String, Long>()
-            for (account in accounts) {
-                val entries = byAccount[account.id]
-                if (entries == null) {
-                    Logger.w("HomeViewModel", "loadCachedBalances: no cache for ${account.label}")
-                    continue
+        accounts.forEach { account ->
+            val entries = byAccount[account.id].orEmpty()
+            val failure = failures[account.id]
+            val state = states[account.id] ?: AccountRefreshUiState()
+            val accountSnapshot = AccountCacheSnapshot(entries, failure)
+            if (state.isLoading) {
+                val baseline = refreshCacheBaselines[account.id]
+                if (baseline == null || baseline.accountSnapshot == accountSnapshot) {
+                    return@forEach
                 }
+                refreshCacheBaselines.remove(account.id)
+            }
+            if (entries.isNotEmpty()) {
                 accountBalances[account.id] = BalanceResponse(
                     isAvailable = entries.all { it.isAvailable },
                     balanceInfos = entries.map { entry ->
@@ -448,28 +495,32 @@ class HomeViewModel @JvmOverloads constructor(
                         )
                     }
                 )
-                cachedTimestamps[account.id] = entries.maxOfOrNull { it.lastUpdated } ?: 0L
-                Logger.i("HomeViewModel", "loadCachedBalances: loaded ${account.label}, isAvailable=${entries.all { it.isAvailable }}")
-            }
-
-            if (accountBalances.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    accountBalances = accountBalances
+                val timestamp = entries.maxOfOrNull { it.lastUpdated } ?: state.dataTimestamp
+                val staleReason = failure?.reason ?: entries.firstOrNull { it.stale }?.staleReason
+                states[account.id] = state.copy(
+                    isLoading = false,
+                    lastSuccessAt = if (staleReason == null) {
+                        maxOf(state.lastSuccessAt ?: 0L, timestamp ?: 0L).takeIf { it > 0L }
+                    } else state.lastSuccessAt,
+                    dataTimestamp = timestamp,
+                    stale = staleReason != null,
+                    errorMessage = staleReason?.let { "[${account.label}] $it" }
                 )
-                val states = _uiState.value.refreshStates.toMutableMap()
-                cachedTimestamps.forEach { (accountId, timestamp) ->
-                    val state = states[accountId] ?: AccountRefreshUiState()
-                    if (state.dataTimestamp == null) {
-                        states[accountId] = state.copy(dataTimestamp = timestamp)
-                    }
-                }
-                publishRefreshStates(states)
-                Logger.i("HomeViewModel", "loadCachedBalances: updated UI with ${accountBalances.size} accounts")
+            } else if (failure != null) {
+                accountBalances.remove(account.id)
+                states[account.id] = state.copy(
+                    isLoading = false,
+                    stale = false,
+                    dataTimestamp = null,
+                    errorMessage = "[${account.label}] ${failure.reason}"
+                )
+            } else {
+                accountBalances.remove(account.id)
             }
-            if (gateway == null && getApplication<Application>() !is com.balancesentinel.app.DeepSeekApp) {
-                Logger.w("HomeViewModel", "loadCachedBalances: no cached data found")
-            }
-        } catch (e: Exception) { Logger.e("HomeViewModel", "loadCachedBalances failed", e) }
+        }
+
+        _uiState.value = _uiState.value.copy(accountBalances = accountBalances)
+        publishRefreshStates(states)
     }
 
     // ── 午夜调度 ──
@@ -672,33 +723,39 @@ class HomeViewModel @JvmOverloads constructor(
     // ── 全局设置 ──
 
     fun setRefreshInterval(seconds: Int) {
-        _uiState.value = _uiState.value.copy(refreshIntervalSeconds = seconds)
+        val sharedInterval = seconds.coerceAtLeast(1)
+        _uiState.value = _uiState.value.copy(refreshIntervalSeconds = sharedInterval)
         viewModelScope.launch {
             settingsRepository.updateSnapshot { current ->
                 current.copy(
                     appSettings = current.appSettings.copy(
-                        foregroundMonitoringIntervalSeconds = seconds,
-                        backgroundRefreshIntervalSeconds = if (
-                            seconds >= RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
-                        ) seconds else current.backgroundRefreshIntervalSeconds
-                            ?: RoomSettingsRepository.MIN_BACKGROUND_INTERVAL_SECONDS
+                        foregroundMonitoringIntervalSeconds = sharedInterval,
+                        // Preserve an explicit background-disabled state. The
+                        // shared cadence is still used by the foreground service.
+                        backgroundRefreshIntervalSeconds =
+                            current.appSettings.backgroundRefreshIntervalSeconds?.let { sharedInterval }
                     )
                 )
             }
+            // DeepSeekApp owns background WorkManager reconciliation. Notify
+            // the foreground service only after Room publishes the new value.
+            notifyServiceRescheduleIfDesired()
         }
-        // 通知前台 Service 用新间隔重新调度 Handler
-        notifyServiceReschedule()
         if (!readyAccounts().isNullOrEmpty()) refreshBalance()
     }
 
-    /** 发送 startService 意图让 Service 的 onStartCommand 触发重调度 */
-    private fun notifyServiceReschedule() {
-        try {
-            val context = getApplication<Application>()
-            val intent = Intent(context, BalanceRefreshService::class.java)
-                .putExtra(BalanceRefreshService.EXTRA_USER_INITIATED, true)
-            ContextCompat.startForegroundService(context, intent)
-        } catch (e: Exception) { Logger.w("HomeViewModel", "operation failed", e) }
+    /** Re-schedules a live user-owned session without changing its intent. */
+    private suspend fun notifyServiceRescheduleIfDesired() {
+        val context = getApplication<Application>()
+        val desired = runCatching {
+            WalletDatabaseProvider.get(context).monitoringStateDao().get()?.desired == true
+        }.getOrDefault(false)
+        if (!desired) return
+        runCatching {
+            ForegroundServiceStarter(userInitiated = false).start(context)
+        }.onFailure { error ->
+            Logger.w("HomeViewModel", "service_reschedule_failed", error)
+        }
     }
 
     fun setAlertEnabled(enabled: Boolean) {
@@ -874,6 +931,7 @@ class HomeViewModel @JvmOverloads constructor(
                     markRefreshFailure(account, requestId, message, cause = e)
                 }
             } finally {
+                clearRefreshCacheBaseline(accountId, requestId)
                 updateRefreshState(accountId, requestId) { state ->
                     state.copy(isLoading = false)
                 }
@@ -893,7 +951,10 @@ class HomeViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             if (readyAccounts() == null) return@launch
             clearNonRefreshError()
-            val requestIds = accounts.associate { it.id to beginRefresh(it.id) }
+            val cacheSnapshot = BalanceWidgetDataStore.getSnapshot(getApplication())
+            val requestIds = accounts.associate { account ->
+                account.id to beginRefresh(account.id, cacheSnapshot)
+            }
             try {
                 val gw = gateway ?: (getApplication<Application>() as? com.balancesentinel.app.DeepSeekApp)?.refreshGateway
                 if (gw != null) {
@@ -928,6 +989,7 @@ class HomeViewModel @JvmOverloads constructor(
                 Logger.e("HomeViewModel", "refreshBalance failed", e)
             } finally {
                 requestIds.forEach { (accountId, requestId) ->
+                    clearRefreshCacheBaseline(accountId, requestId)
                     updateRefreshState(accountId, requestId) { state ->
                         state.copy(isLoading = false)
                     }
@@ -935,6 +997,21 @@ class HomeViewModel @JvmOverloads constructor(
             }
         }
     }
+
+    private data class AccountCacheSnapshot(
+        val balances: List<AccountBalance>,
+        val failure: AccountBalanceFailure?
+    )
+
+    private data class RefreshCacheBaseline(
+        val requestId: Long,
+        val accountSnapshot: AccountCacheSnapshot
+    )
+
+    private fun BalanceCacheSnapshot.forAccount(accountId: String) = AccountCacheSnapshot(
+        balances = balances.filter { it.accountId == accountId },
+        failure = failures.firstOrNull { it.accountId == accountId }
+    )
 
     private fun updateAllWidgets() {
         try {

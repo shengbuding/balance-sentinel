@@ -22,8 +22,23 @@ class ContinuousMonitoringController(
     suspend fun start(at: Long = now(), userInitiated: Boolean = false): MonitoringSessionEntity? {
         var started: MonitoringSessionEntity? = null
         database.withTransaction {
-            state.getOrCreate(at)
-            state.setDesiredAndState(true, MonitoringObservedState.STARTING, "USER_STARTED", at)
+            val currentState = state.getOrCreate(at)
+            if (!userInitiated && !currentState.desired) {
+                return@withTransaction
+            }
+            if (!userInitiated && currentState.observedState in setOf(
+                    MonitoringObservedState.PLATFORM_LIMITED,
+                    MonitoringObservedState.PAUSED
+                )
+            ) {
+                return@withTransaction
+            }
+            state.setDesiredAndState(
+                desired = true,
+                observedState = MonitoringObservedState.STARTING,
+                reason = if (userInitiated) "USER_STARTED" else "PROCESS_RECOVERY",
+                updatedAt = at
+            )
             if (userInitiated) state.setLastUserForegroundResetAt(at, at)
             sessions.getOpenForProcess(processSessionId)?.let {
                 state.projectSessionStart(it.id, processSessionId, it.startedAt)
@@ -66,9 +81,11 @@ class ContinuousMonitoringController(
 
     suspend fun stop(
         reason: MonitoringSessionEndReason = MonitoringSessionEndReason.USER_STOPPED,
-        at: Long = now()
+        at: Long = now(),
+        preserveDesired: Boolean = false
     ) {
         database.withTransaction {
+            val currentState = state.getOrCreate(at)
             val current = sessions.getOpenForProcess(processSessionId)
                 ?: sessions.getOpenDataSync()
             if (current != null) {
@@ -76,11 +93,19 @@ class ContinuousMonitoringController(
                 state.projectSessionEnd(
                     current.id,
                     at,
-                    MonitoringObservedState.STOPPED,
+                    if (preserveDesired && currentState.desired) {
+                        MonitoringObservedState.ABNORMAL
+                    } else {
+                        MonitoringObservedState.STOPPED
+                    },
                     reason.name
                 )
             }
-            state.setDesiredAndState(false, MonitoringObservedState.STOPPED, reason.name, at)
+            if (!preserveDesired || !currentState.desired) {
+                state.setDesiredAndState(false, MonitoringObservedState.STOPPED, reason.name, at)
+            } else if (current == null) {
+                state.projectObservedState(MonitoringObservedState.ABNORMAL, reason.name, at)
+            }
         }
     }
 

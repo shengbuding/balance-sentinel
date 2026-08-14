@@ -65,16 +65,6 @@ object RefreshRuntime {
         cached: List<AccountBalance>,
         markStale: () -> Unit
     ): AccountRefreshResult.Failed {
-        if (cached.isEmpty()) {
-            return AccountRefreshResult.Failed(
-                accountId = accountId,
-                failure = failure,
-                stale = false,
-                dataTimestamp = null,
-                lastError = failure.message
-            )
-        }
-
         val persisted = try {
             markStale()
             true
@@ -86,7 +76,7 @@ object RefreshRuntime {
         return AccountRefreshResult.Failed(
             accountId = accountId,
             failure = failure,
-            stale = persisted,
+            stale = persisted && cached.isNotEmpty(),
             dataTimestamp = cached.maxOfOrNull { it.lastUpdated }.takeIf { persisted },
             lastError = failure.message
         )

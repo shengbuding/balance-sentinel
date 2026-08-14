@@ -42,6 +42,17 @@ class WidgetErrorLoggerTest {
     }
 
     @Test
+    fun `log redacts credentials before persisting`() {
+        WidgetErrorLogger.logMessage(context, "Authorization: Bearer widget-secret")
+        WidgetErrorLogger.logMessage(context, "https://user:password@example.com/path")
+
+        val content = WidgetErrorLogger.getLogs(context).joinToString("\n") { it.message }
+        assertFalse(content.contains("widget-secret"))
+        assertFalse(content.contains("user:password"))
+        assertTrue(content.contains("[REDACTED]"))
+    }
+
+    @Test
     fun `getLogs returns empty when no entries`() {
         val entries = WidgetErrorLogger.getLogs(context)
         assertTrue(entries.isEmpty())

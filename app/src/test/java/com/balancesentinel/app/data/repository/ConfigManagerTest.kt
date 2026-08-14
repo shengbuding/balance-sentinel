@@ -187,6 +187,23 @@ class ConfigManagerTest {
     }
 
     @Test
+    fun `buildConfig keeps shared interval and legacy background floor`() {
+        snapshot = snapshot.copy(
+            appSettings = snapshot.appSettings.copy(
+                backgroundRefreshIntervalSeconds = 120,
+                foregroundMonitoringIntervalSeconds = 120
+            )
+        )
+
+        val exported = testJson.decodeFromString<AppConfig>(buildConfig(includeTokens = false))
+
+        assertEquals(120, exported.settings.refreshIntervalSeconds)
+        assertEquals(900, exported.settings.backgroundRefreshInterval)
+        assertEquals(120, exported.settings.foregroundMonitoringInterval)
+        assertEquals(true, exported.settings.backgroundRefreshEnabled)
+    }
+
+    @Test
     fun `buildConfig includes perCurrencyAlertSettings`() {
         snapshot = snapshot.copy(
             accountAlertSettings = listOf(AccountAlertSettingEntity("acc1", "CNY", true, false))

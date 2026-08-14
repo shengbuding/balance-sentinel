@@ -55,7 +55,23 @@ class RefreshResultCommitter(
         fetched: BalanceFetchResult.Success,
         isLatest: () -> Boolean
     ): AccountRefreshResult = RefreshMutationBarrier.withRefreshCommitSuspend {
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.DATA_MUTATION_WAIT,
+            runId = request.runId,
+            accountId = request.accountId,
+            trigger = request.trigger,
+            generation = request.token,
+            timestamp = wallClock()
+        )
         DataMutationCoordinator.withMutationSuspend {
+        RefreshDiagnostics.record(
+            stage = RefreshDiagnosticStage.DATA_MUTATION_ENTERED,
+            runId = request.runId,
+            accountId = request.accountId,
+            trigger = request.trigger,
+            generation = request.token,
+            timestamp = wallClock()
+        )
         if (!isLatest()) return@withMutationSuspend recordTerminal(request, stale(request.accountId))
         val account = try {
             accountStore.getAccount(request.accountId)
@@ -102,6 +118,14 @@ class RefreshResultCommitter(
                     fetched.balance,
                     fetched.completedAt
                 )
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.ROOM_COMMIT_STARTED,
+                    runId = request.runId,
+                    accountId = request.accountId,
+                    trigger = request.trigger,
+                    generation = request.token,
+                    timestamp = wallClock()
+                )
                 val persistedResult = if (runRecorder != null && request.runId != null) {
                     runRecorder.recordAccount(request.runId, request, committed) {
                         roomPersistence.commit(
@@ -122,6 +146,15 @@ class RefreshResultCommitter(
                     )
                     committed
                 }
+                RefreshDiagnostics.record(
+                    stage = RefreshDiagnosticStage.ROOM_COMMIT_COMPLETED,
+                    runId = request.runId,
+                    accountId = request.accountId,
+                    trigger = request.trigger,
+                    generation = request.token,
+                    timestamp = wallClock(),
+                    detail = persistedResult.javaClass.simpleName
+                )
 
                 if (persistedResult !is AccountRefreshResult.Committed) {
                     return@withMutationSuspend persistedResult

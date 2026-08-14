@@ -1,6 +1,7 @@
 package com.balancesentinel.app.widget
 
 import android.content.Context
+import com.balancesentinel.app.data.debug.SensitiveDataRedactor
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -31,7 +32,7 @@ object WidgetErrorLogger {
 
     private fun writeLog(context: Context, message: String) {
         val timestamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        val entry = "[$timestamp] $message"
+        val entry = "[$timestamp] ${SensitiveDataRedactor.redactText(message)}"
         val truncated = if (entry.length > 8000) entry.take(8000) + "...[truncated]" else entry
 
         // Try internal filesDir first

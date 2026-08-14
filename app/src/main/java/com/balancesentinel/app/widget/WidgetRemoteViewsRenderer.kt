@@ -4,6 +4,7 @@ import android.content.Context
 import android.widget.RemoteViews
 import com.balancesentinel.app.R
 import com.balancesentinel.app.ui.navigation.AppRoute
+import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.util.LocalizedFormatter
 
 enum class WidgetPrimaryAction { CONFIGURE, OPEN_HOME, OPEN_INSIGHTS }
@@ -35,7 +36,9 @@ object WidgetRemoteViewsRenderer {
         val balance = (state as? WidgetViewState.Fresh)?.balance
             ?: (state as? WidgetViewState.Stale)?.balance
         val balanceText = when (state) {
-            is WidgetViewState.Fresh, is WidgetViewState.Stale -> balance?.let { formatBalanceDisplay(formatter, it) }
+            is WidgetViewState.Fresh, is WidgetViewState.Stale -> balance?.let {
+                formatBalanceDisplay(formatter, it, compact = !expanded)
+            }
                 ?: context.getString(R.string.widget_query_balance)
             is WidgetViewState.PermissionRestricted -> context.getString(R.string.widget_state_permission_restricted_balance)
             is WidgetViewState.Unconfigured -> context.getString(R.string.widget_state_configure_prompt)
@@ -114,11 +117,29 @@ object WidgetRemoteViewsRenderer {
         return views to model
     }
 
-    private fun formatBalanceDisplay(formatter: LocalizedFormatter, balance: AggregatedBalance): String {
-        val first = formatter.formatCurrency(balance.totalBalance.toDoubleOrNull() ?: 0.0, balance.currency)
+    private fun formatBalanceDisplay(
+        formatter: LocalizedFormatter,
+        balance: AggregatedBalance,
+        compact: Boolean
+    ): String {
+        val first = formatCurrencyDisplay(formatter, balance.totalBalance, balance.currency, compact)
         val second = balance.totalBalance2.takeIf { it.isNotEmpty() && (it.toDoubleOrNull() ?: 0.0) > 0 }
-            ?.let { " · ${formatter.formatCurrency(it.toDoubleOrNull() ?: 0.0, balance.currency2)}" }
+            ?.let { " · ${formatCurrencyDisplay(formatter, it, balance.currency2, compact)}" }
         return first + (second ?: "")
+    }
+
+    private fun formatCurrencyDisplay(
+        formatter: LocalizedFormatter,
+        amount: String,
+        currency: String,
+        compact: Boolean
+    ): String {
+        val value = amount.toDoubleOrNull() ?: 0.0
+        return if (compact) {
+            FormatUtils.currencySymbol(currency) + formatter.formatAmount(value)
+        } else {
+            formatter.formatCurrency(value, currency)
+        }
     }
 
     private fun formatSignedValue(formatter: LocalizedFormatter, value: String, currency: String): String =

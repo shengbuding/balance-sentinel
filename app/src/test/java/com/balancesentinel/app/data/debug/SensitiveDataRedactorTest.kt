@@ -73,6 +73,17 @@ class SensitiveDataRedactorTest {
         assertEquals(3, "[REDACTED]".toRegex(RegexOption.LITERAL).findAll(redacted).count())
     }
 
+    @Test
+    fun `url userinfo is removed even when there is no query`() {
+        val redacted = SensitiveDataRedactor.redactUrl(
+            "https://user:password@example.com/path".toHttpUrl()
+        )
+
+        assertEquals("https://example.com/path", redacted)
+        assertFalse(redacted.contains("user"))
+        assertFalse(redacted.contains("password"))
+    }
+
     // Mutation caught: handling only top-level JSON keys or only sk-prefixed credentials.
     @Test
     fun `nested json and non sk credentials are redacted`() {

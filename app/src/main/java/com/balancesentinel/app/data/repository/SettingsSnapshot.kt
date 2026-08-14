@@ -20,12 +20,22 @@ data class SettingsSnapshot(
     val foregroundMonitoringIntervalSeconds: Int
         get() = appSettings.foregroundMonitoringIntervalSeconds
 
+    /**
+     * The single user-facing cadence used by the foreground service and
+     * background recovery work. The two persisted columns remain for
+     * backwards-compatible database/config reads.
+     */
+    val sharedRefreshIntervalSeconds: Int
+        get() = foregroundMonitoringIntervalSeconds.takeIf { it > 0 }
+            ?: backgroundRefreshIntervalSeconds?.takeIf { it > 0 }
+            ?: RoomSettingsRepository.DEFAULT_FOREGROUND_INTERVAL_SECONDS
+
     /** The cadence used by a caller that has no foreground session. */
     val effectiveBackgroundCadenceSeconds: Int?
-        get() = backgroundRefreshIntervalSeconds
+        get() = backgroundRefreshIntervalSeconds?.let { sharedRefreshIntervalSeconds }
 
     fun effectiveCadenceSeconds(isForeground: Boolean): Int? =
-        if (isForeground) foregroundMonitoringIntervalSeconds else backgroundRefreshIntervalSeconds
+        if (isForeground) sharedRefreshIntervalSeconds else effectiveBackgroundCadenceSeconds
 
     fun accountAlert(accountId: String, currency: String): AccountAlertSettingEntity? =
         accountAlertSettings.firstOrNull { it.accountId == accountId && it.currency == currency }

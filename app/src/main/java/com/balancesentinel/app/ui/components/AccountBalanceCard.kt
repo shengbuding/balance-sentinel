@@ -63,7 +63,9 @@ fun AccountBalanceCard(
         DebugDialog(
             accountId = accountId,
             accountLabel = accountLabel,
-            onDismiss = { showDebugDialog = false }
+            onDismiss = { showDebugDialog = false },
+            onRefresh = onRefresh,
+            isRefreshing = effectiveLoading
         )
     }
 
