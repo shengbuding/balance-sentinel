@@ -33,6 +33,7 @@ import com.balancesentinel.app.data.repository.SettingsRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.service.MonitoringStateStore
 import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
 import com.balancesentinel.app.work.MidnightWorkSchedulingGate
@@ -116,6 +117,15 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             runBlocking(Dispatchers.IO) { appResetRecoveryRunner() }
         }
         refreshGateway = RefreshRuntime.create(this)
+        runCatching {
+            // Materialize the monitoring projection before any worker/receiver
+            // can create its default row. This preserves the old app's
+            // automatic foreground-monitoring intent for upgrades, while a
+            // fresh install (with no legacy service heartbeat) remains opt-in.
+            runBlocking(Dispatchers.IO) { MonitoringStateStore.from(this@DeepSeekApp).get() }
+        }.onFailure { error ->
+            CrashLogger.logNonFatal("MonitoringState", error)
+        }
         runCatching {
             MidnightWorkSchedulingGate.withLock {
                 MidnightWorkScheduler().reconcile(

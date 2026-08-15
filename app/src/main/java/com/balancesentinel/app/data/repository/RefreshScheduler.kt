@@ -219,6 +219,20 @@ object RefreshScheduler {
         )
     }
 
+    /**
+     * Returns true only for state written by the pre-WorkManager foreground
+     * service. New background plans use an explicit work_manager_* method and
+     * must not silently opt a fresh install into a foreground session.
+     */
+    fun hasLegacyForegroundIntent(context: Context): Boolean {
+        val state = getState(context)
+        if (getServiceHealthState(context).lastHeartbeat > 0L) return true
+        return state.lastScheduledAt > 0L && state.alarmMethod !in setOf(
+            "work_manager_periodic",
+            "work_manager_recovery_chain"
+        )
+    }
+
     fun getServiceHealthState(context: Context): ServiceHealthState {
         val p = getPrefs(context)
         return ServiceHealthState(

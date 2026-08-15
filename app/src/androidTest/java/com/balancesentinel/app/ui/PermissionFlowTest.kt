@@ -22,6 +22,7 @@ import com.balancesentinel.app.ui.components.CapabilityStatusCard
 import com.balancesentinel.app.ui.theme.DeepSeekBalanceTheme
 import com.balancesentinel.app.ui.viewmodel.CapabilityUiEvent
 import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
+import com.balancesentinel.app.service.ServiceStartResult
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -156,7 +157,10 @@ class PermissionFlowTest {
         permissionHistory = history,
         loadMonitoringState = loadState,
         setMonitoringDesired = setDesired,
-        startMonitoring = { onStart() },
+        startMonitoring = { _, _ ->
+            onStart()
+            ServiceStartResult.Started
+        },
         stopMonitoring = {}
     )
 

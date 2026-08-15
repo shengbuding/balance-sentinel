@@ -147,6 +147,39 @@ class RefreshSchedulerTest {
         assertEquals(0, state.totalAlarmsFired)
     }
 
+    @Test
+    fun `legacy foreground intent requires legacy scheduler evidence`() {
+        assertFalse(RefreshScheduler.hasLegacyForegroundIntent(context))
+
+        RefreshScheduler.recordSchedule(
+            context,
+            intervalSeconds = 30,
+            expectedTriggerTime = System.currentTimeMillis() + 30_000L,
+            method = "foreground_service"
+        )
+
+        assertTrue(RefreshScheduler.hasLegacyForegroundIntent(context))
+    }
+
+    @Test
+    fun `work manager plans do not opt into foreground monitoring`() {
+        RefreshScheduler.recordSchedule(
+            context,
+            intervalSeconds = 900,
+            expectedTriggerTime = System.currentTimeMillis() + 900_000L,
+            method = "work_manager_periodic"
+        )
+
+        assertFalse(RefreshScheduler.hasLegacyForegroundIntent(context))
+    }
+
+    @Test
+    fun `legacy heartbeat restores foreground intent`() {
+        RefreshScheduler.heartbeat(context)
+
+        assertTrue(RefreshScheduler.hasLegacyForegroundIntent(context))
+    }
+
     // ── resetAlarmCounters ──
 
     @Test

@@ -14,8 +14,23 @@ abstract class MonitoringStateDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     protected abstract suspend fun insertSingletonRow(state: MonitoringStateEntity): Long
 
-    suspend fun getOrCreate(updatedAt: Long): MonitoringStateEntity {
-        insertSingletonRow(MonitoringStateEntity(updatedAt = updatedAt))
+    suspend fun getOrCreate(
+        updatedAt: Long,
+        initialDesired: Boolean = false,
+        initialReason: String? = null
+    ): MonitoringStateEntity {
+        insertSingletonRow(
+            MonitoringStateEntity(
+                desired = initialDesired,
+                observedState = if (initialDesired) {
+                    MonitoringObservedState.STARTING
+                } else {
+                    MonitoringObservedState.STOPPED
+                },
+                stateReason = initialReason,
+                updatedAt = updatedAt
+            )
+        )
         return requireNotNull(get())
     }
 

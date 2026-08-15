@@ -9,6 +9,7 @@ import com.balancesentinel.app.platform.permission.CapabilityAvailability
 import com.balancesentinel.app.platform.permission.CapabilityChecker
 import com.balancesentinel.app.platform.permission.CapabilityPermissionHistory
 import com.balancesentinel.app.platform.permission.CapabilitySnapshot
+import com.balancesentinel.app.service.ServiceStartResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -150,6 +151,20 @@ class CapabilityViewModelTest {
     }
 
     @Test
+    fun `initial refresh restores desired monitoring after process recreation`() = runTest {
+        var starts = 0
+        val viewModel = createViewModel(
+            loadState = { monitoring(true) },
+            onStart = { starts++ }
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(1, starts)
+        assertTrue(viewModel.uiState.value.monitoringDesired)
+    }
+
+    @Test
     fun `capability statuses remain independent`() = runTest {
         val viewModel = createViewModel(
             checker = CapabilityChecker {
@@ -214,7 +229,10 @@ class CapabilityViewModelTest {
         permissionHistory = history,
         loadMonitoringState = loadState,
         setMonitoringDesired = setDesired,
-        startMonitoring = { onStart() },
+        startMonitoring = { _, _ ->
+            onStart()
+            ServiceStartResult.Started
+        },
         stopMonitoring = {}
     )
 
