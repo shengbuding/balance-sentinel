@@ -36,6 +36,7 @@ import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.work.RefreshWorkScheduler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -63,7 +64,7 @@ class BalanceRefreshService : Service() {
     private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var refreshGateway: RefreshGateway
     private lateinit var settingsRepository: SettingsRepository
-    private var isLoopRunning = false
+    @Volatile private var isLoopRunning = false
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
     private var isSelfDestructing = false
     private lateinit var notificationHelper: NotificationHelper
@@ -302,6 +303,13 @@ class BalanceRefreshService : Service() {
                     ServiceHealthTracker.recordFailure(this@BalanceRefreshService)
                     RefreshStatsStore.recordFailure(this@BalanceRefreshService)
                 }
+            } catch (e: CancellationException) {
+                // Service shutdown cancels the in-flight refresh scope. This is
+                // an expected lifecycle event, not a provider/query failure;
+                // let cancellation propagate without replacing the foreground
+                // notification with "Job was cancelled".
+                Logger.i(TAG, "Auto refresh batch cancelled")
+                throw e
             } catch (e: Exception) {
                 Logger.e(TAG, "Auto refresh batch failed", e)
                 ServiceHealthTracker.recordFailure(this@BalanceRefreshService)
@@ -309,7 +317,9 @@ class BalanceRefreshService : Service() {
                 CrashLogger.logNonFatal(TAG, e)
                 notificationHelper.sendForegroundNotification(getString(R.string.service_notif_query_failed), e.message ?: e.javaClass.simpleName)
             } finally {
-                scheduleNext()
+                // onDestroy() stops the loop before cancelling refreshScope.
+                // Do not enqueue a new refresh after that lifecycle boundary.
+                if (isLoopRunning) scheduleNext()
                 isRefreshing = false
                 try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
                 CrashLogger.breadcrumb(TAG, "Refresh cycle completed")
@@ -319,6 +329,8 @@ class BalanceRefreshService : Service() {
     }
 
     private fun scheduleNext() {
+        if (!isLoopRunning) return
+
         val baseIntervalSec =
             ((settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value)
                 ?.sharedRefreshIntervalSeconds ?: DEFAULT_FOREGROUND_INTERVAL_SECONDS
@@ -332,14 +344,24 @@ class BalanceRefreshService : Service() {
             Logger.w(TAG, "Protection mode active — reduced refresh to every 60 min")
         }
 
-        RefreshScheduler.recordSchedule(
-            this,
-            if (inProtection) 3600 else baseIntervalSec,
-            System.currentTimeMillis() + intervalMs,
-            if (inProtection) "protection_mode" else "foreground_service"
-        )
-        handler.removeCallbacks(refreshTask)
-        handler.postDelayed(refreshTask, intervalMs)
+        val scheduledAt = System.currentTimeMillis() + intervalMs
+        val scheduleMethod = if (inProtection) "protection_mode" else "foreground_service"
+        val scheduleIntervalSec = if (inProtection) 3600 else baseIntervalSec
+
+        // Serialize the final state check and Handler mutation on the main
+        // looper. If onDestroy() wins the race, this runnable becomes a no-op;
+        // it can never enqueue refreshTask after stopLoop() removes callbacks.
+        handler.post {
+            if (!isLoopRunning) return@post
+            RefreshScheduler.recordSchedule(
+                this,
+                scheduleIntervalSec,
+                scheduledAt,
+                scheduleMethod
+            )
+            handler.removeCallbacks(refreshTask)
+            handler.postDelayed(refreshTask, intervalMs)
+        }
     }
 
     private fun sendWidgetUpdateBroadcast() {
