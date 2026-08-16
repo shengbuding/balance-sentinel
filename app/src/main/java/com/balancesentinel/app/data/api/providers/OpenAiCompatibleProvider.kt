@@ -19,6 +19,7 @@ import com.balancesentinel.app.data.api.balance.ScriptExecutionResult
 import com.balancesentinel.app.data.api.balance.UsageScript
 import com.balancesentinel.app.data.api.balance.UsageScriptExecutor
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.decodeUsageDisplayFields
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.util.Logger
 
@@ -52,7 +53,13 @@ class OpenAiCompatibleProvider(
                             RefreshFailure.ResponseSchemaFailure("Script returned no balance data")
                         )
                     Logger.i("OpenAiCompatibleProvider", "Custom script succeeded")
-                    ProviderResult.Success(balance.toUnifiedBalance(providerType, accountId))
+                    ProviderResult.Success(
+                        balance.toUnifiedBalance(
+                            providerType,
+                            accountId,
+                            decodeUsageDisplayFields(effectiveConfig.settings["usageDisplayFields"])
+                        )
+                    )
                 }
                 is ScriptExecutionResult.Failure -> scriptFailure(result.failure)
             }
@@ -82,7 +89,9 @@ class OpenAiCompatibleProvider(
             extraSettings = config.settings,
             usageScript = source,
             usageScriptEnabled = enabled,
-            authorizedScriptOrigins = authorizedOrigins
+            authorizedScriptOrigins = authorizedOrigins,
+            usageDisplayFields = decodeUsageDisplayFields(config.settings["usageDisplayFields"]),
+            usageBalanceField = config.settings["usageBalanceField"]
         )
         return UsageScriptExecutor.execute(
             script = UsageScript(
@@ -107,7 +116,8 @@ class OpenAiCompatibleProvider(
 
     private fun BalanceData.toUnifiedBalance(
         providerType: ProviderType,
-        accountId: String
+        accountId: String,
+        displayFieldLabels: Map<String, String>
     ): UnifiedBalance {
         val currency = unit ?: "CNY"
         return UnifiedBalance(
@@ -118,7 +128,10 @@ class OpenAiCompatibleProvider(
                 BalanceEntry(
                     currency = currency,
                     totalBalance = checkNotNull(remaining),
-                    unit = currency
+                    unit = currency,
+                    displayFields = fields
+                        .filterKeys { it in displayFieldLabels }
+                        .mapKeys { (path, _) -> displayFieldLabels[path].orEmpty().ifBlank { path } }
                 )
             ),
             isEstimated = false

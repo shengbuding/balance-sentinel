@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.repository
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -207,6 +208,22 @@ class NotificationHelper(private val context: Context) {
     fun sendForegroundNotification(title: String, content: String) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(DeepSeekApp.NOTIFICATION_ID, buildForegroundNotification(title, content))
+    }
+
+    /** Reuse the retained notification when a bounded service session is promoted again. */
+    fun currentPersistentNotification(): Notification? {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return runCatching {
+            nm.activeNotifications
+                .firstOrNull { it.id == DeepSeekApp.NOTIFICATION_ID }
+                ?.notification
+        }.getOrNull()
+    }
+
+    /** Explicit user shutdown must remove a notification detached from its old service. */
+    fun cancelPersistentNotification() {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(DeepSeekApp.NOTIFICATION_ID)
     }
 
     /**

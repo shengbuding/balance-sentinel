@@ -26,6 +26,8 @@ import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.RoomHistoryRepository
+import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -74,11 +76,13 @@ class InsightsViewModelTest {
         database = Room.inMemoryDatabaseBuilder(context, WalletDatabase::class.java).build()
         WalletDatabaseProvider.installForTests(database)
         runBlocking { database.accountDao().insertCreate(insightsRoomAccount()) }
+        BalanceWidgetDataStore.clearAll(context)
         Dispatchers.setMain(UnconfinedTestDispatcher())
     }
 
     @After
     fun tearDown() {
+        BalanceWidgetDataStore.clearAll(context)
         WalletDatabaseProvider.clearForTests()
         Dispatchers.resetMain()
     }
@@ -262,6 +266,246 @@ class InsightsViewModelTest {
         assertEquals("USD", viewModel.uiState.value.selectedCurrency)
         assertEquals(1, viewModel.uiState.value.intradayOutput!!.dataPointCount)
         assertEquals(50f, viewModel.uiState.value.intradayOutput!!.trendPoints[0].actualBalance)
+    }
+
+    @Test
+    fun `current balance snapshot hides historical currencies for the same account`() {
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 3_600_000L, "CNY", 100f, 0f, 100f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "USD", 7.73f, 0f, 7.73f)
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = INSIGHTS_ACCOUNT_ID,
+                    label = "Insights test account",
+                    totalBalance = "7.73",
+                    currency = "USD",
+                    isAvailable = true,
+                    grantedBalance = "0",
+                    toppedUpBalance = "0",
+                    lastUpdated = now
+                )
+            )
+        )
+        val savedState = SavedStateHandle(mapOf("insights.selectedCurrency" to "CNY"))
+
+        val viewModel = createViewModel(savedStateHandle = savedState)
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.selectedCurrency == "USD"
+        }
+
+        assertEquals(listOf("USD"), viewModel.uiState.value.availableCurrencies)
+        assertEquals("USD", savedState.get<String>("insights.selectedCurrency"))
+    }
+
+    @Test
+    fun `history currency fallback is scoped to visible accounts`() {
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = "Hidden historical account"
+                )
+            )
+        }
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(
+                INSIGHTS_ACCOUNT_ID,
+                now - 366L * 24 * 3_600_000L,
+                "CNY",
+                100f,
+                0f,
+                100f
+            ),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "USD", 7.73f, 0f, 7.73f),
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now, "CNY", 100f, 0f, 100f)
+        )
+
+        val viewModel = createViewModel(accounts = listOf(insightsAccountInfo()))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.selectedCurrency == "USD"
+        }
+
+        assertEquals(listOf("USD"), viewModel.uiState.value.availableCurrencies)
+    }
+
+    @Test
+    fun `current snapshot limits each account to its current currencies`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "CNY account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 1_000L, "CNY", 100f, 0f, 100f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, "USD", 7.73f, 0f, 7.73f),
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now, "CNY", 100f, 0f, 100f)
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = INSIGHTS_ACCOUNT_ID,
+                    label = "Insights test account",
+                    totalBalance = "7.73",
+                    currency = "USD",
+                    isAvailable = true,
+                    grantedBalance = "0",
+                    toppedUpBalance = "0",
+                    lastUpdated = now
+                )
+            )
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            SECOND_INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = SECOND_INSIGHTS_ACCOUNT_ID,
+                    label = secondAccount.label,
+                    totalBalance = "100",
+                    currency = "CNY",
+                    isAvailable = true,
+                    grantedBalance = "0",
+                    toppedUpBalance = "0",
+                    lastUpdated = now
+                )
+            )
+        )
+
+        val viewModel = createViewModel(accounts = listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.selectedCurrency == "CNY"
+        }
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(SECOND_INSIGHTS_ACCOUNT_ID), state.eligibleAccounts.map { it.id })
+    }
+
+    @Test
+    fun `currency eligibility excludes accounts without matching data and keeps single account estimate`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "USD account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val today = java.time.LocalDate.now()
+        addInsightsRoomSummaries(
+            *listOf(3, 2, 1).mapIndexed { index, daysAgo ->
+                insightsSummary(
+                    accountId = INSIGHTS_ACCOUNT_ID,
+                    date = today.minusDays(daysAgo.toLong()).toString(),
+                    currency = "CNY",
+                    close = 90f - index * 10f,
+                    consumed = 5f + index * 5f
+                )
+            }.toTypedArray(),
+            *listOf(3, 2, 1).mapIndexed { index, daysAgo ->
+                insightsSummary(
+                    accountId = SECOND_INSIGHTS_ACCOUNT_ID,
+                    date = today.minusDays(daysAgo.toLong()).toString(),
+                    currency = "USD",
+                    close = 45f - index * 5f,
+                    consumed = 2f + index * 2f
+                )
+            }.toTypedArray()
+        )
+
+        val viewModel = createViewModel(listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.selectedCurrency == "CNY" && state.dailyOutput != null
+        }
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.accounts.size)
+        assertEquals(listOf(INSIGHTS_ACCOUNT_ID), state.eligibleAccounts.map { it.id })
+        assertEquals(EstimateMethod.LINEAR_REGRESSION, state.dailyOutput!!.estimate!!.method)
+    }
+
+    @Test
+    fun `switching currency clears an account selection that is no longer eligible`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "USD account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val today = java.time.LocalDate.now()
+        addInsightsRoomSummaries(
+            insightsSummary(
+                accountId = INSIGHTS_ACCOUNT_ID,
+                date = today.minusDays(1).toString(),
+                currency = "CNY",
+                close = 90f,
+                consumed = 10f
+            ),
+            insightsSummary(
+                accountId = SECOND_INSIGHTS_ACCOUNT_ID,
+                date = today.minusDays(1).toString(),
+                currency = "USD",
+                close = 45f,
+                consumed = 5f
+            )
+        )
+        val savedState = SavedStateHandle(
+            mapOf(
+                "insights.selectedAccountId" to INSIGHTS_ACCOUNT_ID,
+                "insights.selectedCurrency" to "CNY"
+            )
+        )
+        val viewModel = createViewModel(
+            accounts = listOf(insightsAccountInfo(), secondAccount),
+            savedStateHandle = savedState
+        )
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading &&
+                state.selectedCurrency == "CNY" &&
+                state.selectedAccountId == INSIGHTS_ACCOUNT_ID &&
+                state.eligibleAccounts.map { it.id } == listOf(INSIGHTS_ACCOUNT_ID)
+        }
+
+        viewModel.selectCurrency("USD")
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading &&
+                state.selectedCurrency == "USD" &&
+                state.selectedAccountId == null &&
+                state.eligibleAccounts.map { it.id } == listOf(SECOND_INSIGHTS_ACCOUNT_ID)
+        }
+
+        val state = viewModel.uiState.value
+        assertNull(savedState.get<String>("insights.selectedAccountId"))
+        assertEquals(45f, state.dailyOutput!!.dailyPoints.single().balance, 0.01f)
     }
 
     @Test
@@ -575,7 +819,7 @@ class InsightsViewModelTest {
 
     @Test
     fun `mergeIntradayOutputs carry-forward fills missing timestamps`() {
-        // Account A has points at 1000 and 2000 (inserted first → LinkedHashMap order)
+        // Account A has points at 1000 and 2000.
         val a = IntradayOutput(
             trendPoints = listOf(
                 IntradayPoint(1000L, 100f, false, false, 0f, 0f),
@@ -584,7 +828,7 @@ class InsightsViewModelTest {
             billReport = IntradayBillReport(20f, 0f, 0f, -20f),
             dataPointCount = 2
         )
-        // Account B has a point at 1500 only (inserted second → appears after A's points)
+        // Account B has a point at 1500 only.
         val b = IntradayOutput(
             trendPoints = listOf(
                 IntradayPoint(1500L, 50f, false, false, 0f, 0f)
@@ -593,18 +837,68 @@ class InsightsViewModelTest {
             dataPointCount = 1
         )
         val result = InsightsViewModel.mergeIntradayOutputs(listOf(a, b))
-        // LinkedHashMap maintains insertion order from iterating outputs:
-        // t=1000 (from A), t=2000 (from A), t=1500 (from B)
-        // At t=1000: A=100 → totalBalance=100
-        // At t=2000: A=80 → totalBalance=80
-        // At t=1500: B=50, A still 80 (carry-forward) → totalBalance=130
-        assertEquals(3, result.trendPoints.size)
-        assertEquals(1000L, result.trendPoints[0].timestamp)
-        assertEquals(100f, result.trendPoints[0].actualBalance)
+        // The merged series must be chronological even when account outputs
+        // were supplied in a different timestamp order.
+        assertEquals(2, result.trendPoints.size)
+        assertEquals(1500L, result.trendPoints[0].timestamp)
+        assertEquals(150f, result.trendPoints[0].actualBalance)
         assertEquals(2000L, result.trendPoints[1].timestamp)
-        assertEquals(80f, result.trendPoints[1].actualBalance)
-        assertEquals(1500L, result.trendPoints[2].timestamp)
-        assertEquals(130f, result.trendPoints[2].actualBalance)
+        assertEquals(130f, result.trendPoints[1].actualBalance)
+    }
+
+    @Test
+    fun `mergeIntradayOutputs does not leave a stale zero tail for all accounts`() {
+        val first = IntradayOutput(
+            trendPoints = listOf(
+                IntradayPoint(1_000L, 7.73f, false, false, 0f, 0f),
+                IntradayPoint(3_000L, 7.00f, false, false, 0f, 0f)
+            ),
+            billReport = IntradayBillReport(0.73f, 0f, 0f, -0.73f),
+            dataPointCount = 2
+        )
+        val second = IntradayOutput(
+            trendPoints = listOf(
+                IntradayPoint(2_000L, 4.00f, false, false, 0f, 0f)
+            ),
+            billReport = IntradayBillReport(0f, 0f, 0f, 0f),
+            dataPointCount = 1
+        )
+
+        val result = InsightsViewModel.mergeIntradayOutputs(listOf(first, second))
+
+        assertEquals(listOf(2_000L, 3_000L), result.trendPoints.map { it.timestamp })
+        assertEquals(listOf(11.73f, 11.00f), result.trendPoints.map { it.actualBalance })
+        assertEquals(11.00f, result.trendPoints.last().actualBalance, 0.01f)
+    }
+
+    @Test
+    fun `mergeDailyOutputs carries each account balance across missing dates`() {
+        val first = DailyOutput(
+            dailyPoints = listOf(
+                DailyPoint("2026-08-01", 100f, 4f, 0f, 0f, false, 104f, 1),
+                DailyPoint("2026-08-03", 90f, 10f, 0f, 0f, false, 100f, 1)
+            ),
+            billReport = DailyBillReport(14f, 0f, 0f, -14f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = false
+        )
+        val second = DailyOutput(
+            dailyPoints = listOf(
+                DailyPoint("2026-08-02", 50f, 1f, 0f, 0f, false, 51f, 1)
+            ),
+            billReport = DailyBillReport(1f, 0f, 0f, -1f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = false
+        )
+
+        val result = InsightsViewModel.mergeDailyOutputs(listOf(first, second), rangeDays = 7)
+
+        assertEquals(listOf("2026-08-02", "2026-08-03"), result.dailyPoints.map { it.date })
+        assertEquals(listOf(150f, 140f), result.dailyPoints.map { it.balance })
+        assertEquals(listOf(1f, 10f), result.dailyPoints.map { it.consumed })
+        assertEquals(listOf(151f, 150f), result.dailyPoints.map { it.open })
     }
 
     @Test
@@ -670,9 +964,10 @@ class InsightsViewModelTest {
             )
         )
         val result = InsightsViewModel.mergeIntradayOutputs(outputs)
-        // 16 unique timestamps, all within 20 → no downsampling
-        assertEquals(16, result.trendPoints.size)
-        assertEquals(16, result.dataPointCount)
+        // The aggregate starts at the latest first sample, then keeps all points.
+        assertEquals(1, result.trendPoints.size)
+        assertEquals(16_000L, result.trendPoints.single().timestamp)
+        assertEquals(1, result.dataPointCount)
     }
 
     @Test
@@ -799,9 +1094,26 @@ class InsightsViewModelTest {
             estimate = null, periodLabel = "7天", isEmpty = false, insufficientData = false
         )
         val result = InsightsViewModel.mergeDailyOutputs(listOf(a, b), 7)
-        assertEquals(2, result.dailyPoints.size)
-        assertEquals("2026-07-01", result.dailyPoints[0].date)
-        assertEquals("2026-07-03", result.dailyPoints[1].date)
+        assertEquals(1, result.dailyPoints.size)
+        assertEquals("2026-07-03", result.dailyPoints[0].date)
+    }
+
+    @Test
+    fun `mergeDailyOutputs sorts dates when later account is listed first`() {
+        val later = DailyOutput(
+            dailyPoints = listOf(DailyPoint("2026-07-03", 200f, 5f, 0f, 0f, false)),
+            billReport = DailyBillReport(5f, 0f, 0f, -5f, "7天"),
+            estimate = null, periodLabel = "7天", isEmpty = false, insufficientData = false
+        )
+        val earlier = DailyOutput(
+            dailyPoints = listOf(DailyPoint("2026-07-01", 100f, 10f, 0f, 0f, false)),
+            billReport = DailyBillReport(10f, 0f, 0f, -10f, "7天"),
+            estimate = null, periodLabel = "7天", isEmpty = false, insufficientData = false
+        )
+
+        val result = InsightsViewModel.mergeDailyOutputs(listOf(later, earlier), 7)
+
+        assertEquals(listOf("2026-07-03"), result.dailyPoints.map { it.date })
     }
 
     @Test
@@ -1088,9 +1400,13 @@ class InsightsViewModelTest {
         assertTrue("Timed out waiting for account state", predicate(viewModel.uiState.value))
     }
 
-    private fun createViewModel(): InsightsViewModel = InsightsViewModel(
+    private fun createViewModel(
+        accounts: List<AccountInfo> = listOf(insightsAccountInfo()),
+        savedStateHandle: SavedStateHandle = SavedStateHandle()
+    ): InsightsViewModel = InsightsViewModel(
         app,
-        AccountUiRepository { flowOf(AccountLoadState.Ready(listOf(insightsAccountInfo()))) }
+        AccountUiRepository { flowOf(AccountLoadState.Ready(accounts)) },
+        savedStateHandle = savedStateHandle
     )
 
     private fun addInsightsRoomRecords(vararg records: RawRecord) = runBlocking {
@@ -1101,24 +1417,50 @@ class InsightsViewModelTest {
         RoomHistoryRepository(database).upsertSummaries(summaries.toList())
     }
 
-    private fun insightsAccountInfo() = AccountInfo(
-        id = INSIGHTS_ACCOUNT_ID,
-        label = "Insights test account",
-        apiKey = "sk-insights-test",
+    private fun insightsAccountInfo(
+        id: String = INSIGHTS_ACCOUNT_ID,
+        label: String = "Insights test account"
+    ) = AccountInfo(
+        id = id,
+        label = label,
+        apiKey = "sk-insights-$id",
         providerType = ProviderType.DEEPSEEK,
         revision = 1
     )
 
-    private fun insightsRoomAccount() = AccountEntity(
-        id = INSIGHTS_ACCOUNT_ID,
-        displayOrder = 0,
-        label = "Insights test account",
+    private fun insightsRoomAccount(
+        id: String = INSIGHTS_ACCOUNT_ID,
+        displayOrder: Int = 0,
+        label: String = "Insights test account"
+    ) = AccountEntity(
+        id = id,
+        displayOrder = displayOrder,
+        label = label,
         providerType = ProviderType.DEEPSEEK,
         activeCredentialGeneration = "test",
         state = AccountState.VERIFIED,
         revision = 1,
         createdAt = 1L,
         updatedAt = 1L
+    )
+
+    private fun insightsSummary(
+        accountId: String,
+        date: String,
+        currency: String,
+        close: Float,
+        consumed: Float
+    ) = DailySummary(
+        accountId = accountId,
+        date = date,
+        currency = currency,
+        open = close + consumed,
+        close = close,
+        consumed = consumed,
+        toppedUp = 0f,
+        granted = 0f,
+        avgBalance = close + consumed / 2f,
+        sampleCount = 2
     )
 
     private class RecordingAccountUiRepository(
@@ -1140,5 +1482,6 @@ class InsightsViewModelTest {
 
     private companion object {
         const val INSIGHTS_ACCOUNT_ID = "7f4b8b3e-3f71-4d4f-a1c3-6c7e5a9b2d10"
+        const val SECOND_INSIGHTS_ACCOUNT_ID = "4ce47980-97c5-4b55-96b3-4e4d6c8e7b22"
     }
 }

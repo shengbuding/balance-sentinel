@@ -43,7 +43,8 @@ data class AppSettingsValues(
     val changeAlertPeriodMinutes: Int,
     val logMaxEntries: Int,
     val snoozeDurationMinutes: Int,
-    val showTotalBalanceInNotification: Boolean
+    val showTotalBalanceInNotification: Boolean,
+    val notificationTotalDisplayOrder: Int = 0
 )
 
 sealed interface AppSettingsWrite {

@@ -45,6 +45,7 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.data.repository.SnoozeInfo
+import com.balancesentinel.app.data.repository.reorderNotificationWallets
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.service.ForegroundServiceStarter
@@ -94,6 +95,7 @@ data class HomeUiState(
     val backgroundRefreshIntervalSeconds: Int? = 900,
     val settingsLoading: Boolean = true,
     val showTotalBalanceInNotification: Boolean = true,
+    val notificationTotalDisplayOrder: Int = 0,
     val accountAlertSettings: List<com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity> = emptyList(),
     val notificationSelections: List<com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity> = emptyList()
 )
@@ -205,6 +207,8 @@ class HomeViewModel @JvmOverloads constructor(
             snoozeDurationMinutes = app.snoozeDurationMinutes,
             settingsLoading = false,
             showTotalBalanceInNotification = app.showTotalBalanceInNotification,
+            notificationTotalDisplayOrder = app.notificationTotalDisplayOrder
+                .coerceIn(0, snapshot.notificationSelections.size),
             accountAlertSettings = snapshot.accountAlertSettings,
             notificationSelections = snapshot.notificationSelections
         )
@@ -381,8 +385,9 @@ class HomeViewModel @JvmOverloads constructor(
                 BalanceInfo(
                     currency = entry.currency,
                     totalBalance = entry.totalBalance.toString(),
-                    grantedBalance = entry.grantedBalance.toString(),
-                    toppedUpBalance = entry.toppedUpBalance.toString()
+                    grantedBalance = entry.grantedBalance?.toString().orEmpty(),
+                    toppedUpBalance = entry.toppedUpBalance?.toString().orEmpty(),
+                    displayFields = entry.displayFields
                 )
             }
         )
@@ -491,7 +496,8 @@ class HomeViewModel @JvmOverloads constructor(
                             currency = entry.currency,
                             totalBalance = entry.totalBalance,
                             grantedBalance = entry.grantedBalance,
-                            toppedUpBalance = entry.toppedUpBalance
+                            toppedUpBalance = entry.toppedUpBalance,
+                            displayFields = entry.displayFields
                         )
                     }
                 )
@@ -699,7 +705,9 @@ class HomeViewModel @JvmOverloads constructor(
                 extraSettings = extraSettings,
                 usageScript = usageScript,
                 usageScriptEnabled = currentAccount.usageScriptEnabled,
-                authorizedScriptOrigins = currentAccount.authorizedScriptOrigins
+                authorizedScriptOrigins = currentAccount.authorizedScriptOrigins,
+                usageDisplayFields = currentAccount.usageDisplayFields,
+                usageBalanceField = currentAccount.usageBalanceField
             )
         )
     }
@@ -717,7 +725,9 @@ class HomeViewModel @JvmOverloads constructor(
         extraSettings = extraSettings,
         usageScript = usageScript,
         usageScriptEnabled = usageScriptEnabled,
-        authorizedScriptOrigins = authorizedScriptOrigins
+        authorizedScriptOrigins = authorizedScriptOrigins,
+        usageDisplayFields = usageDisplayFields,
+        usageBalanceField = usageBalanceField
     )
 
     // ── 全局设置 ──
@@ -742,6 +752,22 @@ class HomeViewModel @JvmOverloads constructor(
             notifyServiceRescheduleIfDesired()
         }
         if (!readyAccounts().isNullOrEmpty()) refreshBalance()
+    }
+
+    fun setBackgroundRefreshEnabled(enabled: Boolean) {
+        val interval = _uiState.value.refreshIntervalSeconds.coerceAtLeast(1)
+        _uiState.value = _uiState.value.copy(
+            backgroundRefreshIntervalSeconds = interval.takeIf { enabled }
+        )
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                current.copy(
+                    appSettings = current.appSettings.copy(
+                        backgroundRefreshIntervalSeconds = interval.takeIf { enabled }
+                    )
+                )
+            }
+        }
     }
 
     /** Re-schedules a live user-owned session without changing its intent. */
@@ -871,6 +897,9 @@ class HomeViewModel @JvmOverloads constructor(
     fun setNotificationWalletSelected(accountId: String, currency: String, selected: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateSnapshot { current ->
+                val existingIndex = current.notificationSelections.indexOfFirst {
+                    it.accountId == accountId && it.currency == currency
+                }
                 val retained = current.notificationSelections
                     .filterNot { it.accountId == accountId && it.currency == currency }
                 val values = if (selected) {
@@ -880,7 +909,40 @@ class HomeViewModel @JvmOverloads constructor(
                         retained.size
                     )
                 } else retained
-                current.copy(notificationSelections = values)
+                val totalDisplayOrder = if (
+                    !selected && existingIndex >= 0 &&
+                    existingIndex < current.appSettings.notificationTotalDisplayOrder
+                ) {
+                    current.appSettings.notificationTotalDisplayOrder - 1
+                } else {
+                    current.appSettings.notificationTotalDisplayOrder
+                }.coerceIn(0, values.size)
+                current.copy(
+                    appSettings = current.appSettings.copy(
+                        notificationTotalDisplayOrder = totalDisplayOrder
+                    ),
+                    notificationSelections = values
+                )
+            }
+        }
+    }
+
+    fun moveNotificationTotal(direction: Int) {
+        viewModelScope.launch {
+            settingsRepository.updateSnapshot { current ->
+                val result = reorderNotificationWallets(
+                    selections = current.notificationSelections,
+                    showTotal = current.appSettings.showTotalBalanceInNotification,
+                    totalDisplayOrder = current.appSettings.notificationTotalDisplayOrder,
+                    accountId = null,
+                    direction = direction
+                )
+                current.copy(
+                    appSettings = current.appSettings.copy(
+                        notificationTotalDisplayOrder = result.totalDisplayOrder
+                    ),
+                    notificationSelections = result.selections
+                )
             }
         }
     }
@@ -888,16 +950,20 @@ class HomeViewModel @JvmOverloads constructor(
     fun moveNotificationWallet(accountId: String, currency: String, direction: Int) {
         viewModelScope.launch {
             settingsRepository.updateSnapshot { current ->
-                val values = current.notificationSelections.toMutableList()
-                val index = values.indexOfFirst { it.accountId == accountId && it.currency == currency }
-                val target = (index + direction).coerceIn(0, values.lastIndex.coerceAtLeast(0))
-                if (index >= 0 && target != index) {
-                    val entry = values.removeAt(index)
-                    values.add(target, entry)
-                }
-                current.copy(notificationSelections = values.mapIndexed { order, value ->
-                    value.copy(displayOrder = order)
-                })
+                val result = reorderNotificationWallets(
+                    selections = current.notificationSelections,
+                    showTotal = current.appSettings.showTotalBalanceInNotification,
+                    totalDisplayOrder = current.appSettings.notificationTotalDisplayOrder,
+                    accountId = accountId,
+                    currency = currency,
+                    direction = direction
+                )
+                current.copy(
+                    appSettings = current.appSettings.copy(
+                        notificationTotalDisplayOrder = result.totalDisplayOrder
+                    ),
+                    notificationSelections = result.selections
+                )
             }
         }
     }

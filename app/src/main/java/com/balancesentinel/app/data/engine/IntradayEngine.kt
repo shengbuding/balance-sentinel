@@ -45,13 +45,10 @@ object IntradayEngine {
             val curr = filtered[i]
 
             val balanceDelta = curr.totalBalance - prev.totalBalance
-            val topUpDelta = curr.toppedUpBalance - prev.toppedUpBalance
-            val grantDelta = curr.grantedBalance - prev.grantedBalance
-
-            val isTopUp = topUpDelta >= 1f && isNearInteger(topUpDelta)
-            val topUpAmount = if (isTopUp) topUpDelta else 0f
-            val isGrant = grantDelta > 0f
-            val grantAmount = if (isGrant) grantDelta else 0f
+            val topUpAmount = topUpAmount(prev, curr)
+            val grantAmount = grantAmount(prev, curr)
+            val isTopUp = topUpAmount > 0f
+            val isGrant = grantAmount > 0f
 
             val consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)
 

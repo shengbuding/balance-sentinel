@@ -16,6 +16,7 @@ import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.mutation.MutationOperationType
 import com.balancesentinel.app.data.local.mutation.MutationStage
 import com.balancesentinel.app.data.local.mutation.MutationOperationEntity
+import com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
 import kotlinx.serialization.encodeToString
@@ -162,7 +163,11 @@ class ConfigImportCoordinatorTest {
             changeAlertEnabled = false,
             changeAlertThreshold = 0f,
             changeAlertPeriodMinutes = 60,
-            logMaxEntries = 25
+            logMaxEntries = 25,
+            notificationSelectedWallets = listOf(
+                NotificationWalletSelection(accountId, "USD")
+            ),
+            notificationTotalDisplayOrder = 1
         )
         val config = AppConfig(
             credentialsIncluded = true,
@@ -184,6 +189,11 @@ class ConfigImportCoordinatorTest {
             assertTrue(published.alertEnabled)
             assertEquals(25, published.logMaxEntries)
             assertEquals(45, published.foregroundMonitoringIntervalSeconds)
+            assertEquals(1, published.notificationTotalDisplayOrder)
+            assertEquals(
+                listOf(NotificationWalletSelectionEntity(accountId, "USD", 0)),
+                settingsRepository.readSnapshot().notificationSelections
+            )
             assertTrue(database.mutationOperationDao().listRecoverableByType(
                 com.balancesentinel.app.data.local.mutation.MutationOperationType.CONFIG_IMPORT
             ).isEmpty())

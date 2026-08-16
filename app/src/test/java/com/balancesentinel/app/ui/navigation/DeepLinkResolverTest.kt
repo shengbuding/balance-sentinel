@@ -2,12 +2,15 @@ package com.balancesentinel.app.ui.navigation
 
 import android.content.Intent
 import android.net.Uri
+import androidx.test.core.app.ApplicationProvider
+import com.balancesentinel.app.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import com.balancesentinel.app.widget.StaticWidgetProvider
+import com.balancesentinel.app.widget.WidgetPrimaryAction
 
 @RunWith(RobolectricTestRunner::class)
 class DeepLinkResolverTest {
@@ -95,6 +98,26 @@ class DeepLinkResolverTest {
 
         assertEquals("balancesentinel://insights/account-1/CNY", uri.toString())
         assertTrue(uri.pathSegments == listOf("account-1", "CNY"))
+    }
+
+    @Test
+    fun `widget insights action uses canonical URI without legacy extras`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val route = AppRoute.Insights("account-1", "usd")
+
+        val intent = StaticWidgetProvider.primaryActionIntent(
+            context = context,
+            widgetId = 42,
+            primaryAction = WidgetPrimaryAction.OPEN_INSIGHTS,
+            route = route
+        )
+
+        assertEquals(Intent.ACTION_VIEW, intent.action)
+        assertEquals(route.toUri(), intent.data)
+        assertEquals(MainActivity::class.java.name, intent.component?.className)
+        assertTrue(!intent.hasExtra(AppRoute.LEGACY_TARGET_EXTRA))
+        assertTrue(!intent.hasExtra(AppRoute.LEGACY_ACCOUNT_EXTRA))
+        assertTrue(!intent.hasExtra(AppRoute.LEGACY_CURRENCY_EXTRA))
     }
     @Test
     fun `invalid result exposes typed InvalidDeepLink route`() {

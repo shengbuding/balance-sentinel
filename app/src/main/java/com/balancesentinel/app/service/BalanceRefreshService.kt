@@ -35,6 +35,7 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.work.RefreshWorkScheduler
+import com.balancesentinel.app.receiver.KeepAliveReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal fun buildServiceRefreshRunner(
     gateway: RefreshGateway,
@@ -58,6 +60,19 @@ internal fun buildServiceRefreshRunner(
     committedBalanceReader = committedBalanceReader
 )
 
+internal suspend fun publishNotificationBestEffort(
+    onFailure: (Throwable) -> Unit = {},
+    publish: suspend () -> Unit
+) {
+    try {
+        publish()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Throwable) {
+        onFailure(error)
+    }
+}
+
 class BalanceRefreshService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -66,9 +81,17 @@ class BalanceRefreshService : Service() {
     private lateinit var settingsRepository: SettingsRepository
     @Volatile private var isLoopRunning = false
     @Volatile private var isRefreshing = false  // 防并发刷新风暴
-    private var isSelfDestructing = false
+    @Volatile private var platformTimeoutStopping = false
+    @Volatile private var removeNotificationOnDestroy = false
+    @Volatile private var serviceStopCompleted = false
     private lateinit var notificationHelper: NotificationHelper
+    private lateinit var persistentNotificationPublisher: PersistentBalanceNotificationPublisher
     internal var serviceStarter: ServiceStarter = ForegroundServiceStarter()
+    internal var refreshGatewayFactory: (Context) -> RefreshGateway = RefreshRuntime::from
+    internal var taskRemovalReconciler: suspend (Context) -> Unit = { context ->
+        RefreshWorkScheduler().reconcileFromRepository(context)
+    }
+    internal var foregroundStopper: (Int) -> Unit = { flags -> stopForeground(flags) }
     private lateinit var monitoringController: ContinuousMonitoringController
     private var monitoringSessionStarted = false
     private val leaseRenewRunnable = object : Runnable {
@@ -82,15 +105,31 @@ class BalanceRefreshService : Service() {
     // 指数退避自毁：3h → 6h → 12h，基于重启次数
     private val restartRunnable = object : Runnable {
         override fun run() {
+            if (platformTimeoutStopping) return
             Logger.i(TAG, "Foreground dataSync budget reached — stopping service")
             stopLoop()
-            isSelfDestructing = true
-            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
-            stopSelf()
-            CoroutineScope(NonCancellable + Dispatchers.IO).launch {
-                runCatching { monitoringController.onPlatformTimeout() }
+            platformTimeoutStopping = true
+            handler.postDelayed(serviceStopDeadlineRunnable, SERVICE_STOP_DEADLINE_MS)
+            refreshScope.launch {
+                val persisted = try {
+                    withTimeoutOrNull(PLATFORM_TIMEOUT_PERSIST_TIMEOUT_MS) {
+                        monitoringController.onPlatformTimeout()
+                        true
+                    } ?: false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Logger.w(TAG, "platform_timeout_persist_failed", error)
+                    false
+                }
+                if (!persisted) Logger.w(TAG, "platform_timeout_persist_incomplete")
+                monitoringSessionStarted = false
+                handler.post { completeServiceStop(removeNotification = false) }
             }
         }
+    }
+    private val serviceStopDeadlineRunnable = Runnable {
+        completeServiceStop(removeNotification = removeNotificationOnDestroy)
     }
 
     private val refreshTask = object : Runnable {
@@ -104,15 +143,26 @@ class BalanceRefreshService : Service() {
         CrashLogger.breadcrumb(TAG, "Service onCreate")
         settingsRepository = SettingsRepositoryProvider.get(this)
         notificationHelper = NotificationHelper(this)
-        refreshGateway = RefreshRuntime.from(this)
+        persistentNotificationPublisher = PersistentBalanceNotificationPublisher(
+            this,
+            settingsRepository,
+            notificationHelper
+        )
+        refreshGateway = refreshGatewayFactory(this)
         val processId = (application as? DeepSeekApp)?.processSessionId ?: java.util.UUID.randomUUID().toString()
         monitoringController = ContinuousMonitoringController(WalletDatabaseProvider.get(this), processId)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_MONITORING) {
+            handleExplicitUserStop()
+            return START_NOT_STICKY
+        }
         try {
             startForeground(DeepSeekApp.NOTIFICATION_ID,
-                notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
+                notificationHelper.currentPersistentNotification()
+                    ?: notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
+            KeepAliveReceiver.schedule(this)
         } catch (e: Exception) {
             Logger.e(TAG, "startForeground failed", e)
             stopSelf()
@@ -129,6 +179,16 @@ class BalanceRefreshService : Service() {
                 monitoringSessionStarted = false
                 Logger.i(TAG, "Service start ignored: monitoring is not desired")
                 stopLoop()
+                val monitoringState = runCatching {
+                    MonitoringStateStore.from(this@BalanceRefreshService).get()
+                }.getOrNull()
+                if (monitoringState?.desired == true) {
+                    runCatching { persistentNotificationPublisher.publishCached(refreshGateway) }
+                    removeNotificationOnDestroy = false
+                } else {
+                    removeNotificationOnDestroy = true
+                    notificationHelper.cancelPersistentNotification()
+                }
                 stopSelf()
                 return@launch
             }
@@ -154,7 +214,7 @@ class BalanceRefreshService : Service() {
     override fun onDestroy() {
         CrashLogger.breadcrumb(TAG, "Service onDestroy")
         stopLoop()
-        if (!isSelfDestructing) {
+        if (!platformTimeoutStopping && monitoringSessionStarted) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO + NonCancellable).launch {
                 runCatching {
                     monitoringController.stop(
@@ -165,15 +225,75 @@ class BalanceRefreshService : Service() {
             }
         }
         refreshScope.cancel()
-        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+        handler.removeCallbacks(serviceStopDeadlineRunnable)
+        val stopFlag = if (removeNotificationOnDestroy) {
+            STOP_FOREGROUND_REMOVE
+        } else {
+            STOP_FOREGROUND_DETACH
+        }
+        try { foregroundStopper(stopFlag) } catch (_: Exception) {}
         super.onDestroy()
+    }
+
+    private fun handleExplicitUserStop() {
+        Logger.i(TAG, "Explicit monitoring stop requested")
+        stopLoop()
+        removeNotificationOnDestroy = true
+        handler.postDelayed(serviceStopDeadlineRunnable, SERVICE_STOP_DEADLINE_MS)
+        if (!monitoringSessionStarted) {
+            completeServiceStop(removeNotification = true)
+            return
+        }
+        refreshScope.launch {
+            val persisted = try {
+                withTimeoutOrNull(SERVICE_STOP_DEADLINE_MS) {
+                    monitoringController.stop(
+                        reason = MonitoringSessionEndReason.USER_STOPPED,
+                        preserveDesired = false
+                    )
+                    true
+                } ?: false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Logger.w(TAG, "user_stop_persist_failed", error)
+                false
+            }
+            if (!persisted) Logger.w(TAG, "user_stop_persist_incomplete")
+            monitoringSessionStarted = false
+            handler.post { completeServiceStop(removeNotification = true) }
+        }
+    }
+
+    private fun completeServiceStop(removeNotification: Boolean) {
+        if (removeNotification) removeNotificationOnDestroy = true
+        if (serviceStopCompleted) {
+            if (removeNotification) {
+                KeepAliveReceiver.cancel(this)
+                notificationHelper.cancelPersistentNotification()
+            }
+            return
+        }
+        serviceStopCompleted = true
+        handler.removeCallbacks(serviceStopDeadlineRunnable)
+        val stopFlag = if (removeNotificationOnDestroy) {
+            STOP_FOREGROUND_REMOVE
+        } else {
+            STOP_FOREGROUND_DETACH
+        }
+        try { foregroundStopper(stopFlag) } catch (_: Exception) {}
+        if (removeNotificationOnDestroy) {
+            KeepAliveReceiver.cancel(this)
+            notificationHelper.cancelPersistentNotification()
+        }
+        stopSelf()
     }
 
     // Keep the persistent background plan healthy; do not start an FGS from
     // this callback because Android may classify the app as background.
     override fun onTaskRemoved(rootIntent: Intent?) {
         refreshScope.launch {
-            runCatching { RefreshWorkScheduler().reconcileFromRepository(this@BalanceRefreshService) }
+            runCatching { taskRemovalReconciler(this@BalanceRefreshService) }
                 .onFailure { Logger.w(TAG, "task_removal_reconcile_failed", it) }
         }
         super.onTaskRemoved(rootIntent)
@@ -224,7 +344,8 @@ class BalanceRefreshService : Service() {
         // Android 16+ 前台服务超时限制：每个刷新周期开始前重新进入前台状态
         try {
             startForeground(DeepSeekApp.NOTIFICATION_ID,
-                notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
+                notificationHelper.currentPersistentNotification()
+                    ?: notificationHelper.buildForegroundNotification("--", getString(R.string.service_notif_connecting)))
         } catch (e: Exception) {
             Logger.e(TAG, "startForeground failed", e)
         }
@@ -265,33 +386,12 @@ class BalanceRefreshService : Service() {
                 )
                 val serviceBatch = runner.refreshBatch()
                 val committedBalances = serviceBatch.committedBalances
-                val settings = (settingsRepository.snapshot.value as? SettingsSnapshotState.Ready)?.value
-                    ?: settingsRepository.readSnapshot()
-                val showTotal = settings.appSettings.showTotalBalanceInNotification
-                val walletOrder = buildList {
-                    if (showTotal) add(NOTIFICATION_TOTAL_KEY)
-                    addAll(settings.notificationSelections.map { "${it.accountId}_${it.currency}" })
-                }
-                val notification = BalanceNotificationDeriver.derive(
-                    committedBalances = committedBalances,
-                    walletOrder = walletOrder,
-                    showTotal = showTotal
-                )
-                if (notification == null) {
-                    notificationHelper.sendForegroundNotification("--", getString(R.string.service_notif_no_data))
-                } else {
-                    val status = if (notification.isAvailable) getString(R.string.service_notif_status_available)
-                        else getString(R.string.service_notif_status_partial)
-                    notificationHelper.sendBalanceNotification(
-                        notification.totalBalance,
-                        notification.totalCurrency,
-                        status,
-                        notification.wallets,
-                        notification.showTotal,
-                        notification.totalPosition,
-                        notification.totalBalance2,
-                        notification.totalCurrency2
-                    )
+                publishNotificationBestEffort(
+                    onFailure = { error ->
+                        Logger.w(TAG, "persistent_notification_publish_failed", error)
+                    }
+                ) {
+                    persistentNotificationPublisher.publish(committedBalances)
                 }
                 sendWidgetUpdateBroadcast()
                 RefreshScheduler.markFired(this@BalanceRefreshService)
@@ -396,8 +496,24 @@ class BalanceRefreshService : Service() {
     companion object {
         private const val TAG = "BalanceRefreshSvc"
         private const val DEFAULT_FOREGROUND_INTERVAL_SECONDS = 30
-        private const val NOTIFICATION_TOTAL_KEY = "__total__"
         private const val LEASE_RENEW_INTERVAL_MS = 30_000L
+        private const val PLATFORM_TIMEOUT_PERSIST_TIMEOUT_MS = 2_000L
+        private const val SERVICE_STOP_DEADLINE_MS = 2_000L
+        internal const val ACTION_STOP_MONITORING =
+            "com.balancesentinel.app.action.STOP_MONITORING"
         const val EXTRA_USER_INITIATED = "monitoring_user_initiated"
+
+        fun stopMonitoring(context: Context) {
+            val appContext = context.applicationContext
+            KeepAliveReceiver.cancel(appContext)
+            val stopIntent = Intent(appContext, BalanceRefreshService::class.java)
+                .setAction(ACTION_STOP_MONITORING)
+            try {
+                appContext.startService(stopIntent)
+            } catch (_: Exception) {
+                appContext.stopService(Intent(appContext, BalanceRefreshService::class.java))
+            }
+            NotificationHelper(appContext).cancelPersistentNotification()
+        }
     }
 }

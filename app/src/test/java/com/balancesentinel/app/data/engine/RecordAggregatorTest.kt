@@ -82,6 +82,17 @@ class RecordAggregatorTest {
     }
 
     @Test
+    fun `toppedUp infers positive balance increase when provider omits metadata`() {
+        val sorted = listOf(
+            RawRecord("custom", 1000L, "USD", 7.73f, 0f, 0f),
+            RawRecord("custom", 2000L, "USD", 10.00f, 0f, 0f)
+        )
+
+        assertEquals(2.27f, RecordAggregator.computeToppedUp(sorted), 0.01f)
+        assertEquals(0f, RecordAggregator.computeConsumed(sorted), 0.01f)
+    }
+
+    @Test
     fun `toppedUp returns zero when balance decreases`() {
         val sorted = listOf(
             RawRecord("acc1", 1000L, "CNY", 200f, 0f, 200f),

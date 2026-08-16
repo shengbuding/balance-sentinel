@@ -471,7 +471,7 @@ private fun BalanceInfoCard(
             }
 
             // 赠送和充值明细
-            if (info.grantedBalance != null || info.toppedUpBalance != null) {
+            if (info.grantedBalance.isNotBlank() || info.toppedUpBalance.isNotBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
@@ -482,14 +482,14 @@ private fun BalanceInfoCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    if (info.grantedBalance != null) {
+                    if (info.grantedBalance.isNotBlank()) {
                         DetailItem(
                             label = stringResource(R.string.balance_granted_label),
                             value = formatter.formatAmount(info.grantedBalance),
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    if (info.toppedUpBalance != null) {
+                    if (info.toppedUpBalance.isNotBlank()) {
                         DetailItem(
                             label = stringResource(R.string.balance_topped_up_label),
                             value = formatter.formatAmount(info.toppedUpBalance),
@@ -497,6 +497,18 @@ private fun BalanceInfoCard(
                             alignment = Alignment.End
                         )
                     }
+                }
+            }
+
+            if (info.displayFields.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                info.displayFields.entries.forEach { (label, value) ->
+                    DetailItem(label = label, value = value, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
             }
         }

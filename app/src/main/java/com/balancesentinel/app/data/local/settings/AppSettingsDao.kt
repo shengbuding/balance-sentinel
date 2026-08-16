@@ -34,7 +34,8 @@ abstract class AppSettingsDao {
         logMaxEntries: Int,
         snoozeDurationMinutes: Int,
         showTotalBalanceInNotification: Boolean,
-        updatedAt: Long
+        updatedAt: Long,
+        notificationTotalDisplayOrder: Int = 0
     ) {
         replaceSingletonRow(
             AppSettingsEntity(
@@ -49,7 +50,8 @@ abstract class AppSettingsDao {
                 logMaxEntries = logMaxEntries,
                 snoozeDurationMinutes = snoozeDurationMinutes,
                 showTotalBalanceInNotification = showTotalBalanceInNotification,
-                updatedAt = updatedAt
+                updatedAt = updatedAt,
+                notificationTotalDisplayOrder = notificationTotalDisplayOrder
             )
         )
     }

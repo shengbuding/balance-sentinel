@@ -202,34 +202,22 @@ object DailyEngine {
         else -> "最近${days}天"
     }
 
-    /**
-     * Per-pair top-up detection on raw records (same logic as IntradayEngine).
-     * Sums toppedUpBalance deltas that are >=1 and near-integer across adjacent pairs.
-     */
+    /** Per-pair recharge detection shared with the intraday and archive paths. */
     private fun computeTopUpFromRecords(sorted: List<RawRecord>): Float {
         if (sorted.size < 2) return 0f
         var total = 0f
         for (i in 1 until sorted.size) {
-            val delta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
-            if (delta >= 1f && isNearInteger(delta)) {
-                total += delta
-            }
+            total += topUpAmount(sorted[i - 1], sorted[i])
         }
         return total
     }
 
-    /**
-     * Per-pair grant detection on raw records (same logic as IntradayEngine).
-     * Sums grantedBalance deltas > 0 across adjacent pairs.
-     */
+    /** Per-pair grant detection shared with the intraday and archive paths. */
     private fun computeGrantFromRecords(sorted: List<RawRecord>): Float {
         if (sorted.size < 2) return 0f
         var total = 0f
         for (i in 1 until sorted.size) {
-            val delta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
-            if (delta > 0f) {
-                total += delta
-            }
+            total += grantAmount(sorted[i - 1], sorted[i])
         }
         return total
     }
@@ -241,16 +229,7 @@ object DailyEngine {
     private fun computeConsumedFromPairs(sorted: List<RawRecord>): Float {
         var consumed = 0f
         for (i in 1 until sorted.size) {
-            val balanceDelta = sorted[i].totalBalance - sorted[i - 1].totalBalance
-            val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
-            val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
-
-            val isTopUp = topDelta >= 1f && isNearInteger(topDelta)
-            val topUpAmount = if (isTopUp) topDelta else 0f
-            val isGrant = grantDelta > 0f
-            val grantAmount = if (isGrant) grantDelta else 0f
-            val consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)
-            consumed += consumption
+            consumed += consumedAmount(sorted[i - 1], sorted[i])
         }
         return consumed
     }

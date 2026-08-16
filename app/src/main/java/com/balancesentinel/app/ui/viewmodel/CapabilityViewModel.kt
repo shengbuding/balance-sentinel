@@ -2,7 +2,6 @@ package com.balancesentinel.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.balancesentinel.app.data.local.monitoring.MonitoringStateEntity
@@ -42,7 +41,7 @@ class CapabilityViewModel @JvmOverloads constructor(
         ForegroundServiceStarter(userInitiated = userInitiated).start(context)
     },
     private val stopMonitoring: (Context) -> Unit = { context ->
-        context.stopService(Intent(context, BalanceRefreshService::class.java))
+        BalanceRefreshService.stopMonitoring(context)
     }
 ) : AndroidViewModel(application) {
     private val mutableUiState = kotlinx.coroutines.flow.MutableStateFlow(CapabilityUiState())
@@ -82,7 +81,10 @@ class CapabilityViewModel @JvmOverloads constructor(
                     CapabilityAvailability.PERMANENTLY_DENIED -> {
                         eventChannel.send(CapabilityUiEvent.OpenAppSettings)
                     }
-                    else -> startIfAllowed(capabilities, userInitiated = true, force = true)
+                    else -> {
+                        requestExactAlarmResolutionIfNeeded(capabilities)
+                        startIfAllowed(capabilities, userInitiated = true, force = true)
+                    }
                 }
             }
             refreshInternal()
@@ -95,6 +97,7 @@ class CapabilityViewModel @JvmOverloads constructor(
         launchWithErrorProjection {
             val capabilities = checker.read(permissionHistory.notificationPermanentlyDenied)
             if (granted && loadMonitoringState().desired) {
+                requestExactAlarmResolutionIfNeeded(capabilities)
                 startIfAllowed(capabilities, userInitiated = true, force = true)
             }
             refreshInternal()
@@ -109,6 +112,22 @@ class CapabilityViewModel @JvmOverloads constructor(
             CapabilityUiEvent.RequestNotificationPermission
         }
         eventChannel.trySend(event)
+    }
+
+    fun requestExactAlarmResolution() {
+        eventChannel.trySend(CapabilityUiEvent.OpenExactAlarmSettings)
+    }
+
+    fun requestBatteryOptimizationResolution() {
+        eventChannel.trySend(CapabilityUiEvent.OpenBatteryOptimizationSettings)
+    }
+
+    private suspend fun requestExactAlarmResolutionIfNeeded(
+        capabilities: com.balancesentinel.app.platform.permission.CapabilitySnapshot
+    ) {
+        if (capabilities[AppCapability.EXACT_ALARM] == CapabilityAvailability.NOT_GRANTED) {
+            eventChannel.send(CapabilityUiEvent.OpenExactAlarmSettings)
+        }
     }
 
     private fun startIfAllowed(

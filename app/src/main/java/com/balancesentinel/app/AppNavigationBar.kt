@@ -19,7 +19,7 @@ fun AppNavigationBar(currentScreen: Screen, onScreenSelected: (Screen) -> Unit) 
     NavigationBar {
         NavigationBarItem(selected = currentScreen == Screen.HOME, onClick = { onScreenSelected(Screen.HOME) }, icon = { Icon(Icons.Filled.Home, null) }, label = { Text(stringResource(R.string.home_title)) })
         NavigationBarItem(selected = currentScreen == Screen.INSIGHTS, onClick = { onScreenSelected(Screen.INSIGHTS) }, icon = { Icon(CustomIcons.TrendingUp, null) }, label = { Text(stringResource(R.string.insights_title)) })
-        NavigationBarItem(selected = currentScreen == Screen.CONSOLE_SELECT, onClick = { onScreenSelected(Screen.CONSOLE_SELECT) }, icon = { Icon(CustomIcons.Analytics, null) }, label = { Text("Console") })
+        NavigationBarItem(selected = currentScreen == Screen.CONSOLE_SELECT, onClick = { onScreenSelected(Screen.CONSOLE_SELECT) }, icon = { Icon(CustomIcons.Analytics, null) }, label = { Text(stringResource(R.string.nav_console)) })
         NavigationBarItem(selected = currentScreen == Screen.SETTINGS, onClick = { onScreenSelected(Screen.SETTINGS) }, icon = { Icon(Icons.Filled.Settings, null) }, label = { Text(stringResource(R.string.settings_title)) })
     }
 }

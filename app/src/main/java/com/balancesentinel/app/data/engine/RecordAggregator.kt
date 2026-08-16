@@ -51,15 +51,17 @@ object RecordAggregator {
     }
 
     /**
-     * toppedUp = 累加每次 toppedUpBalance 的正向跳变。
-     * 仅计入 >=1 且接近整数的跳变（与 IntradayEngine/DailyEngine 守卫一致），
-     * 避免 API 浮点漂移被误判为充值。
+     * toppedUp = 累加每次充值/余额补充的正向跳变。
+     *
+     * DeepSeek exposes a cumulative topped_up_balance field, while many
+     * providers (including custom scripts) expose only the current balance.
+     * When all metadata fields are absent, a meaningful positive balance delta
+     * is the only provider-neutral recharge signal available.
      */
     fun computeToppedUp(sorted: List<RawRecord>): Float {
         var sum = 0f
         for (i in 1 until sorted.size) {
-            val diff = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
-            if (diff >= 1f && isNearInteger(diff)) sum += diff
+            sum += topUpAmount(sorted[i - 1], sorted[i])
         }
         return sum
     }
@@ -68,8 +70,7 @@ object RecordAggregator {
     fun computeGranted(sorted: List<RawRecord>): Float {
         var sum = 0f
         for (i in 1 until sorted.size) {
-            val diff = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
-            if (diff > 0) sum += diff
+            sum += grantAmount(sorted[i - 1], sorted[i])
         }
         return sum
     }
@@ -83,20 +84,48 @@ object RecordAggregator {
     fun computeConsumed(sorted: List<RawRecord>): Float {
         var consumed = 0f
         for (i in 1 until sorted.size) {
-            val balanceDelta = sorted[i].totalBalance - sorted[i - 1].totalBalance
-            val topDelta = sorted[i].toppedUpBalance - sorted[i - 1].toppedUpBalance
-            val grantDelta = sorted[i].grantedBalance - sorted[i - 1].grantedBalance
-
-            val isTopUp = topDelta >= 1f && isNearInteger(topDelta)
-            val topUpAmount = if (isTopUp) topDelta else 0f
-            val isGrant = grantDelta > 0f
-            val grantAmount = if (isGrant) grantDelta else 0f
-            val consumption = (topUpAmount + grantAmount - balanceDelta).coerceAtLeast(0f)
-            consumed += consumption
+            consumed += consumedAmount(sorted[i - 1], sorted[i])
         }
         return consumed
     }
 }
+
+/**
+ * Returns the recharge amount represented by one adjacent record pair.
+ * Explicit provider metadata wins. If both metadata fields remain zero, a
+ * positive balance delta is treated as a recharge so custom accounts work too.
+ */
+internal fun topUpAmount(previous: RawRecord, current: RawRecord): Float {
+    val explicitDelta = current.toppedUpBalance - previous.toppedUpBalance
+    if (explicitDelta >= 1f && isNearInteger(explicitDelta)) return explicitDelta
+
+    val grantDelta = current.grantedBalance - previous.grantedBalance
+    val metadataMissing = previous.toppedUpBalance == 0f &&
+        current.toppedUpBalance == 0f &&
+        previous.grantedBalance == 0f &&
+        current.grantedBalance == 0f
+    val balanceDelta = current.totalBalance - previous.totalBalance
+    return if (
+        metadataMissing &&
+            grantDelta <= 0f &&
+            balanceDelta > INFERRED_TOP_UP_EPSILON
+    ) {
+        balanceDelta
+    } else {
+        0f
+    }
+}
+
+internal fun grantAmount(previous: RawRecord, current: RawRecord): Float =
+    (current.grantedBalance - previous.grantedBalance).takeIf { it > 0f } ?: 0f
+
+internal fun consumedAmount(previous: RawRecord, current: RawRecord): Float {
+    val balanceDelta = current.totalBalance - previous.totalBalance
+    return (topUpAmount(previous, current) + grantAmount(previous, current) - balanceDelta)
+        .coerceAtLeast(0f)
+}
+
+private const val INFERRED_TOP_UP_EPSILON = 0.01f
 
 /**
  * 判断浮点数是否接近整数（API 浮点漂移容差 0.01）。

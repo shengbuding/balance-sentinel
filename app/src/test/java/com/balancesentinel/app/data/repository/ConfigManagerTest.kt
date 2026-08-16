@@ -216,12 +216,16 @@ class ConfigManagerTest {
     @Test
     fun `buildConfig includes notificationSelectedWallets`() {
         snapshot = snapshot.copy(
-            appSettings = snapshot.appSettings.copy(showTotalBalanceInNotification = false),
+            appSettings = snapshot.appSettings.copy(
+                showTotalBalanceInNotification = false,
+                notificationTotalDisplayOrder = 1
+            ),
             notificationSelections = listOf(NotificationWalletSelectionEntity("acc1", "CNY", 0))
         )
         val json = buildConfig(includeTokens = false)
         assertTrue(json.contains("\"notificationSelectedWallets\""))
         assertTrue(json.contains("\"showTotalBalance\": false"))
+        assertTrue(json.contains("\"notificationTotalDisplayOrder\": 1"))
     }
 
     // ═══════════════════════════════════════════════════════════

@@ -21,6 +21,7 @@ sealed interface AppRoute {
     }
     data object Settings : AppRoute { override val route = "settings" }
     data object RefreshSettings : AppRoute { override val route = "refresh-settings" }
+    data object PermissionGuide : AppRoute { override val route = "permission-guide" }
     data object SystemStatus : AppRoute { override val route = "system-status" }
     data object About : AppRoute { override val route = "about" }
     data object Log : AppRoute { override val route = "log" }

@@ -19,5 +19,6 @@ data class BalanceData(
     val used: Double? = null,          // 已使用
     val unit: String? = null,          // 货币单位（CNY, USD等）
     val isValid: Boolean? = null,      // 是否有效（余额是否充足）
-    val invalidMessage: String? = null // 无效时的提示信息
+    val invalidMessage: String? = null, // 无效时的提示信息
+    val fields: Map<String, String> = emptyMap()
 )

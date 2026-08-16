@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.util.OnboardingHelper
+import com.balancesentinel.app.ui.components.CapabilityStatusCard
+import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
 import kotlinx.coroutines.launch
 
 // ═══════════════════════════════════════════════════════════
@@ -54,7 +56,8 @@ private data class FeatureItem(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(
-    onComplete: () -> Unit
+    onComplete: () -> Unit,
+    capabilityViewModel: CapabilityViewModel? = null
 ) {
     val context = LocalContext.current
     val pages = remember {
@@ -121,6 +124,7 @@ fun OnboardingScreen(
         ) { pageIndex ->
             OnboardingPageContent(
                 page = pages[pageIndex],
+                capabilityViewModel = if (pageIndex == pages.lastIndex) capabilityViewModel else null,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -134,6 +138,7 @@ fun OnboardingScreen(
 @Composable
 private fun OnboardingPageContent(
     page: OnboardingPage,
+    capabilityViewModel: CapabilityViewModel? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -192,6 +197,25 @@ private fun OnboardingPageContent(
                     FeatureRow(feature = feature)
                 }
             }
+        }
+
+        if (capabilityViewModel != null) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.onboarding_permissions_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.onboarding_permissions_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            CapabilityStatusCard(capabilityViewModel)
         }
 
         Spacer(modifier = Modifier.height(24.dp))

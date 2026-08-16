@@ -69,12 +69,21 @@
     <string name="account_hint_secret_key_jwt">Used to generate a JWT token</string>
     <string name="account_hint_secret_key_baidu">Baidu Cloud Secret Key</string>
     <string name="account_hint_base_url">https://api.example.com/v1</string>
+    <string name="account_field_access_token">Access Token (optional)</string>
+    <string name="account_hint_access_token">Token for NewAPI and similar services; API Key is used when blank</string>
+    <string name="account_field_user_id">User ID (optional)</string>
+    <string name="account_hint_user_id">NewAPI New-Api-User value</string>
     <string name="account_custom_script_toggle">Custom balance query script</string>
     <string name="account_custom_script_label">Query Script</string>
     <string name="account_custom_script_placeholder">({\n  request: {\n    url: "{{baseUrl}}/v1/usage",\n    method: "GET",\n    headers: { "Authorization": "Bearer {{apiKey}}" }\n  },\n  extractor: function(response) {\n    return {\n      remaining: response.balance,\n      unit: "USD"\n    };\n  }\n})</string>
-    <string name="account_custom_script_help">Supports template variables: {{apiKey}}, {{baseUrl}}\nReturn format: { remaining, unit, isValid }</string>
+    <string name="account_custom_script_help">Supports template variables: {{apiKey}}, {{baseUrl}}, {{accessToken}}, {{userId}}\nReturn format: { remaining, unit, isValid }</string>
     <string name="account_custom_script_load_preset">Load Preset Script</string>
     <string name="account_custom_script_preset_generic">Generic Script</string>
+    <string name="account_custom_script_preset_newapi">NewAPI preset</string>
+    <string name="account_custom_display_fields_label">Card display fields</string>
+    <string name="account_custom_display_fields_hint">One per line: response path=card label, for example total=Total quota</string>
+    <string name="account_custom_balance_field_label">Balance calculation field</string>
+    <string name="account_custom_balance_field_hint">Optional response path; leave blank to use remaining or balance</string>
     <string name="provider_name_openai">OpenAI</string>
     <string name="provider_name_anthropic">Anthropic</string>
     <string name="provider_name_gemini">Gemini</string>
@@ -240,6 +249,8 @@
     <string name="settings_alert_hint">Send notification when balance drops below threshold</string>
     <string name="settings_alert_amount">Alert Threshold</string>
     <string name="settings_alert_current">Current threshold: %1$d</string>
+    <string name="settings_alert_current_decimal">Current threshold: %1$s</string>
+    <string name="settings_alert_period_current">Current time window: %1$d minutes</string>
     <string name="settings_alert_snoozed">⚠ Alert Paused</string>
     <string name="settings_alert_snoozed_remaining">%1$d min remaining</string>
     <string name="settings_alert_snoozed_accounts">Paused accounts: %1$s</string>
@@ -303,7 +314,8 @@
     <string name="alert_settings_change_period_label">Change Time Window</string>
     <string name="alert_settings_snooze_label">Snooze Duration</string>
     <string name="alert_settings_section_accounts">Per-Account / Per-Currency</string>
-    <string name="alert_settings_section_global">Global Settings</string>
+    <string name="alert_settings_section_global">Default alerts</string>
+    <string name="alert_settings_default_hint">Accounts or currencies without an override inherit these defaults.</string>
     <string name="alert_settings_threshold_hint">Enter amount</string>
     <string name="alert_settings_period_hint">Minutes</string>
 
@@ -708,13 +720,27 @@
     <string name="capability_foreground_service">Foreground service</string>
     <string name="capability_data_sync">Data sync session</string>
     <string name="capability_exact_alarm">Exact alarms</string>
+    <string name="capability_battery_optimization">Battery optimization</string>
     <string name="capability_available">Available</string>
     <string name="capability_not_granted">Not granted</string>
     <string name="capability_permanently_denied">Denied</string>
     <string name="capability_platform_limited">Platform limited</string>
     <string name="capability_not_required">No longer required</string>
     <string name="capability_open_settings">Open system settings</string>
+    <string name="capability_request_permission">Allow notifications</string>
+    <string name="capability_open_battery_settings">Allow background activity</string>
     <string name="capability_notification_required">Notification permission is not granted; notifications and continuous monitoring will not start.</string>
+    <string name="settings_permission_guide">Permissions &amp; background activity</string>
+    <string name="settings_permission_guide_desc">Check notification, battery optimization, and exact alarm access for reliable background monitoring.</string>
+    <string name="settings_background_refresh_switch">Background auto-refresh</string>
+    <string name="settings_background_refresh_switch_desc">Turn off periodic refresh, recovery chains, and retry work.</string>
+    <string name="settings_auto_update_switch">Automatic update checks</string>
+    <string name="settings_auto_update_switch_desc">Check GitHub for a new version when Settings opens each day.</string>
+    <string name="settings_section_runtime">Runtime &amp; alerts</string>
+    <string name="settings_section_data">Data &amp; diagnostics</string>
+    <string name="settings_section_app">App preferences</string>
+    <string name="onboarding_permissions_title">Finish background permissions</string>
+    <string name="onboarding_permissions_desc">Allow notifications, background activity, and exact alarms as needed so refreshes and alerts stay reliable. You can revisit this guide in Settings.</string>
 
     <!-- Console UI -->
     <string name="console_title">Console</string>

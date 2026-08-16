@@ -45,7 +45,8 @@ data class ConfigSettings(
     val notificationSelectedWallets: List<NotificationWalletSelection> = emptyList(),
     val backgroundRefreshInterval: Int? = null,
     val foregroundMonitoringInterval: Int? = null,
-    val backgroundRefreshEnabled: Boolean? = null
+    val backgroundRefreshEnabled: Boolean? = null,
+    val notificationTotalDisplayOrder: Int = 0
 )
 
 internal fun ConfigSettings.backgroundRefreshEnabledForImport(): Boolean =
@@ -144,6 +145,7 @@ object ConfigManager {
             notificationSelectedWallets = snapshot.notificationSelections.map {
                 NotificationWalletSelection(it.accountId, it.currency)
             },
+            notificationTotalDisplayOrder = app.notificationTotalDisplayOrder,
             // Keep the schema-v2 field valid for older app versions. New builds
             // read the shared value above and only use this as an enablement hint.
             backgroundRefreshInterval = if (backgroundEnabled) {

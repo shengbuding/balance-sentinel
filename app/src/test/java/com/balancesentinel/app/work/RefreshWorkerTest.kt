@@ -1,5 +1,6 @@
 package com.balancesentinel.app.work
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
@@ -24,13 +25,16 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class RefreshWorkerTest {
     private lateinit var context: Context
     private val scheduledRetries = mutableListOf<RetrySchedule>()
     private val cancelledRetries = mutableListOf<String>()
     private val observedTriggers = mutableListOf<RefreshTrigger>()
+    private var publishedNotifications = 0
 
     @Before
     fun setUp() {
@@ -38,10 +42,13 @@ class RefreshWorkerTest {
         scheduledRetries.clear()
         cancelledRetries.clear()
         observedTriggers.clear()
+        publishedNotifications = 0
         RefreshWorkerDependencies.gatewayFactory = { fakeGateway() }
         RefreshWorkerDependencies.retryPlanner = RefreshRetryPlanner(jitterMillis = { 0L })
         RefreshWorkerDependencies.retryScheduler = { scheduledRetries += it }
         RefreshWorkerDependencies.retryCanceller = { _, accountId -> cancelledRetries += accountId }
+        RefreshWorkerDependencies.notificationPublisher = { _, _ -> publishedNotifications++ }
+        RefreshWorkerDependencies.monitoringDesiredReader = { true }
     }
 
     @After
@@ -59,6 +66,7 @@ class RefreshWorkerTest {
         assertEquals(listOf(RetrySchedule("network", attempt = 1, delayMillis = 30_000L)), scheduledRetries)
         assertEquals(listOf("success", "permanent"), cancelledRetries)
         assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
+        assertEquals(1, publishedNotifications)
     }
 
     @Test
@@ -87,6 +95,30 @@ class RefreshWorkerTest {
         assertTrue(scheduledRetries.isEmpty())
         assertEquals(listOf("permanent"), cancelledRetries)
         assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
+        assertEquals(1, publishedNotifications)
+    }
+
+    @Test
+    fun `notification failure does not fail a committed background refresh`() = runTest {
+        RefreshWorkerDependencies.notificationPublisher = { _, _ -> error("notifications blocked") }
+        val worker = TestListenableWorkerBuilder.from(context, RefreshWorker::class.java).build()
+
+        val result = worker.doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
+    }
+
+    @Test
+    fun `disabled monitoring never republishes after a background refresh`() = runTest {
+        RefreshWorkerDependencies.monitoringDesiredReader = { false }
+        val worker = TestListenableWorkerBuilder.from(context, RefreshWorker::class.java).build()
+
+        val result = worker.doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(listOf(RefreshTrigger.BACKGROUND), observedTriggers)
+        assertEquals(0, publishedNotifications)
     }
 
     @Test

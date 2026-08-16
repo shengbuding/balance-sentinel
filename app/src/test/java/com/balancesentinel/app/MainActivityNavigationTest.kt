@@ -22,21 +22,28 @@ class MainActivityNavigationTest {
         val intent = Intent().setData(AppRoute.Insights("acct-1", "USD").toUri())
         assertEquals("insights/acct-1/USD", MainActivity.resolveStartDestination(intent, accounts, false))
     }
-    @Test fun unknownAndMalformedLinksAreInvalid() {
+    @Test fun unknownAndMalformedInsightsLinksFallBackToInsightsHome() {
         val unknown = Intent().setData(Uri.parse("balancesentinel://insights/unknown/USD"))
-        assertEquals(AppRoute.InvalidDeepLink("UnknownAccount").route, MainActivity.resolveStartDestination(unknown, accounts, false))
+        assertEquals("insights", MainActivity.resolveStartDestination(unknown, accounts, false))
         val malformed = Intent().setData(Uri.parse("balancesentinel://insights/acct-1/USD/extra"))
-        assertEquals(AppRoute.InvalidDeepLink("MalformedUri").route, MainActivity.resolveStartDestination(malformed, accounts, false))
+        assertEquals("insights", MainActivity.resolveStartDestination(malformed, accounts, false))
     }
-    @Test fun legacyIncompleteAndNonIsoCurrencyAreInvalid() {
+    @Test fun legacyIncompleteAndNonIsoCurrencyFallBackToInsightsHome() {
         val incomplete = Intent().putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
-        assertEquals(AppRoute.InvalidDeepLink("MissingAccount").route, MainActivity.resolveStartDestination(incomplete, accounts, false))
+        assertEquals("insights", MainActivity.resolveStartDestination(incomplete, accounts, false))
         val invalidCurrency = Intent().apply {
             putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
             putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, "acct-1")
             putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, "not-a-currency")
         }
-        assertEquals(AppRoute.InvalidDeepLink("InvalidCurrency").route, MainActivity.resolveStartDestination(invalidCurrency, accounts, false))
+        assertEquals("insights", MainActivity.resolveStartDestination(invalidCurrency, accounts, false))
+    }
+    @Test fun unsupportedTargetsRemainInvalid() {
+        val unsupported = Intent().setData(Uri.parse("balancesentinel://settings"))
+        assertEquals(
+            AppRoute.InvalidDeepLink("UnsupportedTarget").route,
+            MainActivity.resolveStartDestination(unsupported, accounts, false)
+        )
     }
     @Test fun childRoutesKeepOwningTabSelected() {
         assertEquals(AppRoute.Settings.route, topLevelTabForRoute(AppRoute.Log.route))

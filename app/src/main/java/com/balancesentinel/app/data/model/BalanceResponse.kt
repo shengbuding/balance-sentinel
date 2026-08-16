@@ -22,5 +22,6 @@ data class BalanceInfo(
     @SerialName("granted_balance")
     val grantedBalance: String,
     @SerialName("topped_up_balance")
-    val toppedUpBalance: String
+    val toppedUpBalance: String,
+    val displayFields: Map<String, String> = emptyMap()
 )

@@ -20,7 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.balancesentinel.app.data.console.DebugLogger
-import com.balancesentinel.app.data.repository.ApiKeyManager
+import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.repository.AccountLoadState
+import com.balancesentinel.app.data.repository.RoomAccountRepository
+import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdatePrefs
 import com.balancesentinel.app.data.update.UpdateResult
@@ -34,6 +38,8 @@ import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
 import com.balancesentinel.app.util.BatteryOptimizationHelper
 import com.balancesentinel.app.util.OnboardingHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -78,13 +84,7 @@ class MainActivity : ComponentActivity() {
         CrashLogger.breadcrumb("MainActivity", "onCreate started")
         // Foreground monitoring and notification permission are user initiated.
 
-        val accountIds = try {
-            val manager = ApiKeyManager(this)
-            manager.migrateLegacyKeyIfNeeded()
-            manager.getAccounts().map { it.id }.toSet()
-        } catch (_: Exception) {
-            emptySet()
-        }
+        val accountIds = readRoomAccountIds()
         val requestedStart = resolveStartDestination(
             intent = intent,
             accountIds = accountIds,
@@ -120,18 +120,33 @@ class MainActivity : ComponentActivity() {
                                         .setData(android.net.Uri.parse("package:$packageName"))
                                 )
                             }
+                            CapabilityUiEvent.OpenExactAlarmSettings -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    startActivity(
+                                        Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                                            .setData(android.net.Uri.parse("package:$packageName"))
+                                    )
+                                }
+                            }
+                            CapabilityUiEvent.OpenBatteryOptimizationSettings -> {
+                                if (BatteryOptimizationHelper.openBatterySettings(this@MainActivity)) {
+                                    BatteryOptimizationHelper.markGuideShown(this@MainActivity)
+                                }
+                            }
                         }
                     }
                 }
 
-                LaunchedEffect(Unit) {
-                    if (BatteryOptimizationHelper.shouldShowGuide(context)) showBatteryGuide = true
+                LaunchedEffect(currentRoute) {
+                    if (currentRoute != AppRoute.Onboarding.route &&
+                        BatteryOptimizationHelper.shouldShowGuide(context)
+                    ) showBatteryGuide = true
                 }
                 LaunchedEffect(currentRoute) {
                     if (currentRoute == AppRoute.Settings.route && !updateCheckPerformed) {
                         updateCheckPerformed = true
                         val prefs = UpdatePrefs(context)
-                        if (prefs.shouldAutoCheckToday()) {
+                        if (prefs.autoCheckEnabled && prefs.shouldAutoCheckToday()) {
                             when (val result = withContext(Dispatchers.IO) { UpdateChecker().checkForUpdate(context) }) {
                                 is UpdateResult.UpdateAvailable -> if (!prefs.shouldSkipVersion(result.release.tagName)) {
                                     autoUpdateRelease = result.release
@@ -152,8 +167,9 @@ class MainActivity : ComponentActivity() {
                         text = { Text(stringResource(R.string.settings_battery_guide_desc)) },
                         confirmButton = {
                             TextButton(onClick = {
-                                BatteryOptimizationHelper.markGuideShown(context)
-                                BatteryOptimizationHelper.openBatterySettings(context)
+                                if (BatteryOptimizationHelper.openBatterySettings(context)) {
+                                    BatteryOptimizationHelper.markGuideShown(context)
+                                }
                                 showBatteryGuide = false
                             }) { Text(stringResource(R.string.settings_close_battery_opt)) }
                         },
@@ -178,7 +194,8 @@ class MainActivity : ComponentActivity() {
                 }
                 WalletNavHost(
                     startDestination = requestedStart,
-                    onRouteChanged = { currentRoute = it }
+                    onRouteChanged = { currentRoute = it },
+                    capabilityViewModel = capabilityViewModel
                 )
             }
         }
@@ -188,6 +205,21 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         capabilityViewModel.refresh()
+    }
+
+    private fun readRoomAccountIds(): Set<String> = try {
+        runBlocking(Dispatchers.IO) {
+            val accountState = RoomAccountUiRepository(
+                RoomAccountRepository(WalletDatabaseProvider.get(this@MainActivity)),
+                EncryptedPreferencesCredentialStore(this@MainActivity)
+            ).observe().first { it !is AccountLoadState.Loading }
+            (accountState as? AccountLoadState.Ready)
+                ?.accounts
+                ?.mapTo(mutableSetOf()) { it.id }
+                .orEmpty()
+        }
+    } catch (_: Exception) {
+        emptySet()
     }
 
     companion object {
@@ -204,7 +236,25 @@ class MainActivity : ComponentActivity() {
                     it.containsKey(AppRoute.LEGACY_CURRENCY_EXTRA)
             } == true
             if (!hasDeepLink) return AppRoute.Home.route
-            return DeepLinkResolver.resolve(intent, accountIds).route.route
+            val result = DeepLinkResolver.resolve(intent, accountIds)
+            return if (
+                result is com.balancesentinel.app.ui.navigation.DeepLinkResult.InvalidDeepLink &&
+                isInsightsIntent(intent)
+            ) {
+                "insights"
+            } else {
+                result.route.route
+            }
+        }
+
+        private fun isInsightsIntent(intent: Intent): Boolean {
+            val uri = intent.data
+            if (uri != null) {
+                return uri.scheme.equals(AppRoute.SCHEME, ignoreCase = true) &&
+                    uri.host.equals(AppRoute.INSIGHTS_HOST, ignoreCase = true)
+            }
+            return intent.getStringExtra(AppRoute.LEGACY_TARGET_EXTRA)
+                .equals("insights", ignoreCase = true)
         }
     }
 

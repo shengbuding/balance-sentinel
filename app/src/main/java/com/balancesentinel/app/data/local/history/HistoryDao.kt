@@ -338,6 +338,22 @@ interface HistoryDao {
                 granted_balance - previous_granted AS granted_delta,
                 total_balance - previous_total AS balance_delta
             FROM paired
+        ), accounting AS (
+            SELECT *,
+                CASE
+                    WHEN topped_up_delta >= 1.0 AND
+                        (topped_up_delta - CAST(topped_up_delta AS INTEGER) < 0.01 OR
+                         topped_up_delta - CAST(topped_up_delta AS INTEGER) > 0.99)
+                        THEN topped_up_delta
+                    WHEN previous_id IS NOT NULL
+                        AND previous_topped_up = 0.0 AND topped_up_balance = 0.0
+                        AND previous_granted = 0.0 AND granted_balance = 0.0
+                        AND balance_delta > 0.01
+                        THEN balance_delta
+                    ELSE 0.0
+                END AS top_up_amount,
+                CASE WHEN granted_delta > 0.0 THEN granted_delta ELSE 0.0 END AS grant_amount
+            FROM deltas
         )
         SELECT
             COUNT(*) AS row_count,
@@ -345,35 +361,22 @@ interface HistoryDao {
             MAX(CASE WHEN next_id IS NULL THEN total_balance END) AS close_balance,
             SUM(CASE
                 WHEN previous_id IS NULL THEN 0.0
-                WHEN ((CASE WHEN topped_up_delta >= 1.0 AND
-                        (topped_up_delta - CAST(topped_up_delta AS INTEGER) < 0.01 OR
-                         topped_up_delta - CAST(topped_up_delta AS INTEGER) > 0.99)
-                        THEN topped_up_delta ELSE 0.0 END) +
-                    (CASE WHEN granted_delta > 0.0 THEN granted_delta ELSE 0.0 END) -
-                    balance_delta) > 0.0
-                    THEN (CASE WHEN topped_up_delta >= 1.0 AND
-                        (topped_up_delta - CAST(topped_up_delta AS INTEGER) < 0.01 OR
-                         topped_up_delta - CAST(topped_up_delta AS INTEGER) > 0.99)
-                        THEN topped_up_delta ELSE 0.0 END) +
-                        (CASE WHEN granted_delta > 0.0 THEN granted_delta ELSE 0.0 END) -
-                        balance_delta
+                WHEN top_up_amount + grant_amount - balance_delta > 0.0
+                    THEN top_up_amount + grant_amount - balance_delta
                 ELSE 0.0
             END) AS consumed_balance,
             SUM(CASE
                 WHEN previous_id IS NULL THEN 0.0
-                WHEN topped_up_delta >= 1.0 AND
-                    (topped_up_delta - CAST(topped_up_delta AS INTEGER) < 0.01 OR
-                     topped_up_delta - CAST(topped_up_delta AS INTEGER) > 0.99)
-                    THEN topped_up_delta ELSE 0.0 END
+                ELSE top_up_amount END
             ) AS topped_up_balance,
             SUM(CASE
                 WHEN previous_id IS NULL THEN 0.0
-                WHEN granted_delta > 0.0 THEN granted_delta ELSE 0.0 END
+                ELSE grant_amount END
             ) AS granted_balance,
             AVG(total_balance) AS average_balance,
             MAX(CASE WHEN next_id IS NULL THEN topped_up_balance END) AS topped_up_balance_close,
             MAX(CASE WHEN next_id IS NULL THEN granted_balance END) AS granted_balance_close
-        FROM deltas
+        FROM accounting
         """
     )
     suspend fun aggregateSemantic(
@@ -479,6 +482,18 @@ interface HistoryDao {
 
     @Query("SELECT DISTINCT currency FROM balance_records ORDER BY currency")
     suspend fun distinctCurrencies(): List<String>
+
+    @Query(
+        "SELECT DISTINCT currency FROM balance_records " +
+            "WHERE account_id IN (:accountIds) " +
+            "AND recorded_at >= :fromInclusive AND recorded_at < :toExclusive " +
+            "ORDER BY currency"
+    )
+    suspend fun distinctCurrenciesForAccounts(
+        accountIds: List<String>,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): List<String>
 
     @Query(
         "SELECT DISTINCT date, account_id, currency FROM daily_summaries " +

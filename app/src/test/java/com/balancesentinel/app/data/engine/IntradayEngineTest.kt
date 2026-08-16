@@ -76,6 +76,22 @@ class IntradayEngineTest {
     }
 
     @Test
+    fun `top-up detection infers positive balance increase for metadata-less account`() {
+        val now = System.currentTimeMillis()
+        val records = listOf(
+            RawRecord("custom", now - 1800_000L, "USD", 7.73f, 0f, 0f),
+            RawRecord("custom", now, "USD", 10.00f, 0f, 0f)
+        )
+
+        val output = IntradayEngine.compute(IntradayInput(records, "USD", null))
+
+        assertTrue(output.trendPoints[1].isTopUp)
+        assertEquals(2.27f, output.trendPoints[1].topUpAmount, 0.01f)
+        assertEquals(2.27f, output.billReport.toppedUp, 0.01f)
+        assertEquals(0f, output.billReport.consumed, 0.01f)
+    }
+
+    @Test
     fun `top-up rejects non-integer delta`() {
         val now = System.currentTimeMillis()
         val records = listOf(

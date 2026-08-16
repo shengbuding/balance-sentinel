@@ -34,7 +34,8 @@ object BalanceWidgetDataStore {
         currency: String,
         isAvailable: Boolean,
         grantedBalance: String,
-        toppedUpBalance: String
+        toppedUpBalance: String,
+        displayFields: Map<String, String> = emptyMap()
     ) {
         synchronized(STORE_LOCK) {
             val p = getPrefs(context)
@@ -48,6 +49,7 @@ object BalanceWidgetDataStore {
                 isAvailable = isAvailable,
                 grantedBalance = grantedBalance,
                 toppedUpBalance = toppedUpBalance,
+                displayFields = displayFields,
                 lastUpdated = System.currentTimeMillis()
             )
             if (idx >= 0) balances[idx] = entry else balances.add(entry)
@@ -303,7 +305,8 @@ data class AccountBalance(
     val toppedUpBalance: String,
     val lastUpdated: Long,
     val stale: Boolean = false,
-    val staleReason: String? = null
+    val staleReason: String? = null,
+    val displayFields: Map<String, String> = emptyMap()
 )
 
 @Serializable

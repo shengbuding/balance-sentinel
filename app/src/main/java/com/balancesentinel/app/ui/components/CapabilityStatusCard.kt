@@ -83,6 +83,19 @@ fun CapabilityStatusCard(viewModel: CapabilityViewModel) {
                 stringResource(R.string.capability_exact_alarm),
                 state.capabilities[AppCapability.EXACT_ALARM]
             )
+            CapabilityRow(
+                stringResource(R.string.capability_battery_optimization),
+                state.capabilities[AppCapability.BATTERY_OPTIMIZATION]
+            )
+
+            if (state.capabilities[AppCapability.EXACT_ALARM] == CapabilityAvailability.NOT_GRANTED) {
+                Button(
+                    onClick = viewModel::requestExactAlarmResolution,
+                    modifier = Modifier.fillMaxWidth().testTag("open_exact_alarm_settings")
+                ) {
+                    Text(stringResource(R.string.capability_open_settings))
+                }
+            }
 
             if (state.capabilities[AppCapability.NOTIFICATIONS] == CapabilityAvailability.PERMANENTLY_DENIED) {
                 Button(
@@ -90,6 +103,24 @@ fun CapabilityStatusCard(viewModel: CapabilityViewModel) {
                     modifier = Modifier.fillMaxWidth().testTag("open_notification_settings")
                 ) {
                     Text(stringResource(R.string.capability_open_settings))
+                }
+            }
+
+            if (state.capabilities[AppCapability.NOTIFICATIONS] == CapabilityAvailability.NOT_GRANTED) {
+                Button(
+                    onClick = viewModel::requestPermissionResolution,
+                    modifier = Modifier.fillMaxWidth().testTag("request_notification_permission")
+                ) {
+                    Text(stringResource(R.string.capability_request_permission))
+                }
+            }
+
+            if (state.capabilities[AppCapability.BATTERY_OPTIMIZATION] == CapabilityAvailability.NOT_GRANTED) {
+                Button(
+                    onClick = viewModel::requestBatteryOptimizationResolution,
+                    modifier = Modifier.fillMaxWidth().testTag("open_battery_settings")
+                ) {
+                    Text(stringResource(R.string.capability_open_battery_settings))
                 }
             }
 

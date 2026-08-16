@@ -18,7 +18,8 @@ object WalletDatabaseProvider {
             WalletDatabase.MIGRATION_1_2,
             WalletDatabase.MIGRATION_2_3,
             WalletDatabase.MIGRATION_3_4,
-            WalletDatabase.MIGRATION_4_5
+            WalletDatabase.MIGRATION_4_5,
+            WalletDatabase.MIGRATION_5_6
         )
             .build().also { instance = it }
     }

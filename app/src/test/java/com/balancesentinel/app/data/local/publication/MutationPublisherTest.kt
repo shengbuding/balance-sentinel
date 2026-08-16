@@ -126,7 +126,8 @@ class MutationPublisherTest {
                             changeAlertPeriodMinutes = 30,
                             logMaxEntries = 321,
                             snoozeDurationMinutes = 75,
-                            showTotalBalanceInNotification = false
+                            showTotalBalanceInNotification = false,
+                            notificationTotalDisplayOrder = 1
                         )
                     ),
                     accountAlertSettings = AccountAlertSettingsWrite.ReplaceAll(
@@ -152,6 +153,7 @@ class MutationPublisherTest {
         assertEquals(45, appSettings?.foregroundMonitoringIntervalSeconds)
         assertTrue(appSettings?.alertEnabled == true)
         assertFalse(appSettings?.showTotalBalanceInNotification ?: true)
+        assertEquals(1, appSettings?.notificationTotalDisplayOrder)
         assertEquals(800L, appSettings?.updatedAt)
         assertEquals("USD", database.queryString("SELECT currency FROM account_alert_settings"))
         assertEquals("EUR", database.queryString("SELECT currency FROM notification_wallet_selections"))

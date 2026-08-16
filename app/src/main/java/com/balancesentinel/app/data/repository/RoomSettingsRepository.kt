@@ -70,6 +70,12 @@ class RoomSettingsRepository(
         val accountAlerts = snapshot.accountAlertSettings.filter { it.accountId in knownAccountIds }
         val notificationRows = selections.filter { it.accountId in knownAccountIds }
             .mapIndexed { index, value -> value.copy(displayOrder = index) }
+        val requestedTotalOrder = app.notificationTotalDisplayOrder
+            .coerceIn(0, selections.size)
+        val totalDisplayOrder = selections
+            .take(requestedTotalOrder)
+            .count { it.accountId in knownAccountIds }
+            .coerceIn(0, notificationRows.size)
         database.withTransaction {
             database.appSettingsDao().upsert(
                 backgroundRefreshIntervalSeconds = app.backgroundRefreshIntervalSeconds,
@@ -82,7 +88,8 @@ class RoomSettingsRepository(
                 logMaxEntries = app.logMaxEntries,
                 snoozeDurationMinutes = app.snoozeDurationMinutes,
                 showTotalBalanceInNotification = app.showTotalBalanceInNotification,
-                updatedAt = publishedAt
+                updatedAt = publishedAt,
+                notificationTotalDisplayOrder = totalDisplayOrder
             )
             database.eventLogDao().trimToLatest(app.logMaxEntries.coerceIn(10, 1000))
             database.settingsDao().replaceAccountAlertSettings(accountAlerts)
@@ -151,7 +158,8 @@ class RoomSettingsRepository(
                 changeAlertPeriodMinutes = settings.changeAlertPeriodMinutes,
                 logMaxEntries = settings.logMaxEntries,
                 snoozeDurationMinutes = settings.snoozeDurationMinutes,
-                showTotalBalanceInNotification = settings.showTotalBalance
+                showTotalBalanceInNotification = settings.showTotalBalance,
+                notificationTotalDisplayOrder = settings.notificationTotalDisplayOrder
             ),
             accountAlertSettings = settings.perCurrencyAlertSettings.map {
                 com.balancesentinel.app.data.local.settings.AccountAlertSettingEntity(

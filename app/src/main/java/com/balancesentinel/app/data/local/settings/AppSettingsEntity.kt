@@ -30,5 +30,7 @@ data class AppSettingsEntity(
     @ColumnInfo(name = "show_total_balance_in_notification", defaultValue = "1")
     val showTotalBalanceInNotification: Boolean = true,
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+    @ColumnInfo(name = "notification_total_display_order", defaultValue = "0")
+    val notificationTotalDisplayOrder: Int = 0
 )

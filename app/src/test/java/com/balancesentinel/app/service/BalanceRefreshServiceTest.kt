@@ -1,7 +1,11 @@
 package com.balancesentinel.app.service
 
+import android.app.Service
+import android.app.Application
 import android.content.Context
+import android.content.Intent
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
@@ -21,8 +25,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class BalanceRefreshServiceTest {
     @Before
     fun setUp() {
@@ -33,6 +39,7 @@ class BalanceRefreshServiceTest {
     @After
     fun tearDown() {
         SettingsRepositoryProvider.resetForTests()
+        WalletDatabaseProvider.clearForTests()
     }
 
     @Test
@@ -40,10 +47,51 @@ class BalanceRefreshServiceTest {
         val service = Robolectric.buildService(BalanceRefreshService::class.java).get()
         val starter = RecordingStarter()
         service.serviceStarter = starter
+        service.taskRemovalReconciler = {}
 
         service.onTaskRemoved(null)
 
         assertEquals(0, starter.calls)
+        service.onDestroy()
+    }
+
+    @Test
+    fun `service destruction detaches the persistent notification`() {
+        val service = Robolectric.buildService(BalanceRefreshService::class.java).get()
+        val stopFlags = mutableListOf<Int>()
+        service.foregroundStopper = { stopFlags += it }
+
+        service.onDestroy()
+
+        assertEquals(listOf(Service.STOP_FOREGROUND_DETACH), stopFlags)
+    }
+
+    @Test
+    fun `explicit user stop removes the persistent notification`() {
+        val service = createService()
+        val stopFlags = mutableListOf<Int>()
+        service.foregroundStopper = { stopFlags += it }
+
+        val result = service.onStartCommand(
+            Intent(service, BalanceRefreshService::class.java)
+                .setAction(BalanceRefreshService.ACTION_STOP_MONITORING),
+            0,
+            1
+        )
+
+        assertEquals(Service.START_NOT_STICKY, result)
+        assertTrue(stopFlags.contains(Service.STOP_FOREGROUND_REMOVE))
+    }
+
+    @Test
+    fun `notification failure does not fail committed service refresh work`() = runTest {
+        var failure: Throwable? = null
+
+        publishNotificationBestEffort(onFailure = { failure = it }) {
+            error("notifications blocked")
+        }
+
+        assertEquals("notifications blocked", failure?.message)
     }
 
     @Test
@@ -100,6 +148,12 @@ class BalanceRefreshServiceTest {
     }
 
     private fun account(id: String) = AccountInfo(id, id, "key-$id", ProviderType.DEEPSEEK, revision = 1)
+
+    private fun createService(): BalanceRefreshService {
+        val controller = Robolectric.buildService(BalanceRefreshService::class.java)
+        controller.get().refreshGatewayFactory = { EmptyGateway() }
+        return controller.create().get()
+    }
 
     private class EmptyGateway : RefreshGateway {
         override suspend fun refreshAccount(accountId: String, trigger: RefreshTrigger): AccountRefreshResult =

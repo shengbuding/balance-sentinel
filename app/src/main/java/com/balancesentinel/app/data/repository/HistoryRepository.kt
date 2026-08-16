@@ -54,6 +54,16 @@ interface HistoryRepository {
 
     suspend fun distinctCurrencies(): List<String>
 
+    suspend fun distinctCurrencies(
+        accountIds: List<String>,
+        fromInclusive: Long = Long.MIN_VALUE,
+        toExclusive: Long = Long.MAX_VALUE
+    ): List<String> = if (accountIds.isEmpty()) {
+        emptyList()
+    } else {
+        distinctCurrencies()
+    }
+
     suspend fun summaries(
         accountId: String? = null,
         currency: String? = null,
@@ -174,6 +184,27 @@ class LegacyHistoryRepository(
             .distinct()
             .sorted()
     }
+
+    override suspend fun distinctCurrencies(
+        accountIds: List<String>,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): List<String> =
+        withContext(Dispatchers.IO) {
+            require(toExclusive >= fromInclusive) { "invalid history range" }
+            if (accountIds.isEmpty()) return@withContext emptyList()
+            val accountIdSet = accountIds.toHashSet()
+            RawRecordStore.getAllRecords(appContext)
+                .asSequence()
+                .filter {
+                    it.accountId in accountIdSet &&
+                        it.timestamp >= fromInclusive && it.timestamp < toExclusive
+                }
+                .map { it.currency.uppercase(Locale.ROOT) }
+                .distinct()
+                .sorted()
+                .toList()
+        }
 
     override suspend fun summaries(
         accountId: String?,
@@ -488,6 +519,7 @@ open class RoomHistoryRepository(
 
     private companion object {
         const val CLEANUP_KEY_PAGE_SIZE = 200
+        const val CURRENCY_ACCOUNT_BATCH_SIZE = 900
     }
     override suspend fun insert(records: List<RawRecord>, source: BalanceRecordSource): Int {
         if (records.isEmpty()) return 0
@@ -586,6 +618,25 @@ open class RoomHistoryRepository(
     }
 
     override suspend fun distinctCurrencies(): List<String> = database.historyDao().distinctCurrencies()
+
+    override suspend fun distinctCurrencies(
+        accountIds: List<String>,
+        fromInclusive: Long,
+        toExclusive: Long
+    ): List<String> {
+        require(toExclusive >= fromInclusive) { "invalid history range" }
+        return accountIds.distinct()
+            .chunked(CURRENCY_ACCOUNT_BATCH_SIZE)
+            .flatMap { accountIdBatch ->
+                database.historyDao().distinctCurrenciesForAccounts(
+                    accountIds = accountIdBatch,
+                    fromInclusive = fromInclusive,
+                    toExclusive = toExclusive
+                )
+            }
+            .distinct()
+            .sorted()
+    }
 
     override suspend fun summaries(
         accountId: String?,

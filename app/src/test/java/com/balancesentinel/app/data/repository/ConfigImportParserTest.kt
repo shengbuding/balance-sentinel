@@ -62,7 +62,9 @@ class ConfigImportParserTest {
     }
 
     @Test fun `exact limits are accepted`() {
-        assertEquals(256, parser.parse(ByteArrayInputStream(validJson(accounts = 256))).accounts.size)
+        val legacyCompatible = parser.parse(ByteArrayInputStream(validJson(accounts = 256)))
+        assertEquals(256, legacyCompatible.accounts.size)
+        assertEquals(0, legacyCompatible.settings.notificationTotalDisplayOrder)
         assertEquals(16 * 1024, parser.parse(ByteArrayInputStream(validJson(accounts = 1, label = "x".repeat(16 * 1024)))).accounts.single().label.length)
         assertEquals(256 * 1024, parser.parse(ByteArrayInputStream(validJson(accounts = 1, script = "s".repeat(256 * 1024)))).accounts.single().usageScript!!.length)
         assertEquals(0, parser.parse(ByteArrayInputStream(validJson(depth = 30))).accounts.size)

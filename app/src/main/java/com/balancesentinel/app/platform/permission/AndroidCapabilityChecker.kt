@@ -1,9 +1,11 @@
 package com.balancesentinel.app.platform.permission
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.balancesentinel.app.data.repository.WidgetPrefs
@@ -43,13 +45,34 @@ class AndroidCapabilityChecker(
             CapabilityAvailability.PLATFORM_LIMITED
         }
 
+        val exactAlarm = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            CapabilityAvailability.NOT_REQUIRED
+        } else if (
+            appContext.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true
+        ) {
+            CapabilityAvailability.AVAILABLE
+        } else {
+            CapabilityAvailability.NOT_GRANTED
+        }
+
+        val batteryOptimization = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            CapabilityAvailability.NOT_REQUIRED
+        } else {
+            val powerManager = appContext.getSystemService(PowerManager::class.java)
+            if (powerManager?.isIgnoringBatteryOptimizations(appContext.packageName) == true) {
+                CapabilityAvailability.AVAILABLE
+            } else {
+                CapabilityAvailability.NOT_GRANTED
+            }
+        }
+
         return CapabilitySnapshot(
             mapOf(
                 AppCapability.NOTIFICATIONS to notification,
                 AppCapability.FOREGROUND_SERVICE to foregroundService,
                 AppCapability.DATA_SYNC_SESSION to dataSync,
-                // Exact alarms were retired in Task 17; they must never be requested again.
-                AppCapability.EXACT_ALARM to CapabilityAvailability.NOT_REQUIRED
+                AppCapability.EXACT_ALARM to exactAlarm,
+                AppCapability.BATTERY_OPTIMIZATION to batteryOptimization
             )
         )
     }

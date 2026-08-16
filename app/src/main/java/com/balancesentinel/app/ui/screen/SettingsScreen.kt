@@ -25,8 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import com.balancesentinel.app.ui.theme.WalletColors
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +47,7 @@ import com.balancesentinel.app.ui.CustomIcons
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
 import com.balancesentinel.app.ui.components.CapabilityStatusCard
+import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
@@ -78,7 +79,8 @@ fun SettingsScreen(
     onNavigateToAlertSettings: () -> Unit,
     onNavigateToRefresh: () -> Unit = {},
     onNavigateToSystemStatus: () -> Unit = {},
-    onNavigateToAbout: () -> Unit = {}
+    onNavigateToAbout: () -> Unit = {},
+    onNavigateToPermissionGuide: () -> Unit = {}
 ) {
     LaunchedEffect(Unit) {
         viewModel.loadStatusSummary()
@@ -92,12 +94,17 @@ fun SettingsScreen(
         onNavigateToDataManagement = onNavigateToDataManagement,
         onNavigateToRefresh = onNavigateToRefresh,
         onNavigateToSystemStatus = onNavigateToSystemStatus,
-        onNavigateToAbout = onNavigateToAbout
+        onNavigateToAbout = onNavigateToAbout,
+        onNavigateToPermissionGuide = onNavigateToPermissionGuide
     )
 }
 
 @Composable
-fun RefreshSettingsScreen(viewModel: HomeViewModel, onBack: () -> Unit) = RefreshSettingsPage(viewModel, onBack)
+fun RefreshSettingsScreen(
+    viewModel: HomeViewModel,
+    capabilityViewModel: CapabilityViewModel? = null,
+    onBack: () -> Unit
+) = RefreshSettingsPage(viewModel, capabilityViewModel, onBack)
 
 @Composable
 fun SystemStatusScreen(viewModel: HomeViewModel, onBack: () -> Unit, onNavigateToLog: () -> Unit) =
@@ -119,7 +126,8 @@ private fun SettingsMainPage(
     onNavigateToDataManagement: () -> Unit,
     onNavigateToRefresh: () -> Unit,
     onNavigateToSystemStatus: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    onNavigateToAbout: () -> Unit,
+    onNavigateToPermissionGuide: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -134,9 +142,9 @@ private fun SettingsMainPage(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -149,7 +157,7 @@ private fun SettingsMainPage(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. 刷新设置 — 最常用
+            SettingsSectionHeader(stringResource(R.string.settings_section_runtime))
             SettingsNavCard(
                 icon = { Icon(Icons.Filled.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_auto_refresh),
@@ -157,7 +165,13 @@ private fun SettingsMainPage(
                 onClick = onNavigateToRefresh
             )
 
-            // 2. 预警设置
+            SettingsNavCard(
+                icon = { Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
+                title = stringResource(R.string.settings_permission_guide),
+                description = stringResource(R.string.settings_permission_guide_desc),
+                onClick = onNavigateToPermissionGuide
+            )
+
             SettingsNavCard(
                 icon = { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_alert_entry),
@@ -165,7 +179,7 @@ private fun SettingsMainPage(
                 onClick = onNavigateToAlertSettings
             )
 
-            // 3. 系统状态
+            SettingsSectionHeader(stringResource(R.string.settings_section_data))
             SettingsNavCard(
                 icon = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_system_status),
@@ -173,7 +187,6 @@ private fun SettingsMainPage(
                 onClick = onNavigateToSystemStatus
             )
 
-            // 4. 数据管理
             SettingsNavCard(
                 icon = { Icon(CustomIcons.SaveAlt, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_data_management),
@@ -181,7 +194,7 @@ private fun SettingsMainPage(
                 onClick = onNavigateToDataManagement
             )
 
-            // 5. 语言切换
+            SettingsSectionHeader(stringResource(R.string.settings_section_app))
             val widgetPrefs = remember { WidgetPrefs(context) }
             val currentLang = widgetPrefs.language
             var showLanguageDialog by remember { mutableStateOf(false) }
@@ -216,7 +229,6 @@ private fun SettingsMainPage(
                 )
             }
 
-            // 6. 关于与反馈 — 最少用
             SettingsNavCard(
                 icon = { Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) },
                 title = stringResource(R.string.settings_about),
@@ -239,8 +251,8 @@ private fun SettingsNavCard(
     onClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Row(
             modifier = Modifier
@@ -250,7 +262,7 @@ private fun SettingsNavCard(
                     contentDescription = title
                 }
                 .clickable { onClick() }
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -281,9 +293,13 @@ private fun SettingsNavCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
+fun RefreshSettingsPage(
+    viewModel: HomeViewModel,
+    capabilityViewModel: CapabilityViewModel? = null,
+    onBack: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val capabilityViewModel: CapabilityViewModel = viewModel()
+    val resolvedCapabilityViewModel = capabilityViewModel ?: viewModel<CapabilityViewModel>()
 
     Scaffold(
         topBar = {
@@ -295,9 +311,9 @@ fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -309,7 +325,7 @@ fun RefreshSettingsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            CapabilityStatusCard(capabilityViewModel)
+            CapabilityStatusCard(resolvedCapabilityViewModel)
             Spacer(modifier = Modifier.height(12.dp))
             WidgetSettingsSection(viewModel, uiState)
         }
@@ -340,9 +356,9 @@ fun SystemStatusPage(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -404,9 +420,9 @@ fun AboutPage(onBack: () -> Unit) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
@@ -844,6 +860,30 @@ private fun VersionInfo(snackbarHostState: SnackbarHostState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.settings_auto_update_switch),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(R.string.settings_auto_update_switch_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = updatePrefs.autoCheckEnabled,
+                    onCheckedChange = { updatePrefs.autoCheckEnabled = it },
+                    modifier = Modifier.testTag("auto_update_switch")
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // Check update button row
@@ -1122,8 +1162,43 @@ private fun WidgetSettingsSection(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.settings_background_refresh_switch),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(R.string.settings_background_refresh_switch_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = uiState.backgroundRefreshIntervalSeconds != null,
+                    onCheckedChange = viewModel::setBackgroundRefreshEnabled,
+                    modifier = Modifier.testTag("background_refresh_switch")
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+    )
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1136,8 +1211,8 @@ private fun PrivacyPolicyRow() {
     val privacyLabel = stringResource(R.string.settings_privacy_policy)
 
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Row(
             modifier = Modifier
@@ -1147,7 +1222,7 @@ private fun PrivacyPolicyRow() {
                     contentDescription = privacyLabel
                 }
                 .clickable { showDialog = true }
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

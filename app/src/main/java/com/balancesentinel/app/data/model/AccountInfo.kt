@@ -26,7 +26,9 @@ data class AccountInfo(
     val usageScript: String? = null,
     val usageScriptEnabled: Boolean = true,
     val authorizedScriptOrigins: Set<String> = emptySet(),
-    val revision: Long = 0
+    val revision: Long = 0,
+    val usageDisplayFields: Map<String, String> = emptyMap(),
+    val usageBalanceField: String? = null
 ) {
     /**
      * 转换为ProviderConfig
@@ -40,6 +42,8 @@ data class AccountInfo(
         settings.remove("usageScript")
         settings.remove("usageScriptEnabled")
         settings.remove("authorizedScriptOrigins")
+        settings.remove("usageDisplayFields")
+        settings.remove("usageBalanceField")
         // 添加自定义脚本到settings中
         if (usageScript != null) {
             settings["usageScript"] = usageScript
@@ -50,6 +54,12 @@ data class AccountInfo(
             .distinct()
             .sorted()
             .joinToString(",")
+        if (usageDisplayFields.isNotEmpty()) {
+            settings["usageDisplayFields"] = encodeUsageDisplayFields(usageDisplayFields)
+        }
+        usageBalanceField?.trim()?.takeIf(String::isNotEmpty)?.let {
+            settings["usageBalanceField"] = it
+        }
         return ProviderConfig(
             providerType = providerType,
             credentials = credentials,
@@ -80,7 +90,9 @@ data class AccountDraft(
     val extraSettings: Map<String, String> = emptyMap(),
     val usageScript: String? = null,
     val usageScriptEnabled: Boolean = true,
-    val authorizedScriptOrigins: Set<String> = emptySet()
+    val authorizedScriptOrigins: Set<String> = emptySet(),
+    val usageDisplayFields: Map<String, String> = emptyMap(),
+    val usageBalanceField: String? = null
 )
 
 sealed interface AccountSaveResult {

@@ -35,7 +35,8 @@ class WalletDatabaseMigrationTest {
                 WalletDatabase.MIGRATION_1_2,
                 WalletDatabase.MIGRATION_2_3,
                 WalletDatabase.MIGRATION_3_4,
-                WalletDatabase.MIGRATION_4_5
+                WalletDatabase.MIGRATION_4_5,
+                WalletDatabase.MIGRATION_5_6
             )
             .build()
         try {
@@ -66,7 +67,8 @@ class WalletDatabaseMigrationTest {
             WalletDatabase.MIGRATION_1_2,
             WalletDatabase.MIGRATION_2_3,
             WalletDatabase.MIGRATION_3_4,
-            WalletDatabase.MIGRATION_4_5
+            WalletDatabase.MIGRATION_4_5,
+            WalletDatabase.MIGRATION_5_6
         ).use { sqlite ->
             val identity = sqlite.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"

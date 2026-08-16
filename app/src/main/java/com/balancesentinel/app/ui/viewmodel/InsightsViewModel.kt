@@ -32,6 +32,8 @@ import com.balancesentinel.app.data.repository.RoomAccountRepository
 import com.balancesentinel.app.data.repository.RoomAccountUiRepository
 import com.balancesentinel.app.data.repository.HistoryRepository
 import com.balancesentinel.app.data.repository.RoomHistoryRepository
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -47,6 +49,9 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Currency
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
 /**
@@ -58,6 +63,8 @@ data class InsightsUiState(
     val accountLoadState: AccountLoadState = AccountLoadState.Loading,
     val isLoading: Boolean = false,
     val accounts: List<AccountInfo> = emptyList(),
+    /** Accounts that have data for the selected currency in the insight windows. */
+    val eligibleAccounts: List<AccountInfo> = emptyList(),
     val selectedAccountId: String? = null,
     val availableCurrencies: List<String> = emptyList(),
     val selectedCurrency: String = "",
@@ -119,6 +126,7 @@ class InsightsViewModel @JvmOverloads constructor(
         ?: RoomHistoryRepository(WalletDatabaseProvider.get(application))
     private var accountCollectionJob: Job? = null
     private var loadDataJob: Job? = null
+    private val loadGeneration = AtomicLong()
 
     init {
         observeAccounts()
@@ -180,6 +188,7 @@ class InsightsViewModel @JvmOverloads constructor(
             AccountLoadState.Loading -> return
         }
         loadDataJob?.cancel()
+        val generation = loadGeneration.incrementAndGet()
         loadDataJob = workScope.launch(Dispatchers.Default) {
             _uiState.update { current -> current.copy(
                 isLoading = true,
@@ -187,46 +196,140 @@ class InsightsViewModel @JvmOverloads constructor(
             ) }
 
             try {
-                val accountId = _uiState.value.selectedAccountId
+                val requestedAccountId = _uiState.value.selectedAccountId
+                val requestedCurrency = _uiState.value.selectedCurrency
                 val rangeDays = _uiState.value.rangeDays
                 val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
                 val historyFrom = today.minusDays(365).toString()
                 val historyTo = today.toString()
-                val scopedSummaries = historySource.summaries(
-                    accountId = accountId,
+                val historyFromMillis = today.minusDays(365)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+                val historyToMillis = today.plusDays(1)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+                val allSummaries = historySource.summaries(
+                    accountId = null,
                     fromDateInclusive = historyFrom,
                     toDateInclusive = historyTo
                 )
-                val currencies = (historySource.distinctCurrencies() + scopedSummaries.map { it.currency })
-                    .distinct().sorted()
-                val currency = _uiState.value.selectedCurrency.let {
+                val accountIds = accounts.map { it.id }
+                val accountIdSet = accountIds.toHashSet()
+                val currentCurrenciesByAccount = runCatching {
+                    BalanceWidgetDataStore.getAllBalances(getApplication())
+                }.getOrDefault(emptyList())
+                    .asSequence()
+                    .filter { it.accountId in accountIdSet && it.currency.isNotBlank() }
+                    .groupBy { it.accountId }
+                    .asSequence()
+                    .mapNotNull { (accountId, balances) ->
+                        val latestUpdatedAt = balances.maxOf { it.lastUpdated }
+                        val currencies = balances.asSequence()
+                            .filter { it.lastUpdated == latestUpdatedAt }
+                            .mapNotNull { balance -> canonicalCurrency(balance.currency) }
+                            .toSet()
+                        accountId to currencies
+                    }
+                    .filter { (_, currencies) -> currencies.isNotEmpty() }
+                    .toMap()
+                val currentCurrencies = currentCurrenciesByAccount.values.flatten()
+                val fallbackAccountIds = accountIds.filterNot(currentCurrenciesByAccount::containsKey)
+                val fallbackAccountIdSet = fallbackAccountIds.toHashSet()
+                val fallbackCurrencies = historySource.distinctCurrencies(
+                    accountIds = fallbackAccountIds,
+                    fromInclusive = historyFromMillis,
+                    toExclusive = historyToMillis
+                ) +
+                    allSummaries.asSequence()
+                        .filter { it.accountId in fallbackAccountIdSet }
+                        .mapNotNull { canonicalCurrency(it.currency) }
+                        .toList()
+                val currencies = (currentCurrencies + fallbackCurrencies)
+                    .asSequence()
+                    .mapNotNull(::canonicalCurrency)
+                    .distinct()
+                    .sorted()
+                    .toList()
+                val currency = requestedCurrency.let {
                     if (it.isNotEmpty() && currencies.contains(it)) it
                     else currencies.firstOrNull() ?: ""
                 }
+                if (generation != loadGeneration.get()) return@launch
+                if (currency != requestedCurrency) {
+                    savedStateHandle[KEY_CURRENCY] = currency
+                }
+                val selectedAccountSupportsCurrency = requestedAccountId != null && (
+                    currentCurrenciesByAccount[requestedAccountId]?.contains(currency) == true ||
+                        allSummaries.any {
+                            it.accountId == requestedAccountId &&
+                                canonicalCurrency(it.currency) == currency
+                        }
+                )
+                val scopedAccounts = if (selectedAccountSupportsCurrency) {
+                    accounts.filter { it.id == requestedAccountId }
+                } else {
+                    accounts
+                }
+                val scopedAccountId = scopedAccounts.singleOrNull()?.id
 
                 // ── Intraday: 24h 滑动窗口 ──
                 val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-                val scopedAccounts = accountId?.let { id -> accounts.filter { it.id == id } } ?: accounts
-                val recentRaw = readHistoryWindow(historySource, scopedAccounts, currency, cutoff, Long.MAX_VALUE)
-                val intradayOutput = computeIntraday(recentRaw, currency, accountId, accounts)
+                val allRecentRaw = readHistoryWindow(historySource, scopedAccounts, currency, cutoff, Long.MAX_VALUE)
+                val eligibleAccountIds = buildSet {
+                    currentCurrenciesByAccount.forEach { (accountId, accountCurrencies) ->
+                        if (currency in accountCurrencies) add(accountId)
+                    }
+                    allSummaries.asSequence()
+                        .filter {
+                            it.accountId in fallbackAccountIdSet &&
+                                canonicalCurrency(it.currency) == currency
+                        }
+                        .mapTo(this) { it.accountId }
+                    allRecentRaw.asSequence()
+                        .filter {
+                            it.accountId in fallbackAccountIdSet &&
+                                canonicalCurrency(it.currency) == currency
+                        }
+                        .mapTo(this) { it.accountId }
+                }
+                val eligibleAccounts = if (selectedAccountSupportsCurrency) {
+                    scopedAccounts.filter { it.id in eligibleAccountIds }
+                } else {
+                    accounts.filter { it.id in eligibleAccountIds }
+                }
+                val accountId = requestedAccountId?.takeIf { id ->
+                    eligibleAccounts.any { it.id == id }
+                }
+                if (accountId != requestedAccountId) {
+                    if (generation != loadGeneration.get()) return@launch
+                    savedStateHandle[KEY_ACCOUNT_ID] = accountId
+                }
+                val recentRaw = if (accountId == null) {
+                    allRecentRaw
+                } else {
+                    allRecentRaw.filter { it.accountId == accountId }
+                }
+                val intradayOutput = computeIntraday(recentRaw, currency, accountId, eligibleAccounts)
 
                 // ── Daily: 长期日历天视图 ──
                 val todayRaw = recentRaw.filter {
                     Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
                 }
-                val summaries = if (accountId == null) scopedSummaries else historySource.summaries(
-                    accountId = accountId,
-                    currency = currency.takeIf { it.isNotEmpty() },
-                    fromDateInclusive = historyFrom,
-                    toDateInclusive = historyTo
-                )
-                val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, rangeDays)
+                val summaries = allSummaries.filter { summary ->
+                    canonicalCurrency(summary.currency) == currency &&
+                        (accountId == null || summary.accountId == accountId)
+                }
+                val dailyOutput = computeDaily(summaries, todayRaw, currency, accountId, eligibleAccounts, rangeDays)
 
                 // ── Daily History: 全量历史日汇总（不受 rangeDays 影响）──
-                val fullHistoryOutput = computeDaily(summaries, todayRaw, currency, accountId, accounts, 365)
+                val fullHistoryOutput = computeDaily(summaries, todayRaw, currency, accountId, eligibleAccounts, 365)
 
+                if (generation != loadGeneration.get()) return@launch
                 _uiState.update { current -> current.copy(
                     isLoading = false,
+                    eligibleAccounts = eligibleAccounts,
                     selectedAccountId = accountId,
                     availableCurrencies = currencies,
                     selectedCurrency = currency,
@@ -234,8 +337,12 @@ class InsightsViewModel @JvmOverloads constructor(
                     dailyOutput = dailyOutput,
                     dailyHistoryPoints = fullHistoryOutput.dailyPoints
                 ) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _uiState.update { it.copy(isLoading = false) }
+                if (generation == loadGeneration.get()) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
         }
     }
@@ -352,6 +459,12 @@ class InsightsViewModel @JvmOverloads constructor(
         }
     }
 
+    private fun canonicalCurrency(value: String): String? {
+        val canonical = value.trim().uppercase(Locale.ROOT)
+        if (canonical.length != 3) return null
+        return runCatching { Currency.getInstance(canonical).currencyCode }.getOrNull()
+    }
+
     class Factory(private val application: Application) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -383,7 +496,7 @@ class InsightsViewModel @JvmOverloads constructor(
             if (outputs.size == 1) return outputs[0]
 
             // 构建每个时间戳 → 哪些账户在此刻有新数据
-            val updatesByTs = linkedMapOf<Long, MutableList<Pair<Int, IntradayPoint>>>()
+            val updatesByTs = sortedMapOf<Long, MutableList<Pair<Int, IntradayPoint>>>()
             for ((idx, output) in outputs.withIndex()) {
                 for (point in output.trendPoints) {
                     updatesByTs.getOrPut(point.timestamp) { mutableListOf() }
@@ -391,7 +504,15 @@ class InsightsViewModel @JvmOverloads constructor(
                 }
             }
 
-            // Carry-forward：按时间推进，维护每个账户的最后已知余额
+            // Start once every account has an initial sample. This keeps the first
+            // aggregate point complete without backfilling a future balance into
+            // timestamps that predate that account's first observation.
+            val firstCompleteTimestamp = outputs
+                .mapNotNull { it.trendPoints.firstOrNull()?.timestamp }
+                .maxOrNull()
+                ?: return IntradayOutput(
+                    emptyList(), IntradayBillReport(0f, 0f, 0f, 0f), 0
+                )
             val lastPerAccount = mutableMapOf<Int, IntradayPoint>()
             val merged = mutableListOf<IntradayPoint>()
 
@@ -400,6 +521,7 @@ class InsightsViewModel @JvmOverloads constructor(
                 for ((idx, point) in updates) {
                     lastPerAccount[idx] = point
                 }
+                if (ts < firstCompleteTimestamp) continue
                 // 此时刻各账户的余额/充值/赠送求和
                 val totalBalance = lastPerAccount.values.sumOf { it.actualBalance.toDouble() }.toFloat()
                 val tsTopUpAmt = updates.sumOf { (_, p) -> p.topUpAmount.toDouble() }.toFloat()
@@ -461,28 +583,47 @@ class InsightsViewModel @JvmOverloads constructor(
             )
             if (outputs.size == 1) return outputs[0]
 
-            val dateMap = linkedMapOf<String, DailyPoint>()
-            for (output in outputs) {
+            // Start once every account has an initial sample. A missing day means no
+            // new sample, not a zero balance; carry the latest known close forward
+            // only after the complete aggregate timeline has begun.
+            val updatesByDate = sortedMapOf<String, MutableList<Pair<Int, DailyPoint>>>()
+            for ((index, output) in outputs.withIndex()) {
                 for (point in output.dailyPoints) {
-                    val existing = dateMap[point.date]
-                    if (existing == null) {
-                        dateMap[point.date] = point
-                    } else {
-                        dateMap[point.date] = DailyPoint(
-                            date = point.date,
-                            balance = existing.balance + point.balance,
-                            consumed = existing.consumed + point.consumed,
-                            toppedUp = existing.toppedUp + point.toppedUp,
-                            granted = existing.granted + point.granted,
-                            isGapFill = existing.isGapFill && point.isGapFill,
-                            open = existing.open + point.open,
-                            sampleCount = maxOf(existing.sampleCount, point.sampleCount)
-                        )
-                    }
+                    updatesByDate.getOrPut(point.date) { mutableListOf() }.add(index to point)
                 }
             }
 
-            val merged = dateMap.values.toList()
+            val firstCompleteDate = outputs
+                .mapNotNull { it.dailyPoints.firstOrNull()?.date }
+                .maxOrNull()
+                ?: return DailyOutput(
+                    emptyList(), DailyBillReport(0f, 0f, 0f, 0f, ""), null, "", true, true
+                )
+            val latestByAccount = mutableMapOf<Int, DailyPoint>()
+            val merged = mutableListOf<DailyPoint>()
+            for ((date, updates) in updatesByDate) {
+                val carriedCloseByAccount = latestByAccount.mapValues { (_, point) -> point.balance }
+                updates.forEach { (index, point) ->
+                    latestByAccount[index] = point
+                }
+                if (date < firstCompleteDate) continue
+                val updatesByAccount = updates.toMap()
+                merged += DailyPoint(
+                    date = date,
+                    balance = latestByAccount.values.sumOf { it.balance.toDouble() }.toFloat(),
+                    consumed = updates.sumOf { (_, point) -> point.consumed.toDouble() }.toFloat(),
+                    toppedUp = updates.sumOf { (_, point) -> point.toppedUp.toDouble() }.toFloat(),
+                    granted = updates.sumOf { (_, point) -> point.granted.toDouble() }.toFloat(),
+                    isGapFill = updates.all { (_, point) -> point.isGapFill },
+                    open = latestByAccount.keys.sumOf { index ->
+                        val open = updatesByAccount[index]?.open
+                            ?: carriedCloseByAccount[index]
+                            ?: latestByAccount.getValue(index).open
+                        open.toDouble()
+                    }.toFloat(),
+                    sampleCount = updates.maxOfOrNull { (_, point) -> point.sampleCount } ?: 0
+                )
+            }
             val periodLabel = outputs.firstOrNull()?.periodLabel ?: ""
 
             val totalConsumed = merged.sumOf { it.consumed.toDouble() }.toFloat()

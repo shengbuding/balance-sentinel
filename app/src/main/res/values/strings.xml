@@ -68,12 +68,21 @@
     <string name="account_hint_secret_key_jwt">用于生成 JWT Token</string>
     <string name="account_hint_secret_key_baidu">百度云 Secret Key</string>
     <string name="account_hint_base_url">https://api.example.com/v1</string>
+    <string name="account_field_access_token">访问令牌（可选）</string>
+    <string name="account_hint_access_token">NewAPI 等平台的访问令牌；留空时使用 API Key</string>
+    <string name="account_field_user_id">用户 ID（可选）</string>
+    <string name="account_hint_user_id">NewAPI 的 New-Api-User 值</string>
     <string name="account_custom_script_toggle">自定义余额查询脚本</string>
     <string name="account_custom_script_label">查询脚本</string>
     <string name="account_custom_script_placeholder">({\n  request: {\n    url: "{{baseUrl}}/v1/usage",\n    method: "GET",\n    headers: { "Authorization": "Bearer {{apiKey}}" }\n  },\n  extractor: function(response) {\n    return {\n      remaining: response.balance,\n      unit: "USD"\n    };\n  }\n})</string>
-    <string name="account_custom_script_help">支持模板变量: {{apiKey}}, {{baseUrl}}\n返回格式: { remaining, unit, isValid }</string>
+    <string name="account_custom_script_help">支持模板变量: {{apiKey}}, {{baseUrl}}, {{accessToken}}, {{userId}}\n返回格式: { remaining, unit, isValid }</string>
     <string name="account_custom_script_load_preset">加载预置脚本</string>
     <string name="account_custom_script_preset_generic">通用脚本</string>
+    <string name="account_custom_script_preset_newapi">NewAPI 预设</string>
+    <string name="account_custom_display_fields_label">卡片展示字段</string>
+    <string name="account_custom_display_fields_hint">每行一个：响应字段路径=卡片名称，例如 total=总额度</string>
+    <string name="account_custom_balance_field_label">余额计算字段</string>
+    <string name="account_custom_balance_field_hint">可选，填写脚本返回字段路径；留空使用 remaining 或 balance</string>
     <string name="provider_name_openai">OpenAI</string>
     <string name="provider_name_anthropic">Anthropic</string>
     <string name="provider_name_gemini">Gemini</string>
@@ -205,7 +214,7 @@
     <string name="settings_clear">清除</string>
     <string name="settings_community">交流与反馈</string>
     <string name="settings_qq_copy_hint">点击复制群号</string>
-    <string name="settings_language">语言 / Language</string>
+    <string name="settings_language">语言</string>
     <string name="settings_language_dialog_title">选择语言</string>
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_chinese">中文</string>
@@ -222,7 +231,7 @@
     <string name="settings_auto_refresh">自动刷新</string>
     <string name="settings_refresh_desc">配置前台服务与后台恢复任务共用的余额查询间隔</string>
     <string name="settings_refresh_interval_label">刷新间隔: %1$s</string>
-    <string name="settings_loading">Loading</string>
+    <string name="settings_loading">加载中…</string>
     <string name="settings_cadence_disabled">已停用</string>
     <string name="settings_refresh_cadences">统一配置 %1$d 秒 · 后台任务实际 %2$s 秒 · 当前生效 %3$d 秒</string>
     <string name="settings_refresh_min_hint">后台恢复链使用统一周期；15 分钟以上使用系统周期任务，低于 15 分钟使用持久恢复链，系统可能延迟执行。</string>
@@ -239,6 +248,8 @@
     <string name="settings_alert_hint">当余额低于以下金额时发送通知</string>
     <string name="settings_alert_amount">预警金额</string>
     <string name="settings_alert_current">当前阈值: %1$d</string>
+    <string name="settings_alert_current_decimal">当前阈值：%1$s</string>
+    <string name="settings_alert_period_current">当前时间窗口：%1$d 分钟</string>
     <string name="settings_alert_snoozed">⚠ 预警已暂停</string>
     <string name="settings_alert_snoozed_remaining">剩余 %1$d 分钟</string>
     <string name="settings_alert_snoozed_accounts">已暂停账户: %1$s</string>
@@ -302,7 +313,8 @@
     <string name="alert_settings_change_period_label">异动时间窗口</string>
     <string name="alert_settings_snooze_label">暂停预警时长</string>
     <string name="alert_settings_section_accounts">分账户/币种开关</string>
-    <string name="alert_settings_section_global">全局参数</string>
+    <string name="alert_settings_section_global">默认预警</string>
+    <string name="alert_settings_default_hint">账户或币种未单独配置时，将继承以下默认开关。</string>
     <string name="alert_settings_threshold_hint">输入金额</string>
     <string name="alert_settings_period_hint">分钟数</string>
 
@@ -702,13 +714,27 @@
     <string name="capability_foreground_service">前台服务</string>
     <string name="capability_data_sync">数据同步会话</string>
     <string name="capability_exact_alarm">精确闹钟</string>
+    <string name="capability_battery_optimization">电池优化</string>
     <string name="capability_available">可用</string>
     <string name="capability_not_granted">未授予</string>
     <string name="capability_permanently_denied">已拒绝</string>
     <string name="capability_platform_limited">受系统限制</string>
     <string name="capability_not_required">不再需要</string>
     <string name="capability_open_settings">打开系统设置</string>
+    <string name="capability_request_permission">请求通知权限</string>
+    <string name="capability_open_battery_settings">允许后台运行</string>
     <string name="capability_notification_required">通知权限尚未授予；通知与持续监控不会启动。</string>
+    <string name="settings_permission_guide">权限与后台运行</string>
+    <string name="settings_permission_guide_desc">检查通知、电池优化和精确闹钟权限，确保后台监控稳定运行。</string>
+    <string name="settings_background_refresh_switch">后台自动刷新</string>
+    <string name="settings_background_refresh_switch_desc">关闭后将停止后台定时刷新、恢复链和重试任务。</string>
+    <string name="settings_auto_update_switch">自动检查更新</string>
+    <string name="settings_auto_update_switch_desc">允许每天进入设置时检查 GitHub 最新版本。</string>
+    <string name="settings_section_runtime">运行与提醒</string>
+    <string name="settings_section_data">数据与诊断</string>
+    <string name="settings_section_app">应用偏好</string>
+    <string name="onboarding_permissions_title">完成后台权限设置</string>
+    <string name="onboarding_permissions_desc">为保证余额刷新和预警持续可见，请按需打开通知、允许后台运行和精确闹钟权限。之后也可在设置中再次引导。</string>
 
     <!-- Console UI -->
     <string name="console_title">控制台</string>

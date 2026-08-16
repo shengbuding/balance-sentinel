@@ -103,7 +103,8 @@ class MutationPublisher internal constructor(
                 logMaxEntries = write.value.logMaxEntries,
                 snoozeDurationMinutes = write.value.snoozeDurationMinutes,
                 showTotalBalanceInNotification = write.value.showTotalBalanceInNotification,
-                updatedAt = input.publishedAt
+                updatedAt = input.publishedAt,
+                notificationTotalDisplayOrder = write.value.notificationTotalDisplayOrder
             ).also {
                 database.eventLogDao().trimToLatest(write.value.logMaxEntries.coerceIn(10, 1000))
             }

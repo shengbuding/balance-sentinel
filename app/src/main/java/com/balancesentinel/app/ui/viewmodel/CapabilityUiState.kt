@@ -20,4 +20,6 @@ data class CapabilityUiState(
 sealed interface CapabilityUiEvent {
     data object RequestNotificationPermission : CapabilityUiEvent
     data object OpenAppSettings : CapabilityUiEvent
+    data object OpenExactAlarmSettings : CapabilityUiEvent
+    data object OpenBatteryOptimizationSettings : CapabilityUiEvent
 }

@@ -41,6 +41,7 @@ import com.balancesentinel.app.ui.screen.HomeScreen
 import com.balancesentinel.app.ui.screen.InsightsScreen
 import com.balancesentinel.app.ui.screen.LogScreen
 import com.balancesentinel.app.ui.screen.OnboardingScreen
+import com.balancesentinel.app.ui.screen.PermissionGuideScreen
 import com.balancesentinel.app.ui.screen.RefreshSettingsScreen
 import com.balancesentinel.app.ui.screen.SettingsScreen
 import com.balancesentinel.app.ui.screen.SystemStatusScreen
@@ -48,6 +49,7 @@ import com.balancesentinel.app.ui.viewmodel.ConsoleViewModel
 import com.balancesentinel.app.ui.viewmodel.DataManagementViewModel
 import com.balancesentinel.app.ui.viewmodel.HomeViewModel
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
+import com.balancesentinel.app.ui.viewmodel.CapabilityViewModel
 import com.balancesentinel.app.ui.viewmodel.LogViewModel
 
 @Composable
@@ -55,7 +57,8 @@ fun WalletNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
     startDestination: String = AppRoute.Home.route,
-    onRouteChanged: (String) -> Unit = {}
+    onRouteChanged: (String) -> Unit = {},
+    capabilityViewModel: CapabilityViewModel? = null
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
@@ -69,6 +72,7 @@ fun WalletNavHost(
     val insightsViewModel: InsightsViewModel = viewModel(factory = InsightsViewModel.Factory(application))
     val logViewModel: LogViewModel = viewModel(factory = LogViewModel.Factory(application))
     val dataManagementViewModel: DataManagementViewModel = viewModel()
+    val sharedCapabilityViewModel = capabilityViewModel ?: viewModel<CapabilityViewModel>()
     val showBottomBar = currentRoute != AppRoute.Onboarding.route && currentRoute != AppRoute.InvalidDeepLink().route
 
     fun navigateTab(route: String) {
@@ -98,8 +102,8 @@ fun WalletNavHost(
                 NavigationBarItem(
                     selected = currentTab == AppRoute.ConsoleSelect.route,
                     onClick = { navigateTab(AppRoute.ConsoleSelect.route) },
-                    icon = { Icon(CustomIcons.Analytics, contentDescription = "Console") },
-                    label = { Text("Console") }
+                    icon = { Icon(CustomIcons.Analytics, contentDescription = stringResource(R.string.nav_console)) },
+                    label = { Text(stringResource(R.string.nav_console)) }
                 )
                 NavigationBarItem(
                     selected = currentTab == AppRoute.Settings.route,
@@ -116,7 +120,7 @@ fun WalletNavHost(
             modifier = Modifier.padding(padding)
         ) {
             composable(AppRoute.Onboarding.route) {
-                OnboardingScreen(onComplete = {
+                OnboardingScreen(capabilityViewModel = sharedCapabilityViewModel, onComplete = {
                     navController.navigate(AppRoute.Home.route) {
                         popUpTo(AppRoute.Onboarding.route) { inclusive = true }
                     }
@@ -145,18 +149,20 @@ fun WalletNavHost(
             }
             composable(AppRoute.Settings.route) {
                 LaunchedEffect(Unit) { homeViewModel.loadStatusSummary() }
-                SettingsScreen(
-                    viewModel = homeViewModel,
+                    SettingsScreen(
+                        viewModel = homeViewModel,
                     onBack = { navController.popBackStack() },
                     onNavigateToLog = { navController.navigate(AppRoute.Log.route) },
                     onNavigateToDataManagement = { navController.navigate(AppRoute.DataHub.route) },
                     onNavigateToAlertSettings = { navController.navigate(AppRoute.AlertSettings.route) },
                     onNavigateToRefresh = { navController.navigate(AppRoute.RefreshSettings.route) },
-                    onNavigateToSystemStatus = { navController.navigate(AppRoute.SystemStatus.route) },
-                    onNavigateToAbout = { navController.navigate(AppRoute.About.route) }
+                        onNavigateToSystemStatus = { navController.navigate(AppRoute.SystemStatus.route) },
+                    onNavigateToAbout = { navController.navigate(AppRoute.About.route) },
+                    onNavigateToPermissionGuide = { navController.navigate(AppRoute.PermissionGuide.route) }
                 )
             }
-            composable(AppRoute.RefreshSettings.route) { RefreshSettingsScreen(homeViewModel) { navController.popBackStack() } }
+            composable(AppRoute.RefreshSettings.route) { RefreshSettingsScreen(homeViewModel, sharedCapabilityViewModel) { navController.popBackStack() } }
+            composable(AppRoute.PermissionGuide.route) { PermissionGuideScreen(sharedCapabilityViewModel) { navController.popBackStack() } }
             composable(AppRoute.SystemStatus.route) { SystemStatusScreen(homeViewModel, { navController.popBackStack() }) { navController.navigate(AppRoute.Log.route) } }
             composable(AppRoute.About.route) { AboutScreen { navController.popBackStack() } }
             composable(AppRoute.Log.route) { LogScreen(logViewModel) { navController.popBackStack() } }
@@ -170,7 +176,7 @@ fun WalletNavHost(
             }
             composable(AppRoute.ClearData.route) { ClearDataRouteScreen(dataManagementViewModel) { navController.popBackStack() } }
             composable(AppRoute.BackupRestore.route) { BackupRestoreRouteScreen(dataManagementViewModel, { navController.popBackStack() }, homeViewModel::loadCachedBalances) }
-            composable(AppRoute.AlertSettings.route) { AlertSettingsScreen(homeViewModel) { navController.popBackStack() } }
+            composable(AppRoute.AlertSettings.route) { AlertSettingsScreen(homeViewModel, { navController.popBackStack() }, sharedCapabilityViewModel) }
             composable(AppRoute.ConsoleSelect.route) {
                 ConsoleSelectScreen(
                     onSelectPlatform = { platform -> navController.navigate(AppRoute.Console(platform.id).route) },
@@ -209,7 +215,11 @@ fun WalletNavHost(
                         platform = platform,
                         uiState = uiState,
                         onLoginSuccess = consoleViewModel::onLoginSuccess,
-                        onLogout = { consoleViewModel.logout(); navController.popBackStack(AppRoute.ConsoleSelect.route, false) },
+                        onLogout = {
+                            consoleViewModel.logout {
+                                navController.popBackStack(AppRoute.ConsoleSelect.route, false)
+                            }
+                        },
                         onBack = { navController.popBackStack() }
                     )
                 }
@@ -227,8 +237,9 @@ internal fun topLevelTabForRoute(route: String): String? = when {
     route == AppRoute.Home.route -> AppRoute.Home.route
     route.startsWith("insights") -> "insights"
     route.startsWith("console") || route == AppRoute.AddPlatform.route -> AppRoute.ConsoleSelect.route
-    route.startsWith("settings") || route == AppRoute.About.route ||
+        route.startsWith("settings") || route == AppRoute.About.route ||
         route == AppRoute.RefreshSettings.route || route == AppRoute.SystemStatus.route ||
+        route == AppRoute.PermissionGuide.route ||
         route == AppRoute.Log.route || route == AppRoute.DataHub.route ||
         route == AppRoute.ClearData.route || route == AppRoute.BackupRestore.route ||
         route == AppRoute.AlertSettings.route -> AppRoute.Settings.route

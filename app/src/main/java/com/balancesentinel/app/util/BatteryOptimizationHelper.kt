@@ -32,7 +32,7 @@ object BatteryOptimizationHelper {
         return isBatteryOptimizing(context)
     }
 
-    /** 标记引导已显示（用户同意后调用） */
+    /** 标记引导已显示（仅在系统设置页成功打开后调用） */
     fun markGuideShown(context: Context) {
         getPrefs(context).edit().putBoolean(KEY_GUIDE_SHOWN, true).apply()
     }

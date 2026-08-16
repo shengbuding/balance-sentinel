@@ -262,11 +262,17 @@ class HomeScreenTest {
         composeTestRule.onNodeWithText("Custom balance query script")
             .performScrollTo()
             .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Access Token (optional)")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("User ID (optional)")
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("Query Script")
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithText(
-            "Supports template variables: {{apiKey}}, {{baseUrl}}\n" +
+            "Supports template variables: {{apiKey}}, {{baseUrl}}, {{accessToken}}, {{userId}}\n" +
                 "Return format: { remaining, unit, isValid }"
         ).performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Load Preset Script")
@@ -274,6 +280,7 @@ class HomeScreenTest {
             .assertIsDisplayed()
             .performClick()
         composeTestRule.onNodeWithText("Generic Script").assertIsDisplayed()
+        composeTestRule.onNodeWithText("NewAPI preset").assertIsDisplayed()
     }
 
     private companion object {

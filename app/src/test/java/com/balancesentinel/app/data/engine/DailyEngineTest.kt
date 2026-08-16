@@ -181,6 +181,23 @@ class DailyEngineTest {
     }
 
     @Test
+    fun `today toppedUp infers balance increase for metadata-less account`() {
+        val now = System.currentTimeMillis()
+        val today = dateFormat.format(Date())
+        val summary = DailySummary("custom", today, "USD", 7.73f, 7.73f, 0f, 0f, 0f, 7.73f, 1, 0f, 0f)
+        val todayRecords = listOf(
+            RawRecord("custom", now - 1000L, "USD", 7.73f, 0f, 0f),
+            RawRecord("custom", now, "USD", 10.00f, 0f, 0f)
+        )
+
+        val output = DailyEngine.compute(DailyInput(listOf(summary), todayRecords, "USD", null, 7))
+
+        val todayPoint = output.dailyPoints.find { it.date == today }!!
+        assertEquals(2.27f, todayPoint.toppedUp, 0.01f)
+        assertEquals(0f, todayPoint.consumed, 0.01f)
+    }
+
+    @Test
     fun `today grant uses per-pair analysis on raw records`() {
         val now = System.currentTimeMillis()
         val today = dateFormat.format(Date())

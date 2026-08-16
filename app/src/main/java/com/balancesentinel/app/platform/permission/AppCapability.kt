@@ -4,7 +4,8 @@ enum class AppCapability {
     NOTIFICATIONS,
     FOREGROUND_SERVICE,
     DATA_SYNC_SESSION,
-    EXACT_ALARM
+    EXACT_ALARM,
+    BATTERY_OPTIMIZATION
 }
 
 enum class CapabilityAvailability {

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.console.ConsoleSessionCleaner
+import com.balancesentinel.app.data.console.store.ConsoleStore
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.model.AccountInfo
@@ -51,7 +53,10 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -606,34 +611,15 @@ class DataManagementViewModel @JvmOverloads constructor(
 
     // ── 执行 ──
 
-    /**
-     * 清除 WebView 数据
-     */
-    private fun clearWebViewData(ctx: android.content.Context) {
-        try {
-            // 清除 cookies
-            val cookieManager = android.webkit.CookieManager.getInstance()
-            cookieManager.removeAllCookies(null)
-            cookieManager.flush()
-
-            // 清除 WebView 缓存
-            android.webkit.WebStorage.getInstance().deleteAllData()
-
-            // 清除本地存储目录
-            val webViewDir = java.io.File(ctx.cacheDir, "WebView")
-            if (webViewDir.exists()) {
-                webViewDir.deleteRecursively()
-            }
-
-            // 清除应用缓存中的 WebView 数据
-            val cacheDir = ctx.cacheDir
-            cacheDir.listFiles()?.forEach { file ->
-                if (file.name.contains("WebView") || file.name.contains("webview")) {
-                    file.deleteRecursively()
+    private suspend fun clearConsoleData(ctx: android.content.Context) {
+        withTimeout(10_000L) {
+            withContext(Dispatchers.Main.immediate) {
+                suspendCancellableCoroutine { continuation ->
+                    ConsoleSessionCleaner(ConsoleStore(ctx)).clearAll {
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
                 }
             }
-        } catch (e: Exception) {
-            // 忽略错误
         }
     }
 
@@ -665,8 +651,7 @@ class DataManagementViewModel @JvmOverloads constructor(
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ClearConsoleData -> {
-                    // 只清除控制台存储数据
-                    com.balancesentinel.app.data.console.store.ConsoleStore(ctx).clearAll()
+                    clearConsoleData(ctx)
                     res.getString(R.string.data_cleared_toast)
                 }
                 PendingAction.ResetAlarmCounters -> {

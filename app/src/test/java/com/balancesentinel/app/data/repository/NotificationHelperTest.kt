@@ -316,7 +316,19 @@ class NotificationHelperTest {
         helper.sendForegroundNotification("Test Title", "Test Content")
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val shadow = Shadows.shadowOf(nm)
-        assertTrue(shadow.allNotifications.isNotEmpty())
+        assertNotNull(shadow.getNotification(DeepSeekApp.NOTIFICATION_ID))
+        assertNotNull(helper.currentPersistentNotification())
+    }
+
+    @Test
+    fun `cancelPersistentNotification removes retained service notification`() {
+        helper.sendForegroundNotification("Retained", "Balance")
+
+        helper.cancelPersistentNotification()
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertNull(Shadows.shadowOf(nm).getNotification(DeepSeekApp.NOTIFICATION_ID))
+        assertNull(helper.currentPersistentNotification())
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -360,7 +372,7 @@ class NotificationHelperTest {
         )
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val shadow = Shadows.shadowOf(nm)
-        assertTrue(shadow.allNotifications.isNotEmpty())
+        assertNotNull(shadow.getNotification(DeepSeekApp.NOTIFICATION_ID))
     }
 
     // ═══════════════════════════════════════════════════════════

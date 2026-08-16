@@ -26,6 +26,7 @@ import com.balancesentinel.app.data.model.UsageRecord
 import com.balancesentinel.app.data.model.UsageSnapshot
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.RefreshScheduler
+import com.balancesentinel.app.data.repository.NotificationHelper
 import com.balancesentinel.app.data.repository.SettingsSnapshot
 import com.balancesentinel.app.testing.MutableSettingsRepository
 import com.balancesentinel.app.data.local.settings.AppSettingsEntity
@@ -69,6 +70,7 @@ class DeepSeekAppTest {
         }
         SettingsRepositoryProvider.resetForTests()
         WalletDatabaseProvider.clearForTests()
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancelAll()
         // Clean up test APK files
         val apkDir = File(context.cacheDir, "apk")
         if (apkDir.exists()) apkDir.deleteRecursively()
@@ -105,6 +107,24 @@ class DeepSeekAppTest {
         val usageChannel = channels.find { it.id == DeepSeekApp.CHANNEL_ID_USAGE }
         assertNotNull(usageChannel)
         assertEquals(NotificationManager.IMPORTANCE_DEFAULT, usageChannel!!.importance)
+    }
+
+    @Test
+    fun `channel recreation preserves retained monitoring notification`() {
+        val app = context as DeepSeekApp
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = NotificationHelper(context)
+            .buildForegroundNotification("Retained", "Balance")
+        nm.notify(DeepSeekApp.NOTIFICATION_ID, notification)
+
+        app.createNotificationChannel()
+
+        val retained = Shadows.shadowOf(nm).getNotification(DeepSeekApp.NOTIFICATION_ID)
+        assertNotNull(retained)
+        assertEquals(
+            "Retained",
+            retained.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+        )
     }
 
     @Test

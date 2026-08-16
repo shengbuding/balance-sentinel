@@ -19,6 +19,10 @@ class UpdatePrefs(context: Context) {
         get() = prefs.getString(KEY_SKIPPED_VERSION, "") ?: ""
         set(value) = prefs.edit().putString(KEY_SKIPPED_VERSION, value).apply()
 
+    var autoCheckEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CHECK_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CHECK_ENABLED, value).apply()
+
     fun shouldAutoCheckToday(): Boolean {
         val today = todayString()
         return lastPromptDate != today
@@ -39,5 +43,6 @@ class UpdatePrefs(context: Context) {
     companion object {
         private const val KEY_LAST_PROMPT_DATE = "last_prompt_date"
         private const val KEY_SKIPPED_VERSION = "skipped_version"
+        private const val KEY_AUTO_CHECK_ENABLED = "auto_check_enabled"
     }
 }

@@ -73,6 +73,56 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `publication persists total display order independently of wallet rows`() = runTest {
+        database.accountDao().insertCreate(testAccount("acct-a", displayOrder = 0))
+        database.accountDao().insertCreate(testAccount("acct-b", displayOrder = 1))
+        repository.publishSnapshot(
+            SettingsSnapshot(
+                appSettings = AppSettingsEntity(
+                    showTotalBalanceInNotification = true,
+                    notificationTotalDisplayOrder = 1,
+                    updatedAt = 100
+                ),
+                notificationSelections = listOf(
+                    NotificationWalletSelectionEntity("acct-a", "CNY", 0),
+                    NotificationWalletSelectionEntity("acct-b", "USD", 1)
+                )
+            ),
+            publishedAt = 100
+        )
+
+        val snapshot = repository.readSnapshot()
+        assertEquals(1, snapshot.appSettings.notificationTotalDisplayOrder)
+        assertEquals(
+            listOf("acct-a", "acct-b"),
+            snapshot.notificationSelections.map { it.accountId }
+        )
+        assertEquals(1, ConfigManager.toConfigSettings(snapshot).notificationTotalDisplayOrder)
+    }
+
+    @Test
+    fun `filtered notification rows adjust total display order`() = runTest {
+        database.accountDao().insertCreate(testAccount("known"))
+        repository.publishSnapshot(
+            SettingsSnapshot(
+                appSettings = AppSettingsEntity(
+                    notificationTotalDisplayOrder = 2,
+                    updatedAt = 100
+                ),
+                notificationSelections = listOf(
+                    NotificationWalletSelectionEntity("missing", "USD", 0),
+                    NotificationWalletSelectionEntity("known", "CNY", 1)
+                )
+            ),
+            publishedAt = 100
+        )
+
+        val snapshot = repository.readSnapshot()
+        assertEquals(listOf("known"), snapshot.notificationSelections.map { it.accountId })
+        assertEquals(1, snapshot.appSettings.notificationTotalDisplayOrder)
+    }
+
+    @Test
     fun `config import publishes imported account settings after account persistence`() = runTest {
         val importedAccountId = "imported-account"
         val settings = ConfigSettings(

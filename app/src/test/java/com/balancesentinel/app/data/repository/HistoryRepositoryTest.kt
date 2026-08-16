@@ -111,6 +111,20 @@ class HistoryRepositoryTest {
     }
 
     @Test
+    fun `database aggregate infers recharge when provider metadata is absent`() = runTest {
+        val records = listOf(
+            RawRecord(accountId, 1, "USD", 7.73f, 0f, 0f),
+            RawRecord(accountId, 2, "USD", 10.00f, 0f, 0f)
+        )
+        repository.insert(records, BalanceRecordSource.REFRESH)
+
+        val actual = requireNotNull(repository.aggregate(accountId, "USD", 0, 10))
+
+        assertEquals(2.27f, actual.toppedUp, 0.01f)
+        assertEquals(0f, actual.consumed, 0.01f)
+    }
+
+    @Test
     fun `aggregate handles no recharge noninteger jumps and duplicate timestamps`() = runTest {
         val records = listOf(
             RawRecord(accountId, 100, "USD", 100f, 1f, 10f),

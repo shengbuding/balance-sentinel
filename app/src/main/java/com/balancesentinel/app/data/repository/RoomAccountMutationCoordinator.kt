@@ -22,6 +22,7 @@ import com.balancesentinel.app.data.local.publication.SettingsPublication
 import com.balancesentinel.app.data.local.publication.SnoozesWrite
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.encodeUsageDisplayFields
 import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.data.refresh.RefreshMutationBarrier
 import java.nio.charset.StandardCharsets
@@ -91,6 +92,8 @@ class RoomAccountMutationCoordinator(
             usageScript = draft.usageScript,
             usageScriptEnabled = draft.usageScriptEnabled,
             authorizedScriptOrigins = draft.authorizedScriptOrigins.toSet(),
+            usageDisplayFields = draft.usageDisplayFields,
+            usageBalanceField = draft.usageBalanceField,
             revision = before.revision + 1
         ) ?: AccountInfo(
             id = accountId,
@@ -101,7 +104,9 @@ class RoomAccountMutationCoordinator(
             extraSettings = draft.extraSettings.toMap(),
             usageScript = draft.usageScript,
             usageScriptEnabled = draft.usageScriptEnabled,
-            authorizedScriptOrigins = draft.authorizedScriptOrigins.toSet()
+            authorizedScriptOrigins = draft.authorizedScriptOrigins.toSet(),
+            usageDisplayFields = draft.usageDisplayFields,
+            usageBalanceField = draft.usageBalanceField
         )
         val desiredPayload = oldPayload.copy(
             accounts = oldPayload.accounts
@@ -510,6 +515,12 @@ class RoomAccountMutationCoordinator(
         account.usageScript?.let { put("usageScript", it) }
         put("usageScriptEnabled", account.usageScriptEnabled)
         put("authorizedScriptOrigins", account.authorizedScriptOrigins.sorted().joinToString(","))
+        if (account.usageDisplayFields.isNotEmpty()) {
+            put("usageDisplayFields", encodeUsageDisplayFields(account.usageDisplayFields))
+        }
+        account.usageBalanceField?.takeIf(String::isNotBlank)?.let {
+            put("usageBalanceField", it)
+        }
     }.toString()
 
     private companion object {

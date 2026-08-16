@@ -151,6 +151,27 @@ class CapabilityViewModelTest {
     }
 
     @Test
+    fun `disabling monitoring persists intent before stopping the service`() = runTest {
+        var desired = true
+        val events = mutableListOf<String>()
+        val viewModel = createViewModel(
+            loadState = { monitoring(desired) },
+            setDesired = {
+                desired = it
+                events += "desired:$it"
+            },
+            onStop = { events += "stop" }
+        )
+        advanceUntilIdle()
+
+        viewModel.setMonitoringEnabled(false)
+        advanceUntilIdle()
+
+        assertEquals(listOf("desired:false", "stop"), events)
+        assertFalse(desired)
+    }
+
+    @Test
     fun `initial refresh restores desired monitoring after process recreation`() = runTest {
         var starts = 0
         val viewModel = createViewModel(
@@ -222,7 +243,8 @@ class CapabilityViewModelTest {
         history: CapabilityPermissionHistory = FakePermissionHistory(),
         loadState: suspend () -> MonitoringStateEntity = { monitoring(false) },
         setDesired: suspend (Boolean) -> Unit = {},
-        onStart: () -> Unit = {}
+        onStart: () -> Unit = {},
+        onStop: () -> Unit = {}
     ): CapabilityViewModel = CapabilityViewModel(
         application = application,
         checker = checker,
@@ -233,7 +255,7 @@ class CapabilityViewModelTest {
             onStart()
             ServiceStartResult.Started
         },
-        stopMonitoring = {}
+        stopMonitoring = { onStop() }
     )
 
     private fun snapshotChecker(

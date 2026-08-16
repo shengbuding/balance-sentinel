@@ -392,6 +392,88 @@ class UsageScriptExecutorTest {
         assertEquals("USD", result.balances.single().unit)
     }
 
+    @Test
+    fun `configured nested balance and display paths are resolved`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    "return {remaining:999,wallet:{available:7.5,total:12},meta:{requests:42},unit:'USD'};"
+                )
+            ),
+            account().copy(
+                usageBalanceField = "wallet.available",
+                usageDisplayFields = linkedMapOf(
+                    "wallet.total" to "Total quota",
+                    "meta.requests" to "Requests"
+                )
+            ),
+            "{}"
+        ) as ScriptExecutionResult.Success
+
+        val balance = result.balances.single()
+        assertEquals(7.5, balance.remaining!!, 0.0)
+        assertEquals(
+            mapOf("wallet.total" to "12", "meta.requests" to "42"),
+            balance.fields
+        )
+    }
+
+    @Test
+    fun `nested response metadata does not invalidate an otherwise valid result`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    "return {remaining:1,metadata:{request_id:'abc'},unit:'USD'};"
+                )
+            ),
+            account(),
+            "{}"
+        )
+
+        assertTrue(result is ScriptExecutionResult.Success)
+        assertEquals(1.0, (result as ScriptExecutionResult.Success).balances.single().remaining!!, 0.0)
+    }
+
+    @Test
+    fun `generic preset preserves a real zero balance`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            PresetScripts.getCustomTemplate(),
+            account(),
+            """{"data":{"balance":0,"totalBalance":99,"currency":"USD"}}"""
+        ) as ScriptExecutionResult.Success
+
+        val balance = result.balances.single()
+        assertEquals(0.0, balance.remaining!!, 0.0)
+        assertEquals("USD", balance.unit)
+        assertFalse(balance.isValid!!)
+    }
+
+    @Test
+    fun `new api preset uses cc switch headers and quota units`() = runBlocking {
+        val account = account().copy(
+            extraSettings = mapOf("baseUrl" to "https://newapi.example.com"),
+            extraCredentials = mapOf("userId" to "42")
+        )
+        val inspection = UsageScriptExecutor.inspect(PresetScripts.getNewApiTemplate(), account)
+
+        assertEquals("https://newapi.example.com/api/user/self", inspection.request?.url)
+        assertEquals("application/json", inspection.request?.headers?.get("Content-Type"))
+        assertEquals("Bearer __INSPECTION_ACCESS_TOKEN__", inspection.request?.headers?.get("Authorization"))
+        assertEquals("__INSPECTION_USER_ID__", inspection.request?.headers?.get("New-Api-User"))
+
+        val result = UsageScriptExecutor.extractForTest(
+            PresetScripts.getNewApiTemplate(),
+            account,
+            """{"success":true,"data":{"group":"pro","quota":500000,"used_quota":100000}}"""
+        ) as ScriptExecutionResult.Success
+        val balance = result.balances.single()
+        assertEquals(1.0, balance.remaining!!, 0.0)
+        assertEquals(0.2, balance.used!!, 0.0)
+        assertEquals(1.2, balance.total!!, 0.0)
+        assertEquals("USD", balance.unit)
+        assertEquals("pro", balance.planName)
+    }
+
     private fun assertSchemaFailure(result: ScriptExecutionResult) {
         assertTrue(result is ScriptExecutionResult.Failure)
         assertTrue((result as ScriptExecutionResult.Failure).failure is RefreshFailure.ResponseSchemaFailure)

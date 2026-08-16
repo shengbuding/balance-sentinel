@@ -180,17 +180,12 @@ open class StaticWidgetProvider : AppWidgetProvider() {
 
         // 点击余额/标题 → deep-link 到 Insights 页面
         val appRoute = renderModel.route
-        val appIntent = if (renderModel.primaryAction == WidgetPrimaryAction.CONFIGURE) {
-            Intent(context, WidgetConfigActivity::class.java).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-            }
-        } else Intent(context, MainActivity::class.java).apply {
-            if (appRoute is AppRoute.Insights) {
-                putExtra(AppRoute.LEGACY_TARGET_EXTRA, "insights")
-                putExtra(AppRoute.LEGACY_ACCOUNT_EXTRA, appRoute.accountId)
-                putExtra(AppRoute.LEGACY_CURRENCY_EXTRA, appRoute.currency)
-            }
-        }
+        val appIntent = primaryActionIntent(
+            context = context,
+            widgetId = widgetId,
+            primaryAction = renderModel.primaryAction,
+            route = appRoute
+        )
         val appPending = PendingIntent.getActivity(
             context, widgetId, appIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -262,6 +257,20 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         const val LEGACY_WIDGET_ALARM_REQUEST_CODE = 100
         fun canonicalDeepLinkUri(accountId: String, currency: String): Uri =
             AppRoute.Insights(accountId, currency).toUri()
+        internal fun primaryActionIntent(
+            context: Context,
+            widgetId: Int,
+            primaryAction: WidgetPrimaryAction,
+            route: AppRoute
+        ): Intent = when {
+            primaryAction == WidgetPrimaryAction.CONFIGURE ->
+                Intent(context, WidgetConfigActivity::class.java).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                }
+            route is AppRoute.Insights ->
+                Intent(Intent.ACTION_VIEW, route.toUri(), context, MainActivity::class.java)
+            else -> Intent(context, MainActivity::class.java)
+        }
         fun configuredDeepLinkAccountId(configAccountId: String?, activeAccountIds: Set<String>): String? =
             configAccountId
                 ?.takeUnless { it == WidgetConfig.TOTAL_ACCOUNT_ID }

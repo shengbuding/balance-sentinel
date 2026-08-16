@@ -15,6 +15,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -134,8 +137,10 @@ object UsageScriptExecutor {
             source = script.code,
             apiKey = script.apiKey ?: account.apiKey,
             baseUrl = baseUrl.toString().trimEnd('/'),
-            accessToken = script.accessToken,
-            userId = script.userId
+            accessToken = script.accessToken
+                ?: account.extraCredentials["accessToken"]
+                ?: account.apiKey,
+            userId = script.userId ?: account.extraCredentials["userId"]
         )
         val requestConfig = try {
             evaluateConfiguration(source, timeoutMillis)
@@ -187,7 +192,13 @@ object UsageScriptExecutor {
             )
         ) {
             is HttpFetchResult.Failure -> response.result
-            is HttpFetchResult.Success -> extract(source, response.body, timeoutMillis)
+            is HttpFetchResult.Success -> extract(
+                source,
+                response.body,
+                timeoutMillis,
+                account.usageBalanceField,
+                account.usageDisplayFields.keys
+            )
             is HttpFetchResult.Redirect -> failure(
                 RefreshFailure.NetworkFailure("Script redirect resolution failed")
             )
@@ -214,10 +225,18 @@ object UsageScriptExecutor {
             source = script.code,
             apiKey = script.apiKey ?: account.apiKey,
             baseUrl = baseUrl.toString().trimEnd('/'),
-            accessToken = script.accessToken,
-            userId = script.userId
+            accessToken = script.accessToken
+                ?: account.extraCredentials["accessToken"]
+                ?: account.apiKey,
+            userId = script.userId ?: account.extraCredentials["userId"]
         )
-        extract(source, responseBody, timeoutMillis)
+        extract(
+            source,
+            responseBody,
+            timeoutMillis,
+            account.usageBalanceField,
+            account.usageDisplayFields.keys
+        )
     }
 
     fun validateScript(script: String): String? = try {
@@ -277,7 +296,9 @@ object UsageScriptExecutor {
     private fun extract(
         source: String,
         responseBody: String,
-        timeoutMillis: Long
+        timeoutMillis: Long,
+        balanceField: String? = null,
+        displayFieldPaths: Set<String> = emptySet()
     ): ScriptExecutionResult = try {
         val serialized = runner.run(timeoutMillis, EXTRACTOR_PHASE) { context ->
             val scope = createSandboxScope(context)
@@ -308,7 +329,9 @@ object UsageScriptExecutor {
             )
             Context.toString(result)
         }
-        ScriptExecutionResult.Success(listOf(parseBalance(serialized)))
+        ScriptExecutionResult.Success(
+            listOf(parseBalance(serialized, balanceField, displayFieldPaths))
+        )
     } catch (_: ScriptDeadlineExceeded) {
         failure(RefreshFailure.ScriptTimeout("Script extractor timed out"))
     } catch (interrupted: InterruptedException) {
@@ -321,29 +344,68 @@ object UsageScriptExecutor {
         failure(RefreshFailure.ResponseSchemaFailure("Script response schema is invalid"))
     }
 
-    private fun parseBalance(serialized: String): BalanceData {
+    private fun parseBalance(
+        serialized: String,
+        balanceField: String? = null,
+        displayFieldPaths: Set<String> = emptySet()
+    ): BalanceData {
         val result = json.parseToJsonElement(serialized).jsonObject
-        val remaining = result["remaining"]?.jsonPrimitive?.doubleOrNull
-            ?: result["balance"]?.jsonPrimitive?.doubleOrNull
-            ?: throw IllegalArgumentException("Missing remaining balance")
+        val selectedField = balanceField?.trim()?.takeIf(String::isNotEmpty)
+        val remaining = if (selectedField != null) {
+            jsonValueAt(result, selectedField)?.doubleOrNull
+                ?: throw IllegalArgumentException("Missing configured balance field")
+        } else {
+            jsonValueAt(result, "remaining")?.doubleOrNull
+                ?: jsonValueAt(result, "balance")?.doubleOrNull
+                ?: throw IllegalArgumentException("Missing remaining balance")
+        }
         if (!remaining.isFinite()) throw IllegalArgumentException("Non-finite remaining balance")
-        val total = result["total"]?.jsonPrimitive?.doubleOrNull
-        val used = result["used"]?.jsonPrimitive?.doubleOrNull
+        val total = jsonValueAt(result, "total")?.doubleOrNull
+        val used = jsonValueAt(result, "used")?.doubleOrNull
         if (total?.isFinite() == false || used?.isFinite() == false) {
             throw IllegalArgumentException("Non-finite balance value")
         }
-        val isValid = result["isValid"]?.jsonPrimitive?.booleanOrNull
-            ?: result["is_valid"]?.jsonPrimitive?.booleanOrNull
-            ?: result["is_valid"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+        val isValid = jsonValueAt(result, "isValid")?.booleanOrNull
+            ?: jsonValueAt(result, "is_valid")?.booleanOrNull
+            ?: jsonValueAt(result, "is_valid")?.contentOrNull?.toBooleanStrictOrNull()
+        val fields = if (displayFieldPaths.isEmpty()) {
+            result.mapNotNull { (key, value) ->
+                (value as? kotlinx.serialization.json.JsonPrimitive)
+                    ?.contentOrNull
+                    ?.let { key to it }
+            }.toMap()
+        } else {
+            displayFieldPaths.mapNotNull { path ->
+                jsonValueAt(result, path)?.contentOrNull?.let { path to it }
+            }.toMap()
+        }
         return BalanceData(
-            planName = result["plan_name"]?.jsonPrimitive?.contentOrNull,
+            planName = jsonValueAt(result, "plan_name")?.contentOrNull,
             remaining = remaining,
             total = total,
             used = used,
-            unit = result["unit"]?.jsonPrimitive?.contentOrNull ?: "CNY",
+            unit = jsonValueAt(result, "unit")?.contentOrNull ?: "CNY",
             isValid = isValid ?: true,
-            invalidMessage = result["invalid_message"]?.jsonPrimitive?.contentOrNull
+            invalidMessage = jsonValueAt(result, "invalid_message")?.contentOrNull,
+            fields = fields
         )
+    }
+
+    private fun jsonValueAt(
+        root: JsonObject,
+        path: String
+    ): kotlinx.serialization.json.JsonPrimitive? {
+        val segments = path.split('.').map(String::trim)
+        if (segments.isEmpty() || segments.any { it.isEmpty() }) return null
+        var current: JsonElement = root
+        for (segment in segments) {
+            current = when (current) {
+                is JsonObject -> current[segment] ?: return null
+                is JsonArray -> segment.toIntOrNull()?.let(current::getOrNull) ?: return null
+                else -> return null
+            }
+        }
+        return current as? kotlinx.serialization.json.JsonPrimitive
     }
 
     private suspend fun sendHttpRequest(
@@ -512,10 +574,8 @@ object UsageScriptExecutor {
     ): String = source
         .replace("{{apiKey}}", escapeJsString(apiKey))
         .replace("{{baseUrl}}", escapeJsString(baseUrl))
-        .let { value ->
-            accessToken?.let { value.replace("{{accessToken}}", escapeJsString(it)) } ?: value
-        }
-        .let { value -> userId?.let { value.replace("{{userId}}", escapeJsString(it)) } ?: value }
+        .replace("{{accessToken}}", escapeJsString(accessToken.orEmpty()))
+        .replace("{{userId}}", escapeJsString(userId.orEmpty()))
 
     private fun escapeJsString(value: String): String = value
         .replace("\\", "\\\\")

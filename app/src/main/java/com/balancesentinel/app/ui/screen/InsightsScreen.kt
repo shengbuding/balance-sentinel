@@ -43,7 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -136,9 +135,9 @@ fun InsightsScreen(
             }
 
             // 账户筛选
-            if (uiState.accounts.isNotEmpty()) {
+            if (uiState.eligibleAccounts.isNotEmpty()) {
                 AccountFilterRow(
-                    accounts = uiState.accounts,
+                    accounts = uiState.eligibleAccounts,
                     selectedAccountId = uiState.selectedAccountId,
                     onSelect = { viewModel.selectAccount(it) }
                 )
@@ -880,28 +879,6 @@ private fun IntradayLineChart(
         }
 
         if (points.size >= 2) {
-            // ── 填充渐变 ──
-            val fillPath = Path().apply {
-                moveTo(points[0].x, topPadding + chartHeight)
-                lineTo(points[0].x, points[0].y)
-                for (i in 1 until points.size) {
-                    lineTo(points[i].x, points[i].y)
-                }
-                lineTo(points.last().x, topPadding + chartHeight)
-                close()
-            }
-            drawPath(
-                path = fillPath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        lineColor.copy(alpha = 0.25f),
-                        lineColor.copy(alpha = 0.02f)
-                    ),
-                    startY = points.minOf { it.y },
-                    endY = topPadding + chartHeight
-                )
-            )
-
             // ── 折线 ──
             val linePath = Path().apply {
                 moveTo(points[0].x, points[0].y)
@@ -1159,28 +1136,6 @@ private fun DailyLineChart(
         }
 
         if (points.size >= 2) {
-            // ── 填充渐变 ──
-            val fillPath = Path().apply {
-                moveTo(points[0].x, topPadding + chartHeight)
-                lineTo(points[0].x, points[0].y)
-                for (i in 1 until points.size) {
-                    lineTo(points[i].x, points[i].y)
-                }
-                lineTo(points.last().x, topPadding + chartHeight)
-                close()
-            }
-            drawPath(
-                path = fillPath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        lineColor.copy(alpha = 0.25f),
-                        lineColor.copy(alpha = 0.02f)
-                    ),
-                    startY = points.minOf { it.y },
-                    endY = topPadding + chartHeight
-                )
-            )
-
             // ── 分段绘制折线：补零段为虚线 ──
             for (i in 0 until points.size - 1) {
                 val isGapSegment = data[i].isGapFill || data[i + 1].isGapFill

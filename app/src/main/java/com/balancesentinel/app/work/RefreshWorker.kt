@@ -14,6 +14,8 @@ import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
+import com.balancesentinel.app.service.MonitoringStateStore
+import com.balancesentinel.app.service.PersistentBalanceNotificationPublisher
 import kotlinx.coroutines.CancellationException
 
 /** Injectable seams for the worker's unified refresh engine and retry queue. */
@@ -22,6 +24,12 @@ object RefreshWorkerDependencies {
     var retryPlanner: RefreshRetryPlanner = RefreshRetryPlanner()
     var retryScheduler: ((RetrySchedule) -> Unit)? = null
     var retryCanceller: ((Context, String) -> Unit)? = null
+    var notificationPublisher: suspend (Context, RefreshGateway) -> Unit = { context, gateway ->
+        PersistentBalanceNotificationPublisher.from(context).publishCached(gateway)
+    }
+    var monitoringDesiredReader: suspend (Context) -> Boolean = { context ->
+        MonitoringStateStore.from(context).get().desired
+    }
 
     fun cancelRetry(context: Context, accountId: String) {
         retryCanceller?.invoke(context, accountId) ?: RefreshWorkScheduler().cancelRetries(context, accountId)
@@ -41,6 +49,10 @@ object RefreshWorkerDependencies {
         retryPlanner = RefreshRetryPlanner()
         retryScheduler = null
         retryCanceller = null
+        notificationPublisher = { context, gateway ->
+            PersistentBalanceNotificationPublisher.from(context).publishCached(gateway)
+        }
+        monitoringDesiredReader = { context -> MonitoringStateStore.from(context).get().desired }
     }
 }
 
@@ -56,16 +68,22 @@ class RefreshWorker(
             val gateway = RefreshWorkerDependencies.gatewayFactory(applicationContext)
             val accountId = inputData.getString(KEY_ACCOUNT_ID)
             val previousAttempt = inputData.getInt(KEY_ATTEMPT, 0)
+            var refreshed = false
             if (accountId == null) {
                 if (!hasHealthyForegroundSession()) {
                     val batch = gateway.refreshAll(RefreshTrigger.BACKGROUND)
+                    refreshed = true
                     batch.results.forEach { result ->
                         enqueueRetryIfNeeded(result.accountId, result, previousAttempt)
                     }
                 }
             } else {
                 val result = gateway.refreshAccount(accountId, RefreshTrigger.BACKGROUND)
+                refreshed = true
                 enqueueRetryIfNeeded(accountId, result, previousAttempt)
+            }
+            if (refreshed && shouldPublishPersistentNotification()) {
+                publishPersistentNotification(gateway)
             }
             if (continuousRecovery) continueContinuousRecovery()
             ListenableWorker.Result.success()
@@ -101,6 +119,25 @@ class RefreshWorker(
             .effectiveBackgroundCadenceSeconds
             ?.toLong()
         RefreshWorkScheduler().continueRecovery(applicationContext, interval)
+    }
+
+    private suspend fun publishPersistentNotification(gateway: RefreshGateway) {
+        try {
+            RefreshWorkerDependencies.notificationPublisher(applicationContext, gateway)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            // Notification delivery is best-effort and must not roll back a committed refresh.
+        }
+    }
+
+    private suspend fun shouldPublishPersistentNotification(): Boolean = try {
+        RefreshWorkerDependencies.monitoringDesiredReader(applicationContext)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        // A failed state read must not resurrect a notification after opt-out.
+        false
     }
 
     private fun enqueueRetryIfNeeded(

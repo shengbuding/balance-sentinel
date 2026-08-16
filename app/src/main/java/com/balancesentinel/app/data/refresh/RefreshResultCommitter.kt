@@ -232,6 +232,7 @@ class RefreshResultCommitter(
         isAvailable = available,
         grantedBalance = grantedBalance?.toString().orEmpty(),
         toppedUpBalance = toppedUpBalance?.toString().orEmpty(),
+        displayFields = displayFields,
         lastUpdated = completedAt
     )
 

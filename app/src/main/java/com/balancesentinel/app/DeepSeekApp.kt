@@ -34,6 +34,7 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.WidgetPrefsLegacySettingsSource
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import com.balancesentinel.app.service.MonitoringStateStore
+import com.balancesentinel.app.receiver.KeepAliveReceiver
 import com.balancesentinel.app.work.MidnightMaintenanceDependencies
 import com.balancesentinel.app.work.MidnightWorkPolicy
 import com.balancesentinel.app.work.MidnightWorkSchedulingGate
@@ -117,15 +118,17 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             runBlocking(Dispatchers.IO) { appResetRecoveryRunner() }
         }
         refreshGateway = RefreshRuntime.create(this)
-        runCatching {
+        val monitoringDesiredAtStartup = runCatching {
             // Materialize the monitoring projection before any worker/receiver
             // can create its default row. This preserves the old app's
             // automatic foreground-monitoring intent for upgrades, while a
             // fresh install (with no legacy service heartbeat) remains opt-in.
-            runBlocking(Dispatchers.IO) { MonitoringStateStore.from(this@DeepSeekApp).get() }
+            runBlocking(Dispatchers.IO) {
+                MonitoringStateStore.from(this@DeepSeekApp).get().desired
+            }
         }.onFailure { error ->
             CrashLogger.logNonFatal("MonitoringState", error)
-        }
+        }.getOrNull()
         runCatching {
             MidnightWorkSchedulingGate.withLock {
                 MidnightWorkScheduler().reconcile(
@@ -165,6 +168,11 @@ open class DeepSeekApp : Application(), Configuration.Provider {
         launchLegacyAccountMigration()
 
         createNotificationChannel()
+        when (monitoringDesiredAtStartup) {
+            true -> KeepAliveReceiver.schedule(this)
+            false -> KeepAliveReceiver.cancel(this)
+            null -> Unit
+        }
 
         // 恢复用户语言偏好（未设置则跟随系统）
         val savedLanguage = WidgetPrefs(this).language
@@ -322,7 +330,7 @@ open class DeepSeekApp : Application(), Configuration.Provider {
         // 3. 清理旧版数据
     }
 
-    private fun createNotificationChannel() {
+    internal fun createNotificationChannel() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // 旧版服务渠道：保留其 ID 以兼容升级后的用户设置。
@@ -348,11 +356,6 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(pinnedChannel)
-        // Clear an old low-priority instance once so the next service update
-        // is recreated on the pinned channel rather than left in the legacy
-        // channel after an in-place upgrade.
-        nm.cancel(NOTIFICATION_ID)
-
         // 余额预警通知（高优先级，弹横幅）
         val alertChannel = NotificationChannel(
             CHANNEL_ID_ALERT,

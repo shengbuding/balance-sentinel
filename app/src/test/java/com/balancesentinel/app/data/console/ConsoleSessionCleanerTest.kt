@@ -78,6 +78,20 @@ class ConsoleSessionCleanerTest {
         assertTrue(result.isSuccess)
     }
 
+    @Test
+    fun `clearAll removes every stored session and all runtime web data`() {
+        store.saveSession(PLATFORM.id, session())
+        store.saveSession(OTHER_PLATFORM_ID, session())
+
+        cleaner.clearAll()
+
+        assertNull(store.getSession(PLATFORM.id))
+        assertNull(store.getSession(OTHER_PLATFORM_ID))
+        assertEquals(1, webStorage.deleteAllCalls)
+        assertEquals(1, cookies.removeAllCalls)
+        assertEquals(1, cookies.flushCalls)
+    }
+
     private fun session() = ConsoleSession(
         cookies = mapOf("session" to "value"),
         loginTime = 1L,
@@ -86,9 +100,14 @@ class ConsoleSessionCleanerTest {
 
     private class RecordingWebStorage : ConsoleWebStorage {
         val deletedOrigins = mutableListOf<String>()
+        var deleteAllCalls = 0
 
         override fun deleteOrigin(origin: String) {
             deletedOrigins += origin
+        }
+
+        override fun deleteAllData() {
+            deleteAllCalls++
         }
     }
 

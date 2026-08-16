@@ -37,6 +37,8 @@ import com.balancesentinel.app.data.api.balance.PresetScripts
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.formatUsageDisplayFieldLines
+import com.balancesentinel.app.data.model.parseUsageDisplayFieldLines
 
 /**
  * 编辑账户对话框
@@ -74,6 +76,12 @@ fun EditAccountDialog(
     }
     var usageScriptEnabled by remember(account.id, account.revision) {
         mutableStateOf(account.usageScriptEnabled)
+    }
+    var displayFieldsText by remember(account.id, account.revision) {
+        mutableStateOf(formatUsageDisplayFieldLines(account.usageDisplayFields))
+    }
+    var balanceField by remember(account.id, account.revision) {
+        mutableStateOf(account.usageBalanceField.orEmpty())
     }
     val isCustom = account.providerType == ProviderType.CUSTOM
     val apiKey = values["apiKey"].orEmpty()
@@ -162,6 +170,25 @@ fun EditAccountDialog(
                             )
                         )
 
+                        OutlinedTextField(
+                            value = displayFieldsText,
+                            onValueChange = { displayFieldsText = it },
+                            label = { Text(stringResource(R.string.account_custom_display_fields_label)) },
+                            supportingText = { Text(stringResource(R.string.account_custom_display_fields_hint)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        OutlinedTextField(
+                            value = balanceField,
+                            onValueChange = { balanceField = it },
+                            label = { Text(stringResource(R.string.account_custom_balance_field_label)) },
+                            supportingText = { Text(stringResource(R.string.account_custom_balance_field_hint)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
                         Text(
                             text = stringResource(R.string.account_custom_script_help),
                             style = MaterialTheme.typography.labelSmall,
@@ -190,6 +217,15 @@ fun EditAccountDialog(
                                     onClick = {
                                         showPresetMenu = false
                                         usageScript = PresetScripts.getCustomTemplate().code
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(stringResource(R.string.account_custom_script_preset_newapi))
+                                    },
+                                    onClick = {
+                                        showPresetMenu = false
+                                        usageScript = PresetScripts.getNewApiTemplate().code
                                     }
                                 )
                             }
@@ -233,7 +269,17 @@ fun EditAccountDialog(
                             } else {
                                 account.usageScriptEnabled
                             },
-                            authorizedScriptOrigins = account.authorizedScriptOrigins
+                            authorizedScriptOrigins = account.authorizedScriptOrigins,
+                            usageDisplayFields = if (isCustom) {
+                                parseUsageDisplayFieldLines(displayFieldsText)
+                            } else {
+                                account.usageDisplayFields
+                            },
+                            usageBalanceField = if (isCustom) {
+                                balanceField.trim().ifBlank { null }
+                            } else {
+                                account.usageBalanceField
+                            }
                         )
                     )
                 },

@@ -110,6 +110,26 @@ object ProviderConfigs {
                         hintRes = R.string.account_hint_base_url
                     )
                 )
+                fields.add(
+                    ConfigField(
+                        key = "accessToken",
+                        displayNameRes = R.string.account_field_access_token,
+                        type = FieldType.PASSWORD,
+                        required = false,
+                        storage = ConfigFieldStorage.EXTRA_CREDENTIAL,
+                        hintRes = R.string.account_hint_access_token
+                    )
+                )
+                fields.add(
+                    ConfigField(
+                        key = "userId",
+                        displayNameRes = R.string.account_field_user_id,
+                        type = FieldType.TEXT,
+                        required = false,
+                        storage = ConfigFieldStorage.EXTRA_CREDENTIAL,
+                        hintRes = R.string.account_hint_user_id
+                    )
+                )
             }
             else -> {}
         }

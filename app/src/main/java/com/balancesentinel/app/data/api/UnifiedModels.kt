@@ -25,7 +25,8 @@ data class BalanceEntry(
     val totalBalance: Double,
     val grantedBalance: Double? = null,
     val toppedUpBalance: Double? = null,
-    val unit: String = "元"
+    val unit: String = "元",
+    val displayFields: Map<String, String> = emptyMap()
 )
 
 /**

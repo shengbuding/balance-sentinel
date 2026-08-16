@@ -59,6 +59,47 @@ class ContinuousMonitoringControllerTest {
     }
 
     @Test
+    fun `platform timeout preserves desired intent and marks the projection limited`() = runTest {
+        val controller = ContinuousMonitoringController(database, "process", now = { 100L })
+        val session = controller.start(at = 100L, userInitiated = true)
+        assertNotNull(session)
+
+        controller.onPlatformTimeout(at = 200L)
+
+        val state = database.monitoringStateDao().getOrCreate(200L)
+        assertTrue(state.desired)
+        assertEquals(MonitoringObservedState.PLATFORM_LIMITED, state.observedState)
+        assertEquals(
+            MonitoringSessionEndReason.PLATFORM_TIMEOUT,
+            database.monitoringSessionDao().get(session!!.id)?.endReason
+        )
+        assertTrue(database.monitoringSessionDao().listOpen().isEmpty())
+    }
+
+    @Test
+    fun `user stop clears desired intent and records the user stop reason`() = runTest {
+        val controller = ContinuousMonitoringController(database, "process", now = { 100L })
+        val session = controller.start(at = 100L, userInitiated = true)
+        assertNotNull(session)
+
+        controller.stop(
+            reason = MonitoringSessionEndReason.USER_STOPPED,
+            at = 200L,
+            preserveDesired = false
+        )
+
+        val state = database.monitoringStateDao().getOrCreate(200L)
+        assertFalse(state.desired)
+        assertEquals(MonitoringObservedState.STOPPED, state.observedState)
+        assertEquals("USER_STOPPED", state.stateReason)
+        assertEquals(
+            MonitoringSessionEndReason.USER_STOPPED,
+            database.monitoringSessionDao().get(session!!.id)?.endReason
+        )
+        assertTrue(database.monitoringSessionDao().listOpen().isEmpty())
+    }
+
+    @Test
     fun `new process recovers the old open session without clearing desired`() = runTest {
         val oldController = ContinuousMonitoringController(database, "old", now = { 100L })
         val oldSession = oldController.start(at = 100L, userInitiated = true)

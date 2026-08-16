@@ -286,6 +286,14 @@ class RoomConfigImportCoordinator(
         accountIds: Set<String>
     ): SettingsPublication {
         val sharedInterval = settings.refreshIntervalSeconds.coerceAtLeast(1)
+        val filteredNotificationSelections = settings.notificationSelectedWallets
+            .filter { it.accountId in accountIds }
+        val requestedTotalOrder = settings.notificationTotalDisplayOrder
+            .coerceIn(0, settings.notificationSelectedWallets.size)
+        val totalDisplayOrder = settings.notificationSelectedWallets
+            .take(requestedTotalOrder)
+            .count { it.accountId in accountIds }
+            .coerceIn(0, filteredNotificationSelections.size)
         return SettingsPublication(
             appSettings = AppSettingsWrite.ReplaceAll(
                 AppSettingsValues(
@@ -300,7 +308,8 @@ class RoomConfigImportCoordinator(
                     changeAlertPeriodMinutes = settings.changeAlertPeriodMinutes,
                     logMaxEntries = settings.logMaxEntries,
                     snoozeDurationMinutes = settings.snoozeDurationMinutes,
-                    showTotalBalanceInNotification = settings.showTotalBalance
+                    showTotalBalanceInNotification = settings.showTotalBalance,
+                    notificationTotalDisplayOrder = totalDisplayOrder
                 )
             ),
             accountAlertSettings = AccountAlertSettingsWrite.ReplaceAll(
@@ -314,7 +323,7 @@ class RoomConfigImportCoordinator(
                 }
             ),
             notificationSelections = NotificationSelectionsWrite.ReplaceAll(
-                settings.notificationSelectedWallets.filter { it.accountId in accountIds }
+                filteredNotificationSelections
                     .mapIndexed { index, value ->
                         NotificationWalletSelectionEntity(value.accountId, value.currency, index)
                     }

@@ -16,23 +16,41 @@ data class LegacySettings(
     val snoozeDurationMinutes: Int,
     val showTotalBalanceInNotification: Boolean,
     val perCurrencyAlertSettings: List<PerCurrencyAlertSetting>,
-    val notificationSelections: List<NotificationWalletSelection>
+    val notificationSelections: List<NotificationWalletSelection>,
+    /** Number of legacy wallet entries before the virtual total row. */
+    val notificationTotalDisplayOrder: Int = 0
 )
 
 class WidgetPrefsLegacySettingsSource(private val widgetPrefs: WidgetPrefs) : LegacySettingsSource {
-    override fun read(): LegacySettings = LegacySettings(
-        refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
-        logMaxEntries = widgetPrefs.logMaxEntries,
-        alertEnabled = widgetPrefs.alertEnabled,
-        alertThreshold = widgetPrefs.alertThreshold,
-        changeAlertEnabled = widgetPrefs.changeAlertEnabled,
-        changeAlertThreshold = widgetPrefs.changeAlertThreshold,
-        changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
-        snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes,
-        showTotalBalanceInNotification = widgetPrefs.showTotalBalanceInNotification,
-        perCurrencyAlertSettings = widgetPrefs.getAllPerCurrencyAlertSettings().toList(),
-        notificationSelections = widgetPrefs.getAllNotificationWalletSelections().toList()
-    )
+    override fun read(): LegacySettings {
+        val order = widgetPrefs.getNotificationWalletOrder()
+        fun parseSelection(key: String): NotificationWalletSelection? {
+            if (key == WidgetPrefs.KEY_NOTIFICATION_TOTAL) return null
+            val parts = key.split("_", limit = 2)
+            val accountId = parts.getOrNull(0).orEmpty()
+            val currency = parts.getOrNull(1).orEmpty()
+            return if (accountId.isBlank() || currency.isBlank()) null
+            else NotificationWalletSelection(accountId, currency)
+        }
+        val selections = order.mapNotNull(::parseSelection)
+        val totalIndex = order.indexOf(WidgetPrefs.KEY_NOTIFICATION_TOTAL)
+            .takeIf { it >= 0 }
+            ?: 0
+        return LegacySettings(
+            refreshIntervalSeconds = widgetPrefs.refreshIntervalSeconds,
+            logMaxEntries = widgetPrefs.logMaxEntries,
+            alertEnabled = widgetPrefs.alertEnabled,
+            alertThreshold = widgetPrefs.alertThreshold,
+            changeAlertEnabled = widgetPrefs.changeAlertEnabled,
+            changeAlertThreshold = widgetPrefs.changeAlertThreshold,
+            changeAlertPeriodMinutes = widgetPrefs.changeAlertPeriodMinutes,
+            snoozeDurationMinutes = widgetPrefs.snoozeDurationMinutes,
+            showTotalBalanceInNotification = widgetPrefs.showTotalBalanceInNotification,
+            perCurrencyAlertSettings = widgetPrefs.getAllPerCurrencyAlertSettings().toList(),
+            notificationSelections = selections,
+            notificationTotalDisplayOrder = order.take(totalIndex).mapNotNull(::parseSelection).size
+        )
+    }
 }
 
 /** Migration orchestration is intentionally enabled only by the GREEN wiring. */
@@ -47,6 +65,12 @@ class LegacySettingsMigration(
         val legacy = source.read()
         val oldInterval = legacy.refreshIntervalSeconds.coerceAtLeast(1)
         val publishedAt = now()
+        val resolvedNotificationSelections = legacy.notificationSelections.map { selection ->
+            resolveAccountId(selection.accountId)?.let { selection.copy(accountId = it) }
+        }
+        val totalDisplayOrder = resolvedNotificationSelections
+            .take(legacy.notificationTotalDisplayOrder.coerceIn(0, resolvedNotificationSelections.size))
+            .count { it != null }
         val snapshot = SettingsSnapshot(
             appSettings = com.balancesentinel.app.data.local.settings.AppSettingsEntity(
                 backgroundRefreshIntervalSeconds = oldInterval,
@@ -59,7 +83,8 @@ class LegacySettingsMigration(
                 logMaxEntries = legacy.logMaxEntries,
                 snoozeDurationMinutes = legacy.snoozeDurationMinutes,
                 showTotalBalanceInNotification = legacy.showTotalBalanceInNotification,
-                updatedAt = publishedAt
+                updatedAt = publishedAt,
+                notificationTotalDisplayOrder = totalDisplayOrder
             ),
             accountAlertSettings = legacy.perCurrencyAlertSettings.mapNotNull {
                 val accountId = resolveAccountId(it.accountId) ?: return@mapNotNull null
@@ -70,12 +95,11 @@ class LegacySettingsMigration(
                     changeAlertEnabled = it.changeAlertEnabled
                 )
             },
-            notificationSelections = legacy.notificationSelections
-                .filter { it.accountId.isNotBlank() && it.accountId != WidgetPrefs.KEY_NOTIFICATION_TOTAL }
-                .mapNotNull {
-                    val accountId = resolveAccountId(it.accountId) ?: return@mapNotNull null
+            notificationSelections = resolvedNotificationSelections
+                .filterNotNull()
+                .map {
                     com.balancesentinel.app.data.local.settings.NotificationWalletSelectionEntity(
-                        accountId = accountId,
+                        accountId = it.accountId,
                         currency = it.currency,
                         displayOrder = 0
                     )

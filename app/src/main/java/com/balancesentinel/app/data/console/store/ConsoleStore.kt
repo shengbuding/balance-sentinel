@@ -128,8 +128,8 @@ class ConsoleStore private constructor(
     /**
      * 删除会话
      */
-    fun removeSession(platformId: String) {
-        prefs.edit().remove("${KEY_SESSION_PREFIX}$platformId").apply()
+    fun removeSession(platformId: String): Boolean {
+        return prefs.edit().remove("${KEY_SESSION_PREFIX}$platformId").commit()
     }
 
     /**
@@ -142,8 +142,8 @@ class ConsoleStore private constructor(
     /**
      * 清除所有数据
      */
-    fun clearAll() {
-        prefs.edit().clear().apply()
+    fun clearAll(): Boolean {
+        return prefs.edit().clear().commit()
     }
 
     companion object {

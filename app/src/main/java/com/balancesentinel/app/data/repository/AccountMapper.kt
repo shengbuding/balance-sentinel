@@ -4,6 +4,8 @@ import com.balancesentinel.app.data.local.account.AccountEntity
 import com.balancesentinel.app.data.local.account.AccountState
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.model.decodeUsageDisplayFields
+import com.balancesentinel.app.data.model.encodeUsageDisplayFields
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -34,6 +36,12 @@ object AccountMapper {
             account.usageScript?.let { put("usageScript", it) }
             put("usageScriptEnabled", account.usageScriptEnabled)
             put("authorizedScriptOrigins", account.authorizedScriptOrigins.sorted().joinToString(","))
+            if (account.usageDisplayFields.isNotEmpty()) {
+                put("usageDisplayFields", encodeUsageDisplayFields(account.usageDisplayFields))
+            }
+            account.usageBalanceField?.takeIf(String::isNotBlank)?.let {
+                put("usageBalanceField", it)
+            }
         }.toString(),
         activeCredentialGeneration = credentialGeneration,
         state = state,
@@ -68,6 +76,10 @@ object AccountMapper {
             .map(String::trim)
             .filter(String::isNotEmpty)
             .toSet()
+        val usageDisplayFields = decodeUsageDisplayFields(
+            config["usageDisplayFields"]?.jsonPrimitive?.contentOrNull
+        )
+        val usageBalanceField = config["usageBalanceField"]?.jsonPrimitive?.contentOrNull
         val extraSettings = config
             .filterKeys { it !in PROVIDER_METADATA_KEYS }
             .mapValues { (key, value) ->
@@ -84,13 +96,17 @@ object AccountMapper {
             usageScript = null,
             usageScriptEnabled = usageScriptEnabled,
             authorizedScriptOrigins = authorizedScriptOrigins,
-            revision = entity.revision
+            revision = entity.revision,
+            usageDisplayFields = usageDisplayFields,
+            usageBalanceField = usageBalanceField
         )
     }
 
     private val PROVIDER_METADATA_KEYS = setOf(
         "usageScript",
         "usageScriptEnabled",
-        "authorizedScriptOrigins"
+        "authorizedScriptOrigins",
+        "usageDisplayFields",
+        "usageBalanceField"
     )
 }
