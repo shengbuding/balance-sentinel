@@ -2,9 +2,9 @@
 
 [English](#english) | [中文](#中文)
 
-多AI供应商余额监控 Android 应用 — 支持13个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**数据 100% 本地存储，零追踪。**
+多AI供应商余额监控 Android 应用 — 支持14个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**数据 100% 本地存储，零追踪。**
 
-Multi-AI-provider balance monitoring Android app — supports 13 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
+Multi-AI-provider balance monitoring Android app — supports 14 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
 
 ---
 
@@ -12,12 +12,13 @@ Multi-AI-provider balance monitoring Android app — supports 13 AI providers, m
 
 ### 功能
 
-- **多供应商支持** — 支持13个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、自定义
+- **多供应商支持** — 支持14个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、模力方舟、自定义
 - **多账户管理** — 支持多个API Key，每个账户独立配置
-- **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本，兼容cc-switch格式，支持ES6语法自动转换
+- **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本、卡片展示字段和余额计算字段，兼容cc-switch格式，内置NewAPI预设
 - **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
 - **自定义平台控制台** — 支持添加任意 AI 平台控制台，通过 WebView 登录官方控制台查看数据，登录状态永久保持
-- **后台自动刷新** — 前台服务保活，Handler 定时轮询，支持 1/5/10/15/30/60 分钟间隔
+- **后台自动刷新** — 前台服务、WorkManager 与精确闹钟恢复监控协同保活，支持 1/5/10/15/30/60 分钟间隔
+- **权限引导** — 首次使用和设置页均可检查通知、精确闹钟与电池优化授权状态
 - **5 种桌面小组件** — RemoteViews 驱动，2×1 / 2×2 / 3×1 / 4×2 / 5×1 尺寸，可配单账户或总余额
 - **余额预警** — 分账户分币种低余额预警，阈值可调，支持暂停 (snooze)
 - **异动通知** — 检测余额变化（充值/消耗），实时推送
@@ -57,7 +58,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (1,033 JVM tests, 88 Kotlin test files)
+# 运行测试 (1,486 JVM tests)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -66,7 +67,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 Release 构建需要 `keystore.properties`（不提交到 git）：
 
 ```properties
-storeFile=../deepseek-balance.jks
+storeFile=deepseek-balance.jks
 storePassword=<密码>
 keyAlias=deepseek
 keyPassword=<密码>
@@ -86,6 +87,8 @@ keyPassword=<密码>
 | INTERNET | 调用 AI 供应商 API |
 | FOREGROUND_SERVICE | 后台定时刷新 |
 | POST_NOTIFICATIONS | 余额预警通知 |
+| SCHEDULE_EXACT_ALARM | 恢复后台监控与常驻通知 |
+| REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | 引导用户放宽后台限制 |
 | RECEIVE_BOOT_COMPLETED | 开机自启 |
 | WAKE_LOCK | 刷新期间防止 CPU 休眠 |
 
@@ -105,15 +108,15 @@ keyPassword=<密码>
 | UI | Jetpack Compose + Material 3 |
 | Widget | RemoteViews (5 尺寸) |
 | 网络 | OkHttp + kotlinx.serialization |
-| 存储 | EncryptedSharedPreferences + SharedPreferences (JSON, 无 Room) |
-| 服务 | Foreground Service + Handler 定时循环 |
+| 存储 | Room + EncryptedSharedPreferences |
+| 服务 | Foreground Service + WorkManager + 精确闹钟恢复 |
 | 国际化 | Android LocaleManager (API 35+), 中英双语 |
 | 测试 | JUnit 4 + MockK + Robolectric + MockWebServer |
 | 构建 | Gradle 8.11 + Version Catalog |
 
 ### 版本
 
-当前：**v1.4.2** (2026-07-30)
+当前：**v1.5.0** (2026-08-16)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -128,12 +131,13 @@ keyPassword=<密码>
 
 ### Features
 
-- **Multi-Provider Support** — Supports 13 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Custom
+- **Multi-Provider Support** — Supports 14 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Model Ark, Custom
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
-- **Custom Balance Query Script** — Custom providers support JavaScript query scripts, compatible with cc-switch format, automatic ES6 to ES5 conversion
+- **Custom Balance Query Script** — Custom providers support JavaScript query scripts, card display fields, and selectable balance fields, with cc-switch compatibility and a NewAPI preset
 - **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
 - **Custom Platform Console** — Add any AI platform console, login via WebView to view data, session persists permanently
-- **Background Auto-Refresh** — Foreground service with Handler-based polling at 1/5/10/15/30/60 minute intervals
+- **Background Auto-Refresh** — Foreground service, WorkManager, and exact-alarm recovery work together at 1/5/10/15/30/60 minute intervals
+- **Permission Guide** — First-run and Settings flows show notification, exact-alarm, and battery-optimization authorization status
 - **5 Desktop Widget Sizes** — RemoteViews-driven, 2×1 / 2×2 / 3×1 / 4×2 / 5×1, configurable per-account or total balance
 - **Balance Alerts** — Per-account per-currency low-balance alerts with adjustable thresholds and snooze support
 - **Change Notifications** — Real-time push notifications for balance changes (top-up/consumption)
@@ -173,7 +177,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (1,033 JVM tests, 88 Kotlin test files)
+# Run tests (1,486 JVM tests)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -182,7 +186,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 Release builds require `keystore.properties` (not committed to git):
 
 ```properties
-storeFile=../deepseek-balance.jks
+storeFile=deepseek-balance.jks
 storePassword=<password>
 keyAlias=deepseek
 keyPassword=<password>
@@ -202,6 +206,8 @@ See [SIGNING.md](SIGNING.md) for details.
 | INTERNET | Query AI provider APIs |
 | FOREGROUND_SERVICE | Background scheduled refresh |
 | POST_NOTIFICATIONS | Balance alert notifications |
+| SCHEDULE_EXACT_ALARM | Recover background monitoring and the persistent notification |
+| REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | Guide the user to relax background restrictions |
 | RECEIVE_BOOT_COMPLETED | Start on boot |
 | WAKE_LOCK | Prevent CPU sleep during refresh |
 
@@ -221,15 +227,15 @@ See [SIGNING.md](SIGNING.md) for details.
 | UI | Jetpack Compose + Material 3 |
 | Widget | RemoteViews (5 sizes) |
 | Network | OkHttp + kotlinx.serialization |
-| Storage | EncryptedSharedPreferences + SharedPreferences (JSON, no Room) |
-| Services | Foreground Service + Handler timer loop |
+| Storage | Room + EncryptedSharedPreferences |
+| Services | Foreground Service + WorkManager + exact-alarm recovery |
 | i18n | Android LocaleManager (API 35+), Chinese/English bilingual |
 | Testing | JUnit 4 + MockK + Robolectric + MockWebServer + AndroidX Compose Test + Kover |
 | Build | Gradle 8.11 + Version Catalog |
 
 ### Version
 
-Current: **v1.4.2** (2026-07-30)
+Current: **v1.5.0** (2026-08-16)
 
 [Changelog](https://github.com/shengbuding/balance-sentinel/releases)
 
