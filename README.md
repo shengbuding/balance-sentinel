@@ -2,9 +2,9 @@
 
 [English](#english) | [中文](#中文)
 
-多AI供应商余额监控 Android 应用 — 支持14个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**数据 100% 本地存储，零追踪。**
+多AI供应商余额监控 Android 应用 — 支持14个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**配置和历史数据本地存储，请求仅发往用户配置的端点，零追踪。**
 
-Multi-AI-provider balance monitoring Android app — supports 14 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **100% local data storage, zero tracking.**
+Multi-AI-provider balance monitoring Android app — supports 14 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **Configuration and history stay local; requests go only to endpoints you configure; zero tracking.**
 
 ---
 
@@ -116,9 +116,11 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.5.0** (2026-08-16)
+当前：**v1.5.0** (2026-08-18)
 
-[Changelog](https://github.com/shengbuding/balance-sentinel/releases)
+[变更日志](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
+
+[Claude Code 发布审查交接](docs/claude-code-review-handoff.md)
 
 ### 反馈
 
@@ -235,9 +237,11 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.5.0** (2026-08-16)
+Current: **v1.5.0** (2026-08-18)
 
-[Changelog](https://github.com/shengbuding/balance-sentinel/releases)
+[Changelog](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
+
+[Claude Code release review handoff](docs/claude-code-review-handoff.md)
 
 ### Feedback
 
@@ -298,7 +302,7 @@ System     BalanceRefreshService           ← Foreground service + health track
 - `BackupImportPlanner` requires preview before apply; destructive replace requires complete credentials and two confirmations.
 - `DebugCapturePolicy` gates diagnostic request/response capture by the debuggable build flag; Release packaging tests verify the capture path is inactive.
 
-The current verification baseline is 1,033 Debug and 1,033 Release JVM tests, 8 instrumentation source classes with 39 test methods, and a supplemental 36/36 pass on an API 36 AVD. Target-API device gaps are recorded in [TEST_REPORT.md](TEST_REPORT.md), and accepted release residuals are recorded in [RELEASE_REVIEW_REPORT.md](RELEASE_REVIEW_REPORT.md).
+The v1.5.0 release baseline is 1,486 Debug and 1,486 Release JVM tests (3 skipped per variant), clean Debug/Release lint, and a passing Kover verification gate. The targeted `MainActivityTest` instrumentation smoke test passed 4/4; full connected-test discovery still has an emulator startup limitation recorded in the [Claude Code review handoff](docs/claude-code-review-handoff.md). Target-API device gaps are also tracked in [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Navigation
 
@@ -391,6 +395,8 @@ DeepSeekBalance/
 │       ├── testDebug/ and testRelease/ ← 2 build-variant test files
 │       └── androidTest/ ← 8 classes, 39 instrumentation source tests
 ├── docs/
+│   ├── claude-code-review-handoff.md ← v1.5.0 release review brief
+│   ├── desktop-sync-contract.md   ← Reserved desktop-sync security contract
 │   ├── superpowers/specs/    ← Design & plan documents
 │   ├── adr/                  ← Architecture Decision Records
 │   └── audit/                ← Security audit

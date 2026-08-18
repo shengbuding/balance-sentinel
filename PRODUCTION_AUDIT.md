@@ -1,6 +1,6 @@
 # 钱包哨兵 — 上线前全面审计
 
-日期：2026-07-05（原始审计） / 更新：2026-07-20（v1.3.1 后复审） / 更新：2026-07-30（v1.4.2 全面代码审查 + 安全加固）
+日期：2026-07-05（原始审计） / 更新：2026-07-20（v1.3.1 后复审） / 更新：2026-07-30（v1.4.2 全面代码审查 + 安全加固） / 更新：2026-08-18（v1.5.0 发布审查）
 
 审计范围：所有源码、资源、构建配置、测试、架构
 
@@ -10,9 +10,24 @@
 
 | 版本 | 日期 | 审查类型 | 状态 |
 |------|------|----------|------|
+| v1.5.0 | 2026-08-18 | 钱包哨兵审查修复 + 发布门禁 | ✅ 本地验证完成，GitHub Release 由 tag workflow 发布 |
 | v1.4.2 | 2026-07-30 | 全面代码审查 + 安全加固 | ✅ 90 项发现，44 项已修复 |
 | v1.3.1 | 2026-07-20 | 发布后复审 | ✅ 747+ 测试通过 |
 | v1.0.0 | 2026-07-05 | 原始上线前审计 | ✅ 24 项发现 |
+
+### v1.5.0 发布门禁摘要（2026-08-18）
+
+| 门禁 | 结果 |
+|------|------|
+| Debug JVM | 1,486 tests；0 failures；0 errors；3 skipped |
+| Release JVM | 1,486 tests；0 failures；0 errors；3 skipped |
+| Debug/Release lint | 0 errors |
+| Kover | verify 通过；行覆盖率 58.96%；分支覆盖率 48.79% |
+| 目标设备烟测 | `MainActivityTest` 4/4 通过；完整 API 35 discovery 仍受模拟器启动问题影响 |
+| Release APK | `com.balancesentinel.app`，`versionName=v1.5.0`，SHA-256 见 `TEST_REPORT.md` |
+| 安全审查 | 未发现置信度 ≥7/10 的阻断项；签名材料未入 Git |
+
+v1.5.0 新增精确闹钟恢复、保留通知、权限状态引导、全账户洞察资格与图表合并、自定义 Usage Script 字段投影、NewAPI 预设、通知总额排序、Console 清理和上位机同步安全契约预留。90/120 秒精确闹钟属于用户明确要求的强保活策略，仍受 Doze、OEM 和用户权限限制。
 
 以下项目已在 v1.0.0 发布前完成修复或改善：
 
@@ -30,7 +45,7 @@
 | 高-7 | 权限声明理由 | ✅ 已修复 | `PLAY_CONSOLE_PERMISSIONS.md` 已编写 |
 | 中-11 | package name | ✅ 已修复 | `namespace = "com.balancesentinel.app"`（从未使用 com.example） |
 | 中-13 | 后台任务追踪 | ✅ 已修复 | `RefreshStatsStore` — 本地刷新成功率环形缓冲区（最近 100 次） |
-| 中-3 | ProGuard 规则 | ✅ 已修正 | 不使用 Glance（RemoteViews）、不使用 WorkManager，无需对应规则 |
+| 中-3 | ProGuard 规则 | ✅ 已修正 | 使用原生 RemoteViews；WorkManager 已用于后台降级/维护调度并随 AndroidX 依赖处理 |
 | 严重-2 | allowBackup=true | ✅ 已修复 | AndroidManifest.xml 已设置 allowBackup=false |
 | 高-1 | HTTPS 证书固定 | ✅ 已修复 | network_security_config.xml 已配置 SHA-256 证书固定 |
 | 高-2 | 配置导出明文 Key | ✅ 已修复 | ConfigManager.redactApiKey() 自动脱敏 |
@@ -39,11 +54,11 @@
 
 ### 关键指标更新
 
-| 指标 | 审计时 | v1.0.0 | v1.3.1 | v1.4.2 |
-|------|--------|--------|--------|--------|
-| 单元测试文件 | 16 | 22 | 47 | 53 |
-| 测试数量 | 195 | 254+ | 700+ | 1,528 |
-| Instrumented 测试 | 1 | 4 | 6 | 6 |
+| 指标 | 审计时 | v1.0.0 | v1.3.1 | v1.4.2 | v1.5.0 |
+|------|--------|--------|--------|--------|--------|
+| 单元测试文件 | 16 | 22 | 47 | 53 | 86 shared + 2 variant |
+| 测试数量 | 195 | 254+ | 700+ | 1,528 | 1,486 Debug + 1,486 Release |
+| Instrumented 测试 | 1 | 4 | 6 | 6 | 8 classes / 39 methods |
 | 静默 catch 块 | 32+ | ~25（已减少） | ~20（持续改善） | 显著减少（已修复关键路径） |
 
 ---
@@ -285,7 +300,7 @@ Android 35 (Vanilla Ice Cream) 仅运行在 2025 年后发布的少数设备上�
 - `kotlinx.coroutines` 的 keep 规则（可能导致协程在 release build 中行为异常）
 - RemoteViews Widget 相关类的 keep 规则（`BalanceWidgetDataStore`、`WidgetConfigStore` 等）
 
-> 注意：本项目不使用 Glance（用原生 RemoteViews）、不使用 WorkManager（用 Handler + 前台 Service），因此无需对应 ProGuard 规则。
+> 注意：本项目不使用 Glance（使用原生 RemoteViews）。当前版本使用 WorkManager 处理后台降级、维护和更新下载；相关 AndroidX 规则由依赖提供，业务侧无需复制内部 keep 规则。
 
 ---
 
@@ -548,7 +563,9 @@ private val client = OkHttpClient.Builder()
 
 ## 结论（更新后）
 
-**v1.4.2 发布状态**：已通过 GitHub Release v1.4.2 发布（CI + Release 全部通过）。1,528 项测试全部通过。全面代码审查完成，90 项发现中 44 项已修复，所有严重和高优先级问题均已解决。
+**v1.5.0 发布状态**：正式版本号为 v1.5.0。发布提交、tag 和 GitHub Release 由 tag workflow 管理；Release APK、测试门禁和 SHA-256 记录在 `TEST_REPORT.md` 与 `docs/claude-code-review-handoff.md`。当前残余风险集中在真实 Android 15/OEM 后台策略、精确闹钟配额、全量仪器测试发现和九类边界测试缺口。
+
+**v1.4.2 发布状态（历史）**：已通过 GitHub Release v1.4.2 发布（CI + Release 全部通过）。1,528 项测试全部通过。全面代码审查完成，90 项发现中 44 项已修复，所有严重和高优先级问题均已解决。
 
 **安全加固成果**：
 - Rhino 引擎沙箱：删除 JavaAdapter 等危险全局对象 + 指令限制

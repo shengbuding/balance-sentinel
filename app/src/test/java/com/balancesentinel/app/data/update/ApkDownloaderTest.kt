@@ -68,7 +68,7 @@ class ApkDownloaderTest {
         val result = resolveDownloadUrl(release)
         // Falls back to constructed URL
         assertEquals(
-            "https://github.com/shengbuding/balance-sentinel/releases/download/v1.2.0/app-release.apk",
+            "https://github.com/shengbuding/balance-sentinel/releases/download/v1.2.0/balance-sentinel-v1.2.0.apk",
             result
         )
     }
@@ -86,7 +86,7 @@ class ApkDownloaderTest {
         )
         val result = resolveDownloadUrl(release)
         assertEquals(
-            "https://github.com/shengbuding/balance-sentinel/releases/download/v2.0.0/app-release.apk",
+            "https://github.com/shengbuding/balance-sentinel/releases/download/v2.0.0/balance-sentinel-v2.0.0.apk",
             result
         )
     }

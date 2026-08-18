@@ -1,22 +1,22 @@
 # Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated / 生成日期: 2026-08-04
+Generated / 生成日期: 2026-08-18
 
 ---
 
 ## 1. Overview / 概述
 
-**Wallet Sentinel** (钱包哨兵) — an Android app that monitors AI provider API balance via desktop widgets and in-app screens. Supports 13 AI providers including DeepSeek, OpenAI, Anthropic and more. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture (v2.0): `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, multi-account balance alerts, bilingual Chinese/English UI, and a service health tracker with protection mode.
+**Wallet Sentinel** (钱包哨兵) — an Android app that monitors AI provider API balance via desktop widgets and in-app screens. Supports 14 AI providers including DeepSeek, OpenAI, Anthropic and more. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture: `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, exact-alarm recovery, multi-account balance alerts, bilingual Chinese/English UI, custom usage scripts, and a service health tracker with protection mode.
 
-**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控多个 AI 供应商 API 余额的 Android 应用，支持 DeepSeek、OpenAI、Anthropic 等 13 个供应商。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构 (v2.0)：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、多账户余额预警、中英双语界面和服务健康追踪保护模式。
+**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控多个 AI 供应商 API 余额的 Android 应用，支持 DeepSeek、OpenAI、Anthropic 等 14 个供应商。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、精确闹钟恢复、多账户余额预警、中英双语界面、自定义用量脚本和服务健康追踪保护模式。
 
 - **Package / 包名**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 1,033 Debug + 1,033 Release JVM tests (88 Kotlin test files); 39 instrumented source tests in 8 files; API 36 supplemental run 36/36 passed
-- **Release / 版本**: v1.4.2
+- **Test count / 测试数**: 1,486 Debug + 1,486 Release JVM tests (86 shared + 2 variant Kotlin test files); 39 instrumented source tests in 8 files; targeted MainActivity smoke 4/4 passed
+- **Release / 版本**: v1.5.0 (2026-08-18)
 
 ---
 
@@ -27,8 +27,9 @@ C:\Users\Administrator\
 ├── CLAUDE.md                          # Skill routing: gstack + Superpowers decision tree
 ├── DeepSeekBalance/                   # ★ Main Android project
 │   ├── README.md                      # Project overview, features, build guide
+│   ├── CHANGELOG.md                   # Versioned release notes
 │   ├── PROJECT_INDEX.md               # This file — full project map
-│   ├── PRODUCTION_AUDIT.md            # Production readiness audit (as of v1.0.0)
+│   ├── PRODUCTION_AUDIT.md            # Production readiness audit and v1.5.0 release status
 │   ├── PRIVACY_POLICY.md              # Privacy policy (ML)
 │   ├── PLAY_CONSOLE_PERMISSIONS.md    # Play Console permission declarations
 │   ├── PLAY_STORE_LISTING.md          # Play Store listing draft
@@ -42,6 +43,8 @@ C:\Users\Administrator\
 │   ├── scripts/
 │   │   └── convert-rounded-icon.mjs   # Icon conversion script
 │   ├── docs/
+│   │   ├── claude-code-review-handoff.md # Claude Code release review handoff
+│   │   ├── desktop-sync-contract.md  # Reserved desktop-sync security contract
 │   │   ├── audit/data-safety-audit.md # Data safety audit report
 │   │   └── superpowers/
 │   │       ├── specs/2026-07-05-insights-rewrite-design.md     # v2.0 design
@@ -230,7 +233,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (88 JVM test files, 1,033 tests per build variant + 39 instrumented source tests)
+## 4. Test Map (86 shared + 2 variant JVM test files, 1,486 tests per build variant + 39 instrumented source tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -322,7 +325,7 @@ C:\Users\Administrator\
 
 4. **Security**: AES-256 EncryptedSharedPreferences for API key storage, OkHttp with Bearer token auth. Rhino JS sandbox with ClassShutter (class-level access control) + sealObject (runtime immutability) for isolated custom script execution.
 
-5. **Background Work**: Handler + foreground service for periodic refresh with keep-alive. BootReceiver + MidnightReceiver for lifecycle rescheduling. No WorkManager dependency.
+5. **Background Work**: Handler + foreground service for user cadence, WorkManager for periodic fallback/maintenance and update downloads, plus exact-alarm notification recovery. BootReceiver + MidnightReceiver reconcile schedules after lifecycle events.
 
 6. **Skill Routing**: CLAUDE.md decision tree routes user requests through Superpowers (creative/debug/TDD) → gstack (review/QA/deploy) pipeline.
 

@@ -10,8 +10,8 @@
 | 字段 | 值 |
 |---|---|
 | **应用名称** (30 字符) | 钱包哨兵 — AI 余额监控 |
-| **简短说明** (80 字符) | 支持13个AI供应商，实时监控API余额，低余额预警，桌面小组件，消耗趋势分析 |
-| **简短说明 (EN)** | Support 13 AI providers, real-time API balance monitor with alerts, widgets, insights & bilingual UI |
+| **简短说明** (80 字符) | 支持14个AI供应商，实时监控API余额，低余额预警，桌面小组件，消耗趋势分析 |
+| **简短说明 (EN)** | Support 14 AI providers, real-time API balance monitor with alerts, widgets, insights & bilingual UI |
 | **应用类别** | 财务 |
 | **应用类别 (次要)** | 工具 |
 | **网站** | https://github.com/shengbuding/balance-sentinel |
@@ -33,20 +33,21 @@
 **核心功能：**
 
 • 多账户管理 — 同时监控多个API Key，每个账户独立显示余额
+• 自定义平台 — 支持自定义余额脚本、展示字段、余额计算字段和 NewAPI 预设
 • 手动/自动刷新 — 点击刷新按钮即时查询，或设置 1–60 分钟自动刷新间隔
 • 低余额预警 — 自定义余额阈值，低于设定值时推送高优先级通知
 • 异动提醒 — 余额剧烈变化时（如大额消耗或充值）实时推送通知
 • 桌面小组件 — 5 种尺寸小组件（2×1、2×2、3×1、4×2、5×1），无需打开 App 即可查看余额
 • 洞察分析 — 24 小时实时消耗折线图 + 多天趋势图（7/14/30/90/365 天），支持消耗预估和剩余天数预测
-• 数据安全 — API Key 使用 Android Keystore 加密存储，HTTPS 证书固定，无第三方数据共享
+• 数据安全 — API Key 使用 Android Keystore 加密存储，HTTPS 证书固定，无第三方分析/广告/追踪 SDK
 • 后台常驻服务 — 前台通知清晰展示刷新状态，支持电池优化白名单引导
 • 配置导入/导出 — 一键备份/恢复所有账户和设置
-• 崩溃自愈 — 系统杀死后台服务后自动通过看门狗闹钟恢复
+• 通知保活 — 看门狗闹钟按授权状态恢复保留通知并安排下一次检查；不会绕过系统限制强行启动后台服务
 • 中英双语 — 设置中一键切换界面语言（简体中文 / English），自动保存偏好
 
 **隐私优先：**
 
-钱包哨兵不向任何第三方传输数据。你的 API Key 仅用于查询各AI供应商API，且通过 Android Keystore 加密存储。余额数据保存在设备本地，可随时清除。详见隐私政策。
+钱包哨兵只向你主动配置的供应商端点发送查询。API Key 通过 Android Keystore 加密存储，自定义脚本在受限沙箱中本地执行。余额数据保存在设备本地，可随时清除。详见隐私政策。
 
 **适用人群：**
 
@@ -70,20 +71,21 @@ Wallet Sentinel tracks your API balance across multiple AI providers in real tim
 **Core Features:**
 
 • **Multi-Account Management** — Monitor multiple API keys simultaneously, each with independent balance tracking
+• **Custom Platforms** — Configure balance scripts, display fields, the balance-calculation field, and a NewAPI preset
 • **Manual & Auto Refresh** — Tap to refresh instantly, or set 1–60 minute automatic refresh intervals
 • **Low Balance Alerts** — Customizable thresholds with high-priority push notifications when balances drop
 • **Sudden Change Alerts** — Real-time notifications for unusual balance changes (large consumption spikes or top-ups)
 • **Desktop Widgets** — 5 widget sizes (2×1, 2×2, 3×1, 4×2, 5×1) for at-a-glance balance monitoring
 • **Insights & Analytics** — 24-hour real-time consumption charts + multi-day trend charts (7/14/30/90/365 days) with depletion estimates
-• **Data Security** — API keys encrypted with Android Keystore, HTTPS certificate pinning, zero third-party data sharing
+• **Data Security** — API keys encrypted with Android Keystore, HTTPS certificate pinning, no third-party analytics, advertising, or tracking SDKs
 • **Persistent Background Service** — Foreground notification showing real-time refresh status with battery optimization guidance
 • **Config Import/Export** — One-tap backup and restore for all accounts and settings
-• **Crash Resilience** — Watchdog alarm automatically restarts background service if killed by the system
+• **Notification Survival** — The watchdog alarm republishes the retained notification and schedules the next check when permitted; it does not bypass Android restrictions to force-start a background service
 • **Bilingual UI** — One-tap language switch (Simplified Chinese / English) with persistent preference
 
 **Privacy First:**
 
-Wallet Sentinel sends no data to third parties. Your API keys are used solely to query AI provider APIs and is encrypted at rest via Android Keystore. All balance data is stored locally on your device and can be cleared at any time. See our privacy policy for details.
+Wallet Sentinel sends data only to provider endpoints you configure. Your API keys are encrypted at rest via Android Keystore, and custom query scripts run locally in a restricted sandbox. All balance data is stored locally on your device and can be cleared at any time. See our privacy policy for details.
 
 **Who is it for:**
 
@@ -249,8 +251,9 @@ AI, API, balance, monitor, alert, widget, consumption, tracker, usage, billing, 
 
 | 日期 / Date | 版本 / Version | 变更 / Changes |
 |---|---|---|
+| 2026-08-18 | v1.5.0 | 精确闹钟保活、跨账户洞察、自定义脚本字段、NewAPI、权限引导、通知排序和设置重构 |
 | 2026-07-20 | v1.3.1 | 修复通知栏序号显示异常、清理旧版数据残留 |
-| 2026-07-20 | v1.3.0 | 多供应商支持（13个AI供应商）、缓存层、健康检查、本地用量追踪 |
+| 2026-07-20 | v1.3.0 | 多供应商支持（13个内置 AI 供应商）、缓存层、健康检查、本地用量追踪 |
 | 2026-07-18 | v1.2.1 | 修复历史日汇总受趋势天数选择影响的问题，文档全面更新 |
 | 2026-07-08 | v1.2.0 | 中英双语界面、隐私政策双语化、消耗预估标签/日期本地化 |
 | 2026-07-05 | v1.0.0 | 初始版本准备上架 / Initial listing draft |

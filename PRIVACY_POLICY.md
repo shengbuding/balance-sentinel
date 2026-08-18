@@ -1,14 +1,14 @@
 # 钱包哨兵 — 隐私政策 / Wallet Sentinel — Privacy Policy
 
-**最后更新日期 / Last Updated：2026 年 7 月 20 日 / July 20, 2026**
+**最后更新日期 / Last Updated：2026 年 8 月 18 日 / August 18, 2026**
 
 ---
 
 ## 概述 / Overview
 
-钱包哨兵（Balance Sentinel）是一款多 AI 供应商余额监控工具，支持 DeepSeek、OpenAI、Anthropic、Gemini 等 13 个供应商。我们高度重视您的隐私和数据安全。
+钱包哨兵（Balance Sentinel）是一款多 AI 供应商余额监控工具，支持 DeepSeek、OpenAI、Anthropic、Gemini 等 14 个供应商。我们高度重视您的隐私和数据安全。
 
-Wallet Sentinel (Balance Sentinel) is a multi-AI-provider balance monitoring tool supporting 13 providers including DeepSeek, OpenAI, Anthropic, Gemini and more. We take your privacy and data security seriously.
+Wallet Sentinel (Balance Sentinel) is a multi-AI-provider balance monitoring tool supporting 14 providers including DeepSeek, OpenAI, Anthropic, Gemini and more. We take your privacy and data security seriously.
 
 ---
 
@@ -17,6 +17,8 @@ Wallet Sentinel (Balance Sentinel) is a multi-AI-provider balance monitoring too
 ### 您在设备上输入的数据 / Data You Enter on Your Device
 - **API Key**：用于查询您的 AI 供应商账户余额和使用量。API Key 仅存储在本设备的加密存储（Android EncryptedSharedPreferences）中，不会上传到任何第三方服务器。
 - **API Key**: Used to query your AI provider account balance and usage. The API Key is stored only in encrypted storage on this device (Android EncryptedSharedPreferences) and is never uploaded to any third-party server.
+- **自定义凭据与脚本**：自定义平台可以保存额外凭据、余额字段映射和 JavaScript 查询脚本；这些内容仅存储在本设备，脚本仅在受限沙箱中执行。
+- **Custom credentials and scripts**: Custom platforms may store additional credentials, balance-field mappings, and JavaScript query scripts. These are stored only on this device, and scripts run only in a restricted sandbox.
 
 ### 自动采集的数据 / Automatically Collected Data
 钱包哨兵**不会**自动采集以下任何信息 / Wallet Sentinel does **NOT** automatically collect any of the following:
@@ -31,9 +33,9 @@ Wallet Sentinel (Balance Sentinel) is a multi-AI-provider balance monitoring too
 
 ## 数据使用方式 / How We Use Data
 
-您的 API Key 仅用于向各 AI 供应商官方 API 发起余额查询请求。所有数据传输通过 HTTPS 加密。
+您的 API Key 和自定义凭据仅用于向您配置的供应商端点发起余额查询请求，包括官方 API、自定义平台和 NewAPI。自定义脚本只在设备本地受限沙箱中执行。所有网络传输通过 HTTPS 加密。
 
-Your API Key is used exclusively to query official AI provider APIs for balance information. All data transmission is encrypted via HTTPS.
+Your API keys and custom credentials are used only to query the provider endpoints you configure, including official APIs, custom platforms, and NewAPI. Custom scripts execute locally in a restricted sandbox. All network transmission is encrypted via HTTPS.
 
 查询到的余额数据仅存储在设备本地，用于 / Retrieved balance data is stored only locally on your device for:
 - 在 App 首页展示余额 / Displaying balance on the app home screen
@@ -45,9 +47,9 @@ Your API Key is used exclusively to query official AI provider APIs for balance 
 
 ## 数据共享 / Data Sharing
 
-我们**不会**将您的任何数据分享、出售或传输给任何第三方。
+我们**不会**将您的数据出售或分享给未由您配置的第三方服务。您主动配置的供应商端点会接收该账户所需的凭据和查询请求。
 
-We do **NOT** share, sell, or transmit any of your data to any third party.
+We do **NOT** sell or share your data with services that you have not configured. A provider endpoint you choose receives the credentials and query needed for that account.
 
 ---
 
@@ -79,13 +81,16 @@ You can delete all stored data (including API Key, balance records, and logs) at
 | POST_NOTIFICATIONS | 余额告警通知 / Balance alert notifications |
 | RECEIVE_BOOT_COMPLETED | 开机后自动恢复后台刷新 / Auto-restart background refresh after boot |
 | WAKE_LOCK | 刷新期间防止 CPU 休眠 / Prevent CPU sleep during refresh |
+| SCHEDULE_EXACT_ALARM | 用户授权后恢复保留通知和后台监控 / Recover retained notifications and monitoring after user authorization |
+| REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | 打开系统电池优化豁免设置页 / Open the system battery-optimization exemption settings |
+| REQUEST_INSTALL_PACKAGES | 用户确认后安装从 GitHub Release 下载的更新 / Install a GitHub Release update after user confirmation |
 
 ---
 
 ## 第三方服务 / Third-Party Services
 
 本应用连接以下服务 / This app connects to the following services:
-- 各 AI 供应商官方 API — 余额查询和用量统计 / Balance query and usage statistics
+- 用户配置的 AI 供应商端点（包括官方 API、自定义平台和 NewAPI）— 余额查询和用量统计 / Provider endpoints configured by the user, including official APIs, custom platforms, and NewAPI — balance queries and usage statistics
   - DeepSeek (api.deepseek.com)
   - OpenAI (api.openai.com)
   - Anthropic (api.anthropic.com)

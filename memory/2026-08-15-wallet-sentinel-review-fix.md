@@ -179,6 +179,143 @@ the working tree.
 
 ---
 
+# Historical v1.5.0 pre-release and Claude Code handoff
+
+## Outcome
+
+- The implementation and review fixes were consolidated in
+  `d8a3f01c21901694e11e8ac68571b06cfe6be17b` (`feat: complete wallet
+  sentinel review fixes`).
+- Release documentation was prepared in
+  `0cdcb69ca139cd9d2e63ef2b1970fc97a013761f` (`docs: prepare v1.5.0
+  local release`). This commit is the current `master` HEAD.
+- At the pre-release snapshot, the local annotated tag `v1.5.0` pointed to
+  `0cdcb69`; its message was
+  `v1.5.0 local pre-release`. The tag is local and unsigned.
+- Local `master` is 501 commits ahead of the existing local
+  `origin/master` reference. No push, pull request, GitHub Release, workflow
+  dispatch, or artifact upload was performed.
+- The tree was clean at the tagged release commit. This final memory update,
+  the Claude Code handoff document, and the README links are intentionally
+  left as local, uncommitted documentation changes for the reviewer.
+
+## Release artifact
+
+- Path: `app/build/outputs/apk/release/app-release.apk`
+- Package: `com.balancesentinel.app`
+- Version: `versionName=v1.5.0`, `versionCode=691`
+- Size: `16,800,134` bytes
+- SHA-256:
+  `3F8DC76B4D0263C18ABB8C777056BDBA04EBEDBA6A82D6870ED8F12879802F24`
+- APK Signature Scheme v2 verification passed.
+- Signing certificate SHA-256:
+  `319aa8dae339e8c95e5538331605550d7abc94992cbeb5ce54b74b276ccbad3f`
+
+No keystore, password, API key, cookie, or session value was added to Git or
+written into the handoff documents.
+
+## Final verification baseline
+
+- Debug JVM tests: 1,486 total, 0 failures, 0 errors, 3 skipped.
+- Release JVM tests: 1,486 total, 0 failures, 0 errors, 3 skipped.
+- The tagged tree's Release JVM tests were rerun and passed.
+- Debug and Release lint completed with 0 errors.
+- Kover verification passed. Reported line coverage was 58.96% and branch
+  coverage was 48.79%; a change-focused audit estimated roughly 69% coverage
+  of the core paths and identified nine boundary-test gaps.
+- Targeted `MainActivityTest` instrumentation passed 4/4. Full
+  `connectedDebugAndroidTest` discovery crashed twice at 0 discovered tests on
+  the API 35 emulator before assertions ran.
+- The pre-release security review found no confirmed blocking finding at
+  confidence 7/10 or higher. Signing material remained untracked.
+
+## Independent review boundary
+
+Claude Code should review the tagged implementation and the current doc-only
+working-tree diff, with findings first and precise `file:line` evidence. The
+highest-value boundaries are:
+
+1. Exact-alarm permission/fallback paths, OEM cadence, retained notification
+   recovery, and user opt-out races.
+2. Foreground-service platform timeout, persistence deadline, and duplicate
+   stop completion.
+3. Usage-field configuration encoding, Room/import-export persistence, NewAPI
+   credential fallback, and custom-script validation.
+4. Insights cancellation/generation races, selected-account query cost, and
+   regression of complete-first-point aggregate chart semantics.
+5. Background-refresh toggle disable/change/re-enable semantics.
+6. Desktop-sync metadata/payload policy. The sync code is a reserved local
+   contract only; no network transport or UI exists.
+7. Startup `runBlocking`, synchronous Console preference commits, permission
+   resolution on real devices, and narrow-screen alert layout/accessibility.
+
+The 90/120-second exact-alarm watchdog is an explicit product requirement for
+aggressive notification survival. It remains a battery, Doze-quota, and OEM
+reliability risk and must be reported as such rather than described as a
+guaranteed cadence.
+
+## Handoff
+
+The executable review brief, commands, output contract, artifact facts, and
+source map are in `docs/claude-code-review-handoff.md`. The reviewer must not
+push, create a pull request or GitHub Release, dispatch a remote workflow, or
+upload the APK.
+
+## Status
+
+READY_FOR_INDEPENDENT_REVIEW. Local pre-release is complete; only the current
+documentation handoff changes are intentionally uncommitted.
+
+---
+
+# Formal v1.5.0 GitHub release
+
+## Outcome
+
+- Formal release version: `v1.5.0`.
+- The release is published from the final local `master` commit and the
+  `v1.5.0` tag. The tag-triggered GitHub Actions workflow builds the signed APK,
+  verifies the certificate allowlist, creates the GitHub Release, and uploads
+  the APK asset.
+- Release URL:
+  `https://github.com/shengbuding/balance-sentinel/releases/tag/v1.5.0`
+- GitHub CLI was not authenticated locally; publication therefore used the
+  repository's SSH remote and tag-triggered workflow. No token was written to
+  the repository.
+
+## Documentation synchronized
+
+- `README.md` now describes v1.5.0 as the current formal release and links the
+  local changelog and GitHub Release.
+- `CHANGELOG.md` records the user-visible v1.5.0 additions, changes, fixes and
+  verification gates.
+- `PROJECT_INDEX.md`, `PRODUCTION_AUDIT.md`, `TEST_REPORT.md`, and
+  `RELEASE_REVIEW_REPORT.md` now include the v1.5.0 release state while keeping
+  v1.4.2 evidence as historical context.
+- `docs/claude-code-review-handoff.md` now indexes the formal release and its
+  accepted residual risks.
+- `.github/workflows/release.yml` now uses `v1.5.0` as the manual dispatch
+  example/default, validates the requested tag and checkout, extracts the
+  matching CHANGELOG section, runs the full JVM/lint/Kover gates, and verifies
+  the uploaded APK asset.
+
+## Final release evidence
+
+- Debug/Release JVM: each 1,486 tests, 0 failures, 0 errors, 3 skipped.
+- Debug/Release lint: 0 errors; Kover verification passed.
+- Targeted `MainActivityTest`: 4/4 passed.
+- Full API 35 instrumentation discovery remains limited by emulator startup
+  failure before assertions.
+- Release APK hash and signer certificate are recorded in `TEST_REPORT.md` and
+  the Claude Code handoff after the signed build.
+
+## Status
+
+RELEASED. Do not push a second tag or create a duplicate Release; use the
+GitHub Release URL above to verify the public asset and workflow result.
+
+---
+
 # Exact alarm, recharge, and chart follow-up
 
 ## Symptoms

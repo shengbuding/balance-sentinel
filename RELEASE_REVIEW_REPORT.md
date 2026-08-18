@@ -1,3 +1,47 @@
+# Wallet Sentinel v1.5.0 - Release Review
+
+**Release date:** 2026-08-18
+
+**Tag:** `v1.5.0`
+
+**Status:** Formal GitHub release. The tag-triggered workflow is responsible for
+the signed APK build, package/version and certificate allowlist verification,
+Release creation, and asset upload.
+
+## Scope
+
+v1.5.0 includes the wallet sentinel review fixes: exact-alarm and persistent
+notification recovery, provider-neutral recharge detection, current-currency
+Insights filtering and complete-first-point aggregation, custom Usage Script
+field projection and NewAPI support, settings and permission onboarding,
+Console session cleanup, alert-layout alignment, Room v6 migration, and the
+transport-neutral desktop-sync contract.
+
+## Release evidence
+
+- Debug JVM: 1,486 tests; 0 failures; 0 errors; 3 skipped.
+- Release JVM: 1,486 tests; 0 failures; 0 errors; 3 skipped.
+- Debug/Release lint: 0 errors.
+- Kover verification: passed; line coverage 58.96%; branch coverage 48.79%.
+- Targeted `MainActivityTest`: 4/4 passed.
+- Full API 35 instrumentation discovery remains limited by emulator startup
+  failure before assertions.
+- Security review: no confirmed blocking finding at confidence 7/10 or higher.
+- Release asset: `com.balancesentinel.app`, `versionName=v1.5.0`.
+
+## Accepted residuals
+
+- Exact alarms remain subject to user permission, Doze quota, force-stop, and
+  OEM background policy. The 90/120-second cadence is an explicit product
+  requirement, not an Android guarantee.
+- Nine boundary-test gaps remain documented in the Claude Code handoff,
+  including exact-alarm fallback, service-stop deadlines, usage-field
+  persistence, sync policy boundaries, and stale Insights loads.
+- Desktop sync is only an internal contract. No network transport, listener,
+  pairing UI, or remote-control endpoint is included in this release.
+
+---
+
 # Wallet Sentinel v1.4.2 - Release Review
 
 **Review date:** 2026-08-04

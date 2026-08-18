@@ -14,11 +14,17 @@
 | `WAKE_LOCK` | 普通 | 确保后台刷新不被 CPU 休眠打断 |
 | `POST_NOTIFICATIONS` | 运行时 | 余额不足时推送通知（Android 13+） |
 | `RECEIVE_BOOT_COMPLETED` | 普通 | 设备重启后自动恢复后台刷新 |
+| `SCHEDULE_EXACT_ALARM` | 特殊应用访问 | 用户授权后恢复保留通知和监控计划 |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 特殊应用访问 | 引导用户打开电池优化豁免设置 |
+| `REQUEST_INSTALL_PACKAGES` | 特殊应用访问 | 用户确认后安装 GitHub Release 更新 |
 
 **上架不需要额外声明的权限（普通权限）：** INTERNET、WAKE_LOCK、RECEIVE_BOOT_COMPLETED
 
 **需要 Play Console 声明的：**
 - 前台服务（FOREGROUND_SERVICE_DATA_SYNC）
+- 精确闹钟（SCHEDULE_EXACT_ALARM，按用户授权启用）
+- 电池优化豁免引导（REQUEST_IGNORE_BATTERY_OPTIMIZATIONS）
+- APK 安装意图（REQUEST_INSTALL_PACKAGES）
 
 ---
 
@@ -77,7 +83,7 @@ AlarmManager 单独使用可以被系统冻结（特别是国产 ROM），前台
 
 ---
 
-## 三、已退役调度说明（无需提交特殊权限）
+## 三、精确闹钟与后台恢复声明
 
 > Play Console 路径：应用内容 → 特殊应用访问权限 → 闹钟和提醒 → 添加声明
 
@@ -85,30 +91,38 @@ AlarmManager 单独使用可以被系统冻结（特别是国产 ROM），前台
 ### 核心功能描述（英文，250 字符以内）
 
 ```
-The app no longer uses privileged alarm scheduling. User-requested bounded foreground
-monitoring runs in a dataSync foreground service; ordinary background refreshes
-are delegated to WorkManager.
+The app uses SCHEDULE_EXACT_ALARM only when the user grants it, to re-publish the
+retained monitoring notification and schedule the next recovery check. If access
+is unavailable, it falls back to an inexact idle-allowed alarm. The receiver never
+force-starts a background dataSync service.
 ```
 
 ### 核心功能描述（中文，供参考）
 
 ```
-应用不再使用特权闹钟调度。用户主动开启有界前台 dataSync 监控会话，
-普通后台刷新统一使用 WorkManager；达到平台预算后会显示受限状态，
-不会自动重启前台服务。
+应用在用户授权后使用 SCHEDULE_EXACT_ALARM 恢复保留的监控通知并安排下一次
+检查；未授权时使用非精确的 idle 闹钟作为回退。该接收器不会绕过系统限制
+强行启动后台 dataSync 服务。用户主动监控仍由前台服务承载，普通维护和降级
+任务使用 WorkManager。
 ```
 
 ### 当前调度策略
 
-普通后台刷新由 WorkManager 负责，用户发起的短间隔刷新只在有界前台会话中运行。
+用户发起的短间隔刷新由有界前台 dataSync 会话承载；WorkManager 负责周期性
+降级、维护和更新下载。KeepAliveReceiver 只恢复缓存通知，不执行余额网络刷新。
 
 - WorkManager：系统可能延迟后台任务，界面会明确显示降级状态。
 
-前台 dataSync 会话受 Android 15 滚动预算约束，超限后立即停止且不自动重启。
+- 精确闹钟：默认每 120 秒检查一次，部分受影响的 OEM 使用 90 秒；Android
+  Doze、厂商后台策略、强行停止和系统配额仍可能延迟或阻止唤醒。
+
+前台 dataSync 会话受 Android 15 滚动预算约束，超限后立即停止；应用不会通过
+KeepAliveReceiver 自动重启被系统停止的前台服务。
 
 ### 用户如何控制此权限
 
-用户在「设置 → 桌面小组件设置 → 刷新间隔」中配置频率。应用还在设置中显示「服务状态」面板，包含前台服务和电池优化状态。
+用户在「设置 → 权限与后台」中查看通知、精确闹钟和电池优化状态，并可打开系统
+授权页；「设置 → 桌面小组件设置 → 刷新间隔」用于配置刷新频率。
 
 ---
 
@@ -129,7 +143,7 @@ are delegated to WorkManager.
 
 ### 数据传输
 
-- 用户 API Key 仅通过 HTTPS 发送到各 AI 供应商官方 API
+- 用户 API Key 和自定义凭据仅通过 HTTPS 发送到用户配置的供应商端点（包括官方 API、自定义平台和 NewAPI）
 - 无第三方数据共享
 - 无广告 SDK
 
@@ -161,6 +175,6 @@ are delegated to WorkManager.
 
 | 日期 | 变更 | 原因 |
 |---|---|---|
-| 2026-07-20 | 多供应商支持 | v1.3.1 新增13个AI供应商支持 |
+| 2026-07-20 | 多供应商支持 | v1.3.1 新增13个内置 AI 供应商支持 |
 | 2026-07-18 | 更新文档 | v1.2.1 文档全面审查更新 |
 | 2026-07-05 | 初始编写 | v1.0.0 上线前 Play Console 权限申报 |

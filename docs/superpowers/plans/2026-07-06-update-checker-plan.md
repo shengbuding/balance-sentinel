@@ -674,7 +674,7 @@ class ApkDownloader {
 
     /**
      * Find the APK download URL from release assets.
-     * Fallback: {tag}/app-release.apk direct URL pattern.
+     * Fallback: {tag}/balance-sentinel-{tag}.apk direct URL pattern, where tag includes the leading v.
      */
     private fun resolveDownloadUrl(release: GitHubRelease): String? {
         val apkAsset = release.assets.firstOrNull { asset ->
@@ -685,7 +685,7 @@ class ApkDownloader {
         // Fallback — construct URL from tag name
         val tag = release.tagName
         if (tag.isNotEmpty()) {
-            return "https://github.com/shengbuding/balance-sentinel/releases/download/$tag/app-release.apk"
+            return "https://github.com/shengbuding/balance-sentinel/releases/download/$tag/balance-sentinel-$tag.apk"
         }
         return null
     }
@@ -1411,31 +1411,22 @@ git commit -m "feat: add auto update check on Settings navigation (once per day)
 
 **Interfaces:**
 - Consumes: Existing build steps produce `app-release.apk`
-- Produces: Published GitHub Release with APK + AAB assets
+- Produces: Published GitHub Release with `balance-sentinel-{tag}.apk` asset
 
-- [ ] **Step 1: Add the release creation step to release.yml**
+- [x] **Step 1: Add the release creation step to release.yml**
 
 Insert after the existing "Upload release APK" step, at the end of the `release` job:
 
 ```yaml
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # Current workflow behavior (abbreviated):
+      - name: Upload APK to Release
         run: |
-          VERSION="v${{ github.event.inputs.version }}"
-          
-          # Build release notes from git log since last tag
-          NOTES=$(git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~10")..HEAD 2>/dev/null || echo "Release $VERSION")
-          
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --notes "$NOTES" \
-            --prerelease=false \
-            app/build/outputs/apk/release/app-release.apk \
-            app/build/outputs/bundle/release/app-release.aab
+          TAG="${{ steps.version.outputs.tag }}"
+          APK="balance-sentinel-$TAG.apk"
+          # Create/reuse the release through the GitHub API, then upload "$APK".
 ```
 
-- [ ] **Step 2: Review the full release.yml for consistency**
+- [x] **Step 2: Review the full release.yml for consistency**
 
 The complete file should now flow: checkout → setup → tests → build → upload artifacts → create GitHub Release.
 

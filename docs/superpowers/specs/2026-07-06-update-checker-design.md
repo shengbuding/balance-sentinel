@@ -1,6 +1,6 @@
 # Design Spec: Automatic Update Checker
 
-Date: 2026-07-06 | Status: Draft
+Date: 2026-07-06 | Status: Implemented; current release behavior documented below
 
 ## 1. Overview
 
@@ -126,7 +126,7 @@ Dialog has two rows of buttons that change based on state:
 
 ### 4.4 APK Download & Install
 
-- Download APK from GitHub Release asset URL: `https://github.com/shengbuding/balance-sentinel/releases/download/v{tag}/app-release.apk`
+- Download APK from the GitHub Release APK asset. The v1.5.0 workflow publishes `balance-sentinel-v1.5.0.apk`; when `tag` is the full tag (for example `v1.5.0`), the fallback URL is `https://github.com/shengbuding/balance-sentinel/releases/download/{tag}/balance-sentinel-{tag}.apk`.
 - Save to app-private cache dir: `context.cacheDir/apk/update-{version}.apk` (no storage permission needed)
 - Use OkHttp streaming download with progress callback
 - Install: `FileProvider` serves APK → `Intent(ACTION_VIEW, package-archive)` → system installer
@@ -145,29 +145,20 @@ The `VersionInfo` card in settings shows:
 
 ## 5. CI Changes
 
-The current `release.yml` only uploads build artifacts — no GitHub Release is created. Add a final step to publish a proper GitHub Release so the update checker API can discover it.
+The release workflow creates a stable GitHub Release for each pushed `v*` tag and uploads the renamed APK asset so the update checker API can discover it.
 
-### 5.1 New step in release.yml
+### 5.1 Current release.yml behavior
 
-```yaml
-- name: Create GitHub Release
-  env:
-    GH_TOKEN: ${{ github.token }}
-  run: |
-    VERSION="v${{ github.event.inputs.version }}"
-    gh release create "$VERSION" \
-      --title "$VERSION" \
-      --notes "Release $VERSION" \
-      --prerelease=false \
-      app/build/outputs/apk/release/app-release.apk \
-      app/build/outputs/bundle/release/app-release.aab
-```
+The workflow checks out the pushed tag (or the tag entered for a manual dispatch),
+runs both JVM variants and Release lint, signs the APK, verifies the certificate
+allowlist, then creates or reuses the GitHub Release through the GitHub API and
+uploads `balance-sentinel-$TAG.apk`.
 
 ### 5.2 Release naming convention
 
 - Tag: `v1.0.0` (matches `versionName` prefix the update checker extracts)
 - Title: `v1.0.0`
-- Assets: APK + AAB attached to the release
+- Assets: the signed `balance-sentinel-{tag}.apk` attached to the release
 - `prerelease: false` — ensures update checker's filter works correctly
 
 ## 6. Data Model (App)
@@ -193,7 +184,7 @@ data class GitHubAsset(
 ```
 
 APK download URL: `assets.firstOrNull { it.name.endsWith(".apk") }?.downloadUrl`
-Fallback URL (if no asset): `https://github.com/shengbuding/balance-sentinel/releases/download/v{tag}/app-release.apk`
+Fallback URL (if no asset and `tag` is the full tag): `https://github.com/shengbuding/balance-sentinel/releases/download/{tag}/balance-sentinel-{tag}.apk`
 
 ## 7. Error Handling Matrix
 

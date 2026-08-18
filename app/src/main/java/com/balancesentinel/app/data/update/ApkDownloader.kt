@@ -164,7 +164,7 @@ class ApkDownloader(
         val asset = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
         if (asset != null) return asset.downloadUrl
         return release.tagName.takeIf(String::isNotBlank)?.let { tag ->
-            "https://github.com/shengbuding/balance-sentinel/releases/download/$tag/app-release.apk"
+            "https://github.com/shengbuding/balance-sentinel/releases/download/$tag/balance-sentinel-$tag.apk"
         }
     }
 
