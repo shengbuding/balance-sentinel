@@ -159,10 +159,12 @@ jobs:
           EXPECTED="${EXPECTED_HEX: -64}"
           PINNED="319AA8DAE339E8C95E5538331605550D7ABC94992CBEB5CE54B74B276CCBAD3F"
           echo "Release signer digest lengths: actual=${#ACTUAL}, expected=${#EXPECTED}"
-          test "${#ACTUAL}" -eq 64 && test "${#EXPECTED_HEX}" -ge 64 \
+          if ! { test "${#ACTUAL}" -eq 64 && test "${#EXPECTED_HEX}" -ge 64 \
             && test "${#EXPECTED}" -eq 64 \
-            && { test "$ACTUAL" = "$EXPECTED" || test "$ACTUAL" = "$PINNED"; } \
-            || { echo "Release signer is not allowlisted"; exit 1; }
+            && { test "$ACTUAL" = "$EXPECTED" || test "$ACTUAL" = "$PINNED"; }; }; then
+            echo "::error file=.github/workflows/release.yml,line=1,title=Release signer mismatch::actual=$ACTUAL expected_length=${#EXPECTED}"
+            exit 1
+          fi
 
       - name: Rename APK
         run: |
