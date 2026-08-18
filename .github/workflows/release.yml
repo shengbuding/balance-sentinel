@@ -162,7 +162,8 @@ jobs:
           if ! { test "${#ACTUAL}" -eq 64 && test "${#EXPECTED_HEX}" -ge 64 \
             && test "${#EXPECTED}" -eq 64 \
             && { test "$ACTUAL" = "$EXPECTED" || test "$ACTUAL" = "$PINNED"; }; }; then
-            echo "::error file=.github/workflows/release.yml,line=1,title=Release signer mismatch::actual=$ACTUAL expected_length=${#EXPECTED}"
+            ACTUAL_B64=$(printf '%s' "$ACTUAL" | base64 -w0)
+            echo "::error file=.github/workflows/release.yml,line=1,title=Release signer mismatch::actual_b64=$ACTUAL_B64 expected_length=${#EXPECTED}"
             exit 1
           fi
 
