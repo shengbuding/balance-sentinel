@@ -154,10 +154,12 @@ jobs:
           ACTUAL=$($APKSIGNER verify --print-certs "$APK" 2>&1 \
             | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*([0-9A-Fa-f:]+).*/\1/p' \
             | head -1 | tr -cd '[:xdigit:]' | tr '[:lower:]' '[:upper:]')
-          EXPECTED=$(printf '%s' "$EXPECTED_RELEASE_CERT_SHA256" \
+          EXPECTED_HEX=$(printf '%s' "$EXPECTED_RELEASE_CERT_SHA256" \
             | tr -cd '[:xdigit:]' | tr '[:lower:]' '[:upper:]')
+          EXPECTED="${EXPECTED_HEX: -64}"
           echo "Release signer digest lengths: actual=${#ACTUAL}, expected=${#EXPECTED}"
-          test "${#ACTUAL}" -eq 64 && test "${#EXPECTED}" -eq 64 \
+          test "${#ACTUAL}" -eq 64 && test "${#EXPECTED_HEX}" -ge 64 \
+            && test "${#EXPECTED}" -eq 64 \
             && test "$ACTUAL" = "$EXPECTED" \
             || { echo "Release signer is not allowlisted"; exit 1; }
 
