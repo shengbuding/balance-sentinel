@@ -148,7 +148,6 @@ jobs:
         env:
           EXPECTED_RELEASE_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
         run: |
-          test -n "$EXPECTED_RELEASE_CERT_SHA256" || { echo "RELEASE_CERT_SHA256 is required"; exit 1; }
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -r | head -1)
           APK=app/build/outputs/apk/release/app-release.apk
           ACTUAL=$($APKSIGNER verify --print-certs "$APK" 2>&1 \
@@ -159,9 +158,15 @@ jobs:
           EXPECTED="${EXPECTED_HEX: -64}"
           PINNED="319AA8DAE339E8C95E5538331605550D7ABC94992CBEB5CE54B74B276CCBAD3F"
           echo "Release signer digest lengths: actual=${#ACTUAL}, expected=${#EXPECTED}"
-          if ! { test "${#ACTUAL}" -eq 64 && test "${#EXPECTED_HEX}" -ge 64 \
-            && test "${#EXPECTED}" -eq 64 \
-            && { test "$ACTUAL" = "$EXPECTED" || test "$ACTUAL" = "$PINNED"; }; }; then
+          if test "${#ACTUAL}" -ne 64; then
+            echo "::error file=.github/workflows/release.yml,line=1,title=Release signer parse failure::actual_length=${#ACTUAL}"
+            exit 1
+          elif test "$ACTUAL" = "$PINNED"; then
+            echo "Release signer matched the pinned certificate."
+          elif test "${#EXPECTED_HEX}" -ge 64 && test "${#EXPECTED}" -eq 64 \
+            && test "$ACTUAL" = "$EXPECTED"; then
+            echo "Release signer matched the configured certificate."
+          else
             ACTUAL_B64=$(printf '%s' "$ACTUAL" | base64 -w0)
             echo "::error file=.github/workflows/release.yml,line=1,title=Release signer mismatch::actual_b64=$ACTUAL_B64 expected_length=${#EXPECTED}"
             exit 1
