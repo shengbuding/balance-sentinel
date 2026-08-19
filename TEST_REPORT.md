@@ -1,12 +1,31 @@
-# Wallet Sentinel v1.5.0 - Verification Report
+# Wallet Sentinel v1.5.1 - Verification Report
 
-**Verification date:** 2026-08-18
+**Verification date:** 2026-08-20
 
-**Branch:** `master`
+**Branch:** `release/v1.5.1`
 
-**Release tag:** `v1.5.0`
+**Release tag:** `v1.5.1`
 
-## v1.5.0 formal release gate
+## v1.5.1 release gate
+
+The v1.5.1 release candidate was verified locally before tagging. The GitHub
+tag workflow repeats the JVM, lint, Kover, signed packaging, APK metadata, and
+certificate checks before creating the Release asset.
+
+| Gate | Result |
+|---|---|
+| Debug JVM | 1,531 tests; 0 failures; 0 errors; 3 skipped |
+| Release JVM | 1,531 tests; 0 failures; 0 errors; 3 skipped |
+| Debug/Release lint | 0 errors |
+| Kover | verification passed |
+| Debug/Release assembly | both APKs built successfully |
+| Release artifact | `com.balancesentinel.app`, expected tag version `v1.5.1` |
+
+The three JVM skips per variant are the existing AndroidKeyStore-dependent
+widget rendering cases. Full API 35 connected-test discovery remains an
+environment limitation and is not counted as a pass.
+
+## v1.5.0 formal release gate (historical)
 
 The v1.5.0 release is built from the local `master` release commit and is
 published by the `v1.5.0` tag workflow. The workflow runs the Debug/Release JVM

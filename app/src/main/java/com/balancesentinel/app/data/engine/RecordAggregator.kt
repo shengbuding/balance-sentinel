@@ -1,5 +1,7 @@
 package com.balancesentinel.app.data.engine
 
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.UNKNOWN_QUOTA_REMAINING
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 
@@ -27,9 +29,22 @@ object RecordAggregator {
             .groupBy { AggregationKey(it.currency, it.accountId) }
             .mapValues { (_, recs) ->
                 val sorted = recs.sortedBy { it.timestamp }
-                val toppedUp = computeToppedUp(sorted)
-                val granted = computeGranted(sorted)
-                val consumed = computeConsumed(sorted)
+                val isSubscription = sorted.first().currency == PERCENTAGE_CURRENCY
+                val toppedUp = if (isSubscription) {
+                    computeQuotaConsumed(sorted) { it.toppedUpBalance }
+                } else {
+                    computeToppedUp(sorted)
+                }
+                val granted = if (isSubscription) {
+                    computeQuotaConsumed(sorted) { it.grantedBalance }
+                } else {
+                    computeGranted(sorted)
+                }
+                val consumed = if (isSubscription) {
+                    computeQuotaConsumed(sorted) { it.totalBalance }
+                } else {
+                    computeConsumed(sorted)
+                }
                 DailySummary(
                     accountId = sorted.first().accountId,
                     date = date,
@@ -85,6 +100,30 @@ object RecordAggregator {
         var consumed = 0f
         for (i in 1 until sorted.size) {
             consumed += consumedAmount(sorted[i - 1], sorted[i])
+        }
+        return consumed
+    }
+
+    /**
+     * Subscription history stores remaining percentage. Sum every decrease to
+     * retain real usage across quota resets; an increase starts a new allowance
+     * window and must not cancel usage already observed. The result is an amount
+     * of percentage points and may legitimately exceed 100.
+     */
+    fun computeQuotaConsumed(
+        sorted: List<RawRecord>,
+        remaining: (RawRecord) -> Float
+    ): Float {
+        var consumed = 0f
+        var previous: Float? = null
+        sorted.forEach { record ->
+            val current = remaining(record)
+                .takeIf { it.isFinite() && it in 0f..100f && it != UNKNOWN_QUOTA_REMAINING.toFloat() }
+                ?: return@forEach
+            previous?.let { before ->
+                if (current < before) consumed += before - current
+            }
+            previous = current
         }
         return consumed
     }

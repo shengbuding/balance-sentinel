@@ -3,8 +3,14 @@ package com.balancesentinel.app.widget
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
+import android.text.TextUtils
+import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,6 +82,131 @@ class WidgetRenderingTest {
         val model = WidgetRemoteViewsRenderer.model(chineseContext, state, expanded = false)
 
         assertEquals("\$0.00", model.balance)
+    }
+
+    @Test
+    fun `subscription widget renders percentage and all quota windows`() {
+        val state = WidgetViewState.Fresh(
+            selection = WidgetSelection(
+                "account-1",
+                PERCENTAGE_CURRENCY,
+                "Primary",
+                quotaPeriod = WidgetConfig.DEFAULT_QUOTA_PERIOD
+            ),
+            balance = AggregatedBalance(
+                totalBalance = "10",
+                currency = PERCENTAGE_CURRENCY,
+                isAvailable = true,
+                grantedBalance = "",
+                toppedUpBalance = "",
+                accountCount = 1,
+                lastUpdated = 1,
+                quota = QuotaSnapshot(
+                    listOf(
+                        QuotaPeriodSnapshot("rolling_5h", 10.0, 90.0),
+                        QuotaPeriodSnapshot("weekly", 25.0, 75.0),
+                        QuotaPeriodSnapshot("monthly", 17.0, 83.0)
+                    )
+                )
+            )
+        )
+
+        val model = WidgetRemoteViewsRenderer.model(context, state, expanded = true)
+
+        assertEquals(
+            context.getString(
+                R.string.widget_subscription_primary,
+                context.getString(R.string.widget_subscription_5h),
+                "10%"
+            ),
+            model.balance
+        )
+        assertEquals(context.getString(R.string.widget_status_subscription), model.status)
+        assertEquals(3, model.subscriptionDetails.size)
+        assertTrue(model.subscriptionDetails[0].contains("10%"))
+        assertTrue(model.subscriptionDetails[1].contains("25%"))
+        assertTrue(model.subscriptionDetails[2].contains("17%"))
+        assertTrue(model.granted.isEmpty())
+        assertTrue(model.toppedUp.isEmpty())
+    }
+
+    @Test
+    fun `subscription widget primary value follows selected quota period`() {
+        val quota = QuotaSnapshot(
+            listOf(
+                QuotaPeriodSnapshot("rolling_5h", 10.0, 90.0),
+                QuotaPeriodSnapshot("weekly", 25.0, 75.0),
+                QuotaPeriodSnapshot("monthly", 17.0, 83.0)
+            )
+        )
+        val cases = listOf(
+            Triple("rolling_5h", 10.0, R.string.widget_subscription_5h),
+            Triple("weekly", 25.0, R.string.widget_subscription_weekly),
+            Triple("monthly", 17.0, R.string.widget_subscription_monthly)
+        )
+
+        cases.forEach { (period, used, labelRes) ->
+            val state = WidgetViewState.Fresh(
+                selection = WidgetSelection(
+                    "account-1",
+                    PERCENTAGE_CURRENCY,
+                    "Primary",
+                    quotaPeriod = period
+                ),
+                balance = AggregatedBalance(
+                    totalBalance = used.toString(),
+                    currency = PERCENTAGE_CURRENCY,
+                    isAvailable = true,
+                    grantedBalance = "",
+                    toppedUpBalance = "",
+                    accountCount = 1,
+                    lastUpdated = 1,
+                    quota = quota
+                )
+            )
+
+            val model = WidgetRemoteViewsRenderer.model(context, state, expanded = false)
+            val expected = context.getString(
+                R.string.widget_subscription_primary,
+                context.getString(labelRes),
+                "${used.toInt()}%"
+            )
+            assertEquals(expected, model.balance)
+        }
+    }
+
+    @Test
+    fun `widget title is single line marquee for long wallet names`() {
+        val state = WidgetViewState.Fresh(
+            selection = WidgetSelection(
+                "account-1",
+                "USD",
+                "A very long wallet name that must not take balance space"
+            ),
+            balance = AggregatedBalance(
+                totalBalance = "12.50",
+                currency = "USD",
+                isAvailable = true,
+                grantedBalance = "1",
+                toppedUpBalance = "2",
+                accountCount = 1,
+                lastUpdated = 1
+            )
+        )
+
+        val (remoteViews, _) = WidgetRemoteViewsRenderer.render(
+            context,
+            R.layout.widget_balance,
+            state,
+            expanded = true
+        )
+        val root = remoteViews.apply(context, FrameLayout(context))
+        val title = root.findViewById<TextView>(R.id.widget_title)
+
+        assertTrue(title.isFocusable)
+        assertTrue(title.isFocusableInTouchMode)
+        assertEquals(1, title.maxLines)
+        assertEquals(TextUtils.TruncateAt.MARQUEE, title.ellipsize)
     }
 
     private fun localizedContext(languageTag: String): Context {

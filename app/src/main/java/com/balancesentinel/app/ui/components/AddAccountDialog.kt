@@ -1,24 +1,32 @@
 package com.balancesentinel.app.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -33,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ConfigFieldStorage
@@ -41,6 +50,7 @@ import com.balancesentinel.app.data.api.balance.PresetScripts
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.parseUsageDisplayFieldLines
+import com.balancesentinel.app.ui.icons.ProviderIcons
 import androidx.compose.ui.text.font.FontFamily
 
 @Composable
@@ -50,7 +60,7 @@ fun AddAccountDialog(
 ) {
     var selectedProvider by remember { mutableStateOf(ProviderType.DEEPSEEK) }
     var label by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
+    var showProviderPicker by remember { mutableStateOf(false) }
     var usageScript by remember { mutableStateOf("") }
     var usageScriptEnabled by remember { mutableStateOf(true) }
     var displayFieldsText by remember { mutableStateOf("") }
@@ -63,6 +73,7 @@ fun AddAccountDialog(
     val availableProviders = remember {
         listOf(
             ProviderType.DEEPSEEK,
+            ProviderType.OPENCODE_GO,
             ProviderType.MOONSHOT,
             ProviderType.DOUBAO,
             ProviderType.BAICHUAN,
@@ -94,42 +105,28 @@ fun AddAccountDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box {
-                    OutlinedTextField(
-                        value = stringResource(selectedProvider.displayNameResource()),
-                        onValueChange = {},
-                        label = { Text(stringResource(R.string.account_provider_label)) },
-                        readOnly = true,
-                        trailingIcon = {
-                            IconButton(
-                                modifier = Modifier.testTag("account_provider_selector"),
-                                onClick = { expanded = true }
-                            ) {
-                                Icon(
-                                    Icons.Default.ArrowDropDown,
-                                    stringResource(R.string.account_provider_expand)
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        availableProviders.forEach { provider ->
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag("account_provider_option_${provider.id}"),
-                                text = { Text(stringResource(provider.displayNameResource())) },
-                                onClick = {
-                                    selectedProvider = provider
-                                    expanded = false
-                                }
+                OutlinedTextField(
+                    value = stringResource(selectedProvider.displayNameResource()),
+                    onValueChange = {},
+                    label = { Text(stringResource(R.string.account_provider_label)) },
+                    readOnly = true,
+                    trailingIcon = {
+                        IconButton(
+                            modifier = Modifier.testTag("account_provider_selector"),
+                            onClick = { showProviderPicker = true }
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                stringResource(R.string.account_provider_expand)
                             )
                         }
-                    }
-                }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("account_provider_field")
+                        .clickable { showProviderPicker = true },
+                    shape = RoundedCornerShape(8.dp)
+                )
 
                 OutlinedTextField(
                     value = label,
@@ -254,6 +251,108 @@ fun AddAccountDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.home_cancel)) }
+        }
+    )
+
+    if (showProviderPicker) {
+        ProviderPickerDialog(
+            providers = availableProviders,
+            onDismiss = { showProviderPicker = false },
+            onSelect = { provider ->
+                selectedProvider = provider
+                showProviderPicker = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ProviderPickerDialog(
+    providers: List<ProviderType>,
+    onDismiss: () -> Unit,
+    onSelect: (ProviderType) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val matchingProviders = providers.filter { provider ->
+        val localizedName = stringResource(provider.displayNameResource())
+        query.isBlank() ||
+            localizedName.contains(query, ignoreCase = true) ||
+            provider.displayName.contains(query, ignoreCase = true) ||
+            provider.id.contains(query, ignoreCase = true)
+    }
+
+    AlertDialog(
+        modifier = Modifier.testTag("account_provider_picker"),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.account_provider_picker_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(stringResource(R.string.account_provider_search)) },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                    },
+                    trailingIcon = if (query.isNotBlank()) {
+                        {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = null)
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("account_provider_search"),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                if (matchingProviders.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.account_provider_no_results),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                    ) {
+                        items(matchingProviders, key = { it.id }) { provider ->
+                            ListItem(
+                                headlineContent = {
+                                    Text(stringResource(provider.displayNameResource()))
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = ProviderIcons.getIcon(provider),
+                                        contentDescription = null,
+                                        tint = Color(ProviderIcons.getColor(provider))
+                                    )
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("account_provider_option_${provider.id}")
+                                    .clickable { onSelect(provider) }
+                            )
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_cancel))
+            }
         }
     )
 }

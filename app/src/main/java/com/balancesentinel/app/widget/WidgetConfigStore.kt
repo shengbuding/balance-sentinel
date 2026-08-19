@@ -24,9 +24,15 @@ object WidgetConfigStore {
         return getAllConfigs(context)[appWidgetId]
     }
 
-    fun saveConfig(context: Context, appWidgetId: Int, accountId: String, currency: String) {
+    fun saveConfig(
+        context: Context,
+        appWidgetId: Int,
+        accountId: String,
+        currency: String,
+        quotaPeriod: String = WidgetConfig.DEFAULT_QUOTA_PERIOD
+    ) {
         val all = getAllConfigs(context).toMutableMap()
-        all[appWidgetId] = WidgetConfig(accountId, currency)
+        all[appWidgetId] = WidgetConfig(accountId, currency, quotaPeriod)
         val raw = json.encodeToString(all.mapKeys { it.key.toString() })
         getPrefs(context).edit().putString(KEY_CONFIGS, raw).apply()
     }
@@ -63,10 +69,13 @@ object WidgetConfigStore {
 @Serializable
 data class WidgetConfig(
     val accountId: String,
-    val currency: String
+    val currency: String,
+    /** Selected subscription window; legacy configs default to the shortest window. */
+    val quotaPeriod: String = DEFAULT_QUOTA_PERIOD
 ) {
     companion object Const {
         /** 哨兵值，表示小组件显示全部账户的汇总余额 */
         const val TOTAL_ACCOUNT_ID = "__total__"
+        const val DEFAULT_QUOTA_PERIOD = "rolling_5h"
     }
 }

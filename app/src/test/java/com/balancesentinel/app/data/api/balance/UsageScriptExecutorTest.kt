@@ -474,6 +474,21 @@ class UsageScriptExecutorTest {
         assertEquals("pro", balance.planName)
     }
 
+    @Test
+    fun `quota parser ignores out of range windows but keeps valid ones`() = runBlocking {
+        val result = UsageScriptExecutor.extractForTest(
+            UsageScript(
+                scriptWithExtractor(
+                    "return {remaining:5,unit:'USD',quotaPeriods:[{id:'bad',percent:101},{id:'good',percent:25}]};"
+                )
+            ),
+            account(),
+            "{}"
+        ) as ScriptExecutionResult.Success
+        val quota = result.balances.single().quota
+        assertEquals(listOf("good"), quota?.periods?.map { it.id })
+    }
+
     private fun assertSchemaFailure(result: ScriptExecutionResult) {
         assertTrue(result is ScriptExecutionResult.Failure)
         assertTrue((result as ScriptExecutionResult.Failure).failure is RefreshFailure.ResponseSchemaFailure)

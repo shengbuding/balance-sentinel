@@ -11,6 +11,7 @@ internal fun ProviderType.displayNameResource(): Int = when (this) {
     ProviderType.GEMINI -> R.string.provider_name_gemini
     ProviderType.MISTRAL -> R.string.provider_name_mistral
     ProviderType.COHERE -> R.string.provider_name_cohere
+    ProviderType.OPENCODE_GO -> R.string.provider_name_opencode_go
     ProviderType.DEEPSEEK -> R.string.provider_name_deepseek
     ProviderType.QWEN -> R.string.provider_name_qwen
     ProviderType.WENXIN -> R.string.provider_name_wenxin

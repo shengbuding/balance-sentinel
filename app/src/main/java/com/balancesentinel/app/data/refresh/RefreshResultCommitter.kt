@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import com.balancesentinel.app.data.api.BalanceEntry
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.api.cache.ProviderCache
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.RawRecord
@@ -163,6 +164,11 @@ class RefreshResultCommitter(
                 // Cache/widget state is published only after the durable Room transaction succeeds.
                 try {
                     providerCache.put(account.providerType, account.id, fetched.balance)
+                } catch (_: Exception) {
+                    // Provider cache is a best-effort optimization and must not
+                    // prevent the durable widget projection from being published.
+                }
+                try {
                     BalanceWidgetDataStore.replaceAccountBalances(
                         context,
                         account.id,
@@ -233,17 +239,32 @@ class RefreshResultCommitter(
         grantedBalance = grantedBalance?.toString().orEmpty(),
         toppedUpBalance = toppedUpBalance?.toString().orEmpty(),
         displayFields = displayFields,
+        quota = quota,
         lastUpdated = completedAt
     )
 
-    private fun BalanceEntry.toRawRecord(accountId: String, timestamp: Long) = RawRecord(
-        accountId = accountId,
-        timestamp = timestamp,
-        currency = currency,
-        totalBalance = totalBalance.toFloat(),
-        grantedBalance = grantedBalance?.toFloat() ?: 0f,
-        toppedUpBalance = toppedUpBalance?.toFloat() ?: 0f
-    )
+    private fun BalanceEntry.toRawRecord(accountId: String, timestamp: Long): RawRecord {
+        if (currency == PERCENTAGE_CURRENCY && quota != null) {
+            // The legacy three numeric columns are retained as a compact history
+            // transport for quota windows: monthly, weekly, rolling 5h.
+            return RawRecord(
+                accountId = accountId,
+                timestamp = timestamp,
+                currency = currency,
+                totalBalance = quota.remaining("monthly").toFloat(),
+                grantedBalance = quota.remaining("weekly").toFloat(),
+                toppedUpBalance = quota.remaining("rolling_5h").toFloat()
+            )
+        }
+        return RawRecord(
+            accountId = accountId,
+            timestamp = timestamp,
+            currency = currency,
+            totalBalance = totalBalance.toFloat(),
+            grantedBalance = grantedBalance?.toFloat() ?: 0f,
+            toppedUpBalance = toppedUpBalance?.toFloat() ?: 0f
+        )
+    }
 
     private fun BalanceEntry.toRefreshLog(
         trigger: RefreshTrigger,
@@ -293,6 +314,7 @@ private class AndroidRefreshAlertDispatcher(
     private val context: Context
 ) : RefreshAlertDispatcher {
     override fun check(account: AccountInfo, balance: BalanceEntry) {
+        if (balance.currency == PERCENTAGE_CURRENCY) return
         val amount = balance.totalBalance.toString()
         AlertChecker.checkPublished(context, account.id, amount, balance.currency, account.label)
         AlertChecker.checkChangePublished(context, account.id, amount, balance.currency, account.label)

@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.api
 
 import com.balancesentinel.app.data.api.balance.BalanceQueryService
 import com.balancesentinel.app.data.api.providers.DeepSeekProvider
+import com.balancesentinel.app.data.api.providers.OpenCodeGoProvider
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,6 +22,7 @@ object ProviderFactory {
 
     private fun create(type: ProviderType): AiProvider = when (type) {
         ProviderType.DEEPSEEK -> DeepSeekProvider(balanceQueryService)
+        ProviderType.OPENCODE_GO -> OpenCodeGoProvider(balanceQueryService)
         ProviderType.MOONSHOT -> openAiCompatible(type, "https://api.moonshot.cn")
         ProviderType.DOUBAO -> openAiCompatible(type, "https://ark.cn-beijing.volces.com/api/v3")
         ProviderType.BAICHUAN -> openAiCompatible(type, "https://api.baichuan-ai.com")

@@ -32,6 +32,7 @@ object ProviderConfigs {
             ProviderType.MISTRAL -> R.string.account_hint_api_key_mistral
             ProviderType.COHERE -> R.string.account_hint_api_key_cohere
             ProviderType.MODEL_ARK -> R.string.account_hint_api_key_model_ark
+            ProviderType.OPENCODE_GO -> R.string.account_hint_api_key_custom
             ProviderType.CUSTOM -> R.string.account_hint_api_key_custom
         }
     }
@@ -54,6 +55,7 @@ object ProviderConfigs {
             ProviderType.MISTRAL -> apiKey.isNotBlank() && apiKey.length > 10
             ProviderType.COHERE -> apiKey.isNotBlank() && apiKey.length > 10
             ProviderType.MODEL_ARK -> apiKey.isNotBlank() && apiKey.length > 10
+            ProviderType.OPENCODE_GO -> apiKey.isNotBlank()
             ProviderType.CUSTOM -> apiKey.isNotBlank()
         }
     }
@@ -180,6 +182,7 @@ object ProviderConfigs {
             ProviderType.MISTRAL -> 100.0
             ProviderType.COHERE -> 100.0
             ProviderType.MODEL_ARK -> 0.0  // 使用真实API
+            ProviderType.OPENCODE_GO -> 0.0  // 使用真实API
             ProviderType.CUSTOM -> 100.0
         }
     }

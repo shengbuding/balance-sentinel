@@ -15,6 +15,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DebugCaptureTest {
+    @Test
+    fun `user capture session enables release capture only while open`() {
+        assertFalse(DebugCapturePolicy.enabled(debuggable = false))
+
+        val first = DebugCapturePolicy.openUserCaptureSession()
+        val second = DebugCapturePolicy.openUserCaptureSession()
+        try {
+            assertTrue(DebugCapturePolicy.enabled(debuggable = false))
+
+            first.close()
+            assertTrue(DebugCapturePolicy.enabled(debuggable = false))
+
+            first.close()
+            second.close()
+            assertFalse(DebugCapturePolicy.enabled(debuggable = false))
+        } finally {
+            first.close()
+            second.close()
+        }
+    }
+
     // Mutation caught: truncating by characters or splitting a multibyte UTF-8 sequence.
     @Test
     fun `capture bounds multibyte text at a valid utf8 boundary`() {

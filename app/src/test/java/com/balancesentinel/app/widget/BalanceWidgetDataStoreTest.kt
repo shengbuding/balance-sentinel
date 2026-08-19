@@ -2,6 +2,8 @@ package com.balancesentinel.app.widget
 
 import android.content.Context
 import android.content.ContextWrapper
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineStart
@@ -161,6 +163,28 @@ class BalanceWidgetDataStoreTest {
         assertEquals("USD", agg.currency)
         assertEquals("150.00", agg.totalBalance2)
         assertEquals("CNY", agg.currency2)
+    }
+
+    @Test
+    fun `quota snapshot round trips through shared preferences`() {
+        val quota = QuotaSnapshot(listOf(QuotaPeriodSnapshot("monthly", 25.0, 75.0)))
+        BalanceWidgetDataStore.saveAccountBalance(
+            context, "quota", "Quota", "75", "%", true, "", "", quota = quota
+        )
+        assertEquals(quota, BalanceWidgetDataStore.getAllBalances(context).single().quota)
+    }
+
+    @Test
+    fun `percentage quota entries never become a money aggregate`() {
+        val balances = listOf(
+            AccountBalance("quota", "Quota", "95", "%", true, "", "", 1L),
+            AccountBalance("money", "Money", "12.00", "USD", true, "0", "0", 2L)
+        )
+        val aggregate = BalanceWidgetDataStore.aggregateTopTwo(balances)
+        assertNotNull(aggregate)
+        assertEquals("USD", aggregate!!.currency)
+        assertEquals("12.00", aggregate.totalBalance)
+        assertEquals(1, aggregate.accountCount)
     }
 
     @Test

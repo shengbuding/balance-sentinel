@@ -1,6 +1,8 @@
 package com.balancesentinel.app.data.api.balance
 
 import com.balancesentinel.app.data.model.AccountInfo
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugClientInstaller
@@ -368,6 +370,7 @@ object UsageScriptExecutor {
         val isValid = jsonValueAt(result, "isValid")?.booleanOrNull
             ?: jsonValueAt(result, "is_valid")?.booleanOrNull
             ?: jsonValueAt(result, "is_valid")?.contentOrNull?.toBooleanStrictOrNull()
+        val quota = parseQuota(result)
         val fields = if (displayFieldPaths.isEmpty()) {
             result.mapNotNull { (key, value) ->
                 (value as? kotlinx.serialization.json.JsonPrimitive)
@@ -387,9 +390,82 @@ object UsageScriptExecutor {
             unit = jsonValueAt(result, "unit")?.contentOrNull ?: "CNY",
             isValid = isValid ?: true,
             invalidMessage = jsonValueAt(result, "invalid_message")?.contentOrNull,
-            fields = fields
+            fields = fields,
+            quota = quota
         )
     }
+
+    /**
+     * Parse the provider-neutral quota shape. Custom scripts may return either
+     * `quotaPeriods: [{id, percent, resetsAt}]` or a `quota` object keyed by
+     * period name. Missing/invalid windows are ignored so one bad window does
+     * not hide otherwise usable balance data.
+     */
+    private fun parseQuota(root: JsonObject): QuotaSnapshot? {
+        val periods = mutableListOf<QuotaPeriodSnapshot>()
+        val array = root["quotaPeriods"] ?: root["quota_periods"]
+        if (array is JsonArray) {
+            array.mapNotNullTo(periods) { element ->
+                (element as? JsonObject)?.let { parseQuotaPeriod(it, null) }
+            }
+        }
+        val quotaObject = root["quota"] as? JsonObject
+        quotaObject?.forEach { (key, value) ->
+            (value as? JsonObject)?.let { parseQuotaPeriod(it, key)?.let(periods::add) }
+        }
+        return periods
+            .distinctBy { it.id.trim().lowercase() }
+            .takeIf { it.isNotEmpty() }
+            ?.let(::QuotaSnapshot)
+    }
+
+    private fun parseQuotaPeriod(value: JsonObject, fallbackId: String?): QuotaPeriodSnapshot? {
+        val id = firstText(value, "id", "period", "window", "type", "name")
+            ?.takeIf(String::isNotBlank)
+            ?: fallbackId?.takeIf(String::isNotBlank)
+            ?: return null
+        val used = firstNumber(
+            value,
+            "usedPercent", "used_percent", "percent", "usagePercent", "usage_percent"
+        )
+        val remaining = firstNumber(value, "remainingPercent", "remaining_percent", "remaining")
+        val normalizedUsed = when {
+            used != null -> used
+            remaining != null -> 100.0 - remaining
+            else -> return null
+        }
+        val normalizedRemaining = when {
+            remaining != null -> remaining
+            used != null -> 100.0 - used
+            else -> return null
+        }
+        if (!normalizedUsed.isFinite() || !normalizedRemaining.isFinite() ||
+            normalizedUsed !in 0.0..100.0 || normalizedRemaining !in 0.0..100.0
+        ) return null
+        val reset = firstText(value, "resetsAt", "resets_at", "resetAt", "reset_at")
+        val status = firstText(value, "status")
+        return runCatching {
+            QuotaPeriodSnapshot(
+                id = id,
+                usedPercent = normalizedUsed,
+                remainingPercent = normalizedRemaining,
+                resetsAt = reset,
+                status = status
+            )
+        }.getOrNull()
+    }
+
+    private fun firstText(value: JsonObject, vararg keys: String): String? = keys
+        .asSequence()
+        .mapNotNull { key -> value[key]?.jsonPrimitive?.contentOrNull }
+        .firstOrNull()
+
+    private fun firstNumber(value: JsonObject, vararg keys: String): Double? = keys
+        .asSequence()
+        .mapNotNull { key ->
+            value[key]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+        }
+        .firstOrNull { it.isFinite() }
 
     private fun jsonValueAt(
         root: JsonObject,

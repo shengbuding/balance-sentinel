@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.data.debug.ApiDebugEntry
 import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugReportLabels
 import com.balancesentinel.app.data.debug.DebugReportFormatter
 import com.balancesentinel.app.ui.CustomIcons
@@ -43,6 +44,11 @@ fun DebugDialog(
     val context = LocalContext.current
     val reportLabels = remember(context) { context.debugReportLabels() }
     var entries by remember { mutableStateOf(ApiDebugStore.getEntries(accountId)) }
+
+    DisposableEffect(accountId) {
+        val captureSession = DebugCapturePolicy.openUserCaptureSession()
+        onDispose { captureSession.close() }
+    }
 
     LaunchedEffect(isRefreshing) {
         if (!isRefreshing) {

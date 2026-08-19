@@ -2,6 +2,32 @@
 
 所有用户可见的发布变化记录在此。版本号遵循 `vMAJOR.MINOR.PATCH`，详细审查证据见 `TEST_REPORT.md` 与 `docs/claude-code-review-handoff.md`。
 
+## [1.5.1] - 2026-08-20
+
+### Added
+
+- 新增 OpenCode Go 内置供应商，支持 5 小时、每周、每月订阅窗口及各自重置时间。
+- 洞察和桌面小组件支持订阅窗口选择、剩余率趋势、刷新倒计时、时间刻度和长钱包名滚动显示。
+- 新增 OpenAI API 与 ChatGPT 个人订阅额度的接口边界说明，并提供官方 Usage Dashboard 入口说明。
+
+### Changed
+
+- 订阅图表统一以剩余率呈现：100% 为满值，使用量增加时曲线向 0% 下降。
+- 全部账户订阅历史按账户保留、时间排序并合并，支持稀疏历史和每日汇总；Room 归档使用订阅专用的百分比消耗语义。
+- 订阅账户的刷新时间、下次刷新时间和历史日汇总展示适配不同账户筛选状态。
+
+### Fixed
+
+- 修复全部账户订阅图表因不同账户刷新时间交错而出现大面积蓝色折线的问题。
+- 修复选择单个账户后其他同币种账户筛选项消失的问题，并隔离单账户小组件历史。
+- 修复订阅窗口在跨日归档、连续性补点和小组件 sparkline 中方向相反或被误判为金额充值的问题。
+
+### Verification
+
+- Debug/Release JVM：各 1,531 tests，0 failures，0 errors，3 skipped。
+- Debug/Release lint：0 errors；Kover verify 通过。
+- Debug/Release APK：本地构建成功；正式签名 APK 由 `v1.5.1` tag workflow 生成并上传。
+
 ## [1.5.0] - 2026-08-18
 
 ### Added

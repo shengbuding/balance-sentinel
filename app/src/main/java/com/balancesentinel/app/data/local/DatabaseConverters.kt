@@ -199,6 +199,7 @@ class DatabaseConverters {
         "doubao" -> ProviderType.DOUBAO
         "baichuan" -> ProviderType.BAICHUAN
         "model_ark" -> ProviderType.MODEL_ARK
+        "opencode_go" -> ProviderType.OPENCODE_GO
         "custom" -> ProviderType.CUSTOM
         else -> unknown("ProviderType", value)
     }

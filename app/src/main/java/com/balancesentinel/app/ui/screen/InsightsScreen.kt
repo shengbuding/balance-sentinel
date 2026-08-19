@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,10 +64,18 @@ import com.balancesentinel.app.ui.theme.WalletColors
 import com.balancesentinel.app.data.engine.DepletionEstimate
 import com.balancesentinel.app.data.engine.IntradayBillReport
 import com.balancesentinel.app.data.engine.IntradayPoint
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.quotaResetEpochMillis
+import com.balancesentinel.app.data.api.quotaPeriodRank
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.ui.viewmodel.InsightsViewModel
+import com.balancesentinel.app.ui.viewmodel.QuotaInsight
+import com.balancesentinel.app.ui.viewmodel.QuotaInsightPeriod
 import com.balancesentinel.app.util.LocalizedFormatter
+import kotlinx.coroutines.delay
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 洞察页 v2 — 双引擎双卡片架构。
@@ -126,7 +135,9 @@ fun InsightsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 币种 Tab（仅多币种时显示）
-            if (uiState.availableCurrencies.size > 1) {
+            if (uiState.availableCurrencies.size > 1 ||
+                uiState.availableCurrencies.contains(PERCENTAGE_CURRENCY)
+            ) {
                 CurrencyTabRow(
                     currencies = uiState.availableCurrencies,
                     selected = uiState.selectedCurrency,
@@ -143,37 +154,70 @@ fun InsightsScreen(
                 )
             }
 
-            // ── Card 1: 24h 视图 ──
-            IntradayCard(
-                points = uiState.intradayOutput?.trendPoints ?: emptyList(),
-                bill = uiState.intradayOutput?.billReport
-                    ?: IntradayBillReport(0f, 0f, 0f, 0f),
-                currency = uiState.selectedCurrency
-            )
+            if (uiState.selectedCurrency == PERCENTAGE_CURRENCY) {
+                if (uiState.quotaInsight != null) {
+                    QuotaInsightsContent(
+                        insight = uiState.quotaInsight!!,
+                        showLatestRefreshAccount = shouldShowQuotaLatestRefreshAccount(
+                            uiState.selectedAccountId
+                        )
+                    )
+                    QuotaDailyUsageCard(
+                        output = uiState.dailyOutput,
+                        rangeDays = uiState.rangeDays,
+                        onRangeDaysChange = { viewModel.setRangeDays(it) }
+                    )
+                    DailyHistoryCard(
+                        points = uiState.dailyHistoryPoints,
+                        currency = uiState.selectedCurrency,
+                        visibleCount = uiState.historyVisibleCount,
+                        expandedDate = uiState.expandedDate,
+                        onToggleExpand = { viewModel.toggleExpandDate(it) },
+                        onLoadMore = { viewModel.loadMoreHistory() }
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.insights_empty),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("insights_quota_empty"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                // ── Card 1: 24h 视图 ──
+                IntradayCard(
+                    points = uiState.intradayOutput?.trendPoints ?: emptyList(),
+                    bill = uiState.intradayOutput?.billReport
+                        ?: IntradayBillReport(0f, 0f, 0f, 0f),
+                    currency = uiState.selectedCurrency
+                )
 
-            // ── Card 2: 长期视图 ──
-            DailyCard(
-                points = uiState.dailyOutput?.dailyPoints ?: emptyList(),
-                bill = uiState.dailyOutput?.billReport
-                    ?: DailyBillReport(0f, 0f, 0f, 0f, ""),
-                estimate = uiState.dailyOutput?.estimate,
-                currency = uiState.selectedCurrency,
-                rangeDays = uiState.rangeDays,
-                insufficientData = uiState.dailyOutput?.insufficientData ?: true,
-                chartMode = uiState.chartMode,
-                onChartModeChange = { viewModel.setChartMode(it) },
-                onRangeDaysChange = { viewModel.setRangeDays(it) }
-            )
+                // ── Card 2: 长期视图 ──
+                DailyCard(
+                    points = uiState.dailyOutput?.dailyPoints ?: emptyList(),
+                    bill = uiState.dailyOutput?.billReport
+                        ?: DailyBillReport(0f, 0f, 0f, 0f, ""),
+                    estimate = uiState.dailyOutput?.estimate,
+                    currency = uiState.selectedCurrency,
+                    rangeDays = uiState.rangeDays,
+                    insufficientData = uiState.dailyOutput?.insufficientData ?: true,
+                    chartMode = uiState.chartMode,
+                    onChartModeChange = { viewModel.setChartMode(it) },
+                    onRangeDaysChange = { viewModel.setRangeDays(it) }
+                )
 
-            // ── Card 3: 历史日汇总（全量数据，不受趋势天数选择影响）──
-            DailyHistoryCard(
-                points = uiState.dailyHistoryPoints,
-                currency = uiState.selectedCurrency,
-                visibleCount = uiState.historyVisibleCount,
-                expandedDate = uiState.expandedDate,
-                onToggleExpand = { viewModel.toggleExpandDate(it) },
-                onLoadMore = { viewModel.loadMoreHistory() }
-            )
+                // ── Card 3: 历史日汇总（全量数据，不受趋势天数选择影响）──
+                DailyHistoryCard(
+                    points = uiState.dailyHistoryPoints,
+                    currency = uiState.selectedCurrency,
+                    visibleCount = uiState.historyVisibleCount,
+                    expandedDate = uiState.expandedDate,
+                    onToggleExpand = { viewModel.toggleExpandDate(it) },
+                    onLoadMore = { viewModel.loadMoreHistory() }
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -203,7 +247,15 @@ private fun CurrencyTabRow(
                 androidx.compose.material3.Tab(
                     selected = index == selectedIndex,
                     onClick = { onSelect(currency) },
-                    text = { Text(currency) }
+                    text = {
+                        Text(
+                            if (currency == PERCENTAGE_CURRENCY) {
+                                stringResource(R.string.insights_percentage)
+                            } else {
+                                currency
+                            }
+                        )
+                    }
                 )
             }
         }
@@ -782,6 +834,406 @@ private fun DailyCard(
 }
 
 @Composable
+private fun QuotaInsightsContent(
+    insight: QuotaInsight,
+    showLatestRefreshAccount: Boolean
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("insights_quota_content"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.insights_quota_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        insight.periods.forEach { period ->
+            QuotaPeriodCard(
+                period = period,
+                showLatestRefreshAccount = showLatestRefreshAccount
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuotaPeriodCard(
+    period: QuotaInsightPeriod,
+    showLatestRefreshAccount: Boolean
+) {
+    val formatter = rememberLocalizedFormatter()
+    val label = when (quotaPeriodRank(period.id)) {
+        0 -> stringResource(R.string.insights_quota_rolling_5h)
+        1 -> stringResource(R.string.insights_quota_weekly)
+        2 -> stringResource(R.string.insights_quota_monthly)
+        else -> period.id
+    }
+    val resetTimestamp = remember(period.resetsAt) { quotaResetEpochMillis(period.resetsAt) }
+    var now by remember(resetTimestamp) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(resetTimestamp) {
+        val target = resetTimestamp ?: return@LaunchedEffect
+        while (now < target) {
+            delay(1_000L)
+            now = System.currentTimeMillis()
+        }
+    }
+    val latestRefreshAt = period.latestRefreshAt
+    val latestRefreshAccount = period.latestRefreshAccountLabel?.takeIf { it.isNotBlank() }
+        ?: period.latestRefreshAccountId?.takeIf { it.isNotBlank() }
+    val nextRefreshText = resetTimestamp?.let(formatter::formatDateTime)
+        ?: period.resetsAt?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.insights_quota_no_reset)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("insights_quota_period_${period.id}"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                period.status?.takeIf { it.isNotBlank() }?.let { status ->
+                    Text(
+                        status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            QuotaTrendChart(
+                history = period.history,
+                currentUsedPercent = period.usedPercent,
+                currentTimestamp = latestRefreshAt,
+                modifier = Modifier.fillMaxWidth().height(132.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    stringResource(R.string.insights_quota_used, period.usedPercent),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    stringResource(R.string.insights_quota_remaining, period.remainingPercent),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = WalletColors.success
+                )
+            }
+            if (showLatestRefreshAccount && latestRefreshAccount != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    stringResource(
+                        R.string.insights_quota_latest_account_next_refresh,
+                        latestRefreshAccount,
+                        nextRefreshText
+                    ),
+                    modifier = Modifier.testTag("insights_quota_latest_refresh_${period.id}"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            } else {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.insights_quota_reset_at),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    nextRefreshText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            if (resetTimestamp != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.insights_quota_countdown),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    formatter.formatCountdown(resetTimestamp, now),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuotaDailyUsageCard(
+    output: com.balancesentinel.app.data.engine.DailyOutput?,
+    rangeDays: Int,
+    onRangeDaysChange: (Int) -> Unit
+) {
+    val points = output?.dailyPoints.orEmpty()
+    if (points.isEmpty()) return
+    val formatter = rememberLocalizedFormatter()
+    val rollingColor = WalletColors.warning
+    val weeklyColor = WalletColors.granted
+    val monthlyColor = MaterialTheme.colorScheme.primary
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("insights_quota_daily_usage"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.insights_quota_daily_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    7 to R.string.insights_trend_7d,
+                    30 to R.string.insights_trend_30d,
+                    90 to R.string.insights_trend_90d,
+                    365 to R.string.insights_trend_1y
+                ).forEach { (days, labelId) ->
+                    FilterChip(
+                        selected = rangeDays == days,
+                        onClick = { onRangeDaysChange(days) },
+                        label = { Text(stringResource(labelId), maxLines = 1) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            LabeledLine(
+                label = stringResource(R.string.insights_quota_rolling_consumed),
+                value = stringResource(
+                    R.string.insights_quota_percentage_points,
+                    formatter.formatNumber(output?.billReport?.toppedUp ?: 0f, 0, 2)
+                ),
+                color = rollingColor
+            )
+            LabeledLine(
+                label = stringResource(R.string.insights_quota_weekly_consumed),
+                value = stringResource(
+                    R.string.insights_quota_percentage_points,
+                    formatter.formatNumber(output?.billReport?.granted ?: 0f, 0, 2)
+                ),
+                color = weeklyColor
+            )
+            LabeledLine(
+                label = stringResource(R.string.insights_quota_monthly_consumed),
+                value = stringResource(
+                    R.string.insights_quota_percentage_points,
+                    formatter.formatNumber(output?.billReport?.consumed ?: 0f, 0, 2)
+                ),
+                color = monthlyColor
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            QuotaDailyUsageChart(
+                points = points,
+                rollingColor = rollingColor,
+                weeklyColor = weeklyColor,
+                monthlyColor = monthlyColor,
+                modifier = Modifier.fillMaxWidth().height(150.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuotaDailyUsageChart(
+    points: List<DailyPoint>,
+    rollingColor: Color,
+    weeklyColor: Color,
+    monthlyColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val formatter = rememberLocalizedFormatter()
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+    val textColor = android.graphics.Color.argb(0xB3, 0x6B, 0x6E, 0x8A)
+    val dateLabels = remember(points, formatter.locale) {
+        points.map { point ->
+            runCatching {
+                LocalDate.parse(point.date)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+            }.getOrNull()?.let(formatter::formatDate) ?: point.date
+        }
+    }
+    Canvas(modifier = modifier) {
+        if (points.isEmpty()) return@Canvas
+        val left = 70f
+        val right = size.width - 14f
+        val top = 12f
+        val bottom = size.height - 34f
+        val maxValue = points.maxOfOrNull {
+            maxOf(it.toppedUp, it.granted, it.consumed)
+        }?.coerceAtLeast(100f) ?: 100f
+        val labelPaint = android.graphics.Paint().apply {
+            color = textColor
+            textSize = 28f
+            isAntiAlias = true
+        }
+        listOf(maxValue, maxValue / 2f, 0f).forEach { value ->
+            val y = bottom - (bottom - top) * (value / maxValue)
+            drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+            labelPaint.textAlign = android.graphics.Paint.Align.RIGHT
+            drawContext.canvas.nativeCanvas.drawText(
+                "${value.toInt()}%",
+                left - 8f,
+                y + 9f,
+                labelPaint
+            )
+        }
+        fun chartPoints(value: (DailyPoint) -> Float): List<Offset> = points.mapIndexed { index, point ->
+            val x = if (points.size == 1) (left + right) / 2f else {
+                left + (right - left) * index.toFloat() / points.lastIndex.toFloat()
+            }
+            val y = bottom - (bottom - top) * (value(point) / maxValue)
+            Offset(x, y)
+        }
+        listOf(
+            chartPoints { it.toppedUp } to rollingColor,
+            chartPoints { it.granted } to weeklyColor,
+            chartPoints { it.consumed } to monthlyColor
+        ).forEach { (series, color) ->
+            if (series.size > 1) {
+                val path = Path().apply {
+                    moveTo(series.first().x, series.first().y)
+                    series.drop(1).forEach { lineTo(it.x, it.y) }
+                }
+                drawPath(
+                    path,
+                    color = color,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+            }
+            series.forEach { drawCircle(color, radius = 2.dp.toPx(), center = it) }
+        }
+        quotaChartTickIndices(points.size).forEach { index ->
+            val x = if (points.size == 1) {
+                (left + right) / 2f
+            } else {
+                left + (right - left) * index.toFloat() / points.lastIndex.toFloat()
+            }
+            labelPaint.textAlign = when (index) {
+                0 -> android.graphics.Paint.Align.LEFT
+                points.lastIndex -> android.graphics.Paint.Align.RIGHT
+                else -> android.graphics.Paint.Align.CENTER
+            }
+            drawContext.canvas.nativeCanvas.drawText(dateLabels[index], x, size.height - 4f, labelPaint)
+        }
+    }
+}
+
+@Composable
+private fun QuotaTrendChart(
+    history: List<com.balancesentinel.app.ui.viewmodel.QuotaInsightPoint>,
+    currentUsedPercent: Float,
+    currentTimestamp: Long?,
+    modifier: Modifier = Modifier
+) {
+    val formatter = rememberLocalizedFormatter()
+    val lineColor = MaterialTheme.colorScheme.primary
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+    val textColor = android.graphics.Color.argb(0xB3, 0x6B, 0x6E, 0x8A)
+    val resolvedCurrentTimestamp = remember(history, currentUsedPercent, currentTimestamp) {
+        quotaChartCurrentTimestamp(
+            currentTimestamp = currentTimestamp,
+            latestHistoryTimestamp = history.lastOrNull()?.timestamp,
+            fallbackNow = System.currentTimeMillis()
+        )
+    }
+    Canvas(modifier = modifier) {
+        val samples = (history + com.balancesentinel.app.ui.viewmodel.QuotaInsightPoint(
+            resolvedCurrentTimestamp,
+            currentUsedPercent
+        )).groupBy { it.timestamp }
+            .map { (_, values) -> values.last() }
+            .sortedBy { it.timestamp }
+        if (samples.isEmpty()) return@Canvas
+
+        val left = 62f
+        val right = size.width - 14f
+        val top = 12f
+        val bottom = size.height - 42f
+        val labelPaint = android.graphics.Paint().apply {
+            color = textColor
+            textSize = 30f
+            isAntiAlias = true
+        }
+        listOf(100f, 50f, 0f).forEach { value ->
+            val y = quotaChartY(value, top, bottom)
+            drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+            labelPaint.textAlign = android.graphics.Paint.Align.RIGHT
+            drawContext.canvas.nativeCanvas.drawText("${value.toInt()}%", left - 8f, y + 10f, labelPaint)
+        }
+
+        val startTimestamp = samples.first().timestamp
+        val endTimestamp = samples.last().timestamp
+        val timestampRange = (endTimestamp - startTimestamp).coerceAtLeast(1L)
+        // The subscription chart represents remaining quota: a full 100% is
+        // at the top and usage moves the line down toward 0%.
+        val points = samples.map { sample ->
+            val x = if (samples.size == 1) {
+                (left + right) / 2f
+            } else {
+                left + (right - left) *
+                    ((sample.timestamp - startTimestamp).toFloat() / timestampRange.toFloat())
+            }
+            Offset(x, quotaChartY(quotaChartRemainingPercent(sample.usedPercent), top, bottom))
+        }
+        if (points.size > 1) {
+            val path = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                points.drop(1).forEach { lineTo(it.x, it.y) }
+            }
+            drawPath(
+                path,
+                color = lineColor,
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+        }
+        drawCircle(lineColor, radius = 3.dp.toPx(), center = points.last())
+
+        val span = endTimestamp - startTimestamp
+        quotaChartTickIndices(samples.size).forEach { index ->
+            val label = if (span >= 24L * 60L * 60L * 1_000L) {
+                formatter.formatDate(samples[index].timestamp)
+            } else {
+                formatter.formatTime(samples[index].timestamp)
+            }
+            labelPaint.textAlign = when (index) {
+                0 -> android.graphics.Paint.Align.LEFT
+                samples.lastIndex -> android.graphics.Paint.Align.RIGHT
+                else -> android.graphics.Paint.Align.CENTER
+            }
+            drawContext.canvas.nativeCanvas.drawText(label, points[index].x, size.height - 4f, labelPaint)
+        }
+    }
+}
+
+@Composable
 private fun EstimateMetric(
     label: String,
     value: String,
@@ -826,21 +1278,12 @@ private fun IntradayLineChart(
         val minVal = values.min()
         val maxVal = values.max()
         val rawRange = maxVal - minVal
-
-        val range: Float
-        val adjustedMin: Float
-        if (rawRange <= 0.0001f) {
-            val halfSpan = maxOf(minVal * 0.1f, 0.5f, minVal * 0.01f + 0.1f)
-            range = halfSpan * 2f
-            adjustedMin = minVal - halfSpan
-        } else {
-            val headroom = rawRange * 0.12f
-            range = rawRange + headroom * 2f
-            adjustedMin = minVal - headroom
-        }
+        val axis = insightsChartAxis(values)
+        val adjustedMin = axis.min
+        val range = axis.max - axis.min
 
         val leftPadding = 84f
-        val bottomPadding = 38f
+        val bottomPadding = 58f
         val topPadding = 38f
         val rightPadding = 84f
 
@@ -898,7 +1341,7 @@ private fun IntradayLineChart(
         }
 
         // ── 最高点/最低点/当前金额横虚线 ──
-        // 标签在右侧；数值接近时上下错位避免重叠，仅真正重合时跳过
+        // Label baselines are measured and packed so the minimum is always below its guide.
         if (rawRange > 0.0001f && data.size >= 2) {
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
             val highlightLineColor = lineColor.copy(alpha = 0.35f)
@@ -918,10 +1361,16 @@ private fun IntradayLineChart(
             val curIsMax = kotlin.math.abs(curY - maxY) < 3f
             val curIsMin = kotlin.math.abs(curY - minY) < 3f
             val minIsMax = kotlin.math.abs(minY - maxY) < 3f
-            val nearCurMax = kotlin.math.abs(curY - maxY) < 36f
-            val nearCurMin = kotlin.math.abs(curY - minY) < 36f
-            val nearMinMax = kotlin.math.abs(minY - maxY) < 36f
             val labelX = size.width - rightPadding + 8f
+            val labels = layoutInsightsChartLabels(
+                requests = listOf(
+                    InsightsChartLabelRequest("max", maxY, preferBelow = false, priority = 0),
+                    InsightsChartLabelRequest("current", curY, preferBelow = false, priority = 1),
+                    InsightsChartLabelRequest("min", minY, preferBelow = true, priority = 2)
+                ),
+                top = topPadding,
+                bottom = size.height - 30f
+            ).associateBy { it.id }
 
             // 最高点横虚线 + 标签（右侧上方）
             drawLine(
@@ -931,11 +1380,13 @@ private fun IntradayLineChart(
                 strokeWidth = 1.dp.toPx(),
                 pathEffect = dashEffect
             )
-            drawContext.canvas.nativeCanvas.drawText(
-                formatter.formatCompactNumber(values[maxIdx]),
-                labelX, maxY - 6f,
-                labelPaint
-            )
+            labels["max"]?.let { placement ->
+                drawContext.canvas.nativeCanvas.drawText(
+                    formatter.formatCompactNumber(values[maxIdx]),
+                    labelX, placement.baseline,
+                    labelPaint
+                )
+            }
 
             // 当前金额横虚线 + 标签（右侧；仅与最高点重合时跳过）
             if (!curIsMax) {
@@ -946,13 +1397,13 @@ private fun IntradayLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
-                // 靠近最低点时放线上方，让最低点标签可放下方
-                val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
-                drawContext.canvas.nativeCanvas.drawText(
-                    formatter.formatCompactNumber(values[curIdx]),
-                    labelX, curLabelY,
-                    labelPaint
-                )
+                labels["current"]?.let { placement ->
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatter.formatCompactNumber(values[curIdx]),
+                        labelX, placement.baseline,
+                        labelPaint
+                    )
+                }
             }
 
             // 最低点横虚线 + 标签（右侧；仅与最高点或当前金额重合时跳过）
@@ -964,13 +1415,13 @@ private fun IntradayLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
-                // 靠近当前金额或最高点时放下方
-                val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
-                drawContext.canvas.nativeCanvas.drawText(
-                    formatter.formatCompactNumber(values[minIdx]),
-                    labelX, minLabelY,
-                    labelPaint
-                )
+                labels["min"]?.let { placement ->
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatter.formatCompactNumber(values[minIdx]),
+                        labelX, placement.baseline,
+                        labelPaint
+                    )
+                }
             }
         }
 
@@ -1083,21 +1534,12 @@ private fun DailyLineChart(
         val minVal = values.min()
         val maxVal = values.max()
         val rawRange = maxVal - minVal
-
-        val range: Float
-        val adjustedMin: Float
-        if (rawRange <= 0.0001f) {
-            val halfSpan = maxOf(minVal * 0.1f, 0.5f, minVal * 0.01f + 0.1f)
-            range = halfSpan * 2f
-            adjustedMin = minVal - halfSpan
-        } else {
-            val headroom = rawRange * 0.12f
-            range = rawRange + headroom * 2f
-            adjustedMin = minVal - headroom
-        }
+        val axis = insightsChartAxis(values)
+        val adjustedMin = axis.min
+        val range = axis.max - axis.min
 
         val leftPadding = 84f
-        val bottomPadding = 38f
+        val bottomPadding = 58f
         val topPadding = 38f
         val rightPadding = 84f
 
@@ -1159,7 +1601,7 @@ private fun DailyLineChart(
         }
 
         // ── 最高点/最低点/当前金额横虚线 ──
-        // 标签在右侧；数值接近时上下错位避免重叠，仅真正重合时跳过
+        // Label baselines are measured and packed so the minimum is always below its guide.
         if (rawRange > 0.0001f && data.size >= 2) {
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
             val highlightLineColor = lineColor.copy(alpha = 0.35f)
@@ -1179,10 +1621,16 @@ private fun DailyLineChart(
             val curIsMax = kotlin.math.abs(curY - maxY) < 3f
             val curIsMin = kotlin.math.abs(curY - minY) < 3f
             val minIsMax = kotlin.math.abs(minY - maxY) < 3f
-            val nearCurMax = kotlin.math.abs(curY - maxY) < 36f
-            val nearCurMin = kotlin.math.abs(curY - minY) < 36f
-            val nearMinMax = kotlin.math.abs(minY - maxY) < 36f
             val labelX = size.width - rightPadding + 8f
+            val labels = layoutInsightsChartLabels(
+                requests = listOf(
+                    InsightsChartLabelRequest("max", maxY, preferBelow = false, priority = 0),
+                    InsightsChartLabelRequest("current", curY, preferBelow = false, priority = 1),
+                    InsightsChartLabelRequest("min", minY, preferBelow = true, priority = 2)
+                ),
+                top = topPadding,
+                bottom = size.height - 30f
+            ).associateBy { it.id }
 
             // 最高点横虚线 + 标签（右侧上方）
             drawLine(
@@ -1192,11 +1640,13 @@ private fun DailyLineChart(
                 strokeWidth = 1.dp.toPx(),
                 pathEffect = dashEffect
             )
-            drawContext.canvas.nativeCanvas.drawText(
-                formatter.formatCompactNumber(values[maxIdx]),
-                labelX, maxY - 6f,
-                labelPaint
-            )
+            labels["max"]?.let { placement ->
+                drawContext.canvas.nativeCanvas.drawText(
+                    formatter.formatCompactNumber(values[maxIdx]),
+                    labelX, placement.baseline,
+                    labelPaint
+                )
+            }
 
             // 当前金额横虚线 + 标签（右侧；仅与最高点重合时跳过）
             if (!curIsMax) {
@@ -1207,13 +1657,13 @@ private fun DailyLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
-                // 靠近最低点时放线上方，让最低点标签可放下方
-                val curLabelY = if (nearCurMin && !nearCurMax) curY - 6f else curY + 42f
-                drawContext.canvas.nativeCanvas.drawText(
-                    formatter.formatCompactNumber(values[curIdx]),
-                    labelX, curLabelY,
-                    labelPaint
-                )
+                labels["current"]?.let { placement ->
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatter.formatCompactNumber(values[curIdx]),
+                        labelX, placement.baseline,
+                        labelPaint
+                    )
+                }
             }
 
             // 最低点横虚线 + 标签（右侧；仅与最高点或当前金额重合时跳过）
@@ -1225,13 +1675,13 @@ private fun DailyLineChart(
                     strokeWidth = 1.dp.toPx(),
                     pathEffect = dashEffect
                 )
-                // 靠近当前金额或最高点时放下方
-                val minLabelY = if (nearCurMin || nearMinMax) minY + 42f else minY - 6f
-                drawContext.canvas.nativeCanvas.drawText(
-                    formatter.formatCompactNumber(values[minIdx]),
-                    labelX, minLabelY,
-                    labelPaint
-                )
+                labels["min"]?.let { placement ->
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatter.formatCompactNumber(values[minIdx]),
+                        labelX, placement.baseline,
+                        labelPaint
+                    )
+                }
             }
         }
 
@@ -1389,7 +1839,14 @@ private fun DailyHistoryCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (point.consumed > 0f) {
                                 Text(
-                                    text = formatter.formatCurrency(-point.consumed, currency),
+                                    text = if (currency == PERCENTAGE_CURRENCY) {
+                                        stringResource(
+                                            R.string.insights_quota_percentage_points,
+                                            formatter.formatNumber(point.consumed, 0, 2)
+                                        )
+                                    } else {
+                                        formatter.formatCurrency(-point.consumed, currency)
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.SemiBold
@@ -1404,7 +1861,14 @@ private fun DailyHistoryCard(
                                 Spacer(modifier = Modifier.width(12.dp))
                             }
                             Text(
-                                text = formatter.formatCurrency(point.balance, currency),
+                                text = if (currency == PERCENTAGE_CURRENCY) {
+                                    stringResource(
+                                        R.string.insights_quota_remaining,
+                                        point.balance
+                                    )
+                                } else {
+                                    formatter.formatCurrency(point.balance, currency)
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1436,27 +1900,66 @@ private fun DailyHistoryCard(
                                 )
                                 .padding(12.dp)
                         ) {
-                            HistoryDetailRow(stringResource(R.string.insights_label_consumed),
-                                formatter.formatCurrency(-point.consumed, currency),
+                            HistoryDetailRow(stringResource(
+                                if (currency == PERCENTAGE_CURRENCY) {
+                                    R.string.insights_quota_monthly_consumed
+                                } else {
+                                    R.string.insights_label_consumed
+                                }
+                            ),
+                                if (currency == PERCENTAGE_CURRENCY) {
+                                    stringResource(
+                                        R.string.insights_quota_percentage_points,
+                                        formatter.formatNumber(point.consumed, 0, 2)
+                                    )
+                                } else formatter.formatCurrency(-point.consumed, currency),
                                 MaterialTheme.colorScheme.error)
                             if (point.toppedUp > 0f) {
-                                HistoryDetailRow(stringResource(R.string.insights_label_topped_up),
-                                    formatter.formatSignedCurrency(point.toppedUp, currency, showPositiveSign = true),
+                                HistoryDetailRow(stringResource(
+                                    if (currency == PERCENTAGE_CURRENCY) {
+                                        R.string.insights_quota_rolling_consumed
+                                    } else {
+                                        R.string.insights_label_topped_up
+                                    }
+                                ),
+                                    if (currency == PERCENTAGE_CURRENCY) {
+                                        stringResource(
+                                            R.string.insights_quota_percentage_points,
+                                            formatter.formatNumber(point.toppedUp, 0, 2)
+                                        )
+                                    } else formatter.formatSignedCurrency(point.toppedUp, currency, showPositiveSign = true),
                                     WalletColors.success)
                             }
                             if (point.granted > 0f) {
-                                HistoryDetailRow(stringResource(R.string.insights_label_granted),
-                                    formatter.formatSignedCurrency(point.granted, currency, showPositiveSign = true),
+                                HistoryDetailRow(stringResource(
+                                    if (currency == PERCENTAGE_CURRENCY) {
+                                        R.string.insights_quota_weekly_consumed
+                                    } else {
+                                        R.string.insights_label_granted
+                                    }
+                                ),
+                                    if (currency == PERCENTAGE_CURRENCY) {
+                                        stringResource(
+                                            R.string.insights_quota_percentage_points,
+                                            formatter.formatNumber(point.granted, 0, 2)
+                                        )
+                                    } else formatter.formatSignedCurrency(point.granted, currency, showPositiveSign = true),
                                     WalletColors.granted)
                             }
-                            HistoryDetailRow(stringResource(R.string.insights_label_net),
-                                formatter.formatSignedCurrency(netChange, currency, showPositiveSign = true),
-                                netColor)
+                            if (currency != PERCENTAGE_CURRENCY) {
+                                HistoryDetailRow(stringResource(R.string.insights_label_net),
+                                    formatter.formatSignedCurrency(netChange, currency, showPositiveSign = true),
+                                    netColor)
+                            }
                             HistoryDetailRow(stringResource(R.string.insights_history_open),
-                                formatter.formatCurrency(point.open, currency),
+                                if (currency == PERCENTAGE_CURRENCY) {
+                                    stringResource(R.string.insights_quota_remaining, point.open)
+                                } else formatter.formatCurrency(point.open, currency),
                                 MaterialTheme.colorScheme.onSurfaceVariant)
                             HistoryDetailRow(stringResource(R.string.insights_history_close),
-                                formatter.formatCurrency(point.balance, currency),
+                                if (currency == PERCENTAGE_CURRENCY) {
+                                    stringResource(R.string.insights_quota_remaining, point.balance)
+                                } else formatter.formatCurrency(point.balance, currency),
                                 MaterialTheme.colorScheme.onSurfaceVariant)
                             HistoryDetailRow(stringResource(R.string.insights_history_samples),
                                 "${point.sampleCount}",

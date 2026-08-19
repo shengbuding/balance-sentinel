@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.RoomAccountRepository
@@ -77,7 +78,8 @@ class WidgetConfigActivity : ComponentActivity() {
                     .observe().first { it !is AccountLoadState.Loading }
             }
             val accounts = (state as? AccountLoadState.Ready)?.accounts.orEmpty()
-            val currencies = listOf("CNY", "USD", "EUR")
+            val currencies = listOf("CNY", "USD", "EUR", PERCENTAGE_CURRENCY)
+            val existingConfig = WidgetConfigStore.getConfig(this@WidgetConfigActivity, appWidgetId)
             setContent {
             DeepSeekBalanceTheme {
                 Scaffold(
@@ -93,12 +95,22 @@ class WidgetConfigActivity : ComponentActivity() {
                             .verticalScroll(rememberScrollState())
                     ) {
                         // 安全默认值
-                        val defaultAccountId = accounts.firstOrNull()?.id ?: ""
-                        val defaultAccountLabel = accounts.firstOrNull()?.label ?: ""
+                        val defaultAccountId = existingConfig?.accountId
+                            ?.takeUnless { it == WidgetConfig.TOTAL_ACCOUNT_ID }
+                            ?.takeIf { id -> accounts.any { it.id == id } }
+                            ?: accounts.firstOrNull()?.id.orEmpty()
+                        val defaultAccountLabel = accounts.firstOrNull { it.id == defaultAccountId }?.label.orEmpty()
 
                         var selectedAccountId by remember { mutableStateOf(defaultAccountId) }
-                        var isTotalSelected by remember { mutableStateOf(false) }
-                        var selectedCurrency by remember { mutableStateOf("CNY") }
+                        var isTotalSelected by remember {
+                            mutableStateOf(existingConfig?.accountId == WidgetConfig.TOTAL_ACCOUNT_ID)
+                        }
+                        var selectedCurrency by remember {
+                            mutableStateOf(existingConfig?.currency ?: "CNY")
+                        }
+                        var selectedQuotaPeriod by remember {
+                            mutableStateOf(existingConfig?.quotaPeriod ?: WidgetConfig.DEFAULT_QUOTA_PERIOD)
+                        }
 
                         // 账户下拉
                         var accountExpanded by remember { mutableStateOf(false) }
@@ -150,6 +162,24 @@ class WidgetConfigActivity : ComponentActivity() {
                                 currencyExpanded = false
                             }
                         )
+                        if (!isTotalSelected && selectedCurrency == PERCENTAGE_CURRENCY) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = stringResource(R.string.widget_config_quota_period),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            var quotaPeriodExpanded by remember { mutableStateOf(false) }
+                            QuotaPeriodDropdown(
+                                expanded = quotaPeriodExpanded,
+                                onExpandedChange = { quotaPeriodExpanded = it },
+                                selectedPeriod = selectedQuotaPeriod,
+                                onPeriodSelected = {
+                                    selectedQuotaPeriod = it
+                                    quotaPeriodExpanded = false
+                                }
+                            )
+                        }
                         Spacer(modifier = Modifier.height(24.dp))
 
                         // 按钮行
@@ -168,7 +198,7 @@ class WidgetConfigActivity : ComponentActivity() {
                                 if (accountId.isNotEmpty()) {
                                     WidgetConfigStore.saveConfig(
                                         this@WidgetConfigActivity, appWidgetId,
-                                        accountId, selectedCurrency
+                                        accountId, selectedCurrency, selectedQuotaPeriod
                                     )
                                     // 立即刷新 Widget
                                     val manager = AppWidgetManager.getInstance(this@WidgetConfigActivity)
@@ -252,7 +282,13 @@ private fun CurrencyDropdown(
         onExpandedChange = { if (enabled) onExpandedChange(it) }
     ) {
         OutlinedTextField(
-            value = if (enabled) selectedCurrency else "—",
+            value = if (enabled) {
+                if (selectedCurrency == PERCENTAGE_CURRENCY) {
+                    stringResource(R.string.widget_config_subscription_currency)
+                } else {
+                    selectedCurrency
+                }
+            } else "—",
             onValueChange = {},
             readOnly = true,
             enabled = enabled,
@@ -267,8 +303,56 @@ private fun CurrencyDropdown(
         ) {
             currencies.forEach { currency ->
                 DropdownMenuItem(
-                    text = { Text(currency) },
+                    text = {
+                        Text(
+                            if (currency == PERCENTAGE_CURRENCY) {
+                                stringResource(R.string.widget_config_subscription_currency)
+                            } else {
+                                currency
+                            }
+                        )
+                    },
                     onClick = { onCurrencySelected(currency) }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@androidx.compose.runtime.Composable
+private fun QuotaPeriodDropdown(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    selectedPeriod: String,
+    onPeriodSelected: (String) -> Unit
+) {
+    val periods = listOf(
+        WidgetConfig.DEFAULT_QUOTA_PERIOD to R.string.widget_subscription_5h,
+        "weekly" to R.string.widget_subscription_weekly,
+        "monthly" to R.string.widget_subscription_monthly
+    )
+    val selectedLabel = periods.firstOrNull { it.first == selectedPeriod }?.second
+        ?: R.string.widget_subscription_5h
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange
+    ) {
+        OutlinedTextField(
+            value = stringResource(selectedLabel),
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+            periods.forEach { (period, labelRes) ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(labelRes)) },
+                    onClick = { onPeriodSelected(period) }
                 )
             }
         }

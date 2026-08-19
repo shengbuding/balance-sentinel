@@ -2,6 +2,7 @@ package com.balancesentinel.app.data.api.balance
 
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.network.NetworkResponseException
 import com.balancesentinel.app.data.refresh.RefreshFailure
@@ -98,6 +99,31 @@ class UsageScriptSecurityTest {
 
         assertSuccess(releaseResult)
         assertTrue(ApiDebugStore.getEntries("account-id").isEmpty())
+    }
+
+    @Test
+    fun `user debug session captures custom script diagnostics in release`() = runBlocking {
+        val source = """({request:{url:"https://api.example.com/balance"},extractor:function(r){return r;}})"""
+        val script = UsageScript(source, timeout = 1)
+        val session = DebugCapturePolicy.openUserCaptureSession()
+        ApiDebugStore.clearAll()
+        try {
+            server.enqueue(successResponse())
+            val result = UsageScriptExecutor.execute(
+                script = script,
+                account = account("https://api.example.com"),
+                resolver = PUBLIC_RESOLVER,
+                client = client,
+                connectionUrlOverride = ::routeToTestServer,
+                debuggable = false
+            )
+
+            assertSuccess(result)
+            assertEquals(1, ApiDebugStore.getEntries("account-id").size)
+        } finally {
+            session.close()
+            ApiDebugStore.clearAll()
+        }
     }
 
     // Mutation caught: denying the full same origin, including its registered non-default port.

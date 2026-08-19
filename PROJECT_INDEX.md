@@ -1,22 +1,22 @@
 # Project Index — DeepSeek Balance Sentinel / 项目索引 — 钱包哨兵
 
-Generated / 生成日期: 2026-08-18
+Generated / 生成日期: 2026-08-20
 
 ---
 
 ## 1. Overview / 概述
 
-**Wallet Sentinel** (钱包哨兵) — an Android app that monitors AI provider API balance via desktop widgets and in-app screens. Supports 14 AI providers including DeepSeek, OpenAI, Anthropic and more. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture: `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, exact-alarm recovery, multi-account balance alerts, bilingual Chinese/English UI, custom usage scripts, and a service health tracker with protection mode.
+**Wallet Sentinel** (钱包哨兵) — an Android app that monitors AI provider API balance via desktop widgets and in-app screens. Supports 15 AI providers including DeepSeek, OpenCode Go, OpenAI API, Anthropic and more. Built with Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets. Uses a dual-engine insight architecture: `IntradayEngine` (24h per-pair tracking) + `DailyEngine` (long-term calendar-day tracking). Features foreground-service auto-refresh, exact-alarm recovery, multi-account balance alerts, bilingual Chinese/English UI, custom usage scripts, subscription quota insights, and a service health tracker with protection mode.
 
-**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控多个 AI 供应商 API 余额的 Android 应用，支持 DeepSeek、OpenAI、Anthropic 等 14 个供应商。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、精确闹钟恢复、多账户余额预警、中英双语界面、自定义用量脚本和服务健康追踪保护模式。
+**钱包哨兵** — 一款通过桌面小组件和应用内屏幕监控多个 AI 供应商 API 余额的 Android 应用，支持 DeepSeek、OpenCode Go、OpenAI API、Anthropic 等 15 个供应商。Kotlin + Jetpack Compose (Material 3) + RemoteViews Widgets 构建。双引擎洞察架构：`IntradayEngine`（24h 逐对跟踪）+ `DailyEngine`（长期日历天跟踪）。支持前台服务自动刷新、精确闹钟恢复、多账户余额预警、中英双语界面、自定义用量脚本、订阅额度洞察和服务健康追踪保护模式。
 
 - **Package / 包名**: `com.balancesentinel.app`
 - **Min/Target SDK**: 35 (Android 15+)
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 1,486 Debug + 1,486 Release JVM tests (86 shared + 2 variant Kotlin test files); 39 instrumented source tests in 8 files; targeted MainActivity smoke 4/4 passed
-- **Release / 版本**: v1.5.0 (2026-08-18)
+- **Test count / 测试数**: 1,531 Debug + 1,531 Release JVM tests (3 skipped per variant); 39 instrumented source tests in 8 files
+- **Release / 版本**: v1.5.1 (2026-08-20)
 
 ---
 
@@ -29,7 +29,7 @@ C:\Users\Administrator\
 │   ├── README.md                      # Project overview, features, build guide
 │   ├── CHANGELOG.md                   # Versioned release notes
 │   ├── PROJECT_INDEX.md               # This file — full project map
-│   ├── PRODUCTION_AUDIT.md            # Production readiness audit and v1.5.0 release status
+│   ├── PRODUCTION_AUDIT.md            # Production readiness audit and v1.5.1 release status
 │   ├── PRIVACY_POLICY.md              # Privacy policy (ML)
 │   ├── PLAY_CONSOLE_PERMISSIONS.md    # Play Console permission declarations
 │   ├── PLAY_STORE_LISTING.md          # Play Store listing draft
@@ -45,6 +45,7 @@ C:\Users\Administrator\
 │   ├── docs/
 │   │   ├── claude-code-review-handoff.md # Claude Code release review handoff
 │   │   ├── desktop-sync-contract.md  # Reserved desktop-sync security contract
+│   │   ├── openai-usage-api.md        # OpenAI API vs ChatGPT subscription quota boundary
 │   │   ├── audit/data-safety-audit.md # Data safety audit report
 │   │   └── superpowers/
 │   │       ├── specs/2026-07-05-insights-rewrite-design.md     # v2.0 design

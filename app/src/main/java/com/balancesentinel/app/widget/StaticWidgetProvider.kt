@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import com.balancesentinel.app.DeepSeekApp
 import com.balancesentinel.app.MainActivity
 import com.balancesentinel.app.R
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.ui.navigation.AppRoute
 import com.balancesentinel.app.data.repository.RoomHistoryRepository
 import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
@@ -161,11 +162,18 @@ open class StaticWidgetProvider : AppWidgetProvider() {
             try {
                 val summaries = withContext(Dispatchers.IO) {
                     RoomHistoryRepository(WalletDatabaseProvider.get(context))
-                        .summaries(currency = agg.currency)
+                        .summaries(
+                            accountId = config?.accountId?.takeUnless {
+                                it == WidgetConfig.TOTAL_ACCOUNT_ID
+                            },
+                            currency = agg.currency
+                        )
                 }
                 if (summaries.size >= 2) {
-                    val recent = summaries.takeLast(7)
-                    val values = recent.map { it.close }
+                    val values = widgetSparklineValues(
+                        closes = summaries.map { it.close },
+                        currency = agg.currency
+                    )
                     val isNightSpark = isNight
                     val lineColor = if (isNightSpark) 0xFFB8C4FF.toInt() else 0xFF4D6BFE.toInt()
                     val fillColor = if (isNightSpark) 0x40B8C4FF.toInt() else 0x404D6BFE.toInt()
@@ -283,3 +291,14 @@ open class StaticWidgetProvider : AppWidgetProvider() {
         internal var workSchedulerFactory: (Context) -> com.balancesentinel.app.work.RefreshWorkScheduler = { com.balancesentinel.app.work.RefreshWorkScheduler() }
     }
 }
+
+internal fun widgetSparklineValues(closes: List<Float>, currency: String): List<Float> =
+    closes.takeLast(7).map { close ->
+        // Subscription history is persisted as remaining percent, while its widget uses
+        // consumed percent. Keep both the displayed value and trend direction aligned.
+        if (currency == PERCENTAGE_CURRENCY) {
+            (100f - close).coerceIn(0f, 100f)
+        } else {
+            close
+        }
+    }

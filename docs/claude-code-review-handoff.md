@@ -1,8 +1,18 @@
-# Claude Code v1.5.0 发布审查交接
+# Claude Code v1.5.1 发布审查交接
 
-更新日期：2026-08-18
+更新日期：2026-08-20
 
-状态：v1.5.0 正式发布资料已完成，保留本文件作为独立审查与发布证据索引。
+状态：v1.5.1 发布候选资料已完成，保留 v1.5.0 历史部分作为独立审查证据索引。
+
+## v1.5.1 发布补充
+
+- 发布分支：`release/v1.5.1`；目标分支：`master`。
+- 本地门禁：Debug/Release JVM 各 1,531 tests，0 failures，0 errors，3 skipped；Debug/Release lint 通过；Kover verify 通过；Debug/Release APK 构建成功。
+- 主要范围：OpenCode Go 内置订阅窗口、订阅洞察和小组件、跨账户历史合并、订阅百分比 Room 归档语义，以及 OpenAI API 与 ChatGPT 订阅额度边界文档。
+- 正式签名 APK、包版本校验、证书校验和 GitHub Release 资产由 `v1.5.1` tag workflow 生成；最终 SHA-256 以 Actions 和 Release 资产为准。
+- 全量 API 35 connected-test discovery 仍受本机模拟器启动限制，未将其计为通过。
+
+以下正文中的 v1.5.0 内容是历史审查记录，不应被解释为 v1.5.1 的当前 HEAD。
 
 ## 一、审查目标与操作边界
 

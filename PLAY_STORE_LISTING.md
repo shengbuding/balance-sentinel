@@ -251,6 +251,7 @@ AI, API, balance, monitor, alert, widget, consumption, tracker, usage, billing, 
 
 | 日期 / Date | 版本 / Version | 变更 / Changes |
 |---|---|---|
+| 2026-08-20 | v1.5.1 | OpenCode Go 订阅窗口、订阅洞察图表与小组件、跨账户历史合并、OpenAI API 接口边界说明 |
 | 2026-08-18 | v1.5.0 | 精确闹钟保活、跨账户洞察、自定义脚本字段、NewAPI、权限引导、通知排序和设置重构 |
 | 2026-07-20 | v1.3.1 | 修复通知栏序号显示异常、清理旧版数据残留 |
 | 2026-07-20 | v1.3.0 | 多供应商支持（13个内置 AI 供应商）、缓存层、健康检查、本地用量追踪 |

@@ -131,7 +131,8 @@ class OpenAiCompatibleProvider(
                     unit = currency,
                     displayFields = fields
                         .filterKeys { it in displayFieldLabels }
-                        .mapKeys { (path, _) -> displayFieldLabels[path].orEmpty().ifBlank { path } }
+                        .mapKeys { (path, _) -> displayFieldLabels[path].orEmpty().ifBlank { path } },
+                    quota = quota
                 )
             ),
             isEstimated = false

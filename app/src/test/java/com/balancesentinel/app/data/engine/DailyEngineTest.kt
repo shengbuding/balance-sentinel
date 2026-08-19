@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.engine
 
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import org.junit.Assert.*
@@ -244,5 +245,26 @@ class DailyEngineTest {
         val point = output.dailyPoints[0]
         assertEquals(100f, point.open, 0.01f)    // first record's totalBalance
         assertEquals(3, point.sampleCount)        // 3 records
+    }
+
+    @Test
+    fun `subscription today usage can exceed one hundred after quota resets`() {
+        val now = System.currentTimeMillis()
+        val records = listOf(
+            RawRecord("quota", now - 3_000L, PERCENTAGE_CURRENCY, 100f, 100f, 100f),
+            RawRecord("quota", now - 2_000L, PERCENTAGE_CURRENCY, 20f, 40f, 0f),
+            RawRecord("quota", now - 1_000L, PERCENTAGE_CURRENCY, 100f, 100f, 100f),
+            RawRecord("quota", now, PERCENTAGE_CURRENCY, 10f, 30f, 0f)
+        )
+
+        val output = DailyEngine.compute(
+            DailyInput(emptyList(), records, PERCENTAGE_CURRENCY, "quota", 7)
+        )
+        val point = output.dailyPoints.single()
+
+        assertEquals(170f, point.consumed, 0.01f)
+        assertEquals(130f, point.granted, 0.01f)
+        assertEquals(200f, point.toppedUp, 0.01f)
+        assertNull(output.estimate)
     }
 }

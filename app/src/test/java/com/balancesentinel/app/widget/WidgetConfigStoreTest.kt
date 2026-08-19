@@ -40,6 +40,27 @@ class WidgetConfigStoreTest {
     }
 
     @Test
+    fun `subscription currency roundtrips through widget config`() {
+        WidgetConfigStore.saveConfig(context, 1, "quota-account", "%", "weekly")
+        val config = WidgetConfigStore.getConfig(context, 1)!!
+        assertEquals("%", config.currency)
+        assertEquals("weekly", config.quotaPeriod)
+    }
+
+    @Test
+    fun `legacy subscription config defaults to shortest quota period`() {
+        val prefs = context.getSharedPreferences("widget_configs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("configs", "{\"1\":{\"accountId\":\"legacy\",\"currency\":\"%\"}}")
+            .commit()
+
+        assertEquals(
+            WidgetConfig.DEFAULT_QUOTA_PERIOD,
+            WidgetConfigStore.getConfig(context, 1)!!.quotaPeriod
+        )
+    }
+
+    @Test
     fun `saveConfig overwrites existing config`() {
         WidgetConfigStore.saveConfig(context, 1, "acc1", "CNY")
         WidgetConfigStore.saveConfig(context, 1, "acc2", "USD")

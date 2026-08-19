@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +23,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.quotaPeriodRank
 import com.balancesentinel.app.data.model.BalanceResponse
 import com.balancesentinel.app.ui.icons.ProviderIcons
 import com.balancesentinel.app.ui.theme.WalletColors
@@ -441,37 +444,44 @@ private fun BalanceInfoCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // 币种和总额
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 币种标签
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            val quotaPeriods = info.quota?.ordered().orEmpty()
+            if (quotaPeriods.isNotEmpty()) {
+                QuotaBalanceDetails(quotaPeriods)
+            } else {
+                // 币种和总额
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 币种标签
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            info.currency,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    // 总额
                     Text(
-                        info.currency,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        formatter.formatAmount(info.totalBalance),
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-
-                // 总额
-                Text(
-                    formatter.formatAmount(info.totalBalance),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
             }
 
             // 赠送和充值明细
-            if (info.grantedBalance.isNotBlank() || info.toppedUpBalance.isNotBlank()) {
+            if (quotaPeriods.isEmpty() &&
+                (info.grantedBalance.isNotBlank() || info.toppedUpBalance.isNotBlank())
+            ) {
                 Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
@@ -511,6 +521,77 @@ private fun BalanceInfoCard(
                     Spacer(modifier = Modifier.height(6.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuotaBalanceDetails(periods: List<QuotaPeriodSnapshot>) {
+    Text(
+        text = stringResource(R.string.insights_quota_title),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    periods.forEachIndexed { index, period ->
+        if (index > 0) {
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 10.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+            )
+        } else {
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        QuotaBalancePeriodRow(period)
+    }
+}
+
+@Composable
+private fun QuotaBalancePeriodRow(period: QuotaPeriodSnapshot) {
+    val periodName = when (quotaPeriodRank(period.id)) {
+        0 -> stringResource(R.string.insights_quota_rolling_5h)
+        1 -> stringResource(R.string.insights_quota_weekly)
+        2 -> stringResource(R.string.insights_quota_monthly)
+        else -> period.id
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("account_quota_period_${period.id}"),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = periodName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(
+                    R.string.insights_quota_reset,
+                    period.resetsAt?.takeIf(String::isNotBlank)
+                        ?: stringResource(R.string.insights_quota_no_reset)
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = stringResource(R.string.insights_quota_remaining, period.remainingPercent),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = WalletColors.success
+            )
+            Text(
+                text = stringResource(R.string.insights_quota_used, period.usedPercent),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

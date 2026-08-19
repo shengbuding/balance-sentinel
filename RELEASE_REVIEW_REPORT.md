@@ -1,8 +1,8 @@
-# Wallet Sentinel v1.5.0 - Release Review
+# Wallet Sentinel v1.5.1 - Release Review
 
-**Release date:** 2026-08-18
+**Release date:** 2026-08-20
 
-**Tag:** `v1.5.0`
+**Tag:** `v1.5.1`
 
 **Status:** Formal GitHub release. The tag-triggered workflow is responsible for
 the signed APK build, package/version and certificate allowlist verification,
@@ -10,24 +10,23 @@ Release creation, and asset upload.
 
 ## Scope
 
-v1.5.0 includes the wallet sentinel review fixes: exact-alarm and persistent
-notification recovery, provider-neutral recharge detection, current-currency
-Insights filtering and complete-first-point aggregation, custom Usage Script
-field projection and NewAPI support, settings and permission onboarding,
-Console session cleanup, alert-layout alignment, Room v6 migration, and the
-transport-neutral desktop-sync contract.
+v1.5.1 adds the OpenCode Go built-in provider, multi-window subscription quota
+insights and widgets, remaining-rate chart semantics, cross-account history
+merging, subscription-aware Room archival, and the OpenAI API/subscription
+interface boundary documentation. It builds on the v1.5.0 monitoring,
+permission, custom-script, and data-safety fixes.
 
 ## Release evidence
 
-- Debug JVM: 1,486 tests; 0 failures; 0 errors; 3 skipped.
-- Release JVM: 1,486 tests; 0 failures; 0 errors; 3 skipped.
+- Debug JVM: 1,531 tests; 0 failures; 0 errors; 3 skipped.
+- Release JVM: 1,531 tests; 0 failures; 0 errors; 3 skipped.
 - Debug/Release lint: 0 errors.
 - Kover verification: passed; line coverage 58.96%; branch coverage 48.79%.
 - Targeted `MainActivityTest`: 4/4 passed.
 - Full API 35 instrumentation discovery remains limited by emulator startup
   failure before assertions.
 - Security review: no confirmed blocking finding at confidence 7/10 or higher.
-- Release asset: `com.balancesentinel.app`, `versionName=v1.5.0`.
+- Release asset: `com.balancesentinel.app`, `versionName=v1.5.1` (tag workflow).
 
 ## Accepted residuals
 

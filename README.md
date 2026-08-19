@@ -2,9 +2,9 @@
 
 [English](#english) | [中文](#中文)
 
-多AI供应商余额监控 Android 应用 — 支持14个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**配置和历史数据本地存储，请求仅发往用户配置的端点，零追踪。**
+多AI供应商余额监控 Android 应用 — 支持15个AI供应商、多账户后台自动刷新、桌面小组件、余额预警、趋势分析、控制台数据同步、中英双语界面。**配置和历史数据本地存储，请求仅发往用户配置的端点，零追踪。**
 
-Multi-AI-provider balance monitoring Android app — supports 14 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **Configuration and history stay local; requests go only to endpoints you configure; zero tracking.**
+Multi-AI-provider balance monitoring Android app — supports 15 AI providers, multi-account background auto-refresh, desktop widgets, balance alerts, trend analysis, console data sync, bilingual Chinese/English UI. **Configuration and history stay local; requests go only to endpoints you configure; zero tracking.**
 
 ---
 
@@ -12,9 +12,9 @@ Multi-AI-provider balance monitoring Android app — supports 14 AI providers, m
 
 ### 功能
 
-- **多供应商支持** — 支持14个AI供应商：DeepSeek、OpenAI、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、模力方舟、自定义
+- **多供应商支持** — 支持15个AI供应商：DeepSeek、OpenCode Go、OpenAI API、Anthropic、Gemini、Mistral、Cohere、通义千问、文心一言、智谱GLM、Moonshot、豆包、百川、模力方舟、自定义
 - **多账户管理** — 支持多个API Key，每个账户独立配置
-- **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本、卡片展示字段和余额计算字段，兼容cc-switch格式，内置NewAPI预设
+- **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本、卡片展示字段和余额计算字段，兼容cc-switch格式，内置 NewAPI 预设
 - **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
 - **自定义平台控制台** — 支持添加任意 AI 平台控制台，通过 WebView 登录官方控制台查看数据，登录状态永久保持
 - **后台自动刷新** — 前台服务、WorkManager 与精确闹钟恢复监控协同保活，支持 1/5/10/15/30/60 分钟间隔
@@ -23,6 +23,7 @@ Multi-AI-provider balance monitoring Android app — supports 14 AI providers, m
 - **余额预警** — 分账户分币种低余额预警，阈值可调，支持暂停 (snooze)
 - **异动通知** — 检测余额变化（充值/消耗），实时推送
 - **日内 + 日历天趋势** — 24h 滑动窗口 + 每日摘要，sparkline 图表 + 充值/消耗分析
+- **多窗口额度洞察** — 对百分比额度展示 5 小时、每周、每月使用率、剩余率、重置时间和历史趋势
 - **通知栏钱包** — 自定义排序，总余额双币种显示
 - **账户调试** — 显示完整API请求和响应信息，支持自定义脚本执行错误诊断
 - **数据管理** — 本地导出/导入配置，历史数据导出
@@ -32,6 +33,13 @@ Multi-AI-provider balance monitoring Android app — supports 14 AI providers, m
 - **中英双语** — 设置页面一键切换简体中文 / English，自动记忆语言偏好
 - **隐私优先** — EncryptedSharedPreferences (AES-256)，无 Firebase/分析/广告 SDK
 - **安全加固** — Rhino JS 沙箱（ClassShutter + sealObject）隔离自定义脚本执行环境
+
+### OpenAI 接口边界
+
+- 应用中的 **OpenAI API** 预设使用用户提供的 Platform API Key，统计对象是按量 API，不是 ChatGPT Plus/Pro/Codex 订阅。
+- OpenAI 尚未提供面向个人 ChatGPT/Codex 订阅的公开额度 API，因此应用不会读取或保存 ChatGPT Cookie、OAuth/session token、`auth.json` 或 Codex access token，也不会调用未公开的网页接口。
+- Platform 组织级 Usage/Costs 接口可以提供历史 Token 用量和费用，但不能返回个人订阅的 5 小时、每周、每月剩余百分比或重置时间。
+- 订阅额度请通过 [OpenAI 官方 Usage Dashboard](https://chatgpt.com/codex/settings/usage) 查看。接口调查与后续预留方案见 [OpenAI 额度接口说明](docs/openai-usage-api.md)。
 
 ### 截图
 
@@ -58,7 +66,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (1,486 JVM tests)
+# 运行测试 (1,531 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -116,7 +124,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.5.0** (2026-08-18)
+当前：**v1.5.1** (2026-08-20)
 
 [变更日志](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -133,7 +141,7 @@ keyPassword=<密码>
 
 ### Features
 
-- **Multi-Provider Support** — Supports 14 AI providers: DeepSeek, OpenAI, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Model Ark, Custom
+- **Multi-Provider Support** — Supports 15 AI providers: DeepSeek, OpenCode Go, OpenAI API, Anthropic, Gemini, Mistral, Cohere, Qwen, Wenxin, Zhipu, Moonshot, Doubao, Baichuan, Model Ark, Custom
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
 - **Custom Balance Query Script** — Custom providers support JavaScript query scripts, card display fields, and selectable balance fields, with cc-switch compatibility and a NewAPI preset
 - **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
@@ -144,6 +152,7 @@ keyPassword=<密码>
 - **Balance Alerts** — Per-account per-currency low-balance alerts with adjustable thresholds and snooze support
 - **Change Notifications** — Real-time push notifications for balance changes (top-up/consumption)
 - **Intraday + Calendar Day Trends** — 24h sliding window + daily summaries with sparkline charts and consumption analysis
+- **Multi-Window Quota Insights** — Percentage quotas show 5-hour, weekly, and monthly usage, remaining rates, reset times, and historical trends
 - **Notification Bar Wallet** — Custom sorting, dual-currency total balance display
 - **Account Debugging** — View complete API request and response details, support custom script execution error diagnosis
 - **Data Management** — Local config export/import, historical data export
@@ -153,6 +162,13 @@ keyPassword=<密码>
 - **Bilingual UI** — One-tap switch between Simplified Chinese / English in Settings, language preference persists across restarts
 - **Privacy First** — EncryptedSharedPreferences (AES-256), no Firebase/analytics/ad SDKs
 - **Security Hardening** — Rhino JS sandbox (ClassShutter + sealObject) for isolated custom script execution
+
+### OpenAI API Boundary
+
+- The app's **OpenAI API** preset uses a user-supplied Platform API key. It monitors usage-based API access, not ChatGPT Plus/Pro/Codex subscription quotas.
+- OpenAI does not provide a public personal API for ChatGPT/Codex subscription quota remaining, so the app does not collect ChatGPT cookies, OAuth/session tokens, `auth.json`, or Codex access tokens, and does not call undocumented web endpoints.
+- Platform organization Usage/Costs APIs can expose historical token usage and cost, but they do not return personal subscription 5-hour, weekly, or monthly remaining percentages or reset times.
+- Check subscription quota in the [official OpenAI Usage Dashboard](https://chatgpt.com/codex/settings/usage). See [OpenAI quota API notes](docs/openai-usage-api.md) for the investigation and reserved design.
 
 ### Screenshots
 
@@ -179,7 +195,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (1,486 JVM tests)
+# Run tests (1,531 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -237,7 +253,7 @@ See [SIGNING.md](SIGNING.md) for details.
 
 ### Version
 
-Current: **v1.5.0** (2026-08-18)
+Current: **v1.5.1** (2026-08-20)
 
 [Changelog](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -302,7 +318,7 @@ System     BalanceRefreshService           ← Foreground service + health track
 - `BackupImportPlanner` requires preview before apply; destructive replace requires complete credentials and two confirmations.
 - `DebugCapturePolicy` gates diagnostic request/response capture by the debuggable build flag; Release packaging tests verify the capture path is inactive.
 
-The v1.5.0 release baseline is 1,486 Debug and 1,486 Release JVM tests (3 skipped per variant), clean Debug/Release lint, and a passing Kover verification gate. The targeted `MainActivityTest` instrumentation smoke test passed 4/4; full connected-test discovery still has an emulator startup limitation recorded in the [Claude Code review handoff](docs/claude-code-review-handoff.md). Target-API device gaps are also tracked in [TEST_REPORT.md](TEST_REPORT.md).
+The v1.5.1 release candidate passes 1,531 Debug and 1,531 Release JVM tests (3 skipped per variant), clean Debug/Release lint, Kover verification, and fresh Debug/Release APK assembly. Full connected-test discovery still has an emulator startup limitation recorded in the [Claude Code review handoff](docs/claude-code-review-handoff.md). Target-API device gaps are tracked in [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Navigation
 

@@ -89,6 +89,37 @@ class HistoryRepositoryTest {
     }
 
     @Test
+    fun `percentage quota currency is accepted by Room history`() = runTest {
+        repository.insert(
+            listOf(RawRecord(accountId, 30, "%", 70f, 80f, 90f)),
+            BalanceRecordSource.REFRESH
+        )
+        val page = repository.page(accountId, "%", 0, 100)
+        assertEquals(1, page.records.size)
+        assertEquals(70f, page.records.single().value.totalBalance, 0.001f)
+    }
+
+    @Test
+    fun `database aggregate preserves subscription usage across resets and duplicate timestamps`() = runTest {
+        val records = listOf(
+            RawRecord(accountId, 1, "%", 100f, 100f, 100f),
+            RawRecord(accountId, 1, "%", 20f, 40f, 0f),
+            RawRecord(accountId, 1, "%", 100f, 100f, 100f),
+            RawRecord(accountId, 1, "%", 10f, 30f, 0f)
+        )
+        repository.insert(records, BalanceRecordSource.REFRESH)
+
+        val actual = requireNotNull(repository.aggregate(accountId, "%", 0, 10))
+
+        assertEquals(170f, actual.consumed, 0.001f)
+        assertEquals(130f, actual.granted, 0.001f)
+        assertEquals(200f, actual.toppedUp, 0.001f)
+        assertEquals(10f, actual.close, 0.001f)
+        assertEquals(30f, actual.grantedBalanceClose, 0.001f)
+        assertEquals(0f, actual.toppedUpBalanceClose, 0.001f)
+    }
+
+    @Test
     fun `database aggregate preserves RecordAggregator accounting semantics`() = runTest {
         val records = listOf(
             RawRecord(accountId, 1, "USD", 100f, 0f, 10f),

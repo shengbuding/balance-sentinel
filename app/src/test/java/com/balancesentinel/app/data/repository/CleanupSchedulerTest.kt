@@ -41,6 +41,35 @@ class CleanupSchedulerTest {
         assertTrue(db.historyDao().countSummaries() >= 1)
     }
 
+    @Test fun `cleanup archives subscription usage across quota resets`() = runBlocking {
+        db.accountDao().insertCreate(AccountEntity("quota", 0, "Quota", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
+        db.historyDao().insertBalanceBatch(
+            listOf(
+                BalanceRecordEntity(accountId = "quota", currency = "%", recordedAt = 1L, totalBalance = 100.0, grantedBalance = 100.0, toppedUpBalance = 100.0, source = BalanceRecordSource.REFRESH),
+                BalanceRecordEntity(accountId = "quota", currency = "%", recordedAt = 2L, totalBalance = 20.0, grantedBalance = 40.0, toppedUpBalance = 0.0, source = BalanceRecordSource.REFRESH),
+                BalanceRecordEntity(accountId = "quota", currency = "%", recordedAt = 3L, totalBalance = 100.0, grantedBalance = 100.0, toppedUpBalance = 100.0, source = BalanceRecordSource.REFRESH),
+                BalanceRecordEntity(accountId = "quota", currency = "%", recordedAt = 4L, totalBalance = 10.0, grantedBalance = 30.0, toppedUpBalance = 0.0, source = BalanceRecordSource.REFRESH)
+            )
+        )
+
+        val report = CleanupScheduler.runCleanupForDate(
+            context = context,
+            date = LocalDate.of(1970, 1, 1),
+            now = 4 * 86_400_000L,
+            zoneId = ZoneOffset.UTC
+        )
+        val summary = requireNotNull(db.historyDao().getSummary("1970-01-01", "quota", "%"))
+
+        assertEquals(170.0, summary.consumedBalance, 0.001)
+        assertEquals(130.0, summary.grantedBalance, 0.001)
+        assertEquals(200.0, summary.toppedUpBalance, 0.001)
+        assertEquals(10.0, summary.closeBalance, 0.001)
+        assertEquals(30.0, summary.grantedBalanceClose, 0.001)
+        assertEquals(0.0, summary.toppedUpBalanceClose, 0.001)
+        assertEquals(4, report.deletedRecordCount)
+        assertEquals(0, db.historyDao().countRecords())
+    }
+
     @Test fun `cleanup preserves continuity through yesterday`() = runBlocking {
         db.accountDao().insertCreate(AccountEntity("acct", 0, "Primary", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))
         db.accountDao().insertCreate(AccountEntity("other", 1, "Other", ProviderType.DEEPSEEK, activeCredentialGeneration = "test", createdAt = 1L, updatedAt = 1L, state = com.balancesentinel.app.data.local.account.AccountState.VERIFIED))

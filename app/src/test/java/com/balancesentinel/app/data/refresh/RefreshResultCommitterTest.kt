@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.BalanceEntry
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import com.balancesentinel.app.data.api.UnifiedBalance
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.account.AccountEntity
@@ -14,6 +17,7 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.RefreshLogEntry
 import com.balancesentinel.app.data.model.RefreshLogType
 import com.balancesentinel.app.widget.AccountBalance
+import com.balancesentinel.app.widget.BalanceWidgetDataStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -31,6 +35,10 @@ class RefreshResultCommitterTest {
 
     @Before fun installRoom() = com.balancesentinel.app.data.local.WalletDatabaseProvider.installForTests(db)
     @After fun close() = com.balancesentinel.app.data.local.WalletDatabaseProvider.clearForTests()
+
+    @Before fun clearWidgetCache() = BalanceWidgetDataStore.clearAll(context)
+
+    @After fun clearWidgetCacheAfter() = BalanceWidgetDataStore.clearAll(context)
 
     @Test fun `refresh records usage and logs commit atomically`() = runBlocking {
         db.accountDao().insertCreate(accountEntity())
@@ -82,6 +90,50 @@ class RefreshResultCommitterTest {
         val result = runBlocking { committer.commit(RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0), BalanceFetchResult.Success(UnifiedBalance(ProviderType.DEEPSEEK, "acct", true, listOf(BalanceEntry("USD", 1.0))), 10L)) { true } }
         assertTrue(result is AccountRefreshResult.Committed)
         runBlocking { assertEquals(1, db.historyDao().countRecords()); assertEquals(1, db.usageDao().countSnapshots()); assertEquals(1, db.eventLogDao().countLogs()) }
+    }
+
+    @Test fun `percentage quota survives Room commit and widget projection`() = runBlocking {
+        db.accountDao().insertCreate(accountEntity())
+        val quota = QuotaSnapshot(
+            listOf(
+                QuotaPeriodSnapshot("rolling_5h", 10.0, 90.0),
+                QuotaPeriodSnapshot("weekly", 20.0, 80.0),
+                QuotaPeriodSnapshot("monthly", 30.0, 70.0)
+            )
+        )
+        val committer = RefreshResultCommitter(
+            context = context,
+            accountStore = object : RefreshAccountStore {
+                override fun getAccount(accountId: String) = accountInfo()
+                override fun getAccounts() = emptyList<AccountInfo>()
+            },
+            roomPersistence = RoomRefreshPersistence(db),
+            alertDispatcher = RefreshAlertDispatcher { _, _ -> },
+            widgetRedrawNotifier = WidgetRedrawNotifier { }
+        )
+        val result = committer.commit(
+            RefreshRequest("acct", 0, 1, RefreshTrigger.SERVICE, 0),
+            BalanceFetchResult.Success(
+                UnifiedBalance(
+                    ProviderType.DEEPSEEK,
+                    "acct",
+                    true,
+                    listOf(BalanceEntry(PERCENTAGE_CURRENCY, 70.0, unit = "%", quota = quota))
+                ),
+                10L
+            )
+        ) { true }
+
+        assertTrue(result is AccountRefreshResult.Committed)
+        val cached = BalanceWidgetDataStore.getAllBalances(context).single()
+        assertEquals(quota, cached.quota)
+        assertEquals(1L, db.historyDao().countRecords())
+        val allRows = db.historyDao().keysetPageAll(Long.MIN_VALUE, Long.MAX_VALUE, null, null, 10)
+        assertEquals(listOf("%"), allRows.map { it.currency })
+        val row = db.historyDao().keysetPage("acct", "%", Long.MIN_VALUE, Long.MAX_VALUE, null, null, 10).single()
+        assertEquals(70.0, row.totalBalance, 0.001)
+        assertEquals(80.0, row.grantedBalance, 0.001)
+        assertEquals(90.0, row.toppedUpBalance, 0.001)
     }
 
     @Test fun `default committer constructor uses installed Room database`() {

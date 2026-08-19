@@ -1,6 +1,7 @@
 package com.balancesentinel.app.widget
 
 import android.graphics.Color
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -66,5 +67,28 @@ class SparklineDrawerTest {
         val bitmap = SparklineDrawer.draw(values, 300, 100, Color.BLUE, Color.CYAN)
 
         assertNotNull(bitmap)
+    }
+
+    @Test
+    fun `widget subscription sparkline converts remaining history to used percent`() {
+        assertEquals(
+            listOf(10f, 20f, 30f),
+            widgetSparklineValues(listOf(90f, 80f, 70f), PERCENTAGE_CURRENCY)
+        )
+    }
+
+    @Test
+    fun `widget money sparkline preserves recent balance history`() {
+        val closes = (1..9).map(Int::toFloat)
+
+        assertEquals((3..9).map(Int::toFloat), widgetSparklineValues(closes, "USD"))
+    }
+
+    @Test
+    fun `widget subscription sparkline bounds malformed percentage history`() {
+        assertEquals(
+            listOf(100f, 0f),
+            widgetSparklineValues(listOf(-25f, 125f), PERCENTAGE_CURRENCY)
+        )
     }
 }

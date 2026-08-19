@@ -14,6 +14,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.local.WalletDatabase
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
@@ -141,6 +144,50 @@ class WidgetProviderTest {
         val rendered = awaitWidgetBalance(manager, widgetId) { it.contains("25.00") }
         pending.future.get(2, TimeUnit.SECONDS)
         assertFalse("deleted balance must not affect the rendered aggregate", rendered.contains("100.00"))
+    }
+
+    @Test
+    fun `provider entrypoint renders configured subscription account`() {
+        StaticWidgetProvider.accountStateLoaderOverride = {
+            AccountLoadState.Ready(listOf(account("subscription")))
+        }
+        val manager = AppWidgetManager.getInstance(context)
+        val widgetId = Shadows.shadowOf(manager).createWidget(
+            StaticWidgetProvider_2x1::class.java,
+            R.layout.widget_balance_compact
+        )
+        WidgetConfigStore.saveConfig(context, widgetId, "subscription", PERCENTAGE_CURRENCY)
+        BalanceWidgetDataStore.saveAccountBalance(
+            context = context,
+            accountId = "subscription",
+            label = "Subscription",
+            totalBalance = "70",
+            currency = PERCENTAGE_CURRENCY,
+            isAvailable = true,
+            grantedBalance = "",
+            toppedUpBalance = "",
+            quota = QuotaSnapshot(
+                listOf(
+                    QuotaPeriodSnapshot("rolling_5h", 10.0, 90.0),
+                    QuotaPeriodSnapshot("weekly", 20.0, 80.0),
+                    QuotaPeriodSnapshot("monthly", 30.0, 70.0)
+                )
+            )
+        )
+        val provider = StaticWidgetProvider_2x1()
+        val pending = attachPendingResult(provider)
+
+        provider.onUpdate(context, manager, intArrayOf(widgetId))
+
+        val rendered = awaitWidgetBalance(manager, widgetId) {
+            it.contains("10%") &&
+                (
+                    it.contains(context.getString(R.string.widget_subscription_5h)) ||
+                        it.contains("5 hours", ignoreCase = true)
+                    )
+        }
+        pending.future.get(2, TimeUnit.SECONDS)
+        assertTrue(rendered.contains("10%"))
     }
 
     @Test

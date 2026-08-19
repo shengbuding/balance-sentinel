@@ -1,6 +1,6 @@
 {
   "name": "deepseekbalance",
-  "version": "1.0.0",
+  "version": "1.5.1",
   "description": "DeepSeek 余额查询 Android App，支持桌面小组件实时查看账户余额。",
   "main": "index.js",
   "scripts": {
