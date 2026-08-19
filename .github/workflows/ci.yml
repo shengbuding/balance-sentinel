@@ -81,8 +81,12 @@ jobs:
         shell: pwsh
         run: |
           $missing = Join-Path $env:RUNNER_TEMP "missing-wallet-sentinel-signing.properties"
-          $output = ./gradlew assembleRelease "-PwalletSentinel.signingConfigFile=$missing" --no-daemon 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0 -or $output -notmatch "RELEASE_SIGNING_CONFIG_REQUIRED") {
+          $log = Join-Path $env:RUNNER_TEMP "missing-wallet-sentinel-signing.log"
+          & ./gradlew assembleRelease "-PwalletSentinel.signingConfigFile=$missing" --no-daemon *> $log
+          $gradleExitCode = $LASTEXITCODE
+          $output = Get-Content -LiteralPath $log -Raw
+          if ($gradleExitCode -eq 0 -or $output -notmatch "RELEASE_SIGNING_CONFIG_REQUIRED") {
+            Write-Host $output
             throw "Release signing gate did not reject the missing config"
           }
 
