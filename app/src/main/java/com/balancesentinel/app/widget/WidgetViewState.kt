@@ -15,7 +15,8 @@ data class WidgetSelection(
     val currency: String?,
     val label: String?,
     val accountCount: Int = 0,
-    val total: Boolean = false
+    val total: Boolean = false,
+    val quotaPeriod: String? = null
 )
 
 sealed interface WidgetViewState {

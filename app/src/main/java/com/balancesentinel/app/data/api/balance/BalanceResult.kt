@@ -20,5 +20,7 @@ data class BalanceData(
     val unit: String? = null,          // 货币单位（CNY, USD等）
     val isValid: Boolean? = null,      // 是否有效（余额是否充足）
     val invalidMessage: String? = null, // 无效时的提示信息
-    val fields: Map<String, String> = emptyMap()
+    val fields: Map<String, String> = emptyMap(),
+    /** Optional rolling/weekly/monthly percentage quota windows. */
+    val quota: com.balancesentinel.app.data.api.QuotaSnapshot? = null
 )

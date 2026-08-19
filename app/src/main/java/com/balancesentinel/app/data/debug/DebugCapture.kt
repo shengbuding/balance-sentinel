@@ -13,6 +13,8 @@ import okio.BufferedSink
 import okio.Sink
 import okio.Timeout
 import okio.buffer
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 const val MAX_CAPTURE_BYTES = 64 * 1024
 const val MAX_DEBUG_STORE_BYTES = 2 * 1024 * 1024L
@@ -114,7 +116,30 @@ object DebugCapture {
 }
 
 object DebugCapturePolicy {
-    fun enabled(debuggable: Boolean = BuildConfig.DEBUG): Boolean = debuggable
+    private val userCaptureSessions = AtomicInteger(0)
+
+    /**
+     * Release builds keep capture disabled unless the user explicitly opens an
+     * account debug dialog. The dialog owns a scoped session so background
+     * refreshes do not start retaining request data by default.
+     */
+    fun enabled(debuggable: Boolean = BuildConfig.DEBUG): Boolean =
+        debuggable || userCaptureSessions.get() > 0
+
+    fun openUserCaptureSession(): AutoCloseable {
+        userCaptureSessions.incrementAndGet()
+        return UserCaptureSession()
+    }
+
+    private class UserCaptureSession : AutoCloseable {
+        private val closed = AtomicBoolean(false)
+
+        override fun close() {
+            if (closed.compareAndSet(false, true)) {
+                userCaptureSessions.updateAndGet { count -> (count - 1).coerceAtLeast(0) }
+            }
+        }
+    }
 }
 
 object DebugClientInstaller {

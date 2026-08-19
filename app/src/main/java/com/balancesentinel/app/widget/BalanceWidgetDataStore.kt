@@ -2,6 +2,8 @@ package com.balancesentinel.app.widget
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -35,7 +37,8 @@ object BalanceWidgetDataStore {
         isAvailable: Boolean,
         grantedBalance: String,
         toppedUpBalance: String,
-        displayFields: Map<String, String> = emptyMap()
+        displayFields: Map<String, String> = emptyMap(),
+        quota: QuotaSnapshot? = null
     ) {
         synchronized(STORE_LOCK) {
             val p = getPrefs(context)
@@ -50,6 +53,7 @@ object BalanceWidgetDataStore {
                 grantedBalance = grantedBalance,
                 toppedUpBalance = toppedUpBalance,
                 displayFields = displayFields,
+                quota = quota,
                 lastUpdated = System.currentTimeMillis()
             )
             if (idx >= 0) balances[idx] = entry else balances.add(entry)
@@ -145,10 +149,14 @@ object BalanceWidgetDataStore {
      * 从余额列表中提取总额最大的两个币种（总额为 0 的币种不显示）。
      */
     fun aggregateTopTwo(balances: List<AccountBalance>): AggregatedBalance? {
-        if (balances.isEmpty()) return null
+        // Percentage quota windows are account metadata, not money. Keeping them
+        // out of this aggregation prevents a 97% quota from becoming a currency
+        // total on the home widget.
+        val moneyBalances = balances.filter { it.currency != PERCENTAGE_CURRENCY }
+        if (moneyBalances.isEmpty()) return null
 
         // 按币种汇总
-        val byCurrency = balances.groupBy { it.currency }
+        val byCurrency = moneyBalances.groupBy { it.currency }
         val currencyTotals = byCurrency.mapValues { (_, entries) ->
             entries.sumOf { it.totalBalance.toDoubleOrNull() ?: 0.0 }
         }
@@ -163,10 +171,10 @@ object BalanceWidgetDataStore {
             val first = byCurrency.keys.first()
             return AggregatedBalance(
                 totalBalance = "0.00", currency = first,
-                isAvailable = balances.all { it.isAvailable && !it.stale },
+                isAvailable = moneyBalances.all { it.isAvailable && !it.stale },
                 grantedBalance = "0.00", toppedUpBalance = "0.00",
-                accountCount = balances.map { it.accountId }.distinct().size,
-                lastUpdated = balances.maxOf { it.lastUpdated }
+                accountCount = moneyBalances.map { it.accountId }.distinct().size,
+                lastUpdated = moneyBalances.maxOf { it.lastUpdated }
             )
         }
 
@@ -185,11 +193,11 @@ object BalanceWidgetDataStore {
             currency = currency,
             totalBalance2 = if (total2 > 0) "%.2f".format(total2) else "",
             currency2 = if (total2 > 0) currency2 else "",
-            isAvailable = balances.all { it.isAvailable && !it.stale },
+            isAvailable = moneyBalances.all { it.isAvailable && !it.stale },
             grantedBalance = "%.2f".format(granted),
             toppedUpBalance = "%.2f".format(toppedUp),
-            accountCount = balances.map { it.accountId }.distinct().size,
-            lastUpdated = balances.maxOf { it.lastUpdated }
+            accountCount = moneyBalances.map { it.accountId }.distinct().size,
+            lastUpdated = moneyBalances.maxOf { it.lastUpdated }
         )
     }
 
@@ -306,7 +314,8 @@ data class AccountBalance(
     val lastUpdated: Long,
     val stale: Boolean = false,
     val staleReason: String? = null,
-    val displayFields: Map<String, String> = emptyMap()
+    val displayFields: Map<String, String> = emptyMap(),
+    val quota: com.balancesentinel.app.data.api.QuotaSnapshot? = null
 )
 
 @Serializable
@@ -330,6 +339,8 @@ data class AggregatedBalance(
     val grantedBalance: String,
     val toppedUpBalance: String,
     val accountCount: Int,
-    val lastUpdated: Long
+    val lastUpdated: Long,
+    /** Quota windows for subscription-style accounts; null for money balances. */
+    val quota: com.balancesentinel.app.data.api.QuotaSnapshot? = null
 )
 

@@ -13,6 +13,7 @@ enum class ProviderType(val id: String, val displayName: String) {
     GEMINI("gemini", "Gemini"),
     MISTRAL("mistral", "Mistral"),
     COHERE("cohere", "Cohere"),
+    OPENCODE_GO("opencode_go", "OpenCode Go"),
 
     // 国内供应商
     DEEPSEEK("deepseek", "DeepSeek"),

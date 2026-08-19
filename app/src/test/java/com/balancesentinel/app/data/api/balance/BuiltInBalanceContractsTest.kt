@@ -75,7 +75,8 @@ class BuiltInBalanceContractsTest {
             FixtureCase(BuiltInBalanceContracts.siliconFlowCom, "siliconflow.json", ProviderType.CUSTOM, 21.5, "USD"),
             FixtureCase(BuiltInBalanceContracts.openRouter, "openrouter.json", ProviderType.CUSTOM, 57.5, "USD"),
             FixtureCase(BuiltInBalanceContracts.novita, "novita.json", ProviderType.CUSTOM, 12.3456, "USD"),
-            FixtureCase(BuiltInBalanceContracts.modelArk, "model_ark.json", ProviderType.MODEL_ARK, 700.0, "Token")
+            FixtureCase(BuiltInBalanceContracts.modelArk, "model_ark.json", ProviderType.MODEL_ARK, 700.0, "Token"),
+            FixtureCase(BuiltInBalanceContracts.openCodeGo, "opencode_go.json", ProviderType.OPENCODE_GO, 40.0, "%")
         )
 
         cases.forEach { case ->
@@ -96,9 +97,26 @@ class BuiltInBalanceContractsTest {
     fun `resolver uses provider type only for native typed contracts`() {
         assertNotNull(BuiltInBalanceContracts.resolve(ProviderType.DEEPSEEK, "https://unrelated.example"))
         assertNotNull(BuiltInBalanceContracts.resolve(ProviderType.MODEL_ARK, "https://unrelated.example"))
+        assertNotNull(BuiltInBalanceContracts.resolve(ProviderType.OPENCODE_GO, "https://unrelated.example"))
         assertNotNull(BuiltInBalanceContracts.resolve(ProviderType.CUSTOM, "https://api.stepfun.com/v1"))
         assertNull(BuiltInBalanceContracts.resolve(ProviderType.MOONSHOT, "https://api.stepfun.com/v1"))
         assertNull(BuiltInBalanceContracts.resolve(ProviderType.CUSTOM, "https://api.stepfun.com.evil.test/v1"))
+    }
+
+    @Test
+    fun `open code go contract retains every quota window and reset time`() {
+        val result = BuiltInBalanceContracts.openCodeGo.parse(
+            resource("balance/opencode_go.json"),
+            ProviderType.OPENCODE_GO,
+            "acct"
+        ) as ProviderResult.Success
+
+        val balance = result.data.balances.single()
+        assertEquals("%", balance.currency)
+        assertEquals(40.0, balance.totalBalance, 0.0)
+        assertEquals(3, balance.quota?.periods?.size)
+        assertEquals(75.0, balance.quota?.find("rolling_5h")?.remainingPercent ?: -1.0, 0.0)
+        assertEquals("2026-09-01T00:00:00Z", balance.quota?.find("monthly")?.resetsAt)
     }
 
     private fun resource(path: String): String {

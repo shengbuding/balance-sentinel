@@ -26,7 +26,9 @@ data class BalanceEntry(
     val grantedBalance: Double? = null,
     val toppedUpBalance: Double? = null,
     val unit: String = "元",
-    val displayFields: Map<String, String> = emptyMap()
+    val displayFields: Map<String, String> = emptyMap(),
+    /** Optional multi-window quota metadata. */
+    val quota: QuotaSnapshot? = null
 )
 
 /**

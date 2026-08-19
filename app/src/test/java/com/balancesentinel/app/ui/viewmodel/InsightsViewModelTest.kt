@@ -6,6 +6,9 @@ import androidx.room.Room
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.QuotaSnapshot
 import com.balancesentinel.app.data.engine.DailyBillReport
 import com.balancesentinel.app.data.engine.DailyOutput
 import com.balancesentinel.app.data.engine.DailyPoint
@@ -63,9 +66,9 @@ class InsightsViewModelTest {
     private fun awaitViewModel(viewModel: InsightsViewModel) {
         val deadline = System.currentTimeMillis() + 5000
         while (viewModel.uiState.value.isLoading && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50)
+            Thread.sleep(20)
         }
-        // Give the final state-copy write time to propagate
+        // Give the final state-copy write time to propagate.
         Thread.sleep(50)
     }
 
@@ -109,6 +112,272 @@ class InsightsViewModelTest {
         assertEquals(2, state.intradayOutput!!.dataPointCount)
         assertEquals(10f, state.intradayOutput!!.billReport.consumed, 0.01f)
         assertEquals(-10f, state.intradayOutput!!.billReport.netChange, 0.01f)
+    }
+
+    @Test
+    fun `percentage currency uses quota insights and subscription daily statistics`() {
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 3600_000L, PERCENTAGE_CURRENCY, 80f, 90f, 95f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now, PERCENTAGE_CURRENCY, 70f, 85f, 90f)
+        )
+        val quota = QuotaSnapshot(
+            listOf(
+                QuotaPeriodSnapshot("rolling_5h", 10.0, 90.0, "2026-08-18T12:00:00Z"),
+                QuotaPeriodSnapshot("weekly", 15.0, 85.0, "2026-08-20T00:00:00Z"),
+                QuotaPeriodSnapshot("monthly", 30.0, 70.0, "2026-09-01T00:00:00Z")
+            )
+        )
+        BalanceWidgetDataStore.saveAccountBalance(
+            context,
+            INSIGHTS_ACCOUNT_ID,
+            "Insights",
+            "70",
+            PERCENTAGE_CURRENCY,
+            true,
+            "85",
+            "90",
+            quota = quota
+        )
+
+        val viewModel = createViewModel()
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading &&
+                state.availableCurrencies == listOf(PERCENTAGE_CURRENCY) &&
+                state.quotaInsight?.periods?.size == 3
+        }
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(PERCENTAGE_CURRENCY), state.availableCurrencies)
+        assertNotNull(state.quotaInsight)
+        assertEquals(3, state.quotaInsight!!.periods.size)
+        assertEquals(30f, state.quotaInsight!!.periods.last().usedPercent, 0.01f)
+        assertNull(state.intradayOutput)
+        assertNotNull(state.dailyOutput)
+        assertFalse(state.isEmpty)
+    }
+
+    @Test
+    fun `all percentage accounts merge histories with carry forward`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "Second subscription account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            // Account A: 10% -> 20% used.
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 3_000L, PERCENTAGE_CURRENCY, 90f, -1f, -1f),
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 1_000L, PERCENTAGE_CURRENCY, 80f, -1f, -1f),
+            // Account B refreshes between A's samples: 60% -> 70% used.
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now - 2_000L, PERCENTAGE_CURRENCY, 40f, -1f, -1f),
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now - 500L, PERCENTAGE_CURRENCY, 30f, -1f, -1f)
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = INSIGHTS_ACCOUNT_ID,
+                    label = "Insights test account",
+                    totalBalance = "80",
+                    currency = PERCENTAGE_CURRENCY,
+                    isAvailable = true,
+                    grantedBalance = "-1",
+                    toppedUpBalance = "-1",
+                    lastUpdated = now,
+                    quota = QuotaSnapshot(
+                        listOf(QuotaPeriodSnapshot("monthly", 20.0, 80.0, "2026-09-01T00:00:00Z"))
+                    )
+                )
+            )
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            SECOND_INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = SECOND_INSIGHTS_ACCOUNT_ID,
+                    label = secondAccount.label,
+                    totalBalance = "30",
+                    currency = PERCENTAGE_CURRENCY,
+                    isAvailable = true,
+                    grantedBalance = "-1",
+                    toppedUpBalance = "-1",
+                    lastUpdated = now + 100L,
+                    quota = QuotaSnapshot(
+                        listOf(QuotaPeriodSnapshot("monthly", 70.0, 30.0, "2026-09-02T00:00:00Z"))
+                    )
+                )
+            )
+        )
+
+        val viewModel = createViewModel(listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.quotaInsight?.periods?.singleOrNull()?.history?.size == 3
+        }
+
+        val period = viewModel.uiState.value.quotaInsight!!.periods.single()
+        assertEquals(listOf(35f, 40f, 45f), period.history.map { it.usedPercent })
+        assertTrue(period.history.zipWithNext().all { (first, second) -> first.timestamp < second.timestamp })
+        assertEquals(45f, period.usedPercent, 0.01f)
+        assertEquals(55f, period.remainingPercent, 0.01f)
+        assertEquals(SECOND_INSIGHTS_ACCOUNT_ID, period.latestRefreshAccountId)
+        assertEquals(secondAccount.label, period.latestRefreshAccountLabel)
+        assertEquals(now + 100L, period.latestRefreshAt)
+        assertEquals("2026-09-02T00:00:00Z", period.resetsAt)
+    }
+
+    @Test
+    fun `subscription history supplies latest account metadata without a live snapshot`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "Historical subscription account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 2_000L, PERCENTAGE_CURRENCY, 80f, -1f, -1f),
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now - 1_000L, PERCENTAGE_CURRENCY, 60f, -1f, -1f)
+        )
+
+        val viewModel = createViewModel(listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.quotaInsight?.periods?.singleOrNull()?.latestRefreshAt != null
+        }
+
+        val period = viewModel.uiState.value.quotaInsight!!.periods.single()
+        assertEquals(now - 1_000L, period.latestRefreshAt)
+        assertEquals(SECOND_INSIGHTS_ACCOUNT_ID, period.latestRefreshAccountId)
+        assertEquals(secondAccount.label, period.latestRefreshAccountLabel)
+        assertNull(period.resetsAt)
+    }
+
+    @Test
+    fun `all account current subscription mean includes history only accounts`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "History only account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val now = System.currentTimeMillis()
+        addInsightsRoomRecords(
+            RawRecord(INSIGHTS_ACCOUNT_ID, now - 2_000L, PERCENTAGE_CURRENCY, 80f, -1f, -1f),
+            RawRecord(SECOND_INSIGHTS_ACCOUNT_ID, now - 1_000L, PERCENTAGE_CURRENCY, 30f, -1f, -1f)
+        )
+        BalanceWidgetDataStore.replaceAccountBalances(
+            context,
+            INSIGHTS_ACCOUNT_ID,
+            listOf(
+                AccountBalance(
+                    accountId = INSIGHTS_ACCOUNT_ID,
+                    label = "Insights test account",
+                    totalBalance = "80",
+                    currency = PERCENTAGE_CURRENCY,
+                    isAvailable = true,
+                    grantedBalance = "-1",
+                    toppedUpBalance = "-1",
+                    lastUpdated = now,
+                    quota = QuotaSnapshot(
+                        listOf(QuotaPeriodSnapshot("monthly", 20.0, 80.0))
+                    )
+                )
+            )
+        )
+
+        val viewModel = createViewModel(listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading && state.quotaInsight?.periods?.singleOrNull()?.usedPercent == 45f
+        }
+
+        val period = viewModel.uiState.value.quotaInsight!!.periods.single()
+        assertEquals(45f, period.usedPercent, 0.01f)
+        assertEquals(55f, period.remainingPercent, 0.01f)
+    }
+
+    @Test
+    fun `subscription daily merge averages balances and sums real usage`() {
+        val first = DailyOutput(
+            dailyPoints = listOf(
+                DailyPoint("2026-08-19", 80f, 120f, 150f, 80f, false, 90f, 4)
+            ),
+            billReport = DailyBillReport(120f, 150f, 80f, -350f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = false
+        )
+        val second = DailyOutput(
+            dailyPoints = listOf(
+                DailyPoint("2026-08-19", 40f, 60f, 100f, 40f, false, 50f, 3)
+            ),
+            billReport = DailyBillReport(60f, 100f, 40f, -200f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = false
+        )
+
+        val merged = InsightsViewModel.mergeQuotaDailyOutputs(listOf(first, second))
+        val point = merged.dailyPoints.single()
+
+        assertEquals(60f, point.balance, 0.01f)
+        assertEquals(70f, point.open, 0.01f)
+        assertEquals(180f, point.consumed, 0.01f)
+        assertEquals(250f, point.toppedUp, 0.01f)
+        assertEquals(120f, point.granted, 0.01f)
+        assertEquals(7, point.sampleCount)
+        assertEquals(180f, merged.billReport.consumed, 0.01f)
+        assertNull(merged.estimate)
+    }
+
+    @Test
+    fun `subscription daily merge ignores accounts with no historical points`() {
+        val populated = DailyOutput(
+            dailyPoints = listOf(
+                DailyPoint("2026-08-19", 60f, 120f, 150f, 80f, false, 70f, 4)
+            ),
+            billReport = DailyBillReport(120f, 150f, 80f, -350f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = false
+        )
+        val empty = DailyOutput(
+            dailyPoints = emptyList(),
+            billReport = DailyBillReport(0f, 0f, 0f, 0f, ""),
+            estimate = null,
+            periodLabel = "",
+            isEmpty = true,
+            insufficientData = true
+        )
+
+        val merged = InsightsViewModel.mergeQuotaDailyOutputs(listOf(populated, empty))
+
+        assertEquals(listOf("2026-08-19"), merged.dailyPoints.map { it.date })
+        assertEquals(60f, merged.dailyPoints.single().balance, 0.01f)
+        assertEquals(120f, merged.billReport.consumed, 0.01f)
     }
 
     @Test
@@ -444,6 +713,64 @@ class InsightsViewModelTest {
         assertEquals(2, state.accounts.size)
         assertEquals(listOf(INSIGHTS_ACCOUNT_ID), state.eligibleAccounts.map { it.id })
         assertEquals(EstimateMethod.LINEAR_REGRESSION, state.dailyOutput!!.estimate!!.method)
+    }
+
+    @Test
+    fun `selecting one account keeps other matching accounts in the filter`() {
+        val secondAccount = insightsAccountInfo(
+            id = SECOND_INSIGHTS_ACCOUNT_ID,
+            label = "Second CNY account"
+        )
+        runBlocking {
+            database.accountDao().insertCreate(
+                insightsRoomAccount(
+                    id = SECOND_INSIGHTS_ACCOUNT_ID,
+                    displayOrder = 1,
+                    label = secondAccount.label
+                )
+            )
+        }
+        val date = java.time.LocalDate.now().minusDays(1).toString()
+        addInsightsRoomSummaries(
+            insightsSummary(
+                accountId = INSIGHTS_ACCOUNT_ID,
+                date = date,
+                currency = "CNY",
+                close = 90f,
+                consumed = 10f
+            ),
+            insightsSummary(
+                accountId = SECOND_INSIGHTS_ACCOUNT_ID,
+                date = date,
+                currency = "CNY",
+                close = 40f,
+                consumed = 5f
+            )
+        )
+
+        val viewModel = createViewModel(listOf(insightsAccountInfo(), secondAccount))
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading &&
+                state.selectedCurrency == "CNY" &&
+                state.eligibleAccounts.map { it.id } ==
+                listOf(INSIGHTS_ACCOUNT_ID, SECOND_INSIGHTS_ACCOUNT_ID)
+        }
+
+        viewModel.selectAccount(INSIGHTS_ACCOUNT_ID)
+        awaitAccountState(viewModel) { state ->
+            !state.isLoading &&
+                state.selectedAccountId == INSIGHTS_ACCOUNT_ID &&
+                state.eligibleAccounts.map { it.id } ==
+                listOf(INSIGHTS_ACCOUNT_ID, SECOND_INSIGHTS_ACCOUNT_ID) &&
+                state.dailyOutput?.dailyPoints?.singleOrNull()?.balance == 90f
+        }
+
+        val state = viewModel.uiState.value
+        assertEquals(
+            listOf(INSIGHTS_ACCOUNT_ID, SECOND_INSIGHTS_ACCOUNT_ID),
+            state.eligibleAccounts.map { it.id }
+        )
+        assertEquals(90f, state.dailyOutput!!.dailyPoints.single().balance, 0.01f)
     }
 
     @Test

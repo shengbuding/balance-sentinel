@@ -3,6 +3,7 @@ package com.balancesentinel.app.data.repository
 import android.content.Context
 import androidx.room.withTransaction
 import com.balancesentinel.app.data.engine.RecordAggregator
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.local.history.BalanceRecordSource
 import com.balancesentinel.app.data.local.history.BalanceRecordEntity
 import com.balancesentinel.app.data.local.history.DailySummaryEntity
@@ -285,12 +286,13 @@ open class RoomHistoryRepository(
                 CONTINUITY_SUMMARY_IDENTITY
             ) == 0L
         ) {
-            val aggregate = dao.aggregateSemantic(
+            val aggregate = aggregateForRange(
                 accountId,
                 canonicalCurrency,
                 fromInclusive,
-                toExclusive
-            ).toHistoryAggregateOrNull(accountId, canonicalCurrency)
+                toExclusive,
+                date
+            )
                 ?: return@withTransaction CleanupArchiveResult(false, 0)
             dao.deleteSummaryIdentity(
                 date,
@@ -594,12 +596,43 @@ open class RoomHistoryRepository(
         toExclusive: Long
     ): HistoryAggregate? {
         require(toExclusive >= fromInclusive) { "invalid history range" }
-        return database.historyDao().aggregateSemantic(
+        return aggregateForRange(
             accountId,
             requireIsoCurrency(currency),
             fromInclusive,
+            toExclusive,
+            "aggregate"
+        )
+    }
+
+    /**
+     * Room's SQL accounting projection is intentionally money-specific. A
+     * subscription stores remaining percentages in the same three numeric
+     * columns, so quota resets must be interpreted by the shared Kotlin
+     * aggregator instead of being mistaken for deposits or grants.
+     */
+    private suspend fun aggregateForRange(
+        accountId: String,
+        currency: String,
+        fromInclusive: Long,
+        toExclusive: Long,
+        date: String
+    ): HistoryAggregate? {
+        if (currency == PERCENTAGE_CURRENCY) {
+            val records = database.historyDao()
+                .range(accountId, currency, fromInclusive, toExclusive)
+                .asReversed()
+                .map { it.toHistoryRecord().value }
+            return RecordAggregator.aggregate(records, date)
+                .singleOrNull()
+                ?.toHistoryAggregate()
+        }
+        return database.historyDao().aggregateSemantic(
+            accountId,
+            currency,
+            fromInclusive,
             toExclusive
-        ).toHistoryAggregateOrNull(accountId, requireIsoCurrency(currency))
+        ).toHistoryAggregateOrNull(accountId, currency)
     }
 
     override suspend fun count(
@@ -744,6 +777,7 @@ private fun HistoryAggregateProjection.toHistoryAggregateOrNull(
 
 private fun requireIsoCurrency(value: String): String {
     val canonical = value.trim().uppercase(Locale.ROOT)
+    if (canonical == PERCENTAGE_CURRENCY) return canonical
     require(canonical.length == 3) { "Unknown ISO currency: $value" }
     try {
         Currency.getInstance(canonical)

@@ -54,6 +54,11 @@ class LocalizedFormatter(
         locale
     ).format(Date(timestamp))
 
+    fun formatDate(timestamp: Long): String = DateFormat.getDateInstance(
+        DateFormat.SHORT,
+        locale
+    ).format(Date(timestamp))
+
     fun formatTime(timestamp: Long): String = DateFormat.getTimeInstance(
         DateFormat.SHORT,
         locale
@@ -91,6 +96,36 @@ class LocalizedFormatter(
                 minutes,
                 remainingSeconds
             )
+        }
+    }
+
+    fun formatCountdown(targetTimestamp: Long, now: Long = System.currentTimeMillis()): String {
+        val remainingMillis = targetTimestamp - now
+        if (remainingMillis <= 0L) return localizedResources.getString(R.string.time_countdown_due)
+        val totalSeconds = (remainingMillis + 999L) / 1_000L
+        val days = totalSeconds / 86_400L
+        val hours = (totalSeconds % 86_400L) / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        val seconds = totalSeconds % 60L
+        return when {
+            days > 0L -> localizedResources.getString(
+                R.string.time_countdown_days,
+                days,
+                hours,
+                minutes
+            )
+            hours > 0L -> localizedResources.getString(
+                R.string.time_countdown_hours,
+                hours,
+                minutes,
+                seconds
+            )
+            minutes > 0L -> localizedResources.getString(
+                R.string.time_countdown_minutes,
+                minutes,
+                seconds
+            )
+            else -> localizedResources.getString(R.string.time_countdown_seconds, seconds)
         }
     }
 

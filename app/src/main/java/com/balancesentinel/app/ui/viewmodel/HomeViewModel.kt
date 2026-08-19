@@ -387,7 +387,8 @@ class HomeViewModel @JvmOverloads constructor(
                     totalBalance = entry.totalBalance.toString(),
                     grantedBalance = entry.grantedBalance?.toString().orEmpty(),
                     toppedUpBalance = entry.toppedUpBalance?.toString().orEmpty(),
-                    displayFields = entry.displayFields
+                    displayFields = entry.displayFields,
+                    quota = entry.quota
                 )
             }
         )
@@ -497,7 +498,8 @@ class HomeViewModel @JvmOverloads constructor(
                             totalBalance = entry.totalBalance,
                             grantedBalance = entry.grantedBalance,
                             toppedUpBalance = entry.toppedUpBalance,
-                            displayFields = entry.displayFields
+                            displayFields = entry.displayFields,
+                            quota = entry.quota
                         )
                     }
                 )

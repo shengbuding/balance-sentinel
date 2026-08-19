@@ -23,5 +23,6 @@ data class BalanceInfo(
     val grantedBalance: String,
     @SerialName("topped_up_balance")
     val toppedUpBalance: String,
-    val displayFields: Map<String, String> = emptyMap()
+    val displayFields: Map<String, String> = emptyMap(),
+    val quota: com.balancesentinel.app.data.api.QuotaSnapshot? = null
 )

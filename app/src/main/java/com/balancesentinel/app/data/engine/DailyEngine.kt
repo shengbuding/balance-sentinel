@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.engine
 
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import java.time.LocalDate
@@ -29,11 +30,24 @@ object DailyEngine {
             .sortedBy { it.timestamp }
 
         val todayPoint: DailyPoint? = if (todayFiltered.size >= 1) {
-            val todayTopUp = computeTopUpFromRecords(todayFiltered)
-            val todayGrant = computeGrantFromRecords(todayFiltered)
+            val isSubscription = input.filterCurrency == PERCENTAGE_CURRENCY
+            val todayTopUp = if (isSubscription) {
+                RecordAggregator.computeQuotaConsumed(todayFiltered) { it.toppedUpBalance }
+            } else {
+                computeTopUpFromRecords(todayFiltered)
+            }
+            val todayGrant = if (isSubscription) {
+                RecordAggregator.computeQuotaConsumed(todayFiltered) { it.grantedBalance }
+            } else {
+                computeGrantFromRecords(todayFiltered)
+            }
             val first = todayFiltered.first()
             val last = todayFiltered.last()
-            val consumed = computeConsumedFromPairs(todayFiltered)
+            val consumed = if (isSubscription) {
+                RecordAggregator.computeQuotaConsumed(todayFiltered) { it.totalBalance }
+            } else {
+                computeConsumedFromPairs(todayFiltered)
+            }
             DailyPoint(
                 date = today,
                 balance = last.totalBalance,

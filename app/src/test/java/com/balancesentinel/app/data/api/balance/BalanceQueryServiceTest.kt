@@ -5,6 +5,8 @@ import com.balancesentinel.app.data.api.ProviderError
 import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.providers.OpenAiCompatibleProvider
+import com.balancesentinel.app.data.debug.ApiDebugStore
+import com.balancesentinel.app.data.debug.DebugCapturePolicy
 import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
 import java.io.IOException
@@ -46,6 +48,35 @@ class BalanceQueryServiceTest {
 
         assertEquals(1, debug.interceptors.count { it is DebugInterceptor })
         assertEquals(0, release.interceptors.count { it is DebugInterceptor })
+    }
+
+    @Test
+    fun `user debug session captures release balance requests`() = runTest {
+        val server = MockWebServer().also { it.start() }
+        val session = DebugCapturePolicy.openUserCaptureSession()
+        ApiDebugStore.clearAll()
+        try {
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(resource("balance/stepfun.json"))
+            )
+            val service = BalanceQueryService(
+                callFactory = OkHttpClient(),
+                endpointOverride = endpointOverride(server),
+                debuggable = false
+            )
+
+            val result = service.queryBalance(config(ProviderType.CUSTOM, "https://api.stepfun.com/v1"))
+
+            assertTrue(result is ProviderResult.Success)
+            assertEquals(1, ApiDebugStore.getEntries("acct").size)
+            assertEquals("/v1/accounts", ApiDebugStore.getEntries("acct").single().endpoint)
+        } finally {
+            session.close()
+            ApiDebugStore.clearAll()
+            server.shutdown()
+        }
     }
 
     // Mutation caught: adding a second capture interceptor to an already instrumented shared client.
@@ -149,6 +180,28 @@ class BalanceQueryServiceTest {
             assertTrue(result is ProviderResult.Success)
             assertEquals(1, server.requestCount)
             assertEquals("/v1/accounts", server.takeRequest().path)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `open code go uses its fixed native usage contract`() = runTest {
+        val server = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(resource("balance/opencode_go.json"))
+            )
+            val service = BalanceQueryService(OkHttpClient(), endpointOverride(server))
+
+            val result = service.queryBalance(config(ProviderType.OPENCODE_GO, "https://ignored.example"))
+
+            assertTrue(result is ProviderResult.Success)
+            val request = server.takeRequest()
+            assertEquals("/zen/go/v1/usage", request.path)
+            assertEquals("Bearer test-api-key-12345", request.getHeader("Authorization"))
         } finally {
             server.shutdown()
         }

@@ -27,6 +27,7 @@ object ProviderIcons {
             ProviderType.GEMINI -> Icons.Default.FavoriteBorder
             ProviderType.MISTRAL -> Icons.Default.ShoppingCart
             ProviderType.COHERE -> Icons.Default.ThumbUp
+            ProviderType.OPENCODE_GO -> Icons.Default.Lock
             ProviderType.MODEL_ARK -> Icons.Default.AccountBox
             ProviderType.CUSTOM -> Icons.Default.Settings
         }
@@ -49,6 +50,7 @@ object ProviderIcons {
             ProviderType.GEMINI -> 0xFF8B5CF6
             ProviderType.MISTRAL -> 0xFFEF4444
             ProviderType.COHERE -> 0xFF6366F1
+            ProviderType.OPENCODE_GO -> 0xFF0F766E
             ProviderType.MODEL_ARK -> 0xFFE53935  // 红色
             ProviderType.CUSTOM -> 0xFF6B7280
         }

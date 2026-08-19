@@ -1,5 +1,6 @@
 package com.balancesentinel.app.data.engine
 
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import org.junit.Assert.*
@@ -280,5 +281,24 @@ class RecordAggregatorTest {
         assertEquals(20f, acc2.consumed)
         assertEquals(0f, acc1.toppedUp) // toppedUpBalance unchanged
         assertEquals(0f, acc2.toppedUp)
+    }
+
+    @Test
+    fun `subscription aggregation preserves usage beyond one hundred across resets`() {
+        val records = listOf(
+            RawRecord("quota", 1L, PERCENTAGE_CURRENCY, 100f, 100f, 100f),
+            RawRecord("quota", 2L, PERCENTAGE_CURRENCY, 20f, 40f, 0f),
+            RawRecord("quota", 3L, PERCENTAGE_CURRENCY, 100f, 100f, 100f),
+            RawRecord("quota", 4L, PERCENTAGE_CURRENCY, 10f, 30f, 0f)
+        )
+
+        val summary = RecordAggregator.aggregate(records, "2026-08-19").single()
+
+        assertEquals(170f, summary.consumed, 0.01f)
+        assertEquals(130f, summary.granted, 0.01f)
+        assertEquals(200f, summary.toppedUp, 0.01f)
+        assertEquals(10f, summary.close, 0.01f)
+        assertEquals(30f, summary.grantedBalanceClose, 0.01f)
+        assertEquals(0f, summary.toppedUpBalanceClose, 0.01f)
     }
 }

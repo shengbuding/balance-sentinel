@@ -210,6 +210,7 @@ class DatabaseConvertersTest {
                 "gemini" to ProviderType.GEMINI,
                 "mistral" to ProviderType.MISTRAL,
                 "cohere" to ProviderType.COHERE,
+                "opencode_go" to ProviderType.OPENCODE_GO,
                 "deepseek" to ProviderType.DEEPSEEK,
                 "qwen" to ProviderType.QWEN,
                 "wenxin" to ProviderType.WENXIN,

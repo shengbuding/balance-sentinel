@@ -26,6 +26,10 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.DailySummary
 import com.balancesentinel.app.data.model.RawRecord
 import com.balancesentinel.app.data.credentials.DataCorruptionException
+import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
+import com.balancesentinel.app.data.api.UNKNOWN_QUOTA_REMAINING
+import com.balancesentinel.app.data.api.QuotaPeriodSnapshot
+import com.balancesentinel.app.data.api.quotaPeriodRank
 import com.balancesentinel.app.data.repository.AccountLoadState
 import com.balancesentinel.app.data.repository.AccountUiRepository
 import com.balancesentinel.app.data.repository.RoomAccountRepository
@@ -48,6 +52,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Currency
 import java.util.Locale
@@ -78,12 +83,16 @@ data class InsightsUiState(
     /** 全量历史日汇总数据 — 不受 rangeDays 影响，独立于趋势图 */
     val dailyHistoryPoints: List<DailyPoint> = emptyList(),
 
+    /** Percentage quota windows; populated only when selectedCurrency is `%`. */
+    val quotaInsight: QuotaInsight? = null,
+
     val chartMode: String = "balance",
     val historyVisibleCount: Int = 7,
     val expandedDate: String? = null
 ) {
     val isEmpty: Boolean
-        get() = (intradayOutput?.dataPointCount ?: 0) == 0 &&
+        get() = quotaInsight?.isEmpty != false &&
+                (intradayOutput?.dataPointCount ?: 0) == 0 &&
                 (dailyOutput?.isEmpty ?: true)
 }
 
@@ -217,9 +226,10 @@ class InsightsViewModel @JvmOverloads constructor(
                 )
                 val accountIds = accounts.map { it.id }
                 val accountIdSet = accountIds.toHashSet()
-                val currentCurrenciesByAccount = runCatching {
+                val currentBalances = runCatching {
                     BalanceWidgetDataStore.getAllBalances(getApplication())
                 }.getOrDefault(emptyList())
+                val currentCurrenciesByAccount = currentBalances
                     .asSequence()
                     .filter { it.accountId in accountIdSet && it.currency.isNotBlank() }
                     .groupBy { it.accountId }
@@ -294,11 +304,10 @@ class InsightsViewModel @JvmOverloads constructor(
                         }
                         .mapTo(this) { it.accountId }
                 }
-                val eligibleAccounts = if (selectedAccountSupportsCurrency) {
-                    scopedAccounts.filter { it.id in eligibleAccountIds }
-                } else {
-                    accounts.filter { it.id in eligibleAccountIds }
-                }
+                // Keep the filter chips scoped to every account that supports the
+                // selected currency. `scopedAccounts` is only the query scope for
+                // the selected chart and must not hide the other valid choices.
+                val eligibleAccounts = accounts.filter { it.id in eligibleAccountIds }
                 val accountId = requestedAccountId?.takeIf { id ->
                     eligibleAccounts.any { it.id == id }
                 }
@@ -310,6 +319,52 @@ class InsightsViewModel @JvmOverloads constructor(
                     allRecentRaw
                 } else {
                     allRecentRaw.filter { it.accountId == accountId }
+                }
+
+                if (currency == PERCENTAGE_CURRENCY) {
+                    val quotaSummaries = summariesForQuota(allSummaries, currency, accountId)
+                    val quotaInsight = computeQuotaInsight(
+                        rawRecords = recentRaw,
+                        summaries = quotaSummaries,
+                        balances = currentBalances.filter { balance ->
+                            balance.accountId in eligibleAccountIds &&
+                                canonicalCurrency(balance.currency) == PERCENTAGE_CURRENCY
+                        },
+                        accountId = accountId,
+                        eligibleAccounts = eligibleAccounts
+                    )
+                    val todayRaw = recentRaw.filter {
+                        Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate() == today
+                    }
+                    val dailyOutput = computeDaily(
+                        quotaSummaries,
+                        todayRaw,
+                        currency,
+                        accountId,
+                        eligibleAccounts,
+                        rangeDays
+                    )
+                    val fullHistoryOutput = computeDaily(
+                        quotaSummaries,
+                        todayRaw,
+                        currency,
+                        accountId,
+                        eligibleAccounts,
+                        365
+                    )
+                    if (generation != loadGeneration.get()) return@launch
+                    _uiState.update { current -> current.copy(
+                        isLoading = false,
+                        eligibleAccounts = eligibleAccounts,
+                        selectedAccountId = accountId,
+                        availableCurrencies = currencies,
+                        selectedCurrency = currency,
+                        intradayOutput = null,
+                        dailyOutput = dailyOutput,
+                        dailyHistoryPoints = fullHistoryOutput.dailyPoints,
+                        quotaInsight = quotaInsight
+                    ) }
+                    return@launch
                 }
                 val intradayOutput = computeIntraday(recentRaw, currency, accountId, eligibleAccounts)
 
@@ -335,7 +390,8 @@ class InsightsViewModel @JvmOverloads constructor(
                     selectedCurrency = currency,
                     intradayOutput = intradayOutput,
                     dailyOutput = dailyOutput,
-                    dailyHistoryPoints = fullHistoryOutput.dailyPoints
+                    dailyHistoryPoints = fullHistoryOutput.dailyPoints,
+                    quotaInsight = null
                 ) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -417,7 +473,11 @@ class InsightsViewModel @JvmOverloads constructor(
         val outputs = accounts.map { account ->
             DailyEngine.compute(DailyInput(summaries, todayRaw, currency, account.id, rangeDays))
         }
-        return mergeDailyOutputs(outputs, rangeDays)
+        return if (currency == PERCENTAGE_CURRENCY) {
+            mergeQuotaDailyOutputs(outputs)
+        } else {
+            mergeDailyOutputs(outputs, rangeDays)
+        }
     }
 
     fun selectCurrency(currency: String) {
@@ -459,8 +519,247 @@ class InsightsViewModel @JvmOverloads constructor(
         }
     }
 
+    private fun summariesForQuota(
+        summaries: List<DailySummary>,
+        currency: String,
+        accountId: String?
+    ): List<DailySummary> = summaries.filter { summary ->
+        canonicalCurrency(summary.currency) == currency &&
+            (accountId == null || summary.accountId == accountId)
+    }
+
+    /**
+     * Builds percentage insights without passing quota rows through the money
+     * accounting engines. The legacy three history columns carry monthly,
+     * weekly and rolling-5h remaining percentages respectively.
+     */
+    private fun computeQuotaInsight(
+        rawRecords: List<RawRecord>,
+        summaries: List<DailySummary>,
+        balances: List<com.balancesentinel.app.widget.AccountBalance>,
+        accountId: String?,
+        eligibleAccounts: List<AccountInfo>
+    ): QuotaInsight? {
+        val accountIds = if (accountId != null) {
+            setOf(accountId)
+        } else {
+            eligibleAccounts.mapTo(linkedSetOf()) { it.id }
+        }
+        if (accountIds.isEmpty()) return null
+
+        val scopedRaw = rawRecords.filter { it.accountId in accountIds }
+        val scopedSummaries = summaries.filter { it.accountId in accountIds }
+        val scopedBalances = balances.filter { it.accountId in accountIds }
+        val periodIds = linkedSetOf<String>()
+        scopedBalances.forEach { balance ->
+            balance.quota?.periods?.forEach { periodIds += it.id }
+            if (balance.currency == PERCENTAGE_CURRENCY &&
+                balance.totalBalance.toDoubleOrNull()?.let { it in 0.0..100.0 } == true
+            ) {
+                periodIds += "monthly"
+            }
+        }
+        if (scopedRaw.any { quotaRemaining(it, "monthly") != null }) periodIds += "monthly"
+        if (scopedRaw.any { quotaRemaining(it, "weekly") != null }) periodIds += "weekly"
+        if (scopedRaw.any { quotaRemaining(it, "rolling_5h") != null }) periodIds += "rolling_5h"
+        if (scopedSummaries.any { quotaRemaining(it, "monthly") != null }) periodIds += "monthly"
+        if (scopedSummaries.any { quotaRemaining(it, "weekly") != null }) periodIds += "weekly"
+        if (scopedSummaries.any { quotaRemaining(it, "rolling_5h") != null }) periodIds += "rolling_5h"
+
+        val periods = periodIds
+            .sortedWith(compareBy({ quotaPeriodRank(it) }, { it }))
+            .mapNotNull { periodId ->
+                val liveCandidates = scopedBalances.mapNotNull { balance ->
+                    val snapshot = balance.quota?.find(periodId)
+                        ?: if (quotaPeriodRank(periodId) == 2) {
+                            balance.totalBalance.toDoubleOrNull()
+                                ?.takeIf { it in 0.0..100.0 }
+                                ?.let { remaining ->
+                                    QuotaPeriodSnapshot(
+                                        id = periodId,
+                                        usedPercent = 100.0 - remaining,
+                                        remainingPercent = remaining
+                                    )
+                                }
+                        } else {
+                            null
+                        }
+                    snapshot?.let { Triple(balance, it, balance.lastUpdated) }
+                }
+                val observations = buildQuotaObservations(
+                    rawRecords = scopedRaw,
+                    summaries = scopedSummaries,
+                    periodId = periodId
+                )
+                val history = if (accountId == null) {
+                    mergeQuotaObservations(observations)
+                } else {
+                    collapseQuotaObservations(observations)
+                }.let(::downsampleQuotaHistory)
+                val live = liveCandidates.maxByOrNull { it.third }
+                val latestObservationByAccount = observations
+                    .groupBy { it.accountId }
+                    .mapValues { (_, values) ->
+                        values.maxWithOrNull(
+                            compareBy<QuotaObservation> { it.timestamp }
+                                .thenBy { it.accountId }
+                        )
+                    }
+                val liveByAccount = liveCandidates.associateBy { it.first.accountId }
+                val currentUsedValues = accountIds.mapNotNull { id ->
+                    liveByAccount[id]?.second?.usedPercent?.toFloat()
+                        ?: latestObservationByAccount[id]?.usedPercent
+                }
+                val used = currentUsedValues.takeIf { it.isNotEmpty() }
+                    ?.average()
+                    ?.toFloat()
+                    ?: return@mapNotNull null
+                val remaining = (100f - used).coerceIn(0f, 100f)
+                val latestBalance = live?.first
+                val latestSnapshot = live?.second
+                val latestObservation = observations.maxWithOrNull(
+                    compareBy<QuotaObservation> { it.timestamp }
+                        .thenBy { it.accountId }
+                )
+                val latestAccountId = latestBalance?.accountId ?: latestObservation?.accountId
+                val latestAccountLabel = latestBalance?.label ?: latestAccountId?.let { id ->
+                    eligibleAccounts.firstOrNull { it.id == id }?.label
+                }
+                QuotaInsightPeriod(
+                    id = periodId,
+                    usedPercent = used.coerceIn(0f, 100f),
+                    remainingPercent = remaining.coerceIn(0f, 100f),
+                    resetsAt = latestSnapshot?.resetsAt,
+                    status = latestSnapshot?.status,
+                    history = history,
+                    latestRefreshAccountId = latestAccountId,
+                    latestRefreshAccountLabel = latestAccountLabel,
+                    latestRefreshAt = live?.third ?: latestObservation?.timestamp
+                )
+            }
+        return QuotaInsight(periods).takeIf { it.periods.isNotEmpty() }
+    }
+
+    private data class QuotaObservation(
+        val accountId: String,
+        val timestamp: Long,
+        val usedPercent: Float
+    )
+
+    private fun buildQuotaObservations(
+        rawRecords: List<RawRecord>,
+        summaries: List<DailySummary>,
+        periodId: String
+    ): List<QuotaObservation> {
+        val observations = mutableListOf<QuotaObservation>()
+        rawRecords.forEach { record ->
+            quotaRemaining(record, periodId)?.let { remaining ->
+                observations += QuotaObservation(
+                    accountId = record.accountId,
+                    timestamp = record.timestamp,
+                    usedPercent = 100f - remaining
+                )
+            }
+        }
+        summaries.forEach { summary ->
+            val date = runCatching { LocalDate.parse(summary.date) }.getOrNull() ?: return@forEach
+            quotaRemaining(summary, periodId)?.let { remaining ->
+                val timestamp = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                observations += QuotaObservation(
+                    accountId = summary.accountId,
+                    timestamp = timestamp,
+                    usedPercent = 100f - remaining
+                )
+            }
+        }
+        return observations.filter { it.usedPercent.isFinite() && it.usedPercent in 0f..100f }
+    }
+
+    /** Collapse duplicate samples for one account using their arithmetic mean. */
+    private fun collapseQuotaObservations(
+        observations: List<QuotaObservation>
+    ): List<QuotaInsightPoint> = observations
+        .groupBy { it.timestamp }
+        .mapNotNull { (timestamp, values) ->
+            values.map { it.usedPercent }.takeIf { it.isNotEmpty() }?.average()?.toFloat()?.let { used ->
+                QuotaInsightPoint(timestamp, used)
+            }
+        }
+        .sortedBy { it.timestamp }
+
+    /**
+     * Merge account timelines using carry-forward values. Percentages cannot be
+     * summed, so each chart point is the arithmetic mean of all account values.
+     * The timeline starts once every account
+     * with history has an initial sample, preventing future values from being
+     * backfilled into an earlier timestamp.
+     */
+    private fun mergeQuotaObservations(
+        observations: List<QuotaObservation>
+    ): List<QuotaInsightPoint> {
+        val timelines = observations
+            .groupBy { it.accountId }
+            .mapValues { (_, accountObservations) ->
+                collapseQuotaObservations(accountObservations)
+            }
+            .filterValues { it.isNotEmpty() }
+        if (timelines.isEmpty()) return emptyList()
+        if (timelines.size == 1) return timelines.values.single()
+
+        val updatesByTimestamp = sortedMapOf<Long, MutableList<Pair<String, QuotaInsightPoint>>>()
+        timelines.forEach { (accountId, timeline) ->
+            timeline.forEach { point ->
+                updatesByTimestamp.getOrPut(point.timestamp) { mutableListOf() }
+                    .add(accountId to point)
+            }
+        }
+        val firstCompleteTimestamp = timelines.values
+            .mapNotNull { it.firstOrNull()?.timestamp }
+            .maxOrNull()
+            ?: return emptyList()
+        val latestByAccount = mutableMapOf<String, QuotaInsightPoint>()
+        val merged = mutableListOf<QuotaInsightPoint>()
+        for ((timestamp, updates) in updatesByTimestamp) {
+            updates.forEach { (accountId, point) -> latestByAccount[accountId] = point }
+            if (timestamp < firstCompleteTimestamp || latestByAccount.size < timelines.size) continue
+            val used = latestByAccount.values.map { it.usedPercent }.average().toFloat()
+            merged += QuotaInsightPoint(timestamp, used)
+        }
+        return merged
+    }
+
+    /** Keep the chart readable when daily summaries and dense refresh samples overlap. */
+    private fun downsampleQuotaHistory(
+        points: List<QuotaInsightPoint>,
+        maxSamples: Int = 240
+    ): List<QuotaInsightPoint> {
+        if (points.size <= maxSamples) return points
+        val bucketSize = kotlin.math.ceil(points.size / maxSamples.toDouble()).toInt()
+        return points.chunked(bucketSize).map { bucket ->
+            QuotaInsightPoint(
+                timestamp = bucket.last().timestamp,
+                usedPercent = bucket.map { it.usedPercent }.average().toFloat()
+            )
+        }
+    }
+
+    private fun quotaRemaining(record: RawRecord, periodId: String): Float? = when (quotaPeriodRank(periodId)) {
+        0 -> record.toppedUpBalance
+        1 -> record.grantedBalance
+        2 -> record.totalBalance
+        else -> null
+    }?.takeIf { it.isFinite() && it in 0f..100f && it != UNKNOWN_QUOTA_REMAINING.toFloat() }
+
+    private fun quotaRemaining(summary: DailySummary, periodId: String): Float? = when (quotaPeriodRank(periodId)) {
+        0 -> summary.toppedUpBalanceClose
+        1 -> summary.grantedBalanceClose
+        2 -> summary.close
+        else -> null
+    }?.takeIf { it.isFinite() && it in 0f..100f && it != UNKNOWN_QUOTA_REMAINING.toFloat() }
+
     private fun canonicalCurrency(value: String): String? {
         val canonical = value.trim().uppercase(Locale.ROOT)
+        if (canonical == PERCENTAGE_CURRENCY) return canonical
         if (canonical.length != 3) return null
         return runCatching { Currency.getInstance(canonical).currencyCode }.getOrNull()
     }
@@ -649,6 +948,71 @@ class InsightsViewModel @JvmOverloads constructor(
                 periodLabel = periodLabel,
                 isEmpty = merged.isEmpty(),
                 insufficientData = insufficientData
+            )
+        }
+
+        /**
+         * Subscription balances are percentages and therefore average across
+         * accounts, while real percentage-point usage remains additive.
+         */
+        fun mergeQuotaDailyOutputs(outputs: List<DailyOutput>): DailyOutput {
+            val populatedOutputs = outputs.filter { it.dailyPoints.isNotEmpty() }
+            if (populatedOutputs.isEmpty()) return DailyOutput(
+                emptyList(), DailyBillReport(0f, 0f, 0f, 0f, ""), null, "", true, true
+            )
+            if (populatedOutputs.size == 1) return populatedOutputs.single().copy(estimate = null)
+
+            val updatesByDate = sortedMapOf<String, MutableList<Pair<Int, DailyPoint>>>()
+            populatedOutputs.forEachIndexed { index, output ->
+                output.dailyPoints.forEach { point ->
+                    updatesByDate.getOrPut(point.date) { mutableListOf() }.add(index to point)
+                }
+            }
+            val firstCompleteDate = populatedOutputs
+                .mapNotNull { it.dailyPoints.firstOrNull()?.date }
+                .maxOrNull()
+                ?: return DailyOutput(
+                    emptyList(), DailyBillReport(0f, 0f, 0f, 0f, ""), null, "", true, true
+                )
+            val latestByAccount = mutableMapOf<Int, DailyPoint>()
+            val merged = mutableListOf<DailyPoint>()
+            updatesByDate.forEach { (date, updates) ->
+                val carriedClose = latestByAccount.mapValues { (_, point) -> point.balance }
+                updates.forEach { (index, point) -> latestByAccount[index] = point }
+                if (date < firstCompleteDate || latestByAccount.size < populatedOutputs.size) return@forEach
+                val updatesByAccount = updates.toMap()
+                merged += DailyPoint(
+                    date = date,
+                    balance = latestByAccount.values.map { it.balance }.average().toFloat(),
+                    consumed = updates.sumOf { (_, point) -> point.consumed.toDouble() }.toFloat(),
+                    toppedUp = updates.sumOf { (_, point) -> point.toppedUp.toDouble() }.toFloat(),
+                    granted = updates.sumOf { (_, point) -> point.granted.toDouble() }.toFloat(),
+                    isGapFill = updates.all { (_, point) -> point.isGapFill },
+                    open = latestByAccount.keys.map { index ->
+                        updatesByAccount[index]?.open
+                            ?: carriedClose[index]
+                            ?: latestByAccount.getValue(index).open
+                    }.average().toFloat(),
+                    sampleCount = updates.sumOf { (_, point) -> point.sampleCount }
+                )
+            }
+            val periodLabel = populatedOutputs.firstOrNull()?.periodLabel.orEmpty()
+            val totalMonthly = merged.sumOf { it.consumed.toDouble() }.toFloat()
+            val totalRolling = merged.sumOf { it.toppedUp.toDouble() }.toFloat()
+            val totalWeekly = merged.sumOf { it.granted.toDouble() }.toFloat()
+            return DailyOutput(
+                dailyPoints = merged,
+                billReport = DailyBillReport(
+                    consumed = totalMonthly,
+                    toppedUp = totalRolling,
+                    granted = totalWeekly,
+                    netChange = -(totalMonthly + totalRolling + totalWeekly),
+                    periodLabel = periodLabel
+                ),
+                estimate = null,
+                periodLabel = periodLabel,
+                isEmpty = merged.isEmpty(),
+                insufficientData = merged.none { it.consumed > 0f || it.toppedUp > 0f || it.granted > 0f }
             )
         }
 

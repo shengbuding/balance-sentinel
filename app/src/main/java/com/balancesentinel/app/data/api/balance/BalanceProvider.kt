@@ -10,6 +10,7 @@ enum class BalanceProviderType(val displayName: String) {
     OPENROUTER("OpenRouter"),
     NOVITA("Novita AI"),
     MODEL_ARK("ModelArk"),
+    OPENCODE_GO("OpenCode Go"),
     CUSTOM("Custom");
 
     companion object {

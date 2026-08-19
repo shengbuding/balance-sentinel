@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
 
@@ -561,6 +562,43 @@ class DailySummaryStoreTest {
         assertTrue(all.any { it.date == "2026-07-02" && it.sampleCount == 0 })
         assertTrue(all.any { it.date == "2026-07-03" && it.sampleCount == 0 })
         assertEquals(95f, all.find { it.date == "2026-07-02" }!!.close)  // carryBalance
+    }
+
+    @Test
+    fun `ensureContinuity carries every subscription window through gaps`() {
+        DailySummaryStore.upsert(
+            context,
+            DailySummary(
+                accountId = "quota",
+                date = "2026-07-01",
+                currency = "%",
+                open = 75f,
+                close = 70f,
+                consumed = 5f,
+                toppedUp = 10f,
+                granted = 8f,
+                avgBalance = 72.5f,
+                sampleCount = 2,
+                toppedUpBalanceClose = 90f,
+                grantedBalanceClose = 80f
+            )
+        )
+
+        DailySummaryStore.ensureContinuity(
+            context,
+            "2026-07-01",
+            "2026-07-03",
+            LocalDate.of(2026, 7, 10)
+        )
+
+        val gaps = DailySummaryStore.getSummaries(context)
+            .filter { it.accountId == "quota" && it.date > "2026-07-01" }
+            .sortedBy { it.date }
+        assertEquals(listOf("2026-07-02", "2026-07-03"), gaps.map { it.date })
+        assertTrue(gaps.all { it.close == 70f })
+        assertTrue(gaps.all { it.grantedBalanceClose == 80f })
+        assertTrue(gaps.all { it.toppedUpBalanceClose == 90f })
+        assertTrue(gaps.all { it.consumed == 0f && it.granted == 0f && it.toppedUp == 0f })
     }
 
     @Test

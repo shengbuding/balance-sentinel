@@ -21,7 +21,13 @@
             android:text="@string/widget_default_title"
             android:textColor="#B8C4FF"
             android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:scrollHorizontally="true"
+            android:focusable="true"
+            android:focusableInTouchMode="true" />
 
         <TextView
             android:id="@+id/widget_status"
@@ -76,6 +82,39 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="end"
+            android:text=""
+            android:textColor="#B0B3C4"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_subscription_detail_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/widget_subscription_5h"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#B0B3C4"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/widget_subscription_weekly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#B0B3C4"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/widget_subscription_monthly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text=""
             android:textColor="#B0B3C4"
             android:textSize="11sp" />

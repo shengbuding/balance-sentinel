@@ -179,11 +179,15 @@ object DailySummaryStore {
                     .minByOrNull { it.date }
                     ?: return@forEach
                 var carryBalance = earliest.close
+                var carryToppedUpBalance = earliest.toppedUpBalanceClose
+                var carryGrantedBalance = earliest.grantedBalanceClose
                 var cursor = LocalDate.parse(earliest.date).plusDays(1)
                 while (cursor <= end) {
                     val existing = byDate[cursor]
                     if (existing != null) {
                         carryBalance = existing.close
+                        carryToppedUpBalance = existing.toppedUpBalanceClose
+                        carryGrantedBalance = existing.grantedBalanceClose
                     } else {
                         generated += DailySummary(
                             accountId = earliest.accountId,
@@ -196,8 +200,8 @@ object DailySummaryStore {
                             granted = 0f,
                             avgBalance = carryBalance,
                             sampleCount = 0,
-                            toppedUpBalanceClose = 0f,
-                            grantedBalanceClose = 0f,
+                            toppedUpBalanceClose = carryToppedUpBalance,
+                            grantedBalanceClose = carryGrantedBalance,
                             generatedAt = System.currentTimeMillis()
                         )
                     }
