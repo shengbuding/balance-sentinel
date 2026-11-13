@@ -64,10 +64,13 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Debug 编译
 ./gradlew.bat assembleDebug --no-daemon
 
+# 与正式包可共存的测试构建（包名后缀 .test，不覆盖正式包数据）
+./gradlew.bat assembleCoexist --no-daemon
+
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (1,531 JVM tests per variant)
+# 运行测试 (1,564 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -194,10 +197,13 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Debug build
 ./gradlew.bat assembleDebug --no-daemon
 
+# Coexist build (app id suffix .test; installs alongside the release app)
+./gradlew.bat assembleCoexist --no-daemon
+
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (1,531 JVM tests per variant)
+# Run tests (1,564 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
