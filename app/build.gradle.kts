@@ -265,4 +265,5 @@ dependencies {
     androidTestImplementation(libs.androidx.navigation.testing)
     debugImplementation(libs.compose.ui.test.manifest)
     releaseImplementation(libs.compose.ui.test.manifest)
+    "coexistImplementation"(libs.compose.ui.test.manifest)
 }
