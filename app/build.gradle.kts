@@ -127,6 +127,16 @@ android {
                 keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
+        // 仅在本地存在工作区副本时注册；缺失时 coexist 变体回退到标准 debug 签名。
+        val workspaceDebugKeystore = rootProject.file(".gradle/debug.keystore")
+        if (workspaceDebugKeystore.isFile) {
+            create("coexistDebug") {
+                storeFile = workspaceDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
@@ -141,6 +151,18 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
         // Debug builds keep full debugging support; use assembleRelease for size testing
+        // Coexist 变体：包名带 .test 后缀、使用 debug 签名，可与官方 release 包同机共存，
+        // 用于在不卸载现有安装（及其数据）的前提下试用新构建。
+        create("coexist") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            isDebuggable = true
+            // 优先用工作区内复制的 debug.keystore（沙箱下 ~/.android 不可写，默认 debug 签名
+            // 会因 debug.keystore.lock 拒绝访问而失败）；证书内容与应用既有 debug 包一致。
+            signingConfig = signingConfigs.findByName("coexistDebug")
+                ?: signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {

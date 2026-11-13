@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coexist 变体专用：覆盖 app_name，便于与官方包区分（仅 coexist 构建生效）。 -->
+<resources>
+    <string name="app_name">Wallet Sentinel (Test)</string>
+</resources>
