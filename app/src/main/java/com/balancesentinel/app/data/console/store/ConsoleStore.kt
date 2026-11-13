@@ -76,14 +76,23 @@ class ConsoleStore private constructor(
 
     /**
      * 更新平台配置
+     *
+     * 登录地址换站时旧的 cookie 不再属于新站点（会被注入到错误的域名），
+     * 这里顺手把这个平台的会话清掉，让用户重新登录一次。
+     *
+     * @return 是否真的更新到了一个已存在的平台
      */
-    fun updatePlatform(platform: ConsolePlatform) {
+    fun updatePlatform(platform: ConsolePlatform): Boolean {
         val platforms = getPlatforms().toMutableList()
         val index = platforms.indexOfFirst { it.id == platform.id }
-        if (index != -1) {
-            platforms[index] = platform
-            prefs.edit().putString(KEY_PLATFORMS, json.encodeToString(platforms)).apply()
+        if (index == -1) return false
+        val previous = platforms[index]
+        platforms[index] = platform
+        prefs.edit().putString(KEY_PLATFORMS, json.encodeToString(platforms)).apply()
+        if (previous.loginUrl != platform.loginUrl) {
+            removeSession(platform.id)
         }
+        return true
     }
 
     /**

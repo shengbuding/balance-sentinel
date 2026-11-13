@@ -59,6 +59,27 @@ fun ConsoleSelectScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var platformToDelete by remember { mutableStateOf<ConsolePlatform?>(null) }
 
+    // 修改控制台（预设和自定义都能改）
+    var platformToEdit by remember { mutableStateOf<ConsolePlatform?>(null) }
+
+    platformToEdit?.let { editing ->
+        ConsolePlatformFormScreen(
+            initialDraft = remember(editing) { ConsolePlatformDraft.fromPlatform(editing) },
+            title = stringResource(R.string.console_edit_platform),
+            submitLabel = stringResource(R.string.console_save_changes),
+            platformId = editing.id,
+            isPreset = editing.isPreset,
+            onBack = { platformToEdit = null },
+            onCancel = { platformToEdit = null },
+            onSubmit = { updated ->
+                store.updatePlatform(updated)
+                platforms = store.getPlatforms()
+                platformToEdit = null
+            }
+        )
+        return
+    }
+
     if (showDeleteDialog && platformToDelete != null) {
         AlertDialog(
             onDismissRequest = {
@@ -143,21 +164,7 @@ fun ConsoleSelectScreen(
                             platformToDelete = platform
                             showDeleteDialog = true
                         },
-                        onFixConfig = if (!platform.isPreset) {
-                            // 检查是否能匹配到预设配置
-                            val matchedPreset = findMatchingPreset(platform)
-                            if (matchedPreset != null) {
-                                {
-                                    // 修复配置：使用预设的 successUrlPatterns
-                                    val fixedPlatform = platform.copy(
-                                        successUrlPatterns = matchedPreset.successUrlPatterns,
-                                        loginPagePatterns = matchedPreset.loginPagePatterns
-                                    )
-                                    store.updatePlatform(fixedPlatform)
-                                    platforms = store.getPlatforms()
-                                }
-                            } else null
-                        } else null
+                        onEdit = { platformToEdit = platform }
                     )
                 }
             }
@@ -221,7 +228,7 @@ private fun PlatformCard(
     isLoggedIn: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    onFixConfig: (() -> Unit)? = null
+    onEdit: () -> Unit
 ) {
     val expandedState = stringResource(R.string.accessibility_expanded)
     val collapsedState = stringResource(R.string.accessibility_collapsed)
@@ -349,26 +356,24 @@ private fun PlatformCard(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
 
-                    // 修复配置按钮（仅对自定义平台且能匹配到预设配置时显示）
-                    if (onFixConfig != null) {
-                        TextButton(
-                            onClick = {
-                                isExpanded = false
-                                onFixConfig()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                Icons.Default.Build,
-                                        stringResource(R.string.console_repair),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                        stringResource(R.string.console_repair_config),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                    // 修改配置：预设和自定义平台都可以改
+                    TextButton(
+                        onClick = {
+                            isExpanded = false
+                            onEdit()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.Build,
+                            contentDescription = stringResource(R.string.console_edit),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.console_edit_platform),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
 
                     // 删除按钮
@@ -384,12 +389,12 @@ private fun PlatformCard(
                     ) {
                         Icon(
                             Icons.Default.Delete,
-                                    stringResource(R.string.console_delete),
+                            contentDescription = stringResource(R.string.console_delete),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                                    stringResource(R.string.console_delete_platform_title),
+                            text = stringResource(R.string.console_delete_platform_title),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -405,29 +410,6 @@ private fun getPlatformIcon(platformId: String): androidx.compose.ui.graphics.ve
         "mimo" -> Icons.Default.Face
         "model_ark" -> Icons.Default.AccountCircle
         else -> Icons.Default.Info
-    }
-}
-
-/**
- * 查找匹配的预设平台配置
- * 根据自定义平台的 loginUrl 或 dashboardUrl 匹配预设平台
- */
-private fun findMatchingPreset(platform: ConsolePlatform): ConsolePlatform? {
-    val url = (platform.loginUrl + platform.dashboardUrl).lowercase()
-    return PresetPlatforms.ALL.find { preset ->
-        val presetUrl = (preset.loginUrl + preset.dashboardUrl).lowercase()
-        // 检查域名是否匹配
-        val presetDomain = try {
-            java.net.URL(preset.loginUrl).host
-        } catch (e: Exception) {
-            ""
-        }
-        val platformDomain = try {
-            java.net.URL(platform.loginUrl).host
-        } catch (e: Exception) {
-            ""
-        }
-        presetDomain.isNotBlank() && presetDomain == platformDomain
     }
 }
 

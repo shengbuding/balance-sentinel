@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.balancesentinel.app.data.console.ConsoleOriginPolicy
 import com.balancesentinel.app.R
 
 /**
@@ -37,11 +36,16 @@ fun AddPlatformScreen(
     var searchQuery by remember { mutableStateOf("") }
 
     if (showCustomForm) {
-        CustomPlatformForm(
-            onAdd = { platform ->
-                onAddCustom(platform)
-            },
-            onBack = { showCustomForm = false }
+        val platformId = remember { newCustomPlatformId() }
+        ConsolePlatformFormScreen(
+            initialDraft = ConsolePlatformDraft(),
+            title = stringResource(R.string.console_add_custom_platform),
+            submitLabel = stringResource(R.string.console_add_platform),
+            platformId = platformId,
+            isPreset = false,
+            onBack = { showCustomForm = false },
+            onCancel = null,
+            onSubmit = { platform -> onAddCustom(platform) }
         )
     } else {
         PresetPlatformList(
@@ -108,7 +112,7 @@ private fun PresetPlatformList(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 搜索框
-            SearchBar(
+            SearchField(
                 query = searchQuery,
                 onQueryChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth()
@@ -156,7 +160,7 @@ private fun PresetPlatformList(
 }
 
 @Composable
-private fun SearchBar(
+private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -310,173 +314,4 @@ private fun PresetPlatformCard(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CustomPlatformForm(
-    onAdd: (ConsolePlatform) -> Unit,
-    onBack: () -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var loginUrl by remember { mutableStateOf("") }
-    var dashboardUrl by remember { mutableStateOf("") }
-    var successUrlPatterns by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var showErrors by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.console_add_custom_platform),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.console_back))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // 平台名称
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text(stringResource(R.string.console_platform_name_label)) },
-                placeholder = { Text(stringResource(R.string.console_platform_name_hint)) },
-                isError = showErrors && name.isBlank(),
-                supportingText = if (showErrors && name.isBlank()) {
-                    { Text(stringResource(R.string.console_platform_name_required)) }
-                } else null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            // 登录 URL
-            OutlinedTextField(
-                value = loginUrl,
-                onValueChange = { loginUrl = it },
-                label = { Text(stringResource(R.string.console_login_url_label)) },
-                placeholder = { Text("https://ai.gitee.com/login") },
-                isError = showErrors && !isValidUrl(loginUrl),
-                supportingText = if (showErrors && !isValidUrl(loginUrl)) {
-                    { Text(stringResource(R.string.console_url_http_required)) }
-                } else null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            // 仪表盘 URL
-            OutlinedTextField(
-                value = dashboardUrl,
-                onValueChange = { dashboardUrl = it },
-                label = { Text(stringResource(R.string.console_dashboard_url_label)) },
-                placeholder = { Text("https://ai.gitee.com/dashboard") },
-                isError = showErrors && !isValidUrl(dashboardUrl),
-                supportingText = if (showErrors && !isValidUrl(dashboardUrl)) {
-                    { Text(stringResource(R.string.console_url_required)) }
-                } else null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            // 成功 URL 模式
-            OutlinedTextField(
-                value = successUrlPatterns,
-                onValueChange = { successUrlPatterns = it },
-                label = { Text(stringResource(R.string.console_success_pattern_label)) },
-                placeholder = { Text("ai.gitee.com/dashboard,ai.gitee.com/console") },
-                supportingText = {
-                    Text(stringResource(R.string.console_success_pattern_help))
-                },
-                isError = showErrors && successUrlPatterns.isBlank(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            // 描述（可选）
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text(stringResource(R.string.console_description_label)) },
-                placeholder = { Text(stringResource(R.string.console_description_hint)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 添加按钮
-            Button(
-                onClick = {
-                    showErrors = true
-                    if (isValidInput(name, loginUrl, dashboardUrl, successUrlPatterns)) {
-                        val platform = ConsolePlatform(
-                            id = "custom_${System.currentTimeMillis()}",
-                            name = name.trim(),
-                            loginUrl = loginUrl.trim(),
-                            dashboardUrl = dashboardUrl.trim(),
-                            successUrlPatterns = successUrlPatterns.split(",").map { it.trim() },
-                            description = description.trim().ifBlank { null }
-                        )
-                        onAdd(platform)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(Icons.Default.Add, stringResource(R.string.console_add))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.console_add_platform))
-            }
-        }
-    }
-}
-
-private fun isValidUrl(url: String): Boolean {
-    return ConsoleOriginPolicy.isValidHttpsUrl(url.trim())
-}
-
-private fun isValidInput(
-    name: String,
-    loginUrl: String,
-    dashboardUrl: String,
-    successUrlPatterns: String
-): Boolean {
-    return name.isNotBlank() &&
-           isValidUrl(loginUrl) &&
-           isValidUrl(dashboardUrl) &&
-           successUrlPatterns.isNotBlank()
 }

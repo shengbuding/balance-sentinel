@@ -16,7 +16,8 @@ Multi-AI-provider balance monitoring Android app — supports 15 AI providers, m
 - **多账户管理** — 支持多个API Key，每个账户独立配置
 - **自定义余额查询脚本** — 自定义供应商支持配置JavaScript查询脚本、卡片展示字段和余额计算字段，兼容cc-switch格式，内置 NewAPI 预设
 - **控制台数据同步** — 支持 DeepSeek 和 Xiaomi MiMo 官方控制台登录，同步账户余额、用量统计、趋势图表
-- **自定义平台控制台** — 支持添加任意 AI 平台控制台，通过 WebView 登录官方控制台查看数据，登录状态永久保持
+- **自定义平台控制台** — 支持添加任意 AI 平台控制台，只需输入一个网站地址，再在「浏览并标记」里边点边录登录页与余额页（疑似页面会自动标记），登录状态永久保持；已添加的控制台随时可修改
+- **控制台编辑** — 预设与自定义控制台的名称、网站、登录页、余额页和 URL 模式都能二次编辑，登录地址改站时自动清理旧会话
 - **后台自动刷新** — 前台服务、WorkManager 与精确闹钟恢复监控协同保活，支持 1/5/10/15/30/60 分钟间隔
 - **权限引导** — 首次使用和设置页均可检查通知、精确闹钟与电池优化授权状态
 - **5 种桌面小组件** — RemoteViews 驱动，2×1 / 2×2 / 3×1 / 4×2 / 5×1 尺寸，可配单账户或总余额
@@ -145,7 +146,8 @@ keyPassword=<密码>
 - **Multi-Account Management** — Support multiple API Keys with independent per-account configuration
 - **Custom Balance Query Script** — Custom providers support JavaScript query scripts, card display fields, and selectable balance fields, with cc-switch compatibility and a NewAPI preset
 - **Console Data Sync** — Login to DeepSeek and Xiaomi MiMo official consoles to sync account balance, usage statistics, and trend charts
-- **Custom Platform Console** — Add any AI platform console, login via WebView to view data, session persists permanently
+- **Custom Platform Console** — Add any AI platform console from a website address alone, then mark its login and dashboard pages while browsing (likely pages are auto-marked); sessions persist permanently
+- **Console Editing** — Presets and custom consoles can be re-edited (name, website, login/dashboard URLs, URL patterns); changing the login URL clears the stale session
 - **Background Auto-Refresh** — Foreground service, WorkManager, and exact-alarm recovery work together at 1/5/10/15/30/60 minute intervals
 - **Permission Guide** — First-run and Settings flows show notification, exact-alarm, and battery-optimization authorization status
 - **5 Desktop Widget Sizes** — RemoteViews-driven, 2×1 / 2×2 / 3×1 / 4×2 / 5×1, configurable per-account or total balance
@@ -393,8 +395,12 @@ DeepSeekBalance/
 │       │   │   │   ├── console/
 │       │   │   │   │   ├── ConsoleComponents.kt             # Shared components (TopBar, WebView, DebugPanel)
 │       │   │   │   │   ├── ConsoleScreen.kt                 # Unified console screen (login + dashboard)
-│       │   │   │   │   ├── ConsoleSelectScreen.kt           # Platform selector
-│       │   │   │   │   └── AddCustomPlatformScreen.kt       # Custom platform configuration
+│       │   │   │   │   ├── ConsoleSelectScreen.kt           # Platform selector + per-card edit
+│       │   │   │   │   ├── AddPlatformScreen.kt             # Preset picker + custom console entry
+│       │   │   │   │   ├── ConsolePlatformFormScreen.kt     # Shared add/edit form (name, website, patterns)
+│       │   │   │   │   ├── ConsolePlatformDraft.kt          # Draft validation + URL normalization
+│       │   │   │   │   ├── ConsolePageProbe.kt              # In-app browser used while marking pages
+│       │   │   │   │   └── ConsolePageProbeScreen.kt        # Browse-and-mark surface (mark login/dashboard)
 │       │   │   │   ├── components/
 │       │   │   │   │   ├── AddAccountDialog.kt              # Multi-provider account creation
 │       │   │   │   │   └── AccountBalanceCard.kt            # Provider-aware balance card

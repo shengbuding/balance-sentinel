@@ -15,7 +15,7 @@ Generated / 生成日期: 2026-08-20
 - **JDK**: 17
 - **Gradle**: 8.11
 - **Architecture / 架构**: MVVM
-- **Test count / 测试数**: 1,531 Debug + 1,531 Release JVM tests (3 skipped per variant); 39 instrumented source tests in 8 files
+- **Test count / 测试数**: 1,564 Debug + 1,564 Release JVM tests (3 skipped per variant); 39 instrumented source tests in 8 files
 - **Release / 版本**: v1.5.1 (2026-08-20)
 
 ---
@@ -64,9 +64,9 @@ C:\Users\Administrator\
 │           │   ├── AndroidManifest.xml
 │           │   ├── java/com/balancesentinel/app/
 │           │   └── res/               # Layouts, drawables, mipmaps, values, xml
-│           ├── test/                  # Shared JVM tests (86 Kotlin files)
+│           ├── test/                  # Shared JVM tests (155 Kotlin files, 1,564 cases)
 │           ├── testDebug/, testRelease/ # Build-variant policy tests (2 files)
-│           └── androidTest/           # Instrumented tests (8 files, 39 source cases)
+│           └── androidTest/           # Instrumented tests (20 files, 39 source cases)
 │
 ├── .claude/                           # Claude Code config + session data
 │   ├── settings.json                  # Model config (deepseek-v4-pro), hooks
@@ -211,6 +211,21 @@ C:\Users\Administrator\
 | `Theme.kt` | Material 3 theme |
 | `CustomIcons.kt` | Custom icon composables |
 
+#### Console (`ui/console/`, `data/console/`)
+
+| File | Purpose |
+|---|---|
+| `ui/console/ConsoleSelectScreen.kt` | Console list; per-card edit (preset and custom alike) and delete |
+| `ui/console/AddPlatformScreen.kt` | Preset picker + entry point for a custom console |
+| `ui/console/ConsolePlatformFormScreen.kt` | Shared add/edit form: name, website, browse-and-mark, login/dashboard URLs, URL patterns |
+| `ui/console/ConsolePlatformDraft.kt` | Pure-Kotlin draft: HTTPS normalization, validation, pattern derivation, capture merge |
+| `ui/console/ConsolePageProbe.kt` | In-app browser used while marking pages, with auto-mark heuristics |
+| `ui/console/ConsolePageProbeScreen.kt` | Full-screen browse-and-mark surface: mark login/dashboard, unmark, apply |
+| `ui/console/ConsoleScreen.kt` | Login WebView + dashboard WebView for a saved console |
+| `data/console/store/ConsoleStore.kt` | Encrypted console definitions + per-console session storage |
+| `data/console/ConsoleOriginPolicy.kt` | Exact-origin navigation, injection and API boundary |
+| `data/console/ConsolePageCaptureSession.kt` | Marked-page session state + auto-mark heuristics |
+
 ### 3.4 Services & Receivers
 
 | File | Purpose |
@@ -234,7 +249,7 @@ C:\Users\Administrator\
 
 ---
 
-## 4. Test Map (86 shared + 2 variant JVM test files, 1,486 tests per build variant + 39 instrumented source tests)
+## 4. Test Map (158 JVM test files, 1,564 tests per build variant + 39 instrumented source tests)
 
 ### Engine Tests
 | File | What it covers |
@@ -260,6 +275,13 @@ C:\Users\Administrator\
 | `CleanupSchedulerTest.kt` | Old data pruning |
 | `AlertCheckerTest.kt` | Threshold + change alert logic |
 | `WidgetPrefsTest.kt` | Widget config storage |
+
+### Console Tests
+| File | What it covers |
+|---|---|
+| `ConsolePlatformDraftTest.kt` | HTTPS normalization, draft validation, pattern derivation, capture merge |
+| `ConsolePageCaptureSessionTest.kt` | Manual/auto marking, auto-mark ceiling, same-site navigation, dashboard heuristics |
+| `ConsoleStoreTest.kt` | Console CRUD, session TTL, edit-and-clear-session behavior |
 
 ### Model Tests
 | File | What it covers |
