@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- 本地持有正式签名配置（`keystore.properties` 或 `-PwalletSentinel.signingConfigFile`）时，`debug` 变体默认也使用正式证书签名，`assembleDebug` 与 `assembleRelease` 的产物可以直接互相覆盖安装，恢复 v1.5.0 之前「开发包与正式包随意替换」的体验。
+- 新增 `Debug APK (release-signed)` 手动触发的 CI 工作流：用仓库 secrets 里的正式 keystore 构建 `debug` 变体，产物既是正式签名、又保留可调试能力，可覆盖手机上已装的正式版。
+
 ## [1.5.2] - 2026-11-14
 
 ### Added

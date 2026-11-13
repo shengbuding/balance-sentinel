@@ -150,3 +150,40 @@ CI 脚本在构建前解码 keystore：
 ```bash
 echo "$ANDROID_KEYSTORE_B64" | base64 -d > deepseek-balance.jks
 ```
+
+---
+
+## 十、开发包与正式包互相覆盖
+
+Android 只认私钥：两个 APK 的包名相同、签名证书也必须相同，才能原地升级（保留数据）。
+因此想让本地 `assembleDebug` 的产物直接覆盖手机上已装的正式版，本地必须持有**同一把正式私钥**。
+
+### 本地有正式密钥时
+
+把 `deepseek-balance.jks` 与 `keystore.properties` 放到仓库根目录（两者都在 `.gitignore` 中），然后：
+
+```bash
+./gradlew.bat assembleDebug --no-daemon      # 正式签名 + 可调试
+./gradlew.bat assembleRelease --no-daemon    # 正式签名 + R8 混淆
+```
+
+`app/build.gradle.kts` 的 `buildTypes` 里对 `debug` 做了如下处理，存在正式签名配置时自动切换：
+
+```kotlin
+getByName("debug") {
+    signingConfigs.findByName("release")?.let { signingConfig = it }
+}
+```
+
+两个变体的产物自此可以互相覆盖，也能覆盖任何用该密钥签发的历史版本；没有配置的机器不受影响，仍用 Android 默认 debug 证书。
+
+### 本地没有正式密钥时
+
+手动触发仓库的 `Debug APK (release-signed)` 工作流（`.github/workflows/debug-signed.yml`）：
+它在 CI 里用 `KEYSTORE_B64` / `KEYSTORE_PASSWORD` / `KEY_PASSWORD` 三个 secret 还原 keystore，
+构建 `assembleDebug -PwalletSentinel.signingConfigFile=keystore.properties`，
+并核对签名证书 SHA-256 是否等于 `319AA8DA…CCBAD3F`，最后把 APK 作为 artifact 上传（保留 14 天）。
+
+### 为什么不能只改 debug 证书
+
+把正式包改成 debug 证书签名，等同于换签名：手机上已装的旧包无法升级，必须先卸载，而 `allowBackup=false` 意味着卸载即清空数据。反过来把 debug 包刷成正式证书也做不到——私钥只在 CI 的 secrets 里，无法从已签名的 APK 反推。

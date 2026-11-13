@@ -140,6 +140,14 @@ android {
     }
 
     buildTypes {
+        // 本地存在正式签名配置（keystore.properties 或 -PwalletSentinel.signingConfigFile）时，
+        // debug 变体也改用正式签名。这样 debug 与 release 证书一致，两个变体可以直接
+        // 互相覆盖安装、也能覆盖手机上已装的正式版，恢复 v1.5.0 之前「debug/正式随意替换」
+        // 的开发体验；同时 debug 仍保留 debuggable 与全部诊断能力。
+        // 配置缺失时 signingConfigs 里没有 "release"，自动回退默认 debug 签名，行为不变。
+        getByName("debug") {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

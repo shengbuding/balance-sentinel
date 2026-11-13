@@ -87,6 +87,10 @@ keyPassword=<密码>
 
 详见 [SIGNING.md](SIGNING.md)。
 
+本地存在 `keystore.properties` 时，`debug` 变体也会用正式证书签名，于是 `assembleDebug` 与 `assembleRelease` 的产物可以互相覆盖安装，也能直接覆盖手机上已装的正式版（versionCode 需不小于已装版本）。没有签名配置的机器仍回退 Android 默认 debug 证书，行为不变。
+
+本机没有正式密钥时，可在 Actions 里手动运行 **Debug APK (release-signed)** 工作流，拿到同样效果的安装包。
+
 ### 安装
 
 - **Release APK**：从 [Releases](https://github.com/shengbuding/balance-sentinel/releases) 下载最新版，直接安装
@@ -219,6 +223,10 @@ keyPassword=<password>
 ```
 
 See [SIGNING.md](SIGNING.md) for details.
+
+When `keystore.properties` exists locally, the `debug` variant is signed with the release certificate as well, so `assembleDebug` and `assembleRelease` outputs can be installed over each other and over an installed release build (versionCode must not go backwards). Machines without a signing config still fall back to the default Android debug certificate.
+
+Without the release key on this machine, trigger the **Debug APK (release-signed)** workflow from the Actions tab to get an equivalent package.
 
 ### Installation
 
