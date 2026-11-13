@@ -100,6 +100,65 @@ class AccountBalanceRefresherTest {
     }
 
     @Test
+    fun `expired subscription is distinguished from a rejected key`() = runTest {
+        val subscription = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.AuthError(
+                            provider = ProviderType.DEEPSEEK,
+                            message = "API Key is invalid",
+                            httpStatus = 401,
+                            providerDetail = """{"error":{"message":"Your subscription has expired"}}"""
+                        )
+                    )
+                )
+            }
+        )
+        val rejected = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.AuthError(
+                            provider = ProviderType.DEEPSEEK,
+                            message = "API Key is invalid",
+                            httpStatus = 401,
+                            providerDetail = """{"error":{"message":"invalid api key"}}"""
+                        )
+                    )
+                )
+            }
+        )
+
+        val expired = (subscription.fetch(account()) as BalanceFetchResult.Failure).failure
+        val invalid = (rejected.fetch(account()) as BalanceFetchResult.Failure).failure
+
+        assertEquals(AuthenticationFailureKind.SUBSCRIPTION_EXPIRED, (expired as RefreshFailure.AuthenticationFailure).kind)
+        assertEquals(AuthenticationFailureKind.INVALID_CREDENTIAL, (invalid as RefreshFailure.AuthenticationFailure).kind)
+        assertEquals(401, expired.httpStatus)
+        assertTrue(expired.message != invalid.message)
+    }
+
+    @Test
+    fun `missing credential is reported as configuration instead of a bad key`() = runTest {
+        val refresher = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.AuthError(ProviderType.DEEPSEEK, "API Key is empty")
+                    )
+                )
+            }
+        )
+
+        val failure = (refresher.fetch(account()) as BalanceFetchResult.Failure).failure
+
+        assertEquals(
+            AuthenticationFailureKind.MISSING_CREDENTIAL,
+            (failure as RefreshFailure.AuthenticationFailure).kind
+        )
+    }
+    @Test
     fun `network and rate limit failures expose retry metadata`() = runTest {
         val network = AccountBalanceRefresher(
             providerResolver = BalanceProviderResolver {

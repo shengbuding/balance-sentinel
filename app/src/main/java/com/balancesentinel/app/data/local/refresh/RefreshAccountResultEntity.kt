@@ -28,7 +28,17 @@ enum class RefreshAccountResultState {
 }
 
 enum class RefreshErrorCategory {
+    /**
+     * Legacy coarse bucket. Only rows written before authentication failures were classified
+     * carry this value; new rows use one of the AUTHENTICATION_* cases.
+     */
     AUTHENTICATION,
+    /** The stored credential was rejected: the user must re-enter it. */
+    AUTHENTICATION_INVALID_KEY,
+    /** The credential is valid but the plan lapsed: the user must renew or stop monitoring. */
+    AUTHENTICATION_SUBSCRIPTION,
+    /** No credential is stored at all: the user must configure the account. */
+    AUTHENTICATION_MISSING,
     NETWORK,
     RATE_LIMIT,
     RESPONSE,

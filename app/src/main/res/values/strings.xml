@@ -521,6 +521,9 @@
     <string name="data_reset_app_title">重置整个应用</string>
     <string name="data_reset_app_desc">清除所有数据、重置所有设置、删除所有账户。此操作不可撤销！</string>
     <string name="data_reset_app_btn">重置全部</string>
+    <string name="data_compress_title">压缩数据库</string>
+    <string name="data_compress_desc">清理过期日志后回收空页，缩小数据库文件体积</string>
+    <string name="data_compress_btn">压缩</string>
 
     <!-- ===== Data Management: Confirm Dialog ===== -->
     <string name="data_confirm_title">确认操作</string>
@@ -534,11 +537,13 @@
     <string name="data_confirm_reset_alarm">确定要重置闹钟计数器吗？</string>
     <string name="data_confirm_reset_settings">确定要重置所有设置到默认值吗？小组件配置将被清除。</string>
     <string name="data_confirm_reset_app">确定要重置整个应用吗？所有数据、设置和账户将被永久删除，此操作不可撤销！</string>
+    <string name="data_confirm_compress">压缩期间数据库会被临时占用，大文件可能需要数十秒，请保持应用在前台。</string>
 
     <!-- ===== Data Management: Toast ===== -->
     <string name="data_cleared_toast">数据已清除</string>
     <string name="data_reset_toast">已重置</string>
     <string name="data_reset_app_toast">应用已完全重置</string>
+    <string name="data_compress_toast">数据库已压缩</string>
 
     <!-- ===== Notification Channels ===== -->
     <string name="channel_service_name">余额监控</string>

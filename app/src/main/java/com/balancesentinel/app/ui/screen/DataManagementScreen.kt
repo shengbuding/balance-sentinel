@@ -85,6 +85,7 @@ private fun DataHub(
                         PendingAction.ResetAlarmCounters -> stringResource(R.string.data_confirm_reset_alarm)
                         PendingAction.ResetSettings -> stringResource(R.string.data_confirm_reset_settings)
                         PendingAction.ResetEntireApp -> stringResource(R.string.data_confirm_reset_app)
+                        PendingAction.CompressDatabase -> stringResource(R.string.data_confirm_compress)
                         else -> ""
                     }
                 )
@@ -172,6 +173,14 @@ private fun DataHub(
                 description = stringResource(R.string.data_reset_settings_desc),
                 buttonText = stringResource(R.string.data_reset_settings_btn),
                 onAction = { viewModel.requestAction(PendingAction.ResetSettings) }
+            )
+
+            ActionCard(
+                icon = { Icon(Icons.Filled.Delete, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.data_compress_title),
+                description = stringResource(R.string.data_compress_desc),
+                buttonText = stringResource(R.string.data_compress_btn),
+                onAction = { viewModel.requestAction(PendingAction.CompressDatabase) }
             )
 
             // ── Section 4: 危险区域 ──

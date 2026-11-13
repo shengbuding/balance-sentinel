@@ -121,6 +121,12 @@ sealed class PendingAction {
     data object ResetAlarmCounters : PendingAction()
     data object ResetSettings : PendingAction()
     data object ResetEntireApp : PendingAction()
+
+    /**
+     * Reclaims the free pages that retention pruning leaves behind. Deleting rows alone never
+     * shrinks the file: SQLite keeps the pages on the freelist and reuses them.
+     */
+    data object CompressDatabase : PendingAction()
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -670,6 +676,10 @@ class DataManagementViewModel @JvmOverloads constructor(
                 PendingAction.ResetEntireApp -> {
                     appResetCoordinator.reset()
                     res.getString(R.string.data_reset_app_toast)
+                }
+                PendingAction.CompressDatabase -> {
+                    database.openHelper.writableDatabase.query("VACUUM").close()
+                    res.getString(R.string.data_compress_toast)
                 }
                 }
             }

@@ -78,7 +78,9 @@ class BalanceQueryService(
                             ProviderError.AuthError(
                                 config.providerType,
                                 "API Key is invalid",
-                                cause = statusFailure
+                                cause = statusFailure,
+                                httpStatus = response.code,
+                                providerDetail = body.detailExcerpt()
                             )
                         )
                         429 -> ProviderResult.Failure(
@@ -170,6 +172,13 @@ class BalanceQueryService(
 
     companion object {
         const val CUSTOM_SCRIPT_REQUIRED_MESSAGE = "该供应商需要自定义余额脚本"
+
+        private const val DETAIL_EXCERPT_LENGTH = 160
+
+        /** Upstream bodies are attacker-influenced and unbounded; keep only a short excerpt. */
+        private fun String.detailExcerpt(): String? = trim()
+            .take(DETAIL_EXCERPT_LENGTH)
+            .takeIf { it.isNotEmpty() }
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

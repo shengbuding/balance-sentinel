@@ -4,6 +4,12 @@ import com.balancesentinel.app.data.api.PERCENTAGE_CURRENCY
 import com.balancesentinel.app.data.refresh.RefreshBatchState
 
 object WidgetStateResolver {
+    private val FAILED_BATCH_STATES = setOf(
+        RefreshBatchState.PARTIAL,
+        RefreshBatchState.FAILED,
+        RefreshBatchState.CANCELLED
+    )
+
     fun resolve(input: WidgetStateInput): WidgetViewState {
         val config = input.config ?: return WidgetViewState.Unconfigured(
             reason = WidgetViewState.Unconfigured.Reason.MISSING_CONFIG
@@ -39,26 +45,42 @@ object WidgetStateResolver {
         if (input.capabilityRestricted) {
             return WidgetViewState.PermissionRestricted(selection, aggregate)
         }
+        val affectedByBatchFailure = isAccountAffectedByBatchFailure(input.lastRefresh, config, isTotal)
         if (aggregate == null) {
-            return if (isRefreshFailed(input.lastRefresh)) {
+            return if (affectedByBatchFailure) {
                 WidgetViewState.RefreshFailed(selection)
             } else {
                 WidgetViewState.NoData(selection)
             }
         }
+        // A widget may only report staleness for the accounts it actually shows: one failing
+        // account elsewhere in the batch must not paint every other widget as out of date.
         val hasStaleData = candidates.any { it.stale }
-        return if (hasStaleData || isRefreshFailed(input.lastRefresh)) {
+        return if (hasStaleData || affectedByBatchFailure) {
             WidgetViewState.Stale(selection, aggregate, input.lastRefresh?.state)
         } else {
             WidgetViewState.Fresh(selection, aggregate)
         }
     }
 
-    private fun isRefreshFailed(status: WidgetRefreshStatus?): Boolean = status?.state in setOf(
-        RefreshBatchState.PARTIAL,
-        RefreshBatchState.FAILED,
-        RefreshBatchState.CANCELLED
-    )
+    /**
+     * True when the last batch verdict concerns this widget. A single-account widget follows its
+     * own account; a total widget only follows verdicts that concern every account it aggregates.
+     */
+    private fun isAccountAffectedByBatchFailure(
+        status: WidgetRefreshStatus?,
+        config: WidgetConfig,
+        isTotal: Boolean
+    ): Boolean {
+        if (status == null) return false
+        val batchFailed = status.state in FAILED_BATCH_STATES
+        if (!isTotal) {
+            // Older payloads carry no per-account detail; then the widget only knows the batch.
+            val failedAccounts = status.failedAccountIds
+            return if (failedAccounts.isEmpty()) batchFailed else config.accountId in failedAccounts
+        }
+        return batchFailed && status.failureCount >= status.accountCount
+    }
 
     /** Subscription percentages are not monetary amounts and cannot use currency aggregation. */
     private fun aggregateSubscription(

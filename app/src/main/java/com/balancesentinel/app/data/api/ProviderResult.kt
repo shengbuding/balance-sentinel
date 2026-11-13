@@ -33,7 +33,11 @@ sealed class ProviderError(
     class AuthError(
         provider: ProviderType,
         message: String,
-        cause: Throwable? = null
+        cause: Throwable? = null,
+        /** HTTP status that produced this error, when the provider answered at all. */
+        val httpStatus: Int? = null,
+        /** Short upstream excerpt; distinguishes an expired subscription from a bad key. */
+        val providerDetail: String? = null
     ) : ProviderError(provider, message, cause)
 
     /**

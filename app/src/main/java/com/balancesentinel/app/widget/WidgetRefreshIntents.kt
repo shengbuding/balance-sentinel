@@ -28,6 +28,7 @@ import com.balancesentinel.app.data.repository.SettingsRepositoryProvider
 import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.service.ForegroundServiceStarter
 import com.balancesentinel.app.service.ServiceStarter
+import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshBatchState
@@ -111,7 +112,11 @@ data class WidgetRefreshStatus(
     val accountCount: Int,
     val successCount: Int,
     val failureCount: Int,
-    val cancelledCount: Int
+    val cancelledCount: Int,
+    /** Accounts that failed or went stale in this batch; drives per-widget judgements. */
+    val failedAccountIds: Set<String> = emptySet(),
+    /** Wall-clock time the batch result was persisted; 0 means "unknown, treat as expired". */
+    val recordedAt: Long = 0L
 )
 
 /** Preserves the in-flight refresh indicator across concurrent full renders. */
@@ -141,9 +146,27 @@ object WidgetRefreshStatusStore {
     private const val KEY_SUCCESS_COUNT = "success_count"
     private const val KEY_FAILURE_COUNT = "failure_count"
     private const val KEY_CANCELLED_COUNT = "cancelled_count"
+    private const val KEY_FAILED_ACCOUNT_IDS = "failed_account_ids"
+    private const val KEY_RECORDED_AT = "recorded_at"
+    private const val ID_SEPARATOR = "\n"
 
-    fun record(context: Context, result: RefreshBatchResult) {
+    /**
+     * A batch verdict only describes the accounts that were refreshed in that batch, so it
+     * may only colour a widget while it is recent. Anything older than two refresh cadences
+     * (floored at two minutes) is treated as absent instead of as "the data is stale".
+     */
+    private const val MAX_AGE_MS = 2 * 60_000L
+
+    fun record(
+        context: Context,
+        result: RefreshBatchResult,
+        recordedAt: Long = System.currentTimeMillis()
+    ) {
         val aggregate = result.aggregate
+        val failedAccountIds = result.results
+            .filterIsInstance<AccountRefreshResult.Failed>()
+            .map { it.accountId }
+            .distinct()
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_RUN_ID, result.runId)
             .putString(KEY_STATE, aggregate.state.name)
@@ -151,6 +174,8 @@ object WidgetRefreshStatusStore {
             .putInt(KEY_SUCCESS_COUNT, aggregate.successCount)
             .putInt(KEY_FAILURE_COUNT, aggregate.failureCount)
             .putInt(KEY_CANCELLED_COUNT, aggregate.cancelledCount)
+            .putString(KEY_FAILED_ACCOUNT_IDS, failedAccountIds.joinToString(ID_SEPARATOR))
+            .putLong(KEY_RECORDED_AT, recordedAt)
             .commit()
     }
 
@@ -160,15 +185,40 @@ object WidgetRefreshStatusStore {
         val state = prefs.getString(KEY_STATE, null)?.let { value ->
             runCatching { RefreshBatchState.valueOf(value) }.getOrNull()
         } ?: return null
+        val recordedAt = prefs.getLong(KEY_RECORDED_AT, 0L)
+        if (!isFresh(recordedAt, System.currentTimeMillis())) return null
         return WidgetRefreshStatus(
             runId = runId,
             state = state,
             accountCount = prefs.getInt(KEY_ACCOUNT_COUNT, 0),
             successCount = prefs.getInt(KEY_SUCCESS_COUNT, 0),
             failureCount = prefs.getInt(KEY_FAILURE_COUNT, 0),
-            cancelledCount = prefs.getInt(KEY_CANCELLED_COUNT, 0)
+            cancelledCount = prefs.getInt(KEY_CANCELLED_COUNT, 0),
+            failedAccountIds = prefs.getString(KEY_FAILED_ACCOUNT_IDS, null)
+                ?.split(ID_SEPARATOR)
+                ?.filter { it.isNotBlank() }
+                ?.toSet()
+                .orEmpty(),
+            recordedAt = recordedAt
         )
     }
+
+    /** Drops a verdict that no longer describes the accounts' current state. */
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .remove(KEY_RUN_ID)
+            .remove(KEY_STATE)
+            .remove(KEY_ACCOUNT_COUNT)
+            .remove(KEY_SUCCESS_COUNT)
+            .remove(KEY_FAILURE_COUNT)
+            .remove(KEY_CANCELLED_COUNT)
+            .remove(KEY_FAILED_ACCOUNT_IDS)
+            .remove(KEY_RECORDED_AT)
+            .commit()
+    }
+
+    internal fun isFresh(recordedAt: Long, now: Long): Boolean =
+        recordedAt > 0L && now - recordedAt in 0..MAX_AGE_MS
 
     internal fun clearForTests(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()

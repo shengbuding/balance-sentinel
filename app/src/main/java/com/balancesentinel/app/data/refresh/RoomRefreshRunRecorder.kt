@@ -221,7 +221,7 @@ class RoomRefreshRunRecorder(
         is AccountRefreshResult.Failed -> Terminal(
             state = failure.toResultState(),
             errorCategory = failure.toErrorCategory(),
-            errorCode = failure.javaClass.simpleName,
+            errorCode = failure.toErrorCode(),
             retryable = failure.retryable,
             retryAfterAt = failure.retryAfter,
             dataTimestamp = this.dataTimestamp,
@@ -266,8 +266,25 @@ class RoomRefreshRunRecorder(
         is RefreshFailure.Cancelled -> RefreshAccountResultState.CANCELLED
     }
 
+    /**
+     * The recorded code must stay readable and stable; the class simple name was neither when
+     * the column truncated it to a single character.
+     */
+    private fun RefreshFailure.toErrorCode(): String = when (this) {
+        is RefreshFailure.AuthenticationFailure -> "AUTH_" + kind.name
+        else -> javaClass.simpleName
+    }
+
     private fun RefreshFailure.toErrorCategory(): RefreshErrorCategory = when (this) {
-        is RefreshFailure.AuthenticationFailure -> RefreshErrorCategory.AUTHENTICATION
+        is RefreshFailure.AuthenticationFailure -> when (kind) {
+            AuthenticationFailureKind.MISSING_CREDENTIAL ->
+                RefreshErrorCategory.AUTHENTICATION_MISSING
+            AuthenticationFailureKind.INVALID_CREDENTIAL ->
+                RefreshErrorCategory.AUTHENTICATION_INVALID_KEY
+            AuthenticationFailureKind.SUBSCRIPTION_EXPIRED ->
+                RefreshErrorCategory.AUTHENTICATION_SUBSCRIPTION
+            AuthenticationFailureKind.UNKNOWN -> RefreshErrorCategory.AUTHENTICATION
+        }
         is RefreshFailure.NetworkFailure -> RefreshErrorCategory.NETWORK
         is RefreshFailure.RateLimited -> RefreshErrorCategory.RATE_LIMIT
         is RefreshFailure.ResponseSchemaFailure -> RefreshErrorCategory.RESPONSE

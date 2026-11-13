@@ -123,6 +123,46 @@ class WidgetStateResolverTest {
             }
     }
 
+    @Test
+    fun `fresh data with a stale batch status from another account renders Fresh`() {
+        // A failing sibling account used to mark every widget stale, including this one.
+        val status = failedStatus(failed = setOf("account-9"))
+        val state = WidgetStateResolver.resolve(base.copy(lastRefresh = status))
+
+        assertTrue(state is WidgetViewState.Fresh)
+    }
+
+    @Test
+    fun `batch failure that includes the selected account still renders Stale`() {
+        val status = failedStatus(failed = setOf("account-1"))
+        val state = WidgetStateResolver.resolve(base.copy(lastRefresh = status))
+
+        assertTrue(state is WidgetViewState.Stale)
+    }
+
+    @Test
+    fun `total widget ignores a partial batch that still has healthy accounts`() {
+        val totalConfig = WidgetConfig(WidgetConfig.TOTAL_ACCOUNT_ID, "USD")
+        val status = WidgetRefreshStatus(
+            runId = "run-1",
+            state = RefreshBatchState.PARTIAL,
+            accountCount = 2,
+            successCount = 1,
+            failureCount = 1,
+            cancelledCount = 0,
+            failedAccountIds = setOf("account-9")
+        )
+        val state = WidgetStateResolver.resolve(
+            base.copy(
+                config = totalConfig,
+                activeAccounts = mapOf("account-1" to "Primary", "account-9" to "Secondary"),
+                balances = listOf(balance()),
+                lastRefresh = status
+            )
+        )
+
+        assertTrue(state is WidgetViewState.Fresh)
+    }
     private fun balance(stale: Boolean = false) = AccountBalance(
         accountId = "account-1",
         label = "Primary",
@@ -135,12 +175,17 @@ class WidgetStateResolverTest {
         stale = stale
     )
 
-    private fun failedStatus() = WidgetRefreshStatus(
+    private fun failedStatus(
+        failed: Set<String> = setOf("account-1"),
+        recordedAt: Long = 1_800_000_000_000L
+    ) = WidgetRefreshStatus(
         runId = "run-1",
         state = RefreshBatchState.FAILED,
         accountCount = 1,
         successCount = 0,
         failureCount = 1,
-        cancelledCount = 0
+        cancelledCount = 0,
+        failedAccountIds = failed,
+        recordedAt = recordedAt
     )
 }

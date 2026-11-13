@@ -121,6 +121,9 @@ class DatabaseConverters {
     @TypeConverter fun refreshErrorCategoryFromStorage(value: String?): RefreshErrorCategory? = when (value) {
         null -> null
         "AUTHENTICATION" -> RefreshErrorCategory.AUTHENTICATION
+        "AUTHENTICATION_INVALID_KEY" -> RefreshErrorCategory.AUTHENTICATION_INVALID_KEY
+        "AUTHENTICATION_SUBSCRIPTION" -> RefreshErrorCategory.AUTHENTICATION_SUBSCRIPTION
+        "AUTHENTICATION_MISSING" -> RefreshErrorCategory.AUTHENTICATION_MISSING
         "NETWORK" -> RefreshErrorCategory.NETWORK
         "RATE_LIMIT" -> RefreshErrorCategory.RATE_LIMIT
         "RESPONSE" -> RefreshErrorCategory.RESPONSE

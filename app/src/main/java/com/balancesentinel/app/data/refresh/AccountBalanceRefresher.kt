@@ -25,6 +25,14 @@ class AccountBalanceRefresher(
     private val clock: () -> Long = System::currentTimeMillis
 ) : AccountBalanceSource {
 
+    private companion object {
+        /** Upstream wording used by subscription-backed providers when the plan lapsed. */
+        val SUBSCRIPTION_PATTERN = Regex(
+            "subscription|billing|expired|plan|quota_exhausted|insufficient_quota|payment",
+            RegexOption.IGNORE_CASE
+        )
+    }
+
     override suspend fun fetch(account: AccountInfo): BalanceFetchResult {
         if (!account.usageScript.isNullOrBlank() && !account.usageScriptEnabled) {
             return failure(
@@ -67,8 +75,7 @@ class AccountBalanceRefresher(
     }
 
     private fun mapProviderError(error: ProviderError): RefreshFailure = when (error) {
-        is ProviderError.AuthError ->
-            RefreshFailure.AuthenticationFailure("Authentication failed")
+        is ProviderError.AuthError -> error.toAuthenticationFailure()
         is ProviderError.RateLimitError ->
             RefreshFailure.RateLimited("Provider rate limit reached", retryAfter = error.retryAfter)
         is ProviderError.NetworkError ->
@@ -82,6 +89,29 @@ class AccountBalanceRefresher(
                 ?: RefreshFailure.ResponseSchemaFailure("Balance response schema is invalid")
         is ProviderError.ApiUnavailableError ->
             RefreshFailure.ResponseSchemaFailure("Balance is unavailable for this provider")
+    }
+
+    /**
+     * An authentication rejection is not one failure: a rejected key needs the credential
+     * re-entered, an expired subscription needs a renewal, and a blank key needs configuration.
+     * The upstream status and body are the only evidence available to tell them apart, so keep
+     * them instead of collapsing everything into one message.
+     */
+    private fun ProviderError.AuthError.toAuthenticationFailure(): RefreshFailure.AuthenticationFailure {
+        val kind = when {
+            httpStatus == null && message.contains("empty", ignoreCase = true) ->
+                AuthenticationFailureKind.MISSING_CREDENTIAL
+            providerDetail == null -> AuthenticationFailureKind.INVALID_CREDENTIAL
+            SUBSCRIPTION_PATTERN.containsMatchIn(providerDetail) ->
+                AuthenticationFailureKind.SUBSCRIPTION_EXPIRED
+            else -> AuthenticationFailureKind.INVALID_CREDENTIAL
+        }
+        return RefreshFailure.AuthenticationFailure(
+            message = kind.message,
+            kind = kind,
+            httpStatus = httpStatus,
+            providerDetail = providerDetail
+        )
     }
 
     private fun failure(failure: RefreshFailure) = BalanceFetchResult.Failure(failure)

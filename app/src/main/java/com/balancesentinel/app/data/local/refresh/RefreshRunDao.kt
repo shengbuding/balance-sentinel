@@ -148,4 +148,25 @@ interface RefreshRunDao {
         """
     )
     suspend fun updateInterruptedCounts(completedAt: Long): Int
+
+    /**
+     * Refresh audit rows grow without bound while only the newest handful are ever read, so the
+     * table needs a retention cutoff. Terminal runs only: a RUNNING row still belongs to a live
+     * owner and deleting it would strand its account results.
+     */
+    @Query("SELECT COUNT(*) FROM refresh_runs WHERE state != 'RUNNING' AND started_at < :cutoff")
+    suspend fun countRunsStartedBefore(cutoff: Long): Int
+
+    @Query("DELETE FROM refresh_runs WHERE state != 'RUNNING' AND started_at < :cutoff")
+    suspend fun deleteRunsStartedBefore(cutoff: Long): Int
+
+    /** Results whose run row is already gone (or pruned in the same pass) must not linger. */
+    @Query(
+        """
+        DELETE FROM refresh_account_results
+        WHERE state != 'RUNNING'
+          AND run_id NOT IN (SELECT id FROM refresh_runs)
+        """
+    )
+    suspend fun deleteOrphanedResults(): Int
 }

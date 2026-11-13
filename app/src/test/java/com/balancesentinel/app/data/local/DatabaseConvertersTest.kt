@@ -140,6 +140,9 @@ class DatabaseConvertersTest {
         assertRoundTrips(
             listOf(
                 "AUTHENTICATION" to RefreshErrorCategory.AUTHENTICATION,
+                "AUTHENTICATION_INVALID_KEY" to RefreshErrorCategory.AUTHENTICATION_INVALID_KEY,
+                "AUTHENTICATION_SUBSCRIPTION" to RefreshErrorCategory.AUTHENTICATION_SUBSCRIPTION,
+                "AUTHENTICATION_MISSING" to RefreshErrorCategory.AUTHENTICATION_MISSING,
                 "NETWORK" to RefreshErrorCategory.NETWORK,
                 "RATE_LIMIT" to RefreshErrorCategory.RATE_LIMIT,
                 "RESPONSE" to RefreshErrorCategory.RESPONSE,

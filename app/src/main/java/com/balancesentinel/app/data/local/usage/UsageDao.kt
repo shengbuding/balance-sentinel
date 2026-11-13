@@ -149,4 +149,14 @@ interface UsageDao {
 
     @Query("DELETE FROM usage_snapshots WHERE account_id = :accountId")
     suspend fun deleteByAccount(accountId: String): Int
+
+    /**
+     * Usage snapshots have no UI reader at all: they only feed backup export, so an age cutoff is
+     * safe as long as it stays well beyond any window Insights can show. Records cascade with them.
+     */
+    @Query("SELECT COUNT(*) FROM usage_snapshots WHERE captured_at < :cutoff")
+    suspend fun countSnapshotsCapturedBefore(cutoff: Long): Long
+
+    @Query("DELETE FROM usage_snapshots WHERE captured_at < :cutoff")
+    suspend fun deleteSnapshotsCapturedBefore(cutoff: Long): Int
 }

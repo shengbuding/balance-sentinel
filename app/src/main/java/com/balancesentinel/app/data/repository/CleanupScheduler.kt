@@ -2,8 +2,10 @@ package com.balancesentinel.app.data.repository
 
 import android.content.Context
 import com.balancesentinel.app.data.engine.RecordAggregator
+import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.history.HistorySeriesKeyProjection
 import com.balancesentinel.app.data.model.DailySummary
+import com.balancesentinel.app.data.util.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,6 +38,15 @@ object CleanupScheduler {
 
     private const val RETENTION_MS = 24 * 3_600_000L
     private const val MAX_REASON_LENGTH = 160
+
+    /**
+     * Refresh audit rows exist only for the export dialog, which shows the newest 20 runs, so a
+     * week keeps far more history than anything reads while bounding growth at ~17k runs.
+     */
+    private const val REFRESH_AUDIT_RETENTION_MS = 7 * 24 * 3_600_000L
+
+    /** Usage snapshots feed backup export only; keep well beyond the 365-day Insights window. */
+    private const val USAGE_SNAPSHOT_RETENTION_MS = 90L * 24 * 3_600_000L
 
     suspend fun runCleanup(context: Context): CleanupReport = withContext(Dispatchers.IO) {
         runRoomCleanup(context, System.currentTimeMillis(), ZoneId.systemDefault())
@@ -83,6 +94,37 @@ object CleanupScheduler {
         }
     }
 
+    /**
+     * Prunes the three append-only audit tables that no retention rule covered. Their growth is
+     * driven by the refresh cadence (~2.5k runs/day), not by user activity, so without a cutoff
+     * the database grows ~100 MB/month no matter what the user does.
+     *
+     * Failures are logged instead of reported: MidnightMaintenanceWorker retries the whole
+     * cleanup whenever the report carries a failure, and a stuck audit prune must not turn into
+     * an unbounded WorkManager retry storm.
+     */
+    private suspend fun pruneRefreshAudit(context: Context, now: Long) {
+        val database = WalletDatabaseProvider.get(context)
+        try {
+            val runCutoff = now - REFRESH_AUDIT_RETENTION_MS
+            val deletedRuns = database.refreshRunDao().deleteRunsStartedBefore(runCutoff)
+            // Foreign keys cascade results, but rows written while the run row was already gone
+            // (interrupted batches) would survive, so sweep them explicitly.
+            val deletedOrphans = database.refreshRunDao().deleteOrphanedResults()
+            val usageCutoff = now - USAGE_SNAPSHOT_RETENTION_MS
+            val deletedUsage = database.usageDao().deleteSnapshotsCapturedBefore(usageCutoff)
+            if (deletedRuns > 0 || deletedOrphans > 0 || deletedUsage > 0) {
+                Logger.i(
+                    "CleanupScheduler",
+                    "audit_pruned:runs=$deletedRuns,results=$deletedOrphans,usage=$deletedUsage"
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (throwable: Exception) {
+            Logger.w("CleanupScheduler", "audit_prune_failed:${throwable.message}")
+        }
+    }
     private suspend fun runRoomCleanup(
         context: Context,
         now: Long,
@@ -160,6 +202,9 @@ object CleanupScheduler {
         }
         if (onlyDate == null) {
             repository.fillContinuityThrough(today.minusDays(1), now, zoneId)
+        }
+        if (onlyDate == null) {
+            pruneRefreshAudit(context, now)
         }
         val retained = repository.countRecords().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         return CleanupReport(archived, deleted, retained, failures)

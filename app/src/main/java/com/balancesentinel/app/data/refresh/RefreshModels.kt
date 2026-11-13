@@ -13,6 +13,27 @@ import kotlinx.coroutines.withContext
 
 enum class RefreshTrigger { MANUAL_ALL, MANUAL_ACCOUNT, SERVICE, BACKGROUND, WIDGET, WATCHDOG }
 
+/**
+ * Why an authentication attempt was rejected. These need different user actions, so the
+ * refresh pipeline carries the distinction instead of one opaque "Authentication failed".
+ */
+enum class AuthenticationFailureKind(val message: String) {
+    /** No usable credential is stored; the user must enter one. */
+    MISSING_CREDENTIAL("API Key is empty"),
+    /** The provider rejected the credential; the user must re-enter it. */
+    INVALID_CREDENTIAL("API Key is invalid"),
+    /** The credential is fine but the plan lapsed; the user must renew or ignore the account. */
+    SUBSCRIPTION_EXPIRED("Subscription expired"),
+    /** The provider rejected the credential for a reason the evidence cannot classify. */
+    UNKNOWN("Authentication failed");
+
+    companion object {
+        fun fromStorage(value: String): AuthenticationFailureKind =
+            entries.firstOrNull { it.name == value }
+                ?: throw IllegalArgumentException("Unknown AuthenticationFailureKind: $value")
+    }
+}
+
 sealed interface RefreshFailure {
     val message: String
     /** Whether a subsequent refresh may retry this failure automatically. */
@@ -28,7 +49,12 @@ sealed interface RefreshFailure {
         override val retryAfter: Long? = null,
         val cause: Throwable? = null
     ) : RefreshFailure
-    data class AuthenticationFailure(override val message: String) : RefreshFailure
+    data class AuthenticationFailure(
+        override val message: String,
+        val kind: AuthenticationFailureKind = AuthenticationFailureKind.UNKNOWN,
+        val httpStatus: Int? = null,
+        val providerDetail: String? = null
+    ) : RefreshFailure
     data class RateLimited(
         override val message: String,
         override val retryable: Boolean = true,

@@ -26,6 +26,7 @@ import com.balancesentinel.app.data.repository.SettingsSnapshotState
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.local.monitoring.MonitoringSessionEndReason
 import com.balancesentinel.app.widget.BalanceWidgetDataStore
+import com.balancesentinel.app.widget.WidgetRefreshStatusStore
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x1
 import com.balancesentinel.app.widget.StaticWidgetProvider_2x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_3x1
@@ -385,6 +386,9 @@ class BalanceRefreshService : Service() {
                     }
                 )
                 val serviceBatch = runner.refreshBatch()
+                serviceBatch.batch?.let { batch ->
+                    WidgetRefreshStatusStore.record(this@BalanceRefreshService, batch)
+                }
                 val committedBalances = serviceBatch.committedBalances
                 publishNotificationBestEffort(
                     onFailure = { error ->

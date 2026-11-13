@@ -505,6 +505,23 @@ class DataManagementViewModelTest {
     }
 
     @Test
+    fun `executeAction CompressDatabase vacuums without losing data`() {
+        addDataRoomLogs(RefreshLogEntry(
+            id = System.currentTimeMillis(),
+            type = RefreshLogType.MANUAL,
+            timestamp = System.currentTimeMillis(),
+            message = "Test"
+        ))
+
+        val viewModel = newDataManagementViewModel()
+        assertEquals(1, viewModel.uiState.value.refreshLogCount)
+
+        viewModel.executeAction(PendingAction.CompressDatabase)
+        awaitDataManagementUpdate()
+
+        assertEquals(1, viewModel.uiState.value.refreshLogCount)
+    }
+    @Test
     fun `executeAction ClearRefreshLogs clears all logs`() {
         addDataRoomLogs(RefreshLogEntry(
             id = System.currentTimeMillis(),

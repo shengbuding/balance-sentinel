@@ -522,6 +522,9 @@
     <string name="data_reset_app_title">Reset Entire App</string>
     <string name="data_reset_app_desc">Clear all data, reset all settings, remove all accounts. This cannot be undone!</string>
     <string name="data_reset_app_btn">Reset Everything</string>
+    <string name="data_compress_title">Compress Database</string>
+    <string name="data_compress_desc">Reclaim free pages left by pruning so the database file shrinks</string>
+    <string name="data_compress_btn">Compress</string>
 
     <!-- ===== Data Management: Confirm Dialog ===== -->
     <string name="data_confirm_title">Confirm Action</string>
@@ -535,11 +538,13 @@
     <string name="data_confirm_reset_alarm">Are you sure you want to reset alarm counters?</string>
     <string name="data_confirm_reset_settings">Are you sure you want to reset all settings to defaults? Widget configs will be cleared.</string>
     <string name="data_confirm_reset_app">Are you sure you want to reset the entire app? All data, settings, and accounts will be permanently deleted. This cannot be undone!</string>
+    <string name="data_confirm_compress">The database is locked while compressing. A large file can take tens of seconds, so keep the app in the foreground.</string>
 
     <!-- ===== Data Management: Toast ===== -->
     <string name="data_cleared_toast">Data cleared</string>
     <string name="data_reset_toast">Reset complete</string>
     <string name="data_reset_app_toast">App has been completely reset</string>
+    <string name="data_compress_toast">Database compressed</string>
 
     <!-- ===== Notification Channels ===== -->
     <string name="channel_service_name">Balance Monitor</string>

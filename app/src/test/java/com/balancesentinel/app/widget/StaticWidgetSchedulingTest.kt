@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -159,6 +160,47 @@ class StaticWidgetSchedulingTest {
         assertEquals(0, starter.calls)
     }
 
+    @Test
+    fun `expired refresh status is ignored`() = runTest {
+        WidgetRefreshStatusStore.record(
+            context,
+            RefreshedBatch.failure(),
+            recordedAt = System.currentTimeMillis() - 10 * 60_000L
+        )
+
+        assertNull(WidgetRefreshStatusStore.read(context))
+    }
+
+    @Test
+    fun `fresh refresh status survives a round trip with per-account detail`() = runTest {
+        val recordedAt = System.currentTimeMillis()
+        WidgetRefreshStatusStore.record(context, RefreshedBatch.failure(), recordedAt = recordedAt)
+
+        val status = WidgetRefreshStatusStore.read(context)
+        assertEquals(RefreshBatchState.FAILED, status?.state)
+        assertEquals(setOf("acct-1"), status?.failedAccountIds)
+        assertEquals(recordedAt, status?.recordedAt)
+    }
+
+    @Test
+    fun `cleared refresh status reads as absent`() = runTest {
+        WidgetRefreshStatusStore.record(context, RefreshedBatch.failure())
+        WidgetRefreshStatusStore.clear(context)
+
+        assertNull(WidgetRefreshStatusStore.read(context))
+    }
+
+    private object RefreshedBatch {
+        fun failure(): RefreshBatchResult {
+            val results = listOf(
+                AccountRefreshResult.Failed(
+                    accountId = "acct-1",
+                    failure = com.balancesentinel.app.data.refresh.RefreshFailure.NetworkFailure("timeout")
+                )
+            )
+            return RefreshBatchResult("run-expired", results, deriveRefreshBatchAggregate(results))
+        }
+    }
     @Test
     fun `widget execution delivers the real batch result to its consumer`() = runTest {
         val events = mutableListOf<String>()
