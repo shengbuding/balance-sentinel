@@ -94,6 +94,70 @@ class ConsoleViewModelTest {
         assertFalse(viewModel.uiState.value.isLoggedIn)
     }
 
+    @Test
+    fun `visiting a dashboard page remembers it for the next open`() {
+        store.saveSession(PLATFORM.id, validSession())
+        val viewModel = ConsoleViewModel(application, PLATFORM, store)
+
+        viewModel.onPageVisited("https://platform.deepseek.com/usage")
+
+        assertEquals(
+            "https://platform.deepseek.com/usage",
+            store.getSession(PLATFORM.id)?.lastVisitedUrl
+        )
+        assertEquals(
+            "https://platform.deepseek.com/usage",
+            viewModel.uiState.value.session?.lastVisitedUrl
+        )
+    }
+
+    @Test
+    fun `a login or foreign page never overwrites the remembered page`() {
+        val session = validSession()
+        store.saveSession(PLATFORM.id, session.copy(lastVisitedUrl = "https://platform.deepseek.com/usage"))
+        val viewModel = ConsoleViewModel(application, PLATFORM, store)
+
+        viewModel.onPageVisited("https://platform.deepseek.com/login")
+        viewModel.onPageVisited("https://evil.test/usage")
+        viewModel.onPageVisited(null)
+
+        assertEquals(
+            "https://platform.deepseek.com/usage",
+            store.getSession(PLATFORM.id)?.lastVisitedUrl
+        )
+    }
+
+    @Test
+    fun `a visit without a session does nothing`() {
+        val viewModel = ConsoleViewModel(application, PLATFORM, store)
+
+        viewModel.onPageVisited("https://platform.deepseek.com/usage")
+
+        assertNull(store.getSession(PLATFORM.id))
+    }
+
+    @Test
+    fun `staying on the same page refreshes the active time once it is old enough`() {
+        val stale = System.currentTimeMillis() - 20L * 60 * 1000
+        store.saveSession(
+            PLATFORM.id,
+            ConsoleSession(
+                cookies = mapOf("session" to "value"),
+                loginTime = stale,
+                lastActiveTime = stale,
+                lastVisitedUrl = "https://platform.deepseek.com/usage"
+            )
+        )
+        val viewModel = ConsoleViewModel(application, PLATFORM, store)
+
+        viewModel.onPageVisited("https://platform.deepseek.com/usage")
+
+        val refreshed = store.getSession(PLATFORM.id)
+        assertNotNull(refreshed)
+        assertTrue(refreshed!!.lastActiveTime > stale)
+        assertTrue(refreshed.isValid())
+    }
+
     private fun validSession(): ConsoleSession {
         val now = System.currentTimeMillis()
         return ConsoleSession(loginTime = now, lastActiveTime = now)

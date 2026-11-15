@@ -1,7 +1,10 @@
 package com.balancesentinel.app.data.console
 
 import com.balancesentinel.app.data.console.store.ConsoleSession
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,6 +21,27 @@ class ConsoleSessionTest {
         val session = session(lastActiveTime = NOW - THIRTY_DAYS_MS)
 
         assertFalse(session.isValid(now = NOW))
+    }
+
+    @Test
+    fun `remembering a visit stores the page and refreshes the active time`() {
+        val session = session(lastActiveTime = NOW - THIRTY_DAYS_MS)
+
+        val remembered = session.rememberVisit("https://platform.deepseek.com/usage", now = NOW)
+
+        assertEquals("https://platform.deepseek.com/usage", remembered.lastVisitedUrl)
+        assertEquals(NOW, remembered.lastActiveTime)
+        assertTrue(remembered.isValid(now = NOW))
+    }
+
+    @Test
+    fun `a legacy session without a remembered page still deserializes`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val legacy = """{"cookies":{"session":"value"},"loginTime":1,"lastActiveTime":1}"""
+
+        val decoded = json.decodeFromString<ConsoleSession>(legacy)
+
+        assertNull(decoded.lastVisitedUrl)
     }
 
     private fun session(lastActiveTime: Long) = ConsoleSession(

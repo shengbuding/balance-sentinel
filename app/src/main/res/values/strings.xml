@@ -29,6 +29,8 @@
     <string name="account_data_corrupt">账户数据损坏，账户相关操作已停止。</string>
     <string name="home_no_data">暂无余额数据</string>
     <string name="home_query_failed">查询失败</string>
+    <string name="home_query_failed_subscription_expired">订阅已到期</string>
+    <string name="home_query_failed_subscription_expired_hint">API Key 仍然有效，续订后会自动恢复刷新</string>
     <string name="home_status_available">可用</string>
     <string name="home_status_insufficient">余额不足</string>
     <string name="home_service_starting">启动中…</string>
@@ -771,6 +773,15 @@
     <string name="settings_section_runtime">运行与提醒</string>
     <string name="settings_section_data">数据与诊断</string>
     <string name="settings_section_app">应用偏好</string>
+    <string name="settings_https_required">强制 HTTPS</string>
+    <string name="settings_https_required_desc">所有供应商只接受 https 地址，DeepSeek 官方接口额外校验证书指纹。</string>
+    <string name="settings_https_relaxed_desc">已关闭：允许 http 地址，也不再校验证书指纹。开 VPN 或抓包时可用了，但连接不再能发现中间人。</string>
+    <string name="settings_https_warning_title">关闭强制 HTTPS？</string>
+    <string name="settings_https_warning_body">关闭后将发生以下变化：\n\n1. 所有供应商的地址校验放宽为同时接受 http:// 与 https://。走 http 时余额数据与 API Key 以明文传输，同一网络中的其他人可以读取。\n\n2. DeepSeek 官方接口不再校验证书指纹。任何能签发受信任证书的代理（公司网关、VPN、抓包工具）都可以冒充 api.deepseek.com，拿到你发给它的密钥和余额请求。\n\n3. 该设置对全部账户生效，并会一直保留，直到你重新打开这个开关。\n\n如果你只是因为开了 VPN 导致 DeepSeek 刷新失败，更安全的做法是让 VPN 走规则模式、只代理需要的域名，而不是关闭这里。</string>
+    <string name="settings_https_warning_countdown">请阅读以上风险，%1$d 秒后可确认</string>
+    <string name="settings_https_warning_confirm">我已了解风险，仍然关闭</string>
+    <string name="settings_https_warning_keep">保持开启</string>
+    <string name="account_field_url_insecure">强制 HTTPS 已开启，地址必须以 https:// 开头</string>
     <string name="onboarding_permissions_title">完成后台权限设置</string>
     <string name="onboarding_permissions_desc">为保证余额刷新和预警持续可见，请按需打开通知、允许后台运行和精确闹钟权限。之后也可在设置中再次引导。</string>
 

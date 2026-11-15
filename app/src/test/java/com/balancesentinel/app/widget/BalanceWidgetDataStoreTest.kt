@@ -403,6 +403,44 @@ class BalanceWidgetDataStoreTest {
         )
     }
 
+    // Mutation caught: storing a stale failure without its verdict, which would make an
+    // expired subscription look like a plain query failure after a restart.
+    @Test
+    fun `stale failure keeps the authentication verdict it was recorded with`() {
+        BalanceWidgetDataStore.markAccountStale(
+            context,
+            "acc1",
+            "Subscription expired",
+            "SUBSCRIPTION_EXPIRED"
+        )
+
+        val snapshot = BalanceWidgetDataStore.getSnapshot(context)
+        assertEquals("SUBSCRIPTION_EXPIRED", snapshot.failures.single().kind)
+    }
+
+    // Mutation caught: an older snapshot without the new field failing to decode. The field is
+    // additive, so pre-upgrade caches must keep loading.
+    @Test
+    fun `snapshot written before the verdict field existed still decodes`() {
+        val prefs = context.getSharedPreferences("widget_balance_cache", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(
+                "account_balances",
+                """[{"accountId":"acc1","label":"A","totalBalance":"12.00","currency":"USD","isAvailable":true,"grantedBalance":"0","toppedUpBalance":"0","lastUpdated":42}]"""
+            )
+            .putString(
+                "account_balance_failures",
+                """[{"accountId":"acc1","reason":"offline","failedAt":7}]"""
+            )
+            .commit()
+
+        val snapshot = BalanceWidgetDataStore.getSnapshot(context)
+
+        assertNull(snapshot.failures.single().kind)
+        assertNull(snapshot.balances.single().staleKind)
+        assertEquals("12.00", snapshot.balances.single().totalBalance)
+    }
+
     @Test
     fun `snapshot observer publishes failure and following success atomically`() = runBlocking {
         val updates = Channel<BalanceCacheSnapshot>(Channel.UNLIMITED)

@@ -21,15 +21,19 @@ object DeepSeekTlsPolicy {
         .add(HOST, *pins.toTypedArray())
         .build()
 
+    /**
+     * 把传输安全策略装到这条 client 上。严格态装 pinner，放宽态拆掉 pinner 并
+     * 纳入用户 CA —— 两件事都在 [TransportSecurityClient] 里，见那里的说明。
+     */
     fun apply(builder: OkHttpClient.Builder): OkHttpClient.Builder =
-        builder.certificatePinner(certificatePinner)
+        TransportSecurityClient.apply(builder)
 
     fun isDeepSeek(url: HttpUrl): Boolean = url.host == HOST
 }
 
 /**
- * Construction seam used by the API clients. It is intentionally a no-op
- * until the pinning behavior is enabled in the implementation commit.
+ * Construction seam used by the API clients. Delegates to [DeepSeekTlsPolicy],
+ * which installs the pinner unless the user turned the HTTPS requirement off.
  */
 internal object DeepSeekTlsPolicyAdapter {
     fun configure(builder: OkHttpClient.Builder): OkHttpClient.Builder =

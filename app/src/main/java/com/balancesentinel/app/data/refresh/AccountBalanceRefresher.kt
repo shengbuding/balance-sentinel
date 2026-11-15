@@ -26,6 +26,12 @@ class AccountBalanceRefresher(
 ) : AccountBalanceSource {
 
     private companion object {
+        /**
+         * 与 [mapProviderError] 里的普通网络失败区分开。用户报「关了强制 HTTPS 还失败」
+         * 时，这条消息能直接说明握手仍被拒，而不是含糊的「网络不好」。
+         */
+        const val TLS_FAILURE_MESSAGE = "TLS handshake rejected (certificate pinning or proxy)"
+
         /** Upstream wording used by subscription-backed providers when the plan lapsed. */
         val SUBSCRIPTION_PATTERN = Regex(
             "subscription|billing|expired|plan|quota_exhausted|insufficient_quota|payment",
@@ -79,7 +85,12 @@ class AccountBalanceRefresher(
         is ProviderError.RateLimitError ->
             RefreshFailure.RateLimited("Provider rate limit reached", retryAfter = error.retryAfter)
         is ProviderError.NetworkError ->
-            RefreshFailure.NetworkFailure("Network request failed", retryable = true)
+            // TLS 层失败要单独留痕：它和「网络不好」是两回事，用户看提示时必须能分清。
+            if (error.tlsFailure) {
+                RefreshFailure.NetworkFailure(TLS_FAILURE_MESSAGE, retryable = true)
+            } else {
+                RefreshFailure.NetworkFailure("Network request failed", retryable = true)
+            }
         is ProviderError.ServerError ->
             RefreshFailure.NetworkFailure("Provider service failed (HTTP ${error.code})")
         is ProviderError.QuotaExceededError ->

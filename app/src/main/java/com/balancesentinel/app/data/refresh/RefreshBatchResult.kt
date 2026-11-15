@@ -14,7 +14,13 @@ data class RefreshBatchAggregate(
     val accountCount: Int,
     val successCount: Int,
     val failureCount: Int,
-    val cancelledCount: Int
+    val cancelledCount: Int,
+    /**
+     * Failures that are waiting on the user (expired plan, rejected or missing key) rather than
+     * on the service. They are still failures for display, but they say nothing about whether
+     * the refresh service itself is healthy.
+     */
+    val accountActionRequiredCount: Int = 0
 )
 
 /** Durable run id plus the complete per-account result set and aggregate. */
@@ -37,5 +43,22 @@ internal fun deriveRefreshBatchAggregate(results: List<AccountRefreshResult>): R
         successCount > 0 -> RefreshBatchState.PARTIAL
         else -> RefreshBatchState.FAILED
     }
-    return RefreshBatchAggregate(state, results.size, successCount, failureCount, cancelledCount)
+    return RefreshBatchAggregate(
+        state = state,
+        accountCount = results.size,
+        successCount = successCount,
+        failureCount = failureCount,
+        cancelledCount = cancelledCount,
+        accountActionRequiredCount = countAccountActionRequired(results)
+    )
+}
+
+/**
+ * Failures that only a user action can resolve: an expired plan, a rejected key or a missing
+ * credential. They count as failures for display, but they must not feed the service health
+ * counters — refreshing cannot repair them, so retrying on a backoff schedule only hides the
+ * real remedy.
+ */
+internal fun countAccountActionRequired(results: List<AccountRefreshResult>): Int = results.count {
+    it is AccountRefreshResult.Failed && it.failure.authenticationKind() != null
 }

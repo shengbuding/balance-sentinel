@@ -74,6 +74,59 @@ class RoomRefreshRunRecorderTest {
         )
     }
 
+    // Mutation caught: reporting a run whose only failures need the user to renew a key as
+    // evidence that the refresh service is unhealthy.
+    @Test
+    fun `finish reports how many failures are waiting on the user`() = runTest {
+        val healthy = account("acct-1")
+        val expired = account("acct-2")
+        database.accountDao().insertCreate(accountEntity(healthy))
+        database.accountDao().insertCreate(accountEntity(expired))
+        val recorder = RoomRefreshRunRecorder(database)
+        val handle = recorder.begin(
+            RefreshTrigger.SERVICE,
+            listOf(healthy, expired),
+            10L,
+            "owner-a"
+        )
+
+        recorder.recordAccount(
+            handle.runId,
+            RefreshRequest(healthy.id, healthy.revision, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            AccountRefreshResult.Committed(healthy.id, balance(healthy.id)),
+        )
+        recorder.recordAccount(
+            handle.runId,
+            RefreshRequest(expired.id, expired.revision, 2L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            AccountRefreshResult.Failed(expired.id, subscriptionExpired()),
+        )
+        val aggregate = recorder.finish(handle.runId, 20L)
+
+        assertEquals(RefreshBatchState.PARTIAL, aggregate.state)
+        assertEquals(2, aggregate.accountCount)
+        assertEquals(1, aggregate.failureCount)
+        assertEquals(1, aggregate.accountActionRequiredCount)
+    }
+
+    @Test
+    fun `finish keeps ordinary failures out of the user action count`() = runTest {
+        val account = account("acct-1")
+        database.accountDao().insertCreate(accountEntity(account))
+        val recorder = RoomRefreshRunRecorder(database)
+        val handle = recorder.begin(RefreshTrigger.SERVICE, listOf(account), 10L, "owner-a")
+
+        recorder.recordAccount(
+            handle.runId,
+            RefreshRequest(account.id, account.revision, 1L, RefreshTrigger.SERVICE, 10L, handle.runId),
+            AccountRefreshResult.Failed(account.id, RefreshFailure.NetworkFailure("offline")),
+        )
+        val aggregate = recorder.finish(handle.runId, 20L)
+
+        assertEquals(RefreshBatchState.FAILED, aggregate.state)
+        assertEquals(1, aggregate.failureCount)
+        assertEquals(0, aggregate.accountActionRequiredCount)
+    }
+
     @Test
     fun `startup recovery interrupts runs without an active owner`() = runTest {
         val account = account("acct-1")
@@ -126,6 +179,13 @@ class RoomRefreshRunRecorderTest {
         state = AccountState.VERIFIED,
         createdAt = 1L,
         updatedAt = 1L
+    )
+
+    private fun subscriptionExpired() = RefreshFailure.AuthenticationFailure(
+        message = AuthenticationFailureKind.SUBSCRIPTION_EXPIRED.message,
+        kind = AuthenticationFailureKind.SUBSCRIPTION_EXPIRED,
+        httpStatus = 401,
+        providerDetail = """{"error":{"code":"api_key_expired"}}"""
     )
 
     private fun balance(accountId: String) = UnifiedBalance(

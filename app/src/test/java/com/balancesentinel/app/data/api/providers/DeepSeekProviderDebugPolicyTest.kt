@@ -6,6 +6,7 @@ import com.balancesentinel.app.data.api.ProviderResult
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.debug.DebugInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.PinningAwareClientCache
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -44,9 +45,7 @@ class DeepSeekProviderDebugPolicyTest {
                     .setBody("provider-response-secret")
             )
             val provider = DeepSeekProvider()
-            val clientField = DeepSeekProvider::class.java.getDeclaredField("client")
-            clientField.isAccessible = true
-            clientField.set(provider, OkHttpClient())
+            injectClient(provider, OkHttpClient())
 
             val result = provider.getUsage(
                 ProviderConfig(
@@ -83,9 +82,7 @@ class DeepSeekProviderDebugPolicyTest {
                 })
                 .build()
             val provider = DeepSeekProvider()
-            val clientField = DeepSeekProvider::class.java.getDeclaredField("client")
-            clientField.isAccessible = true
-            clientField.set(provider, client)
+            injectClient(provider, client)
             var observed: Throwable? = null
             val job = launch(Dispatchers.IO) {
                 try {
@@ -112,5 +109,15 @@ class DeepSeekProviderDebugPolicyTest {
         } finally {
             server.shutdown()
         }
+    }
+
+    /** 把 provider 内部的 client 换成测试指定的实例：注入一个永远返回它的缓存。 */
+    private fun injectClient(provider: DeepSeekProvider, client: OkHttpClient) {
+        val cacheField = DeepSeekProvider::class.java.getDeclaredField("clientCache")
+        cacheField.isAccessible = true
+        cacheField.set(
+            provider,
+            PinningAwareClientCache { client }
+        )
     }
 }

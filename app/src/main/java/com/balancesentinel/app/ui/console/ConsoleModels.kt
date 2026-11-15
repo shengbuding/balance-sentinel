@@ -47,6 +47,73 @@ data class ConsolePlatform(
         return (loginPagePatterns + commonLoginPatterns).any { location.matchesLocationPattern(it) }
     }
 
+    /**
+     * 当前地址是否足以证明「登录已失效」
+     *
+     * 有的站点登录页就在首页：入口地址本身就是登录页，单看 URL 无法区分
+     * 「没登录看到登录页」和「已登录看到首页」。这类平台一律不自动提示，
+     * 否则每次进控制台都会误报「登录已失效」。
+     */
+    fun reportsLoginExpiryAt(url: String): Boolean {
+        if (isLoginPage(dashboardUrl)) return false
+        return isLoginPage(url)
+    }
+
+    /**
+     * 该地址是否可以记为「下次直接打开的仪表盘地址」
+     *
+     * 只接受 https、与仪表盘同源、且不是登录页的地址，
+     * 避免把跳去外站的地址或登录页写进会话。
+     */
+    fun isRememberableDashboardUrl(url: String?): Boolean {
+        val parsed = url?.toHttpUrlOrNull() ?: return false
+        val dashboard = dashboardUrl.toHttpUrlOrNull() ?: return false
+        if (parsed.scheme != "https") return false
+        if (WebOrigin.from(parsed) != WebOrigin.from(dashboard)) return false
+        return !isLoginPage(url)
+    }
+
+    /**
+     * 打开控制台时应该加载的地址
+     *
+     * 优先回到上次真正停留过的仪表盘页面。平台只填了网站（首页）时，
+     * 退而用配置里最具体的成功路径，避免每次都从首页重新点进去。
+     */
+    fun preferredDashboardUrl(lastVisitedUrl: String? = null): String {
+        if (lastVisitedUrl != null && isRememberableDashboardUrl(lastVisitedUrl)) {
+            return lastVisitedUrl
+        }
+        if (isHomeDashboard()) {
+            for (pattern in successUrlPatterns) {
+                val location = normalizeLocationPattern(pattern) ?: continue
+                if (location == "/") continue
+                return dashboardUrlFor(location) ?: continue
+            }
+        }
+        return dashboardUrl
+    }
+
+    private fun isHomeDashboard(): Boolean {
+        val dashboard = dashboardUrl.toHttpUrlOrNull() ?: return false
+        return dashboard.encodedPath == "/" && dashboard.encodedFragment.isNullOrEmpty()
+    }
+
+    private fun dashboardUrlFor(location: String): String? {
+        val dashboard = dashboardUrl.toHttpUrlOrNull() ?: return null
+        val hashIndex = location.indexOf('#')
+        val path = if (hashIndex >= 0) location.substring(0, hashIndex) else location
+        val fragment = if (hashIndex >= 0) location.substring(hashIndex + 1) else null
+        return try {
+            dashboard.newBuilder()
+                .encodedPath(path.ifEmpty { "/" })
+                .encodedFragment(fragment)
+                .build()
+                .toString()
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
     private fun HttpUrl.pathAndFragment(): String = buildString {
         append(encodedPath)
         encodedFragment?.let {
@@ -55,10 +122,40 @@ data class ConsolePlatform(
         }
     }
 
+    /**
+     * 把匹配模式归一化成「路径 + #hash 路由」
+     *
+     * 模式可以是完整 URL，也可以是 "/overview"、"/#/console/usage" 这样的片段；
+     * 空模式返回 null。
+     */
+    private fun normalizeLocationPattern(pattern: String): String? {
+        val trimmed = pattern.trim()
+        if (trimmed.isEmpty()) return null
+        val location = trimmed.toHttpUrlOrNull()?.pathAndFragment()
+            ?: trimmed.substring(trimmed.indexOf('/').takeIf { it >= 0 } ?: 0)
+        if (location.isEmpty()) return null
+        val withSlash = if (location.startsWith("/")) location else "/$location"
+        return withSlash.trimEnd('/').ifEmpty { "/" }
+    }
+
+    /**
+     * 判断当前地址（路径 + #hash 路由）是否命中匹配模式
+     *
+     * 只按路径段边界匹配，而不是任意子串：
+     * - "/overview" 命中 "/overview"、"/overview/usage"，不命中 "/overview-archive"；
+     * - "/" 只命中站点根，不能当成「任意地址」的通配符 —— 否则登录页在首页的站点
+     *   会把每个页面都判成登录页，一进控制台就误报「登录已失效」。
+     */
     private fun String.matchesLocationPattern(pattern: String): Boolean {
-        val normalizedPattern = pattern.toHttpUrlOrNull()?.pathAndFragment()
-            ?: pattern.substring(pattern.indexOf('/').takeIf { it >= 0 } ?: 0)
-        return normalizedPattern.isNotEmpty() && contains(normalizedPattern, ignoreCase = true)
+        val normalized = normalizeLocationPattern(pattern) ?: return false
+        if (normalized == "/") return this == "/"
+        var index = indexOf(normalized, ignoreCase = true)
+        while (index >= 0) {
+            val end = index + normalized.length
+            if (end == length || this[end] == '/' || this[end] == '#' || this[end] == '?') return true
+            index = indexOf(normalized, index + 1, ignoreCase = true)
+        }
+        return false
     }
 }
 

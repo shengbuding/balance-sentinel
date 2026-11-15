@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -275,11 +276,15 @@ fun AccountBalanceCard(
                     }
 
                     if (refreshState.errorMessage != null) {
-                        Text(
-                            refreshState.errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        if (refreshState.subscriptionExpired) {
+                            SubscriptionExpiredNotice(MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text(
+                                refreshState.errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     } else if (refreshState.stale) {
                         Text(
                             stringResource(R.string.home_query_failed),
@@ -313,11 +318,18 @@ fun AccountBalanceCard(
                             .heightIn(min = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            refreshState.errorMessage,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        if (refreshState.subscriptionExpired) {
+                            SubscriptionExpiredNotice(
+                                style = MaterialTheme.typography.bodyMedium,
+                                centered = true
+                            )
+                        } else {
+                            Text(
+                                refreshState.errorMessage,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
                 refreshState.stale && effectiveDataTimestamp > 0 -> {
@@ -378,6 +390,34 @@ fun AccountBalanceCard(
         }
     }
 }
+
+/**
+ * An expired subscription is not a failure the user can retry away: the key is fine and only
+ * the plan lapsed. Paint it as a warning that names the next action instead of the red
+ * "query failed" text used for transport and credential errors.
+ */
+@Composable
+private fun SubscriptionExpiredNotice(
+    style: TextStyle,
+    centered: Boolean = false
+) {
+    Column(
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            stringResource(R.string.home_query_failed_subscription_expired),
+            style = style,
+            color = WalletColors.warningText
+        )
+        Text(
+            stringResource(R.string.home_query_failed_subscription_expired_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = WalletColors.warningTextDim
+        )
+    }
+}
+
 // ═══════════════════════════════════════════════════════════
 // 状态芯片
 // ═══════════════════════════════════════════════════════════

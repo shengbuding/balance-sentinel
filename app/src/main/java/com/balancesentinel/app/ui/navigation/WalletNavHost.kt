@@ -220,7 +220,8 @@ fun WalletNavHost(
                                 navController.popBackStack(AppRoute.ConsoleSelect.route, false)
                             }
                         },
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onPageVisited = consoleViewModel::onPageVisited
                     )
                 }
             }

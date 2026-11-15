@@ -35,7 +35,12 @@ object RefreshRuntime {
             val cached = BalanceWidgetDataStore.getAllBalances(appContext)
                 .filter { it.accountId == accountId }
             projectStaleFailure(accountId, failure, cached) {
-                BalanceWidgetDataStore.markAccountStale(appContext, accountId, failure.message)
+                BalanceWidgetDataStore.markAccountStale(
+                    context = appContext,
+                    accountId = accountId,
+                    reason = failure.message,
+                    authFailureKind = failure.authenticationKind()?.name
+                )
             }
         }
         val runRecorder = RoomRefreshRunRecorder(

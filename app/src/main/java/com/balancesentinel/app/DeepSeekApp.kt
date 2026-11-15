@@ -21,6 +21,7 @@ import com.balancesentinel.app.data.migration.LegacyDataMigration
 import com.balancesentinel.app.data.migration.LegacyDataVerifier
 import com.balancesentinel.app.data.migration.LegacyStoresDataSource
 import com.balancesentinel.app.data.local.WalletDatabaseProvider
+import com.balancesentinel.app.data.network.TransportSecurityPolicy
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.util.Logger
@@ -174,8 +175,13 @@ open class DeepSeekApp : Application(), Configuration.Provider {
             null -> Unit
         }
 
+        // 应用 HTTPS 强制策略（默认开启；关闭需用户在设置页经倒计时确认）
+        val transportPrefs = WidgetPrefs(this)
+        TransportSecurityPolicy.update(transportPrefs.httpsRequired)
+        CrashLogger.breadcrumb("App", "HTTPS required: " + transportPrefs.httpsRequired)
+
         // 恢复用户语言偏好（未设置则跟随系统）
-        val savedLanguage = WidgetPrefs(this).language
+        val savedLanguage = transportPrefs.language
         if (savedLanguage != null) {
             val localeManager = getSystemService(LocaleManager::class.java)
             localeManager.applicationLocales = LocaleList.forLanguageTags(savedLanguage)

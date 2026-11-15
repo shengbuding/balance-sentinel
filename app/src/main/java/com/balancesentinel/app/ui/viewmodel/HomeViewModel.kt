@@ -12,6 +12,8 @@ import com.balancesentinel.app.data.credentials.DataCorruptionException
 import com.balancesentinel.app.data.credentials.EncryptedPreferencesCredentialStore
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.refresh.RefreshRuntime
+import com.balancesentinel.app.data.refresh.AuthenticationFailureKind
+import com.balancesentinel.app.data.refresh.authenticationKind
 import com.balancesentinel.app.data.api.ProviderType
 import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
@@ -322,7 +324,8 @@ class HomeViewModel @JvmOverloads constructor(
         states[accountId] = previous.copy(
             requestId = requestId,
             isLoading = true,
-            errorMessage = null
+            errorMessage = null,
+            authFailureKind = null
         )
         publishRefreshStates(states)
         return requestId
@@ -360,7 +363,8 @@ class HomeViewModel @JvmOverloads constructor(
         message: String,
         dataTimestamp: Long? = null,
         emitSnackbar: Boolean = true,
-        cause: Throwable? = null
+        cause: Throwable? = null,
+        authFailureKind: AuthenticationFailureKind? = null
     ) {
         if (isCurrentRefresh(account.id, requestId)) {
             val updated = updateRefreshState(account.id, requestId) { state ->
@@ -368,14 +372,32 @@ class HomeViewModel @JvmOverloads constructor(
                     isLoading = false,
                     dataTimestamp = dataTimestamp ?: state.dataTimestamp,
                     stale = true,
-                    errorMessage = message
+                    errorMessage = message,
+                    authFailureKind = authFailureKind
                 )
             }
-            if (updated && emitSnackbar) emitError(account.id, message)
+            if (updated && emitSnackbar) emitError(account.id, snackbarMessage(account, message, authFailureKind))
         }
         cause?.let {
             Logger.e("HomeViewModel", "refresh failed for ${account.label}", it)
         }
+    }
+
+    /**
+     * The one-line popup a refresh failure produces.
+     *
+     * An expired subscription is not a query failure: the key still resolves, the plan lapsed.
+     * The card says so in its own row, and the toast must not contradict it with a bare
+     * "Subscription expired" in English while the rest of the screen is localised.
+     */
+    private fun snackbarMessage(
+        account: AccountInfo,
+        message: String,
+        authFailureKind: AuthenticationFailureKind?
+    ): String = if (authFailureKind == AuthenticationFailureKind.SUBSCRIPTION_EXPIRED) {
+        "[${account.label}] " + getApplication<Application>().getString(R.string.home_query_failed_subscription_expired)
+    } else {
+        message
     }
 
     private fun toBalanceResponse(balance: com.balancesentinel.app.data.api.UnifiedBalance): BalanceResponse =
@@ -411,7 +433,8 @@ class HomeViewModel @JvmOverloads constructor(
                         lastSuccessAt = System.currentTimeMillis(),
                         dataTimestamp = result.dataTimestamp ?: System.currentTimeMillis(),
                         stale = false,
-                        errorMessage = null
+                        errorMessage = null,
+                        authFailureKind = null
                     )
                 }
             }
@@ -421,7 +444,8 @@ class HomeViewModel @JvmOverloads constructor(
                     account = account,
                     requestId = requestId,
                     message = message,
-                    dataTimestamp = result.dataTimestamp
+                    dataTimestamp = result.dataTimestamp,
+                    authFailureKind = result.failure.authenticationKind()
                 )
             }
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Stale -> {
@@ -429,7 +453,8 @@ class HomeViewModel @JvmOverloads constructor(
                     account = account,
                     requestId = requestId,
                     message = result.failure.message,
-                    emitSnackbar = false
+                    emitSnackbar = false,
+                    authFailureKind = result.failure.authenticationKind()
                 )
             }
             is com.balancesentinel.app.data.refresh.AccountRefreshResult.Skipped -> {
@@ -460,6 +485,13 @@ class HomeViewModel @JvmOverloads constructor(
             }
         } catch (e: Exception) { Logger.e("HomeViewModel", "loadCachedBalances failed", e) }
     }
+
+    /**
+     * Recover the authentication verdict a cached failure was recorded with. Cached names come
+     * from older builds, so an unknown value degrades to "no verdict" instead of throwing.
+     */
+    private fun cachedAuthFailureKind(stored: String?): AuthenticationFailureKind? =
+        stored?.let { name -> AuthenticationFailureKind.entries.firstOrNull { it.name == name } }
 
     /** Project durable cache changes without generating user-facing refresh events. */
     private fun projectBalanceCacheSnapshot(snapshot: BalanceCacheSnapshot) {
@@ -505,6 +537,9 @@ class HomeViewModel @JvmOverloads constructor(
                 )
                 val timestamp = entries.maxOfOrNull { it.lastUpdated } ?: state.dataTimestamp
                 val staleReason = failure?.reason ?: entries.firstOrNull { it.stale }?.staleReason
+                val staleKind = cachedAuthFailureKind(
+                    failure?.kind ?: entries.firstOrNull { it.stale }?.staleKind
+                )
                 states[account.id] = state.copy(
                     isLoading = false,
                     lastSuccessAt = if (staleReason == null) {
@@ -512,7 +547,8 @@ class HomeViewModel @JvmOverloads constructor(
                     } else state.lastSuccessAt,
                     dataTimestamp = timestamp,
                     stale = staleReason != null,
-                    errorMessage = staleReason?.let { "[${account.label}] $it" }
+                    errorMessage = staleReason?.let { "[${account.label}] $it" },
+                    authFailureKind = staleKind
                 )
             } else if (failure != null) {
                 accountBalances.remove(account.id)
@@ -520,7 +556,8 @@ class HomeViewModel @JvmOverloads constructor(
                     isLoading = false,
                     stale = false,
                     dataTimestamp = null,
-                    errorMessage = "[${account.label}] ${failure.reason}"
+                    errorMessage = "[${account.label}] ${failure.reason}",
+                    authFailureKind = cachedAuthFailureKind(failure.kind)
                 )
             } else {
                 accountBalances.remove(account.id)

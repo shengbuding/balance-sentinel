@@ -9,6 +9,7 @@ import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.DeepSeekTlsPolicyAdapter
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.PinningAwareClientCache
 import com.balancesentinel.app.data.network.ResponseBudget
 import com.balancesentinel.app.data.util.Logger
 import kotlinx.serialization.json.Json
@@ -94,17 +95,21 @@ class DeepSeekApiService(
         }
     }
 
-    private val client = DebugClientInstaller.install(
-        DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
-        .addInterceptor(RetryInterceptor())
-        .build(),
-        debuggable = debuggable,
-        interceptor = accountId?.let(::DebugInterceptor)
-    )
+    // 同上：开关变化后重建，保证关闭「强制 HTTPS」立刻不再做证书固定。
+    private val clientCache = PinningAwareClientCache {
+        DebugClientInstaller.install(
+            DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
+                .addInterceptor(RetryInterceptor())
+                .build(),
+            debuggable = debuggable,
+            interceptor = accountId?.let(::DebugInterceptor)
+        )
+    }
+    private val client: OkHttpClient get() = clientCache.current()
 
     internal fun debugClient(): OkHttpClient = client
 

@@ -15,6 +15,7 @@ import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.model.AccountDraft
 import com.balancesentinel.app.data.model.AccountSaveResult
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
+import com.balancesentinel.app.data.refresh.AuthenticationFailureKind
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
 import com.balancesentinel.app.data.refresh.RefreshFailure
 import com.balancesentinel.app.data.refresh.RefreshGateway
@@ -1233,6 +1234,105 @@ class HomeViewModelTest {
         assertEquals(HomeUiEvent.ShowError(account.id, "[Events] temporary failure"), first)
         assertNull(withTimeoutOrNull(100) { vm.events.first() })
     }
+
+    // Mutation caught: painting an expired subscription with the same red error line as a
+    // rejected key. The card keeps its own row and the toast must agree with it.
+    @Test
+    fun `expired subscription becomes a verdict the card can render separately`() = runBlocking {
+        val account = apiKeyManager.addAccount("OpenCode Go6", "sk-opencode-go6")
+        val gateway = RecordingRefreshGateway(
+            AccountRefreshResult.Failed(
+                account.id,
+                subscriptionExpired()
+            )
+        )
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+
+        val state = vm.uiState.value.refreshStates.getValue(account.id)
+        assertTrue(state.subscriptionExpired)
+        assertEquals(AuthenticationFailureKind.SUBSCRIPTION_EXPIRED, state.authFailureKind)
+        assertTrue(state.stale)
+        assertEquals(
+            "[OpenCode Go6] " + context.getString(R.string.home_query_failed_subscription_expired),
+            state.errorMessage
+        )
+
+        val event = vm.events.first()
+        assertEquals(
+            HomeUiEvent.ShowError(
+                account.id,
+                "[OpenCode Go6] " + context.getString(R.string.home_query_failed_subscription_expired)
+            ),
+            event
+        )
+    }
+
+    // Mutation caught: keeping the previous verdict alive after a successful refresh, which
+    // would leave the card announcing an expiry that no longer blocks anything.
+    @Test
+    fun `successful refresh clears the expired subscription verdict`() {
+        val account = apiKeyManager.addAccount("Renewed", "sk-renewed")
+        val gateway = RecordingRefreshGateway(
+            AccountRefreshResult.Failed(account.id, subscriptionExpired()),
+            committed(account.id, 321.0)
+        )
+        val vm = createViewModel(gateway)
+
+        vm.refreshSingleAccount(account.id)
+        assertTrue(vm.uiState.value.refreshStates.getValue(account.id).subscriptionExpired)
+
+        vm.refreshSingleAccount(account.id)
+
+        val state = vm.uiState.value.refreshStates.getValue(account.id)
+        assertFalse(state.subscriptionExpired)
+        assertNull(state.authFailureKind)
+        assertNull(state.errorMessage)
+    }
+
+    // Mutation caught: dropping the verdict when the failure is replayed from the durable
+    // cache, which is the path a restart takes.
+    @Test
+    fun `cached subscription expiry survives a view model rebuild`() {
+        val account = apiKeyManager.addAccount("Cached expiry", "sk-cached-expiry")
+        BalanceWidgetDataStore.markAccountStale(
+            context,
+            account.id,
+            AuthenticationFailureKind.SUBSCRIPTION_EXPIRED.message,
+            AuthenticationFailureKind.SUBSCRIPTION_EXPIRED.name
+        )
+
+        val vm = createViewModel()
+        drainMain()
+
+        val state = vm.uiState.value.refreshStates.getValue(account.id)
+        assertEquals(AuthenticationFailureKind.SUBSCRIPTION_EXPIRED, state.authFailureKind)
+        assertTrue(state.subscriptionExpired)
+    }
+
+    // Mutation caught: an unknown cached name (an older or newer build) throwing instead of
+    // degrading to "no verdict".
+    @Test
+    fun `unknown cached auth verdict degrades to no verdict`() {
+        val account = apiKeyManager.addAccount("Legacy cache", "sk-legacy-cache")
+        BalanceWidgetDataStore.markAccountStale(context, account.id, "Subscription expired", "GONE_IN_A_LATER_BUILD")
+
+        val vm = createViewModel()
+        drainMain()
+
+        val state = vm.uiState.value.refreshStates.getValue(account.id)
+        assertNull(state.authFailureKind)
+        assertFalse(state.subscriptionExpired)
+        assertEquals("[Legacy cache] Subscription expired", state.errorMessage)
+    }
+
+    private fun subscriptionExpired() = RefreshFailure.AuthenticationFailure(
+        message = AuthenticationFailureKind.SUBSCRIPTION_EXPIRED.message,
+        kind = AuthenticationFailureKind.SUBSCRIPTION_EXPIRED,
+        httpStatus = 401,
+        providerDetail = """{"error":{"type":"authentication_error","code":"api_key_expired"}}"""
+    )
 
     private class ControlledRefreshGateway : RefreshGateway {
         private val pendingSingle = java.util.ArrayDeque<CompletableDeferred<AccountRefreshResult>>()

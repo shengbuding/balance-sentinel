@@ -177,7 +177,9 @@ data class ConsoleSession(
     val token: String? = null,
     val email: String? = null,
     val loginTime: Long = System.currentTimeMillis(),
-    val lastActiveTime: Long = System.currentTimeMillis()
+    val lastActiveTime: Long = System.currentTimeMillis(),
+    /** 上次真正停留过的仪表盘地址，下次打开这个平台时直接回到这里 */
+    val lastVisitedUrl: String? = null
 ) {
     companion object {
         private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000 // 30 天
@@ -199,5 +201,16 @@ data class ConsoleSession(
      */
     fun updateActiveTime(): ConsoleSession = copy(
         lastActiveTime = System.currentTimeMillis()
+    )
+
+    /**
+     * 记下这次停留的仪表盘页面，并顺手刷新活跃时间
+     *
+     * 活跃时间以前只在登录时写一次，30 天 TTL 是从登录日算起，
+     * 天天在用的人也会被要求重新登录；这里让 TTL 按真实活跃度滚动。
+     */
+    fun rememberVisit(url: String, now: Long = System.currentTimeMillis()): ConsoleSession = copy(
+        lastVisitedUrl = url,
+        lastActiveTime = now
     )
 }

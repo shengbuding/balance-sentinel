@@ -34,6 +34,7 @@ import com.balancesentinel.app.widget.StaticWidgetProvider_4x2
 import com.balancesentinel.app.widget.StaticWidgetProvider_5x1
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshRuntime
+import com.balancesentinel.app.data.refresh.RefreshBatchAggregate
 import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.work.RefreshWorkScheduler
 import com.balancesentinel.app.receiver.KeepAliveReceiver
@@ -60,6 +61,20 @@ internal fun buildServiceRefreshRunner(
     accountSnapshotReader = accountReader,
     committedBalanceReader = committedBalanceReader
 )
+
+/**
+ * Whether a completed batch is evidence that the refresh service itself is unhealthy.
+ *
+ * A batch whose only failures are "the user must renew or re-enter a key" says nothing about
+ * the service: counting it as a failure walks the health tracker into its alert (3 in a row)
+ * and protection (10 in a row) thresholds for a condition that only the user can fix.
+ * A batch with no accounts, or with any failure of another kind, still counts.
+ */
+internal fun batchIndicatesServiceFailure(aggregate: RefreshBatchAggregate?): Boolean {
+    if (aggregate == null) return true
+    if (aggregate.state == RefreshBatchState.SUCCEEDED) return false
+    return !(aggregate.accountCount > 0 && aggregate.failureCount == aggregate.accountActionRequiredCount)
+}
 
 internal suspend fun publishNotificationBestEffort(
     onFailure: (Throwable) -> Unit = {},
@@ -400,12 +415,12 @@ class BalanceRefreshService : Service() {
                 sendWidgetUpdateBroadcast()
                 RefreshScheduler.markFired(this@BalanceRefreshService)
                 RefreshScheduler.heartbeat(this@BalanceRefreshService)
-                if (serviceBatch.batch?.aggregate?.state == RefreshBatchState.SUCCEEDED) {
-                    ServiceHealthTracker.recordSuccess(this@BalanceRefreshService)
-                    RefreshStatsStore.recordSuccess(this@BalanceRefreshService)
-                } else {
+                if (batchIndicatesServiceFailure(serviceBatch.batch?.aggregate)) {
                     ServiceHealthTracker.recordFailure(this@BalanceRefreshService)
                     RefreshStatsStore.recordFailure(this@BalanceRefreshService)
+                } else {
+                    ServiceHealthTracker.recordSuccess(this@BalanceRefreshService)
+                    RefreshStatsStore.recordSuccess(this@BalanceRefreshService)
                 }
             } catch (e: CancellationException) {
                 // Service shutdown cancels the in-flight refresh scope. This is

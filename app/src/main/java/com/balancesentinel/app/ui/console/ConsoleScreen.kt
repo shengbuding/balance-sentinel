@@ -64,7 +64,8 @@ fun ConsoleScreen(
     onLoginSuccess: (cookies: Map<String, String>, localStorage: Map<String, String>, email: String?) -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPageVisited: (String?) -> Unit = {}
 ) {
     val content = resolveConsoleScreenContent(platform, uiState)
 
@@ -79,6 +80,7 @@ fun ConsoleScreen(
                 session = uiState.session,
                 onLogout = onLogout,
                 onBack = onBack,
+                onPageVisited = onPageVisited,
                 modifier = modifier
             )
         }
@@ -433,7 +435,8 @@ private fun ConsoleDashboard(
     session: com.balancesentinel.app.data.console.store.ConsoleSession?,
     onLogout: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPageVisited: (String?) -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -452,6 +455,13 @@ private fun ConsoleDashboard(
 
     val cookies = session?.cookies ?: emptyMap()
     val localStorage = session?.localStorage ?: emptyMap()
+
+    // 已登录的平台直接回到上次停留的仪表盘页面；从没进过才回落到配置地址。
+    // 只填了网站（首页）的平台，preferredDashboardUrl 会用配置里最具体的成功路径兜底，
+    // 避免每次都停在首页、还要再点一次才进得去仪表盘。
+    val startUrl = remember(platform, session?.lastVisitedUrl) {
+        platform.preferredDashboardUrl(session?.lastVisitedUrl)
+    }
 
     // 构建会话调试信息
     val sessionDebugInfo = remember(session, currentUrl, captureEnabled) {
@@ -474,12 +484,14 @@ private fun ConsoleDashboard(
     }
 
     // 检测登录失效
-    LaunchedEffect(currentUrl) {
-        currentUrl?.let { url ->
-            if (isLoginPage(url, platform) && !loginExpired) {
-                loginExpired = true
-                DebugLogger.log("[ConsoleDashboard] Login expired detected")
-            }
+    // 只有「跳到了登录页」才提示，而且平台本身就以登录页为首页时一律不提示：
+    // 那种站点已登录和未登录看到的都是同一个地址，仅凭 URL 无法区分。
+    LaunchedEffect(currentUrl, session, platform) {
+        val url = currentUrl ?: return@LaunchedEffect
+        if (session == null || loginExpired) return@LaunchedEffect
+        if (platform.reportsLoginExpiryAt(url)) {
+            loginExpired = true
+            DebugLogger.log("[ConsoleDashboard] Login expired detected")
         }
     }
 
@@ -686,7 +698,7 @@ private fun ConsoleDashboard(
         ) {
             Box(modifier = Modifier.weight(1f)) {
                 ConsoleWebView(
-                    url = platform.dashboardUrl,
+                    url = startUrl,
                     policy = policy,
                     cookies = cookies,
                     localStorage = localStorage,
@@ -710,6 +722,7 @@ private fun ConsoleDashboard(
                     },
                     onPageFinished = { url ->
                         currentUrl = url
+                        onPageVisited(url)
                         DebugLogger.log("[ConsoleDashboard] Page finished: ${redactConsoleUrl(url)}")
                     },
                     onReceivedError = { error ->
@@ -741,13 +754,6 @@ private fun ConsoleDashboard(
             }
         }
     }
-}
-
-/**
- * 检测是否是登录页面
- */
-private fun isLoginPage(url: String, platform: ConsolePlatform): Boolean {
-    return platform.isLoginPage(url)
 }
 
 // ═══════════════════════════════════════════════════════════

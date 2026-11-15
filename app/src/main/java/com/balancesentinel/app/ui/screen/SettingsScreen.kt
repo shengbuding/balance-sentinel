@@ -52,12 +52,14 @@ import com.balancesentinel.app.util.FormatUtils
 import com.balancesentinel.app.data.update.UpdateChecker
 import com.balancesentinel.app.data.update.UpdateResult
 import com.balancesentinel.app.data.update.UpdatePrefs
+import com.balancesentinel.app.data.network.TransportSecurityPolicy
 import com.balancesentinel.app.data.repository.WidgetPrefs
 import com.balancesentinel.app.work.RefreshWorkScheduler
 import com.balancesentinel.app.work.BackgroundRefreshMode
 import android.app.LocaleManager
 import android.os.LocaleList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -211,6 +213,34 @@ private fun SettingsMainPage(
                 description = languageLabel,
                 onClick = { showLanguageDialog = true }
             )
+
+            var httpsRequired by remember { mutableStateOf(widgetPrefs.httpsRequired) }
+            var showHttpsWarning by remember { mutableStateOf(false) }
+
+            HttpsRequiredCard(
+                httpsRequired = httpsRequired,
+                onToggle = { wanted ->
+                    if (wanted) {
+                        httpsRequired = true
+                        widgetPrefs.httpsRequired = true
+                        TransportSecurityPolicy.update(true)
+                    } else {
+                        showHttpsWarning = true
+                    }
+                }
+            )
+
+            if (showHttpsWarning) {
+                HttpsRelaxWarningDialog(
+                    onDismiss = { showHttpsWarning = false },
+                    onConfirm = {
+                        httpsRequired = false
+                        widgetPrefs.httpsRequired = false
+                        TransportSecurityPolicy.update(false)
+                        showHttpsWarning = false
+                    }
+                )
+            }
 
             if (showLanguageDialog) {
                 LanguageDialog(
@@ -1319,6 +1349,122 @@ private fun LanguageDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.home_cancel))
+            }
+        }
+    )
+}
+
+// ═══════════════════════════════════════════════════════════
+// 强制 HTTPS 开关
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun HttpsRequiredCard(
+    httpsRequired: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        stringResource(R.string.settings_https_required),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(
+                            if (httpsRequired) R.string.settings_https_required_desc
+                            else R.string.settings_https_relaxed_desc
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (httpsRequired) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            WalletColors.warningText
+                        }
+                    )
+                }
+            }
+            Switch(
+                checked = httpsRequired,
+                onCheckedChange = onToggle,
+                modifier = Modifier.testTag("https_required_switch")
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 关闭强制 HTTPS 的风险确认（倒计时结束后才允许确认）
+// ═══════════════════════════════════════════════════════════
+
+private const val HTTPS_WARNING_READ_SECONDS = 3
+
+@Composable
+private fun HttpsRelaxWarningDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    var remaining by remember { mutableStateOf(HTTPS_WARNING_READ_SECONDS) }
+    LaunchedEffect(Unit) {
+        while (remaining > 0) {
+            delay(1_000)
+            remaining -= 1
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_https_warning_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.settings_https_warning_body),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (remaining > 0) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        stringResource(R.string.settings_https_warning_countdown, remaining),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = WalletColors.warningText,
+                        modifier = Modifier.testTag("https_warning_countdown")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = remaining == 0,
+                modifier = Modifier.testTag("https_warning_confirm")
+            ) {
+                Text(stringResource(R.string.settings_https_warning_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_https_warning_keep))
             }
         }
     )

@@ -110,6 +110,17 @@ class WidgetPrefs(context: Context) {
         get() = prefs.getInt(KEY_SNOOZE_DURATION_MINUTES, DEFAULT_SNOOZE_MINUTES)
         set(value) = prefs.edit().putInt(KEY_SNOOZE_DURATION_MINUTES, value.coerceIn(5, 1440)).apply()
 
+    /**
+     * 是否强制所有供应商走 HTTPS（默认 true）。
+     *
+     * 打开时限制两件事：供应商 baseUrl 只接受 https，DeepSeek 额外启用证书固定。
+     * 关闭后两者都会放宽，用于在自建代理/抓包环境下排查问题 —— 代价是失去
+     * 中间人攻击防护，因此设置页要求阅读倒计时结束后才允许确认关闭。
+     */
+    var httpsRequired: Boolean
+        get() = prefs.getBoolean(KEY_HTTPS_REQUIRED, true)
+        set(value) = prefs.edit().putBoolean(KEY_HTTPS_REQUIRED, value).apply()
+
     /** 用户选择的语言偏好，null = 未设置 = 跟随系统 */
     var language: String?
         get() = prefs.getString(KEY_LANGUAGE, null)
@@ -737,6 +748,7 @@ class WidgetPrefs(context: Context) {
         const val KEY_NOTIFICATION_WALLET_ORDER = "notification_wallet_order"
         const val KEY_NOTIFICATION_TOTAL = "__total__"
         const val KEY_LANGUAGE = "pref_language"
+        const val KEY_HTTPS_REQUIRED = "https_required"
         const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"
         const val KEY_NOTIFICATION_PERMISSION_PERMANENTLY_DENIED = "notification_permission_permanently_denied"
 

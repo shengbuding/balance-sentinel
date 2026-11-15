@@ -55,7 +55,13 @@ sealed class ProviderError(
      */
     class NetworkError(
         provider: ProviderType,
-        cause: Throwable
+        cause: Throwable,
+        /**
+         * 这次失败是否出在 TLS 层。证书固定、VPN/抓包代理换证书、系统时钟错乱
+         * 都会走到这里；普通超时和 DNS 失败不会。用户报「开了 VPN 就刷不出来」时，
+         * 这是唯一能把这几种原因和「网络不好」区分开的信号。
+         */
+        val tlsFailure: Boolean = hasSslFailure(cause)
     ) : ProviderError(
         provider,
         message = if (hasSslFailure(cause)) {

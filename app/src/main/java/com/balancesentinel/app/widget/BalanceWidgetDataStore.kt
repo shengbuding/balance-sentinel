@@ -271,13 +271,22 @@ object BalanceWidgetDataStore {
     }
 
     /** Preserve the last successful values while projecting the current failure. */
-    fun markAccountStale(context: Context, accountId: String, reason: String) {
+    fun markAccountStale(
+        context: Context,
+        accountId: String,
+        reason: String,
+        authFailureKind: String? = null
+    ) {
         synchronized(STORE_LOCK) {
             val prefs = getPrefs(context)
             val balances = getAllBalances(prefs)
             val projected = balances.map { balance ->
                 if (balance.accountId == accountId) {
-                    balance.copy(stale = true, staleReason = reason)
+                    balance.copy(
+                        stale = true,
+                        staleReason = reason,
+                        staleKind = authFailureKind
+                    )
                 } else {
                     balance
                 }
@@ -286,7 +295,8 @@ object BalanceWidgetDataStore {
             failures += AccountBalanceFailure(
                 accountId = accountId,
                 reason = reason,
-                failedAt = System.currentTimeMillis()
+                failedAt = System.currentTimeMillis(),
+                kind = authFailureKind
             )
             check(prefs.edit().putString(KEY_BALANCES, json.encodeToString(projected))
                 .putFailures(failures)
@@ -314,6 +324,11 @@ data class AccountBalance(
     val lastUpdated: Long,
     val stale: Boolean = false,
     val staleReason: String? = null,
+    /**
+     * [AuthenticationFailureKind] name backing [staleReason], kept as a plain string so the
+     * cached payload stays readable when an older build or a new enum case is involved.
+     */
+    val staleKind: String? = null,
     val displayFields: Map<String, String> = emptyMap(),
     val quota: com.balancesentinel.app.data.api.QuotaSnapshot? = null
 )
@@ -322,7 +337,9 @@ data class AccountBalance(
 data class AccountBalanceFailure(
     val accountId: String,
     val reason: String,
-    val failedAt: Long
+    val failedAt: Long,
+    /** [AuthenticationFailureKind] name when the failure was an authentication rejection. */
+    val kind: String? = null
 )
 
 data class BalanceCacheSnapshot(

@@ -41,6 +41,9 @@ class ConsoleViewModel(
 
     companion object {
         private const val TAG = "ConsoleVM"
+
+        /** 活跃时间最多每 10 分钟落盘一次 */
+        private const val ACTIVE_TIME_REFRESH_MS = 10L * 60 * 1000
     }
 
     init {
@@ -115,10 +118,43 @@ class ConsoleViewModel(
     }
 
     /**
+     * 记下这次停留的仪表盘地址
+     *
+     * 下次再打开这个平台时直接回到这里，不用从首页重新点进去。
+     * 只记同源的 https 页面，跳出去的登录页或外站地址一律忽略。
+     */
+    fun onPageVisited(url: String?) {
+        val current = _uiState.value.session ?: return
+        if (!platform.isRememberableDashboardUrl(url)) return
+        if (current.lastVisitedUrl == url) {
+            touchSession(current)
+            return
+        }
+        val updated = current.rememberVisit(requireNotNull(url))
+        store.saveSession(platform.id, updated)
+        _uiState.value = _uiState.value.copy(session = updated)
+        DebugLogger.log("[$TAG] Remembered dashboard url for ${platform.name}")
+    }
+
+    /**
      * 刷新状态
      */
     fun refresh() {
         checkLoginStatus()
+    }
+
+    /**
+     * 续期：把会话的活跃时间推到当前时刻
+     *
+     * 30 天 TTL 按最后一次活跃算，而不是按登录那一刻算。
+     */
+    private fun touchSession(current: ConsoleSession) {
+        // 加密存储写一次不便宜，活跃时间按分钟级滚动就够了，不必每次导航都落盘。
+        if (System.currentTimeMillis() - current.lastActiveTime < ACTIVE_TIME_REFRESH_MS) return
+        val updated = current.updateActiveTime()
+        if (updated.lastActiveTime == current.lastActiveTime) return
+        store.saveSession(platform.id, updated)
+        _uiState.value = _uiState.value.copy(session = updated)
     }
 
     class Factory(

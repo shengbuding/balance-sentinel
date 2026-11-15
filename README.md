@@ -70,7 +70,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release 编译（需要签名配置，见 SIGNING.md）
 ./gradlew.bat assembleRelease --no-daemon
 
-# 运行测试 (1,564 JVM tests per variant)
+# 运行测试 (1,598 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -132,7 +132,7 @@ keyPassword=<密码>
 
 ### 版本
 
-当前：**v1.5.1** (2026-08-20)
+当前：**v1.5.3** (2026-11-15)
 
 [变更日志](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -207,7 +207,7 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 # Release build (requires signing config, see SIGNING.md)
 ./gradlew.bat assembleRelease --no-daemon
 
-# Run tests (1,564 JVM tests per variant)
+# Run tests (1,598 JVM tests per variant)
 ./gradlew.bat testDebugUnitTest --no-daemon
 ```
 
@@ -269,7 +269,7 @@ Without the release key on this machine, trigger the **Debug APK (release-signed
 
 ### Version
 
-Current: **v1.5.1** (2026-08-20)
+Current: **v1.5.3** (2026-11-15)
 
 [Changelog](CHANGELOG.md) | [GitHub Release](https://github.com/shengbuding/balance-sentinel/releases)
 
@@ -334,7 +334,7 @@ System     BalanceRefreshService           ← Foreground service + health track
 - `BackupImportPlanner` requires preview before apply; destructive replace requires complete credentials and two confirmations.
 - `DebugCapturePolicy` gates diagnostic request/response capture by the debuggable build flag; Release packaging tests verify the capture path is inactive.
 
-The v1.5.1 release candidate passes 1,531 Debug and 1,531 Release JVM tests (3 skipped per variant), clean Debug/Release lint, Kover verification, and fresh Debug/Release APK assembly. Full connected-test discovery still has an emulator startup limitation recorded in the [Claude Code review handoff](docs/claude-code-review-handoff.md). Target-API device gaps are tracked in [TEST_REPORT.md](TEST_REPORT.md).
+The v1.5.3 release candidate passes 1,598 Debug and 1,598 Release JVM tests (3 skipped per variant), clean Debug/Release lint, Kover verification, and fresh Debug/Release APK assembly. Full connected-test discovery still has an emulator startup limitation recorded in the [Claude Code review handoff](docs/claude-code-review-handoff.md). Target-API device gaps are tracked in [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Navigation
 

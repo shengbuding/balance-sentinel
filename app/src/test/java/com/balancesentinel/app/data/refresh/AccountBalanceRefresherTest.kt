@@ -139,6 +139,36 @@ class AccountBalanceRefresherTest {
         assertTrue(expired.message != invalid.message)
     }
 
+    // Mutation caught: treating the OpenCode Go body, which says "expired" about the key
+    // rather than about the subscription, as an ordinary rejected key.
+    @Test
+    fun `opencode expired key body is read as an expired plan`() = runTest {
+        val refresher = AccountBalanceRefresher(
+            providerResolver = BalanceProviderResolver {
+                RecordingProvider(
+                    ProviderResult.Failure(
+                        ProviderError.AuthError(
+                            provider = ProviderType.OPENCODE_GO,
+                            message = "API Key is invalid",
+                            httpStatus = 401,
+                            providerDetail = """{"error":{"type":"authentication_error",""" +
+                                """"code":"api_key_expired","message":"This API key has expired. """ +
+                                """Create a new API key in OpenCode Console."}}"""
+                        )
+                    )
+                )
+            }
+        )
+
+        val failure = (refresher.fetch(account()) as BalanceFetchResult.Failure).failure
+
+        assertEquals(
+            AuthenticationFailureKind.SUBSCRIPTION_EXPIRED,
+            (failure as RefreshFailure.AuthenticationFailure).kind
+        )
+        assertEquals(401, failure.httpStatus)
+    }
+
     @Test
     fun `missing credential is reported as configuration instead of a bad key`() = runTest {
         val refresher = AccountBalanceRefresher(

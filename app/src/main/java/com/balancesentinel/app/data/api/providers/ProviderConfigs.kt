@@ -6,6 +6,7 @@ import com.balancesentinel.app.data.api.ConfigField
 import com.balancesentinel.app.data.api.ConfigFieldStorage
 import com.balancesentinel.app.data.api.FieldType
 import com.balancesentinel.app.data.api.ProviderType
+import com.balancesentinel.app.data.network.TransportSecurityPolicy
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
@@ -139,15 +140,28 @@ object ProviderConfigs {
         return fields
     }
 
+    /**
+     * 校验单个字段的输入值。
+     *
+     * URL 字段的 scheme 白名单随 [TransportSecurityPolicy.httpsRequired] 变化：
+     * 默认（强制 https）只接受 https；用户在设置页显式关闭后才会重新接受 http，
+     * 以便在需要抓包排查的自建网关上使用。
+     */
     fun validateFieldValue(field: ConfigField, value: String): Boolean {
         val normalized = value.trim()
         if (normalized.isEmpty()) return !field.required
 
         return when (field.type) {
-            FieldType.URL -> normalized.toHttpUrlOrNull()?.scheme in setOf("http", "https")
+            FieldType.URL -> normalized.toHttpUrlOrNull()?.let { url ->
+                if (TransportSecurityPolicy.httpsRequired) url.isHttps else url.scheme in urlSchemes()
+            } ?: false
             else -> true
         }
     }
+
+    /** 当前允许的 URL scheme。强制 https 时只有 https 一项。 */
+    fun urlSchemes(): Set<String> =
+        if (TransportSecurityPolicy.httpsRequired) setOf("https") else setOf("http", "https")
 
     fun validateFieldValues(type: ProviderType, values: Map<String, String>): Boolean =
         getConfigFields(type).all { field ->

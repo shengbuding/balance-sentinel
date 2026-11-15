@@ -30,6 +30,7 @@ import com.balancesentinel.app.R
 import com.balancesentinel.app.data.api.ConfigField
 import com.balancesentinel.app.data.api.FieldType
 import com.balancesentinel.app.data.api.providers.ProviderConfigs
+import com.balancesentinel.app.data.network.TransportSecurityPolicy
 import com.balancesentinel.app.ui.CustomIcons
 
 @Composable
@@ -39,6 +40,8 @@ fun ProviderCredentialFields(
     onValueChange: (String, String) -> Unit
 ) {
     var visiblePasswords by remember(fields) { mutableStateOf(emptySet<String>()) }
+    // 读取一次即可：对话框存活期间策略不会变（设置页修改时才变）
+    val httpsRequired = TransportSecurityPolicy.httpsRequired
     val clipboardManager = LocalClipboardManager.current
 
     Column(
@@ -125,7 +128,14 @@ fun ProviderCredentialFields(
                 shape = RoundedCornerShape(8.dp),
                 isError = invalid,
                 supportingText = if (invalid && field.type == FieldType.URL) {
-                    { Text(stringResource(R.string.account_field_url_invalid)) }
+                    {
+                        Text(
+                            stringResource(
+                                if (httpsRequired) R.string.account_field_url_insecure
+                                else R.string.account_field_url_invalid
+                            )
+                        )
+                    }
                 } else {
                     null
                 }

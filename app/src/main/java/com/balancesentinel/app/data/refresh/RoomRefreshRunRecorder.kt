@@ -162,12 +162,18 @@ class RoomRefreshRunRecorder(
         database.refreshRunDao().deriveAndUpdateAggregate(runId, completedAt)
         val run = database.refreshRunDao().getRun(runId)
             ?: return RefreshBatchAggregate(RefreshBatchState.FAILED, 0, 0, 0, 0)
+        // Recomputed from the durable rows instead of a new column: the distinction only needs
+        // to survive this run, and a schema change would cost a migration for a derived number.
+        val accountActionRequiredCount = database.refreshRunDao()
+            .getAccountResults(runId)
+            .count { it.state == RefreshAccountResultState.AUTHENTICATION_FAILED }
         val aggregate = RefreshBatchAggregate(
             state = run.state.toBatchState(),
             accountCount = run.accountCount,
             successCount = run.successCount,
             failureCount = run.failureCount,
-            cancelledCount = run.cancelledCount
+            cancelledCount = run.cancelledCount,
+            accountActionRequiredCount = accountActionRequiredCount
         )
         RefreshDiagnostics.record(
             stage = RefreshDiagnosticStage.RUN_FINISHED,

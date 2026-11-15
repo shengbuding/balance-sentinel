@@ -1,38 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  网络安全配置 — HTTPS 证书固定 (Certificate Pinning)
-  拒绝一切非 api.deepseek.com 真实证书的 MITM 代理。
+  网络安全配置 — 明文禁令 + 证书固定的说明
 
-  引脚更新：当 DeepSeek 更换 SSL 证书时，App 需要同步更新 pin。
-  获取新 SPKI hash 的命令：
-    echo | openssl s_client -servername api.deepseek.com -connect api.deepseek.com:443 2>/dev/null \
-      | openssl x509 -pubkey -noout 2>/dev/null \
-      | openssl pkey -pubin -outform DER 2>/dev/null \
-      | openssl dgst -sha256 -binary 2>/dev/null | base64
+  ⚠️ 证书固定（pin-set）已从这里移除，改由代码层实施，原因见下。
 
-  建议同时保留旧 pin 和新 pin 一段时间以平滑过渡。
+  历史上的做法是在 domain-config 里声明 <pin-set> 钉住 api.deepseek.com。
+  平台实施的是**编译期常量**，App 里没有任何 API 能在运行时关掉它。结果是：
+  用户开了 VPN / 抓包代理、证书链被替换时，即使设置页关掉了「强制 HTTPS」，
+  平台仍然拒绝握手 —— 开关形同虚设，表现为「关了还是 Network request failed」。
+
+  现在固定策略由 OkHttp 的 CertificatePinner 承担（DeepSeekTlsPolicy），
+  默认开启，设置页关掉后立即不再安装 pinner，无需重启。
+  pin 覆盖了全部三条访问 api.deepseek.com 的路径：
+    - DeepSeekProvider.clientCache
+    - DeepSeekApiService.clientCache
+    - BalanceQueryService.callFactoryFor 的 DEEPSEEK 分支
+
+  这里保留的是与固定无关、且不该被关掉的那一层：全局禁止明文 HTTP。
 -->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="false">api.deepseek.com</domain>
-        <pin-set expiration="2027-07-01">
-            <!--
-              Evidence captured 2026-08-10 with a Java TLS socket to
-              api.deepseek.com:443 (SNI api.deepseek.com), hashing
-              SHA-256(X509Certificate.publicKey.encoded) and Base64 encoding.
-              Leaf: subject=CN=api.deepseek.com; issuer=CN=TrustAsia DV TLS RSA CA 2025,
-              O=TrustAsia Technologies, Inc., C=CN; valid 2026-06-20 through 2026-09-18.
-              Backup issuer: subject=CN=TrustAsia DV TLS RSA CA 2025,
-              O=TrustAsia Technologies, Inc., C=CN; issuer=CN=DigiCert Global Root G2,
-              O=DigiCert Inc, C=US; valid 2025-01-08 through 2035-01-08.
-            -->
-            <!-- Leaf certificate SPKI (2026-06-20 to 2026-09-18) -->
-            <pin digest="SHA-256">IS95653JtE1/bNto9qa5E/NHBmBbRDmfaLM+btVVTCk=</pin>
-            <!-- Issuer rotation backup SPKI (2025-01-08 to 2035-01-08) -->
-            <pin digest="SHA-256">eLVG2Nq6lNlY482AlhlwwHqvL3TsvXMFJx2ycA8gZpQ=</pin>
-        </pin-set>
-    </domain-config>
-    <!-- 其他域名的 HTTPS 流量：不固定证书但要求加密 -->
+    <!-- 所有域名的 HTTPS 流量：不在此处固定证书，但要求加密，且只信任系统 CA。 -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />

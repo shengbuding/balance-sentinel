@@ -17,6 +17,7 @@ import com.balancesentinel.app.data.network.BoundedResponseReader
 import com.balancesentinel.app.data.network.DeepSeekTlsPolicyAdapter
 import com.balancesentinel.app.data.network.EncodedResponseLimitInterceptor
 import com.balancesentinel.app.data.network.NetworkResponseException
+import com.balancesentinel.app.data.network.PinningAwareClientCache
 import com.balancesentinel.app.data.network.ResponseBudget
 import com.balancesentinel.app.data.network.executeCancellable
 import kotlinx.coroutines.CancellationException
@@ -39,11 +40,15 @@ class DeepSeekProvider(
     )
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val client = DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
-        .build()
+    // 证书固定只在开关打开时安装；用户关掉「强制 HTTPS」后这里会重建 client，无需重启。
+    private val clientCache = PinningAwareClientCache {
+        DeepSeekTlsPolicyAdapter.configure(OkHttpClient.Builder())
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .addNetworkInterceptor(EncodedResponseLimitInterceptor(ResponseBudget.DEEPSEEK))
+            .build()
+    }
+    private val client: OkHttpClient get() = clientCache.current()
 
     internal fun getClientWithDebug(accountId: String?): OkHttpClient {
         val boundedClient = if (client.networkInterceptors.none {

@@ -9,7 +9,9 @@ import com.balancesentinel.app.data.local.WalletDatabaseProvider
 import com.balancesentinel.app.data.model.AccountInfo
 import com.balancesentinel.app.data.refresh.AccountRefreshResult
 import com.balancesentinel.app.data.refresh.AccountStoreRead
+import com.balancesentinel.app.data.refresh.RefreshBatchAggregate
 import com.balancesentinel.app.data.refresh.RefreshBatchResult
+import com.balancesentinel.app.data.refresh.RefreshBatchState
 import com.balancesentinel.app.data.refresh.RefreshGateway
 import com.balancesentinel.app.data.refresh.RefreshTrigger
 import com.balancesentinel.app.data.refresh.deriveRefreshBatchAggregate
@@ -19,6 +21,7 @@ import com.balancesentinel.app.widget.AccountBalance
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -40,6 +43,51 @@ class BalanceRefreshServiceTest {
     fun tearDown() {
         SettingsRepositoryProvider.resetForTests()
         WalletDatabaseProvider.clearForTests()
+    }
+
+    // Mutation caught: feeding an expired plan into the health counters, which walks them to
+    // the 3-failure alert and the 10-failure protection interval for something only the user
+    // can fix. Every other shape of failure must still count.
+    @Test
+    fun `only user actionable failures are exempt from the service health counters`() {
+        val expiredOnly = RefreshBatchAggregate(
+            state = RefreshBatchState.FAILED,
+            accountCount = 2,
+            successCount = 0,
+            failureCount = 2,
+            cancelledCount = 0,
+            accountActionRequiredCount = 2
+        )
+        val mixed = expiredOnly.copy(accountActionRequiredCount = 1)
+        val networkOnly = expiredOnly.copy(accountActionRequiredCount = 0)
+        val partialFromUserActionOnly = RefreshBatchAggregate(
+            state = RefreshBatchState.PARTIAL,
+            accountCount = 2,
+            successCount = 1,
+            failureCount = 1,
+            cancelledCount = 0,
+            accountActionRequiredCount = 1
+        )
+        val partialWithRealFailure = RefreshBatchAggregate(
+            state = RefreshBatchState.PARTIAL,
+            accountCount = 3,
+            successCount = 1,
+            failureCount = 2,
+            cancelledCount = 0,
+            accountActionRequiredCount = 1
+        )
+        val succeeded = expiredOnly.copy(state = RefreshBatchState.SUCCEEDED)
+        val empty = RefreshBatchAggregate(RefreshBatchState.FAILED, 0, 0, 0, 0)
+
+        assertFalse(batchIndicatesServiceFailure(expiredOnly))
+        assertTrue(batchIndicatesServiceFailure(mixed))
+        assertTrue(batchIndicatesServiceFailure(networkOnly))
+        // A partial batch where the only failure is an expiry says nothing about the service either.
+        assertFalse(batchIndicatesServiceFailure(partialFromUserActionOnly))
+        assertTrue(batchIndicatesServiceFailure(partialWithRealFailure))
+        assertFalse(batchIndicatesServiceFailure(succeeded))
+        assertTrue(batchIndicatesServiceFailure(empty))
+        assertTrue(batchIndicatesServiceFailure(null))
     }
 
     @Test

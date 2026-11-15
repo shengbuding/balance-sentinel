@@ -69,6 +69,10 @@ sealed interface RefreshFailure {
     data class Cancelled(override val message: String = "Refresh cancelled") : RefreshFailure
 }
 
+/** The authentication verdict carried by this failure, or null when it is not an auth rejection. */
+fun RefreshFailure.authenticationKind(): AuthenticationFailureKind? =
+    (this as? RefreshFailure.AuthenticationFailure)?.kind
+
 data class RefreshRequest(
     val accountId: String,
     val revision: Long,
